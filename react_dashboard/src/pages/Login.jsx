@@ -11,7 +11,7 @@ import { Link } from "react-router-dom";
 import { login } from "../services/authService";
 
 const Login = () => {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -22,11 +22,11 @@ const Login = () => {
     setLoading(true);
 
     try {
-      await login(email, password);
+      await login(username, password);
       alert("Login success!");
       // navigate("/dashboard");
     } catch (err) {
-      setError("Email hoặc mật khẩu không đúng");
+      setError("Username or Password is incorrect!!");
     } finally {
       setLoading(false);
     }
@@ -44,11 +44,11 @@ const Login = () => {
         {/* FORM */}
         <Box component="form" onSubmit={handleSubmit}>
           <TextField
-            label="Email"
+            label="Username"
             fullWidth
             margin="normal"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
             required
           />
 

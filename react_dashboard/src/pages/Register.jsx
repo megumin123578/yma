@@ -89,7 +89,7 @@ const Register = () => {
 
       setSuccess(res.data.message || "Sign up successfully!");
       setTimeout(() => {
-        navigate("/login");
+        navigate("/");
       }, 1500);
     } catch (err) {
       setError("Sign up failed!");
@@ -203,7 +203,7 @@ const Register = () => {
               backgroundColor: "rgba(255,255,255,0.08)",
             },
           }}
-          onClick={() => navigate("/login")}
+          onClick={() => navigate("/")}
         >
           Back to Login page
         </Button>
