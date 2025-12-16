@@ -70,17 +70,26 @@ const Register = () => {
 
     try {
       setLoading(true);
-      await register({
+
+      const res = await register({
         username: form.username,
         password: form.password,
       });
-      setSuccess("Sign up successfully!");
+
+      // 🔴 QUAN TRỌNG NHẤT: ĐỌC RESPONSE
+      if (res.data.success === false) {
+        setError(res.data.message); // "User existed"
+        return;
+      }
+
+      setSuccess(res.data.message || "Sign up successfully!");
     } catch (err) {
       setError("Sign up failed!");
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <Box
