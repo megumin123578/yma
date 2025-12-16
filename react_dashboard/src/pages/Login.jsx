@@ -7,7 +7,7 @@ import {
   Paper,
   Alert,
 } from "@mui/material";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { login } from "../services/authService";
 
 const Login = () => {
@@ -16,15 +16,19 @@ const Login = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const navigate = useNavigate();
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
-      await login(username, password);
-      alert("Login success!");
-      // navigate("/dashboard");
+      await login(username.trim(), password);
+
+      // 👉 Login thành công → về Dashboard
+      navigate("/dashboard", { replace: true });
+
     } catch (err) {
       setError("Username or Password is incorrect!!");
     } finally {
@@ -33,13 +37,23 @@ const Login = () => {
   };
 
   return (
-    <Box display="flex" justifyContent="center" alignItems="center" height="100%">
+    <Box
+      minHeight="100vh"
+      display="flex"
+      justifyContent="center"
+      alignItems="center"
+      bgcolor="background.default"
+    >
       <Paper elevation={3} sx={{ p: 4, width: 360 }}>
         <Typography variant="h5" fontWeight="bold" mb={2} textAlign="center">
           Login
         </Typography>
 
-        {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
+        {error && (
+          <Alert severity="error" sx={{ mb: 1 }}>
+            {error}
+          </Alert>
+        )}
 
         {/* FORM */}
         <Box component="form" onSubmit={handleSubmit}>
