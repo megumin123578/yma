@@ -6,6 +6,7 @@ from src.api.auth.routers import auth
 
 app = FastAPI()
 
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],

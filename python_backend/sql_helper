@@ -5,6 +5,9 @@ setx PG_URL "postgresql+psycopg2://postgres:V!etdu1492003@localhost:5432/analyti
 python -m uvicorn main:app --reload
  python -m uvicorn python_backend.main:app --reload
 
+-- To run react_dashboard
+npm --prefix react_dashboard run start
+
 -- xóa và tạo lại db
 \c postgres
 DROP DATABASE analytics;

@@ -1,19 +1,23 @@
-#python_backend/main.py
+# python_backend/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from python_backend.api.auth.database import engine, Base
+from python_backend.api.auth import models
+
 from python_backend.routes.traffic_timeseries import router as ts_router
 from python_backend.routes.geography import router as geo_router
 from python_backend.routes.content import router as content_router
 from python_backend.routes.overview import router as overview_router
-from react_dashboard.src.api.auth.routers import auth
+from python_backend.api.auth.routers import auth
+
 app = FastAPI()
 
-
-
+Base.metadata.create_all(bind=engine)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # hoặc chỉ http://localhost:3000
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
