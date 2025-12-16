@@ -9,6 +9,9 @@ import {
   LinearProgress,
 } from "@mui/material";
 import { register } from "../services/authService";
+import { useNavigate } from "react-router-dom";
+
+
 
 const getPasswordStrength = (password) => {
   let score = 0;
@@ -50,6 +53,8 @@ const Register = () => {
   const strength = getPasswordStrength(form.password);
   const strengthInfo = strengthLabel(strength);
 
+  const navigate = useNavigate();
+
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
 
@@ -76,13 +81,16 @@ const Register = () => {
         password: form.password,
       });
 
-      // 🔴 QUAN TRỌNG NHẤT: ĐỌC RESPONSE
+      // ĐỌC RESPONSE
       if (res.data.success === false) {
         setError(res.data.message); // "User existed"
         return;
       }
 
       setSuccess(res.data.message || "Sign up successfully!");
+      setTimeout(() => {
+        navigate("/login");
+      }, 1500);
     } catch (err) {
       setError("Sign up failed!");
     } finally {
@@ -183,6 +191,22 @@ const Register = () => {
           >
             {loading ? "Creating account..." : "Register"}
           </Button>
+          <Button
+          variant="text"
+          fullWidth
+          sx={{
+            mt: 1,
+            color: "white",
+            transition: "all 0.2s ease",
+            "&:hover": {
+              color: "#90caf9",
+              backgroundColor: "rgba(255,255,255,0.08)",
+            },
+          }}
+          onClick={() => navigate("/login")}
+        >
+          Back to Login page
+        </Button>
         </Box>
       </Paper>
     </Box>
