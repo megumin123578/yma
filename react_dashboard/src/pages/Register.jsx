@@ -83,7 +83,7 @@ const Register = () => {
 
       // ĐỌC RESPONSE
       if (res.data.success === false) {
-        setError(res.data.message); // "User existed"
+        setError(res.data.message); // User existed
         return;
       }
 

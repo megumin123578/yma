@@ -25,8 +25,6 @@ const Login = () => {
 
     try {
       await login(username.trim(), password);
-
-      // 👉 Login thành công → về Dashboard
       navigate("/dashboard", { replace: true });
 
     } catch (err) {

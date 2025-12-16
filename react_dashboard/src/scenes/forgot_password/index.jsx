@@ -1,12 +1,23 @@
 import { Box } from "@mui/material";
 import Header from "../../components/Header";
+import ForgotPassword from "../../pages/ForgotPassword";
 
-const ForgotPassword = () => {
+const Forgot = () => {
   return (
     <Box m="20px">
       <Header title="Forgot Password" />
+
+      <Box
+        mt={3}
+        display="flex"
+        justifyContent="center"
+        alignItems="center"
+        minHeight="60vh"
+      >
+        <ForgotPassword />
+      </Box>
     </Box>
   );
 };
 
-export default ForgotPassword;
+export default Forgot;
