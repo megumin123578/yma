@@ -1,0 +1,44 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from react_dashboard.src.api.auth.database import get_db
+from react_dashboard.src.api.auth.models import User
+from react_dashboard.src.api.auth.schemas import UserCreate, UserLogin, Token
+from react_dashboard.src.api.auth.auth_utils import (
+    hash_password,
+    verify_password,
+    create_access_token,
+)
+
+
+router = APIRouter(
+    prefix="/api/auth",
+    tags=["Auth"]
+)
+
+@router.post("/register")
+def register(data: UserCreate, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == data.username).first()
+    if user:
+        raise HTTPException(status_code=400, detail="User exists")
+
+    new_user = User(
+        username=data.username,
+        password=hash_password(data.password)
+    )
+    db.add(new_user)
+    db.commit()
+    return {"message": "Register success"}
+
+@router.post("/login")
+def login(data: UserLogin, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == data.username).first()
+
+    if not user or not verify_password(data.password, user.password):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    token = create_access_token({"sub": user.username})
+
+    return {
+        "access_token": token,
+        "token_type": "bearer"
+    }
