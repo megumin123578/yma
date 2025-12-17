@@ -8,7 +8,6 @@ import InputBase from "@mui/material/InputBase";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
-import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import SearchIcon from "@mui/icons-material/Search";
 
@@ -19,6 +18,12 @@ const Topbar = () => {
 
   const { user } = useContext(UserContext);
   const [openProfile, setOpenProfile] = useState(false);
+
+  // ✅ GUARD: chưa login
+  const avatarSrc =
+    user?.avatar && !user.avatar.startsWith("blob:")
+      ? `${process.env.REACT_APP_API_URL || ""}${user.avatar}`
+      : null;
 
   return (
     <>
@@ -49,10 +54,10 @@ const Topbar = () => {
             <NotificationsOutlinedIcon />
           </IconButton>
 
-          {/* SETTINGS / PROFILE */}
+          {/* PROFILE */}
           <IconButton onClick={() => setOpenProfile(true)}>
-            {user.avatar ? (
-              <Avatar src={user.avatar} sx={{ width: 32, height: 32 }} />
+            {avatarSrc ? (
+              <Avatar src={avatarSrc} sx={{ width: 32, height: 32 }} />
             ) : (
               <PersonOutlinedIcon />
             )}

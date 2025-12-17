@@ -19,6 +19,7 @@ import ExitToAppIcon from "@mui/icons-material/ExitToApp";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { logout } from "../../services/authService";
+import { uploadAvatar } from "../../services/userService";
 import { useNavigate } from "react-router-dom";
 
 const Transition = forwardRef(function Transition(props, ref) {
@@ -28,31 +29,63 @@ const Transition = forwardRef(function Transition(props, ref) {
 const ProfileDialog = ({ open, onClose }) => {
   const theme = useTheme();
   const { user, setUser } = useContext(UserContext);
-  const [name, setName] = useState(user.name || "");
-  const [openPassword, setOpenPassword] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (open) setName(user.name || "");
-  }, [open, user.name]);
+  const [name, setName] = useState("");
+  const [pendingAvatar, setPendingAvatar] = useState(null); // File chưa upload
+  const [previewAvatar, setPreviewAvatar] = useState(null);
+  const [openPassword, setOpenPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const handleAvatarUpload = (e) => {
+  useEffect(() => {
+    if (open && user) {
+      setName(user.name || "");
+      setPreviewAvatar(user.avatar || null);
+      setPendingAvatar(null);
+    }
+  }, [open, user]);
+
+  // 👉 Chỉ chọn ảnh → preview
+  const handleSelectAvatar = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onloadend = () =>
-      setUser((prev) => ({ ...prev, avatar: reader.result }));
-    reader.readAsDataURL(file);
+    setPendingAvatar(file);
+    setPreviewAvatar(URL.createObjectURL(file));
   };
 
-  const handleSave = () => {
-    setUser((prev) => ({ ...prev, name }));
-    onClose();
+  // 👉 CHỈ ẤN SAVE MỚI UPDATE
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+
+    try {
+      let avatarUrl = user.avatar;
+
+      // Nếu có avatar mới → upload
+      if (pendingAvatar) {
+        const res = await uploadAvatar(pendingAvatar);
+        avatarUrl = res.data.avatarUrl;
+      }
+
+      // Update context
+      setUser((prev) => ({
+        ...prev,
+        name,
+        avatar: avatarUrl,
+      }));
+
+      onClose();
+    } catch (err) {
+      console.error("Save profile failed:", err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleLogout = () => {
     logout();
+    setUser(null);
     navigate("/", { replace: true });
   };
 
@@ -67,19 +100,13 @@ const ProfileDialog = ({ open, onClose }) => {
           sx: {
             borderRadius: 3,
             width: 380,
-            backgroundColor: theme.palette.background.paper, // ✅ nền sáng hơn
+            backgroundColor: theme.palette.background.paper,
           },
         },
       }}
     >
-      {/* TITLE */}
       <DialogTitle>
-        <Typography
-          variant="h5"
-          fontWeight="bold"
-          component="div"
-          color={theme.palette.text.primary} // ✅ chữ rõ
-        >
+        <Typography variant="h5" component="span" fontWeight="bold">
           Profile Settings
         </Typography>
       </DialogTitle>
@@ -96,12 +123,12 @@ const ProfileDialog = ({ open, onClose }) => {
             {/* AVATAR */}
             <Box position="relative">
               <Avatar
-                src={user.avatar}
-                sx={{
-                  width: 96,
-                  height: 96,
-                  boxShadow: 3,
-                }}
+                src={
+                  previewAvatar
+                    ? `${process.env.REACT_APP_API_URL || ""}${previewAvatar}`
+                    : undefined
+                }
+                sx={{ width: 96, height: 96, boxShadow: 3 }}
               />
 
               <IconButton
@@ -112,9 +139,6 @@ const ProfileDialog = ({ open, onClose }) => {
                   right: -6,
                   backgroundColor: theme.palette.primary.main,
                   color: "#fff",
-                  "&:hover": {
-                    backgroundColor: theme.palette.primary.dark,
-                  },
                 }}
               >
                 <PhotoCameraIcon fontSize="small" />
@@ -122,36 +146,17 @@ const ProfileDialog = ({ open, onClose }) => {
                   hidden
                   type="file"
                   accept="image/*"
-                  onChange={handleAvatarUpload}
+                  onChange={handleSelectAvatar}
                 />
               </IconButton>
             </Box>
 
-            {/* NAME INPUT */}
+            {/* NAME */}
             <TextField
               fullWidth
               label="Display Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              InputLabelProps={{
-                sx: { color: theme.palette.text.secondary },
-              }}
-              inputProps={{
-                sx: { color: theme.palette.text.primary },
-              }}
-              sx={{
-                "& .MuiOutlinedInput-root": {
-                  "& fieldset": {
-                    borderColor: theme.palette.divider,
-                  },
-                  "&:hover fieldset": {
-                    borderColor: theme.palette.primary.light,
-                  },
-                  "&.Mui-focused fieldset": {
-                    borderColor: theme.palette.primary.main,
-                  },
-                },
-              }}
             />
 
             {/* ACTIONS */}
@@ -161,10 +166,7 @@ const ProfileDialog = ({ open, onClose }) => {
                   fullWidth
                   variant="outlined"
                   onClick={onClose}
-                  sx={{
-                    color: theme.palette.text.primary,
-                    borderColor: theme.palette.divider,
-                  }}
+                  disabled={saving}
                 >
                   Cancel
                 </Button>
@@ -173,9 +175,9 @@ const ProfileDialog = ({ open, onClose }) => {
                   fullWidth
                   variant="contained"
                   onClick={handleSave}
-                  sx={{ color: "#fff" }}
+                  disabled={saving}
                 >
-                  Save
+                  {saving ? "Saving..." : "Save"}
                 </Button>
               </Box>
 
@@ -183,10 +185,6 @@ const ProfileDialog = ({ open, onClose }) => {
                 startIcon={<LockOutlinedIcon />}
                 variant="text"
                 onClick={() => setOpenPassword(true)}
-                sx={{
-                  justifyContent: "flex-start",
-                  color: theme.palette.text.primary, // ✅ rõ
-                }}
               >
                 Change Password
               </Button>
@@ -195,10 +193,7 @@ const ProfileDialog = ({ open, onClose }) => {
                 startIcon={<ExitToAppIcon />}
                 variant="text"
                 onClick={handleLogout}
-                sx={{
-                  justifyContent: "flex-start",
-                  color: theme.palette.error.main, // ✅ đỏ rõ ràng
-                }}
+                sx={{ color: theme.palette.error.main }}
               >
                 Logout
               </Button>

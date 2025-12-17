@@ -1,31 +1,30 @@
-import { useState } from "react";
+import { useState, useContext } from "react";
 import { ProSidebar, Menu, MenuItem, SubMenu } from "react-pro-sidebar";
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
 import { Link } from "react-router-dom";
 import "react-pro-sidebar/dist/css/styles.css";
 import { tokens } from "../../theme";
+
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
-import DatasetIcon from '@mui/icons-material/Dataset';
-import DeviceUnknownIcon from '@mui/icons-material/DeviceUnknown';
-import YouTubeIcon from '@mui/icons-material/YouTube';
+import DatasetIcon from "@mui/icons-material/Dataset";
+import DeviceUnknownIcon from "@mui/icons-material/DeviceUnknown";
+import YouTubeIcon from "@mui/icons-material/YouTube";
 import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutlined";
 import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
 import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
-import FileUploadIcon from '@mui/icons-material/FileUpload';
+import FileUploadIcon from "@mui/icons-material/FileUpload";
 
-import { useContext } from "react";
 import { UserContext } from "../../context/UserContext";
 
 const Item = ({ title, to, icon, selected, setSelected }) => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
+
   return (
     <MenuItem
       active={selected === title}
-      style={{
-        color: colors.grey[100],
-      }}
+      style={{ color: colors.grey[100] }}
       onClick={() => setSelected(title)}
       icon={icon}
     >
@@ -38,18 +37,35 @@ const Item = ({ title, to, icon, selected, setSelected }) => {
 const Sidebar = () => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
+
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [selected, setSelected] = useState("Dashboard");
 
   const { user } = useContext(UserContext);
 
+  /**
+   * ✅ CHỈ render avatar TỪ BACKEND
+   * ❌ TUYỆT ĐỐI không render blob preview
+   */
+  const getSidebarAvatar = () => {
+    if (!user?.avatar) {
+      return "../../assets/user.jpg";
+    }
+
+    // 🚫 Chặn avatar preview (blob URL)
+    if (user.avatar.startsWith("blob:")) {
+      return "../../assets/user.jpg";
+    }
+
+    // ✅ Avatar backend
+    return `${process.env.REACT_APP_API_URL || ""}${user.avatar}`;
+  };
+
   return (
     <Box
       sx={{
         height: "100vh",
-        "& .pro-sidebar": {
-          height: "100vh",
-        },
+        "& .pro-sidebar": { height: "100vh" },
         "& .pro-sidebar-inner": {
           background: `${colors.primary[400]} !important`,
           cursor: "pointer",
@@ -70,7 +86,7 @@ const Sidebar = () => {
     >
       <ProSidebar collapsed={isCollapsed}>
         <Menu iconShape="square">
-          {/* LOGO AND MENU ICON */}
+          {/* LOGO */}
           <MenuItem
             onClick={() => setIsCollapsed(!isCollapsed)}
             icon={isCollapsed ? <MenuOutlinedIcon /> : undefined}
@@ -96,41 +112,41 @@ const Sidebar = () => {
             )}
           </MenuItem>
 
+          {/* USER INFO */}
           {!isCollapsed && (
             <Box mb="25px">
               <Box display="flex" justifyContent="center" alignItems="center">
-                {!isCollapsed && (
-                  <Box mb="25px">
-                    <Box display="flex" justifyContent="center" alignItems="center">
-                      <img
-                        alt="profile-user"
-                        width="100px"
-                        height="100px"
-                        src={user.avatar || "../../assets/user.jpg"}
-                        style={{ cursor: "pointer", borderRadius: "50%" }}
-                      />
-                    </Box>
+                <img
+                  alt="profile-user"
+                  width="100px"
+                  height="100px"
+                  src={getSidebarAvatar()}
+                  style={{
+                    cursor: "pointer",
+                    borderRadius: "50%",
+                    objectFit: "cover",
+                  }}
+                />
+              </Box>
 
-                    <Box textAlign="center">
-                      <Typography
-                        variant="h2"
-                        color={colors.grey[100]}
-                        fontWeight="bold"
-                        sx={{ m: "10px 0 0 0" }}
-                      >
-                        {user.name || "Admin"}
-                      </Typography>
+              <Box textAlign="center">
+                <Typography
+                  variant="h2"
+                  color={colors.grey[100]}
+                  fontWeight="bold"
+                  sx={{ m: "10px 0 0 0" }}
+                >
+                  {user?.name || "Admin"}
+                </Typography>
 
-                      <Typography variant="h5" color={colors.greenAccent[500]}>
-                        FMC Admin
-                      </Typography>
-                    </Box>
-                  </Box>
-                )}
+                <Typography variant="h5" color={colors.greenAccent[500]}>
+                  FMC Admin
+                </Typography>
               </Box>
             </Box>
           )}
 
+          {/* MENU */}
           <Box paddingLeft={isCollapsed ? undefined : "10%"}>
             <Item
               title="Dashboard"
@@ -147,6 +163,7 @@ const Sidebar = () => {
             >
               Data
             </Typography>
+
             <Item
               title="Content"
               to="/content"
@@ -154,6 +171,7 @@ const Sidebar = () => {
               selected={selected}
               setSelected={setSelected}
             />
+
             <Item
               title="Traffic Source"
               to="/traffic_source"
@@ -161,6 +179,7 @@ const Sidebar = () => {
               selected={selected}
               setSelected={setSelected}
             />
+
             <Item
               title="Geography Chart"
               to="/geography"
@@ -176,7 +195,7 @@ const Sidebar = () => {
             >
               Rival's Channel
             </Typography>
-            {/* Channel */}
+
             <SubMenu title="Rival's Channels" icon={<YouTubeIcon />}>
               <Item
                 title="Channel 1"
@@ -199,7 +218,7 @@ const Sidebar = () => {
                 selected={selected}
                 setSelected={setSelected}
               />
-            </SubMenu>                                
+            </SubMenu>
 
             <Typography
               variant="h6"
@@ -208,6 +227,7 @@ const Sidebar = () => {
             >
               Charts
             </Typography>
+
             <Item
               title="Tool Concatenate"
               to="/bar"
@@ -215,6 +235,7 @@ const Sidebar = () => {
               selected={selected}
               setSelected={setSelected}
             />
+
             <Item
               title="Tool Upload"
               to="/pie"
@@ -222,13 +243,14 @@ const Sidebar = () => {
               selected={selected}
               setSelected={setSelected}
             />
+
             <Item
               title="Tool Upload Short"
               to="/tool_upload_short"
               icon={<FileUploadIcon />}
               selected={selected}
               setSelected={setSelected}
-            /> 
+            />
           </Box>
         </Menu>
       </ProSidebar>

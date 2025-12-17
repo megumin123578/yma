@@ -2,13 +2,17 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.models import User
-from python_backend.api.auth.schemas import UserCreate, UserLogin, Token
 from python_backend.api.auth.auth_utils import (
     hash_password,
     verify_password,
     create_access_token,
 )
-from python_backend.api.auth.schemas import ChangePassword
+from python_backend.api.auth.schemas import (
+    UserCreate,
+    UserLogin,
+    ChangePassword,
+    TokenWithUser,
+)
 from python_backend.api.auth.auth_utils import get_current_user
 
 router = APIRouter(
@@ -43,7 +47,7 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
 
 
 
-@router.post("/login")
+@router.post("/login", response_model=TokenWithUser)
 def login(data: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == data.username).first()
 
@@ -54,9 +58,10 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
 
     return {
         "access_token": token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "user": user, 
     }
-
+    
 @router.post("/change-password")
 def change_password(
     data: ChangePassword,
