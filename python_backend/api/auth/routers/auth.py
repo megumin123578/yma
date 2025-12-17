@@ -8,7 +8,8 @@ from python_backend.api.auth.auth_utils import (
     verify_password,
     create_access_token,
 )
-
+from python_backend.api.auth.schemas import ChangePassword
+from python_backend.api.auth.auth_utils import get_current_user
 
 router = APIRouter(
     prefix="/api/auth",
@@ -55,3 +56,22 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
         "access_token": token,
         "token_type": "bearer"
     }
+
+@router.post("/change-password")
+def change_password(
+    data: ChangePassword,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not verify_password(data.current_password, current_user.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    current_user.password = hash_password(data.new_password)
+
+    db.commit()
+    db.refresh(current_user)
+
+    return {"message": "Password changed successfully"}

@@ -15,6 +15,11 @@ import {
 import { useContext, useEffect, useState, forwardRef } from "react";
 import { UserContext } from "../../context/UserContext";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
+import ExitToAppIcon from "@mui/icons-material/ExitToApp";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import ChangePasswordDialog from "./ChangePasswordDialog";
+import { logout } from "../../services/authService";
+import { useNavigate } from "react-router-dom";
 
 const Transition = forwardRef(function Transition(props, ref) {
   return <Slide direction="up" ref={ref} {...props} />;
@@ -24,6 +29,8 @@ const ProfileDialog = ({ open, onClose }) => {
   const theme = useTheme();
   const { user, setUser } = useContext(UserContext);
   const [name, setName] = useState(user.name || "");
+  const [openPassword, setOpenPassword] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (open) setName(user.name || "");
@@ -44,33 +51,38 @@ const ProfileDialog = ({ open, onClose }) => {
     onClose();
   };
 
+  const handleLogout = () => {
+    logout();
+    navigate("/", { replace: true });
+  };
+
   return (
     <Dialog
       open={open}
       onClose={onClose}
-      slots={{
-        transition: Transition,
-      }}
       keepMounted
+      slots={{ transition: Transition }}
       slotProps={{
         paper: {
-        sx: {
+          sx: {
             borderRadius: 3,
             width: 380,
+            backgroundColor: theme.palette.background.paper, // ✅ nền sáng hơn
+          },
         },
-        },
-    }}
+      }}
     >
-        {/* TITLE */}
-        <DialogTitle>
-            <Typography
-                variant="h5"
-                fontWeight="bold"
-                component="div" 
-            >
-                Profile Settings
-            </Typography>
-        </DialogTitle>
+      {/* TITLE */}
+      <DialogTitle>
+        <Typography
+          variant="h5"
+          fontWeight="bold"
+          component="div"
+          color={theme.palette.text.primary} // ✅ chữ rõ
+        >
+          Profile Settings
+        </Typography>
+      </DialogTitle>
 
       <DialogContent>
         <Fade in={open}>
@@ -122,14 +134,10 @@ const ProfileDialog = ({ open, onClose }) => {
               value={name}
               onChange={(e) => setName(e.target.value)}
               InputLabelProps={{
-                style: {
-                  color: theme.palette.text.secondary, // ✅ label rõ
-                },
+                sx: { color: theme.palette.text.secondary },
               }}
               inputProps={{
-                style: {
-                  color: theme.palette.text.primary, // ✅ text rõ
-                },
+                sx: { color: theme.palette.text.primary },
               }}
               sx={{
                 "& .MuiOutlinedInput-root": {
@@ -147,30 +155,59 @@ const ProfileDialog = ({ open, onClose }) => {
             />
 
             {/* ACTIONS */}
-            <Box display="flex" gap={1} width="100%">
+            <Box display="flex" flexDirection="column" gap={1.5} width="100%">
+              <Box display="flex" gap={1}>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  onClick={onClose}
+                  sx={{
+                    color: theme.palette.text.primary,
+                    borderColor: theme.palette.divider,
+                  }}
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  fullWidth
+                  variant="contained"
+                  onClick={handleSave}
+                  sx={{ color: "#fff" }}
+                >
+                  Save
+                </Button>
+              </Box>
+
               <Button
-                fullWidth
-                variant="outlined"
-                onClick={onClose}
+                startIcon={<LockOutlinedIcon />}
+                variant="text"
+                onClick={() => setOpenPassword(true)}
                 sx={{
-                  color: theme.palette.text.primary,
-                  borderColor: theme.palette.divider,
+                  justifyContent: "flex-start",
+                  color: theme.palette.text.primary, // ✅ rõ
                 }}
               >
-                Cancel
+                Change Password
               </Button>
 
               <Button
-                fullWidth
-                variant="contained"
-                onClick={handleSave}
+                startIcon={<ExitToAppIcon />}
+                variant="text"
+                onClick={handleLogout}
                 sx={{
-                  color: "#fff",
+                  justifyContent: "flex-start",
+                  color: theme.palette.error.main, // ✅ đỏ rõ ràng
                 }}
               >
-                Save
+                Logout
               </Button>
             </Box>
+
+            <ChangePasswordDialog
+              open={openPassword}
+              onClose={() => setOpenPassword(false)}
+            />
           </Box>
         </Fade>
       </DialogContent>

@@ -24,3 +24,27 @@ export const forgot = (username) => {
     username,
   });
 }
+
+
+export const changePassword = async (currentPassword, newPassword) => {
+  const token = localStorage.getItem("token");
+
+  const res = await fetch(`${API_URL}/change-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "Change password failed");
+  }
+
+  return res.json();
+};
