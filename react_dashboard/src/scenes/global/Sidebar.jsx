@@ -14,6 +14,9 @@ import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
 import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import FileUploadIcon from '@mui/icons-material/FileUpload';
 
+import { useContext } from "react";
+import { UserContext } from "../../context/UserContext";
+
 const Item = ({ title, to, icon, selected, setSelected }) => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
@@ -37,6 +40,8 @@ const Sidebar = () => {
   const colors = tokens(theme.palette.mode);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [selected, setSelected] = useState("Dashboard");
+
+  const { user } = useContext(UserContext);
 
   return (
     <Box
@@ -94,26 +99,34 @@ const Sidebar = () => {
           {!isCollapsed && (
             <Box mb="25px">
               <Box display="flex" justifyContent="center" alignItems="center">
-                <img
-                  alt="profile-user"
-                  width="100px"
-                  height="100px"
-                  src={`../../assets/user.jpg`}
-                  style={{ cursor: "pointer", borderRadius: "50%" }}
-                />
-              </Box>
-              <Box textAlign="center">
-                <Typography
-                  variant="h2"
-                  color={colors.grey[100]}
-                  fontWeight="bold"
-                  sx={{ m: "10px 0 0 0" }}
-                >
-                  Admin
-                </Typography>
-                <Typography variant="h5" color={colors.greenAccent[500]}>
-                  FMC Admin
-                </Typography>
+                {!isCollapsed && (
+                  <Box mb="25px">
+                    <Box display="flex" justifyContent="center" alignItems="center">
+                      <img
+                        alt="profile-user"
+                        width="100px"
+                        height="100px"
+                        src={user.avatar || "../../assets/user.jpg"}
+                        style={{ cursor: "pointer", borderRadius: "50%" }}
+                      />
+                    </Box>
+
+                    <Box textAlign="center">
+                      <Typography
+                        variant="h2"
+                        color={colors.grey[100]}
+                        fontWeight="bold"
+                        sx={{ m: "10px 0 0 0" }}
+                      >
+                        {user.name || "Admin"}
+                      </Typography>
+
+                      <Typography variant="h5" color={colors.greenAccent[500]}>
+                        FMC Admin
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
               </Box>
             </Box>
           )}
