@@ -6,7 +6,11 @@ const LoginPage = () => {
   return (
     <Box m="20px">
       <Header title="Youtube Manager" />
-      <Box height="75vh">
+      <Box mt={3}
+      display="flex"
+      justifyContent="center"
+      alignItems="center"
+      minHeight="60vh">
         <Login/>
       </Box>
     </Box>

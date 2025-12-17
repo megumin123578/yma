@@ -11,18 +11,15 @@ import {
 import { register } from "../services/authService";
 import { useNavigate } from "react-router-dom";
 
-
-
+/* ================= Password Strength ================= */
 const getPasswordStrength = (password) => {
   let score = 0;
-
   if (password.length >= 8) score++;
   if (/[a-z]/.test(password)) score++;
   if (/[A-Z]/.test(password)) score++;
   if (/[0-9]/.test(password)) score++;
   if (/[^A-Za-z0-9]/.test(password)) score++;
-
-  return score; // 0 - 5
+  return score;
 };
 
 const strengthLabel = (score) => {
@@ -39,6 +36,7 @@ const strengthLabel = (score) => {
       return { label: "", color: "inherit" };
   }
 };
+/* ===================================================== */
 
 const Register = () => {
   const [form, setForm] = useState({
@@ -50,10 +48,10 @@ const Register = () => {
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const navigate = useNavigate();
+
   const strength = getPasswordStrength(form.password);
   const strengthInfo = strengthLabel(strength);
-
-  const navigate = useNavigate();
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -64,7 +62,7 @@ const Register = () => {
     setSuccess("");
 
     if (form.password !== form.confirm_password) {
-      setError("Passwords do not match");
+      setError("Password does not match");
       return;
     }
 
@@ -75,22 +73,18 @@ const Register = () => {
 
     try {
       setLoading(true);
-
       const res = await register({
-        username: form.username,
+        username: form.username.trim(),
         password: form.password,
       });
 
-      // ĐỌC RESPONSE
-      if (res.data.success === false) {
-        setError(res.data.message); // User existed
+      if (res.data?.success === false) {
+        setError(res.data.message || "User already exists");
         return;
       }
 
-      setSuccess(res.data.message || "Sign up successfully!");
-      setTimeout(() => {
-        navigate("/");
-      }, 1500);
+      setSuccess("Account created successfully!");
+      setTimeout(() => navigate("/"), 1500);
     } catch (err) {
       setError("Sign up failed!");
     } finally {
@@ -98,118 +92,169 @@ const Register = () => {
     }
   };
 
-
   return (
-    <Box
-      minHeight="100vh"
-      display="flex"
-      justifyContent="center"
-      alignItems="center"
-      bgcolor="background.default"
+    <Paper
+      elevation={0}
+      sx={{
+        p: 5,
+        width: 520,
+        borderRadius: 4,
+        background: "linear-gradient(180deg, #1e1e2f, #1a1a27)",
+        boxShadow: "0 20px 50px rgba(0,0,0,0.35)",
+        animation: "fadeInUp 0.6s ease",
+        "@keyframes fadeInUp": {
+          from: { opacity: 0, transform: "translateY(30px)" },
+          to: { opacity: 1, transform: "translateY(0)" },
+        },
+        transition: "all 0.3s ease",
+        "&:hover": {
+          transform: "translateY(-4px)",
+          boxShadow: "0 28px 70px rgba(0,0,0,0.45)",
+        },
+      }}
     >
-      <Paper
-        elevation={4}
-        sx={{
-            p: 5,
-            width: "100%",
-            maxWidth: 480,
-        }}
+      <Typography variant="h5" fontWeight="bold" mb={1} color="white">
+        Create Account
+      </Typography>
+
+      <Typography
+        variant="body2"
+        mb={3}
+        color="rgba(255,255,255,0.7)"
+      >
+        Fill in the information below to create a new account.
+      </Typography>
+
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
+
+      <Box component="form" onSubmit={handleSubmit}>
+        {/* Username */}
+        <TextField
+          name="username"
+          label="Username"
+          fullWidth
+          margin="normal"
+          value={form.username}
+          onChange={handleChange}
+          required
+          InputLabelProps={{ style: { color: "#bdbdbd" } }}
+          InputProps={{ style: { color: "white" } }}
+          sx={{
+            "& .MuiOutlinedInput-root": {
+              borderRadius: 2,
+              "& fieldset": { borderColor: "#555" },
+              "&:hover fieldset": { borderColor: "#90caf9" },
+              "&.Mui-focused fieldset": { borderColor: "#90caf9" },
+            },
+          }}
+        />
+
+        {/* Password */}
+        <TextField
+          name="password"
+          label="Password"
+          type="password"
+          fullWidth
+          margin="normal"
+          value={form.password}
+          onChange={handleChange}
+          required
+          InputLabelProps={{ style: { color: "#bdbdbd" } }}
+          InputProps={{ style: { color: "white" } }}
+          sx={{
+            "& .MuiOutlinedInput-root": {
+              borderRadius: 2,
+              "& fieldset": { borderColor: "#555" },
+              "&:hover fieldset": { borderColor: "#90caf9" },
+              "&.Mui-focused fieldset": { borderColor: "#90caf9" },
+            },
+          }}
+        />
+
+        {/* Password strength */}
+        {form.password && (
+          <Box mt={1}>
+            <LinearProgress
+              variant="determinate"
+              value={(strength / 5) * 100}
+              color={strengthInfo.color}
+              sx={{ height: 8, borderRadius: 4 }}
+            />
+            <Typography
+              variant="caption"
+              color={`${strengthInfo.color}.main`}
+            >
+              {strengthInfo.label}
+            </Typography>
+          </Box>
+        )}
+
+        {/* Confirm password */}
+        <TextField
+          name="confirm_password"
+          label="Confirm Password"
+          type="password"
+          fullWidth
+          margin="normal"
+          value={form.confirm_password}
+          onChange={handleChange}
+          required
+          InputLabelProps={{ style: { color: "#bdbdbd" } }}
+          InputProps={{ style: { color: "white" } }}
+          sx={{
+            "& .MuiOutlinedInput-root": {
+              borderRadius: 2,
+              "& fieldset": { borderColor: "#555" },
+              "&:hover fieldset": { borderColor: "#90caf9" },
+              "&.Mui-focused fieldset": { borderColor: "#90caf9" },
+            },
+          }}
+        />
+
+        {/* Submit */}
+        <Button
+          type="submit"
+          variant="contained"
+          fullWidth
+          disabled={loading}
+          sx={{
+            mt: 3,
+            py: 1.4,
+            fontWeight: 600,
+            borderRadius: 2,
+            background: "linear-gradient(90deg, #42a5f5, #478ed1)",
+            transition: "all 0.3s ease",
+            "&:hover": {
+              background: "linear-gradient(90deg, #64b5f6, #5e92f3)",
+              transform: "translateY(-2px)",
+              boxShadow: "0 10px 25px rgba(66,165,245,0.4)",
+            },
+            "&:active": { transform: "translateY(0)" },
+          }}
         >
-        <Typography variant="h5" fontWeight="bold" textAlign="center">
-          Create Account
-        </Typography>
+          {loading ? "Creating account..." : "Register"}
+        </Button>
 
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          mb={2}
-          textAlign="center"
-        >
-          Fill in the information below
-        </Typography>
-
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
-
-        <Box component="form" onSubmit={handleSubmit}>
-          <TextField
-            name="username"
-            label="Username"
-            fullWidth
-            margin="normal"
-            value={form.username}
-            onChange={handleChange}
-            required
-          />
-
-          <TextField
-            name="password"
-            label="Password"
-            type="password"
-            fullWidth
-            margin="normal"
-            value={form.password}
-            onChange={handleChange}
-            required
-          />
-
-          {/* Password strength bar */}
-          {form.password && (
-            <Box mt={1}>
-              <LinearProgress
-                variant="determinate"
-                value={(strength / 5) * 100}
-                color={strengthInfo.color}
-                sx={{ height: 8, borderRadius: 4 }}
-              />
-              <Typography
-                variant="caption"
-                color={`${strengthInfo.color}.main`}
-              >
-                {strengthInfo.label}
-              </Typography>
-            </Box>
-          )}
-
-          <TextField
-            name="confirm_password"
-            label="Confirm Password"
-            type="password"
-            fullWidth
-            margin="normal"
-            value={form.confirm_password}
-            onChange={handleChange}
-            required
-          />
-
-          <Button
-            type="submit"
-            variant="contained"
-            fullWidth
-            sx={{ mt: 3, py: 1.2 }}
-            disabled={loading}
-          >
-            {loading ? "Creating account..." : "Register"}
-          </Button>
-          <Button
+        {/* Back to login */}
+        <Button
           variant="text"
           fullWidth
           sx={{
             mt: 1,
-            color: "white",
-            transition: "all 0.2s ease",
+            color: "#90caf9",
+            textTransform: "none",
             "&:hover": {
-              color: "#90caf9",
-              backgroundColor: "rgba(255,255,255,0.08)",
+              backgroundColor: "transparent",
+              textDecoration: "underline",
             },
           }}
           onClick={() => navigate("/")}
         >
-          Back to Login page
+          Back to Login
         </Button>
-        </Box>
-      </Paper>
-    </Box>
+      </Box>
+    </Paper>
   );
 };
 

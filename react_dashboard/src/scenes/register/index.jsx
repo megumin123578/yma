@@ -7,7 +7,11 @@ const RegisterAccount = () => {
   return (
     <Box m="20px">
       <Header title="Register" />
-    <Box mt={3}>
+    <Box mt={3}
+      display="flex"
+      justifyContent="center"
+      alignItems="center"
+      minHeight="60vh">
         <Register />
     </Box>
     </Box>
