@@ -20,7 +20,7 @@ import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined
 import { tokens } from "../theme";
 import Header from "./Header";
 
-const MotionCard = motion(Card);
+const MotionCard = motion.create(Card);
 
 // Variant cho card khi hover
 const cardVariants = {

@@ -7,7 +7,7 @@ import os
 
 router = APIRouter(prefix="/api/geography")
 
-CREDENTIALS_DIR = "./credentials"
+CREDENTIALS_DIR = "./python_backend/credentials"
 
 def load_all_credentials():
     creds = {}

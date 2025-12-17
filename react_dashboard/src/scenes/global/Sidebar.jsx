@@ -41,9 +41,13 @@ const Sidebar = () => {
   return (
     <Box
       sx={{
+        height: "100vh",
+        "& .pro-sidebar": {
+          height: "100vh",
+        },
         "& .pro-sidebar-inner": {
-            background: `${colors.primary[400]} !important`,
-            cursor: "pointer",      
+          background: `${colors.primary[400]} !important`,
+          cursor: "pointer",
         },
         "& .pro-icon-wrapper": {
           backgroundColor: "transparent !important",
@@ -57,7 +61,6 @@ const Sidebar = () => {
         "& .pro-menu-item.active": {
           color: "#6870fa !important",
         },
-
       }}
     >
       <ProSidebar collapsed={isCollapsed}>

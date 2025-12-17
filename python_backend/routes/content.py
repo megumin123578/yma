@@ -9,7 +9,7 @@ from python_backend.module_trafficsource import sanitize_filename  # dùng lại
 
 router = APIRouter(prefix="/api/content", tags=["content"])
 
-CREDENTIALS_DIR = "./credentials"
+CREDENTIALS_DIR = "./python_backend/credentials"
 
 
 # ==============================

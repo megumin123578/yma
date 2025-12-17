@@ -15,8 +15,8 @@ from sqlalchemy import create_engine, text
 
 
 # ===== Config =====
-CREDENTIALS_FOLDER = "credentials"
-TOKEN_FOLDER = "token"
+CREDENTIALS_FOLDER = "python_backend/credentials"
+TOKEN_FOLDER = "python_backend/token"
 
 CONTENT_OWNER_ID = os.environ.get("CONTENT_OWNER_ID", "").strip()
 IS_OWNER_MODE = bool(CONTENT_OWNER_ID)
