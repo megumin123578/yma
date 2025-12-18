@@ -13,6 +13,13 @@ import {
 import { useState, useMemo } from "react";
 import { changePassword } from "../../services/authService";
 
+import InputAdornment from "@mui/material/InputAdornment";
+import IconButton from "@mui/material/IconButton";
+import Visibility from "@mui/icons-material/Visibility";
+import VisibilityOff from "@mui/icons-material/VisibilityOff";
+
+
+
 const getPasswordStrength = (password) => {
   let score = 0;
   if (password.length >= 8) score++;
@@ -40,6 +47,10 @@ const ChangePasswordDialog = ({ open, onClose }) => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
+  const [ showCurrent, setShowCurrent ] = useState(false)
+  const [ showNew, setShowNew ] = useState(false)
+  const [ showConfirm, setShowConfirm ] = useState(false)
+
   const strength = useMemo(
     () => getPasswordStrength(next),
     [next]
@@ -66,7 +77,7 @@ const ChangePasswordDialog = ({ open, onClose }) => {
       return;
     }
 
-    if (strength < 3) {
+    if (strength < 2) {
       setError("Password is too weak");
       return;
     }
@@ -134,12 +145,25 @@ const ChangePasswordDialog = ({ open, onClose }) => {
             {/* CURRENT */}
             <TextField
               label="Current Password"
-              type="password"
+              type={showCurrent ? "text" : "password"}
               fullWidth
               value={current}
               onChange={(e) => setCurrent(e.target.value)}
               InputLabelProps={{ style: { color: "#bdbdbd" } }}
-              InputProps={{ style: { color: "white" } }}
+              InputProps={{
+                style: { color: "white" },
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowCurrent((v) => !v)}
+                      edge="end"
+                      sx={{ color: "#bdbdbd" }}
+                    >
+                      {showCurrent ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
               sx={{
                 "& .MuiOutlinedInput-root": {
                   borderRadius: 2,
@@ -149,16 +173,30 @@ const ChangePasswordDialog = ({ open, onClose }) => {
                 },
               }}
             />
+
 
             {/* NEW */}
             <TextField
               label="New Password"
-              type="password"
+              type={showNew ? "text" : "password"}
               fullWidth
               value={next}
               onChange={(e) => setNext(e.target.value)}
               InputLabelProps={{ style: { color: "#bdbdbd" } }}
-              InputProps={{ style: { color: "white" } }}
+              InputProps={{
+                style: { color: "white" },
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowNew((v) => !v)}
+                      edge="end"
+                      sx={{ color: "#bdbdbd" }}
+                    >
+                      {showNew ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
               sx={{
                 "& .MuiOutlinedInput-root": {
                   borderRadius: 2,
@@ -168,7 +206,6 @@ const ChangePasswordDialog = ({ open, onClose }) => {
                 },
               }}
             />
-
             {/* STRENGTH */}
             {next && (
               <Box>
@@ -190,12 +227,25 @@ const ChangePasswordDialog = ({ open, onClose }) => {
             {/* CONFIRM */}
             <TextField
               label="Confirm New Password"
-              type="password"
+              type={showConfirm ? "text" : "password"}
               fullWidth
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               InputLabelProps={{ style: { color: "#bdbdbd" } }}
-              InputProps={{ style: { color: "white" } }}
+              InputProps={{
+                style: { color: "white" },
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowConfirm((v) => !v)}
+                      edge="end"
+                      sx={{ color: "#bdbdbd" }}
+                    >
+                      {showConfirm ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
               sx={{
                 "& .MuiOutlinedInput-root": {
                   borderRadius: 2,
