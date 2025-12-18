@@ -17,7 +17,11 @@ export const UserProvider = ({ children }) => {
 
     getMe()
       .then((res) => {
-        setUser(res.data);
+        const data = res.data;
+        setUser({
+          ...data,
+          avatar: data.avatar_url,
+        });
       })
       .catch(() => {
         localStorage.removeItem("access_token");
