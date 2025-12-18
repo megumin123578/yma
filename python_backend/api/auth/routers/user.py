@@ -8,7 +8,7 @@ from python_backend.api.auth.auth_utils import get_current_user
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-UPLOAD_DIR = "uploads/avatars"
+UPLOAD_DIR = "python_backend/api/uploads/avatars"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
@@ -35,3 +35,7 @@ def upload_avatar(
     db.refresh(current_user)
 
     return {"avatarUrl": avatar_url}
+
+@router.get("/me")
+def get_me(current_user: User = Depends(get_current_user)):
+    return current_user

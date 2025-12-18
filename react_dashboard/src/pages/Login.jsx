@@ -1,4 +1,7 @@
-import { useState } from "react";
+import { useState, useContext } from "react";
+import { UserContext } from "../context/UserContext";
+import { getMe } from "../services/userService";
+
 import {
   Box,
   Button,
@@ -15,16 +18,20 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const { setUser } = useContext(UserContext);
 
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
     setLoading(true);
+    setError("");
 
     try {
       await login(username.trim(), password);
+      const me = await getMe();
+      setUser(me.data);
+
       navigate("/dashboard", { replace: true });
     } catch (err) {
       setError("Username or password is incorrect.");

@@ -1,4 +1,5 @@
 import axios from "axios";
+import api from "./api";
 
 const API_URL = "http://localhost:8000/api/auth";
 
@@ -9,19 +10,12 @@ export const register = (data) => {
 
 // ================= LOGIN =================
 export const login = async (username, password) => {
-  const res = await axios.post(`${API_URL}/login`, {
+  const res = await api.post(`${API_URL}/login`, {
     username,
     password,
   });
 
-  //  DÙNG 1 KEY DUY NHẤT
   localStorage.setItem("access_token", res.data.access_token);
-
-  // Nếu backend có trả user thì lưu luôn
-  if (res.data.user) {
-    localStorage.setItem("userProfile", JSON.stringify(res.data.user));
-  }
-
   return res.data;
 };
 
@@ -29,6 +23,7 @@ export const login = async (username, password) => {
 export const logout = () => {
   localStorage.removeItem("access_token");
   localStorage.removeItem("userProfile");
+  
 };
 
 // ================= FORGOT PASSWORD =================

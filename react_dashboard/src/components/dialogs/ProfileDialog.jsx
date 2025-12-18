@@ -54,21 +54,23 @@ const ProfileDialog = ({ open, onClose }) => {
     setPreviewAvatar(URL.createObjectURL(file));
   };
 
-  // 👉 CHỈ ẤN SAVE MỚI UPDATE
   const handleSave = async () => {
+    if (!user) {
+      console.error("User is null, cannot save profile");
+      return; // 🔴 CHẶN NGAY
+    }
+
     if (saving) return;
     setSaving(true);
 
     try {
-      let avatarUrl = user.avatar;
+      let avatarUrl = user.avatar || null;
 
-      // Nếu có avatar mới → upload
       if (pendingAvatar) {
         const res = await uploadAvatar(pendingAvatar);
         avatarUrl = res.data.avatarUrl;
       }
 
-      // Update context
       setUser((prev) => ({
         ...prev,
         name,
