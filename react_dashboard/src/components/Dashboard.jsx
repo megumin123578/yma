@@ -45,6 +45,7 @@ const overlayVariants = {
 const VideoList = () => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
+  const textOnDark = "#fff";
 
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState("");
@@ -246,7 +247,7 @@ const VideoList = () => {
                 >
                   <Typography
                     variant="subtitle1"
-                    color={colors.grey[100]}
+                    color={theme.palette.text.primary}
                     fontWeight={600}
                     noWrap
                     title={v.title}
@@ -278,42 +279,42 @@ const VideoList = () => {
                         size="small"
                         icon={
                           <VisibilityOutlinedIcon
-                            sx={{ fontSize: 16, color: colors.grey[100] }}
+                            sx={{ fontSize: 16, color: textOnDark }}
                           />
                         }
                         label={formatNumber(v.views)}
                         sx={{
                           bgcolor: colors.primary[500],
-                          color: colors.grey[100],
-                          "& .MuiChip-icon": { ml: 0.5 },
+                          color: textOnDark,
+                          "& .MuiChip-icon": { ml: 0.5, color: textOnDark },
                         }}
                       />
                       <Chip
                         size="small"
                         icon={
                           <ThumbUpAltOutlinedIcon
-                            sx={{ fontSize: 16, color: colors.grey[100] }}
+                            sx={{ fontSize: 16, color: textOnDark }}
                           />
                         }
                         label={formatNumber(v.likes)}
                         sx={{
                           bgcolor: colors.primary[500],
-                          color: colors.grey[100],
-                          "& .MuiChip-icon": { ml: 0.5 },
+                          color: textOnDark,
+                          "& .MuiChip-icon": { ml: 0.5, color: textOnDark },
                         }}
                       />
                       <Chip
                         size="small"
                         icon={
                           <CommentOutlinedIcon
-                            sx={{ fontSize: 16, color: colors.grey[100] }}
+                            sx={{ fontSize: 16, color: textOnDark }}
                           />
                         }
                         label={formatNumber(v.comments)}
                         sx={{
                           bgcolor: colors.primary[500],
-                          color: colors.grey[100],
-                          "& .MuiChip-icon": { ml: 0.5 },
+                          color: textOnDark,
+                          "& .MuiChip-icon": { ml: 0.5, color: textOnDark },
                         }}
                       />
                     </Box>
@@ -328,7 +329,7 @@ const VideoList = () => {
                     position: "absolute",
                     inset: 0,
                     bgcolor: "rgba(0,0,0,0.9)",
-                    color: colors.grey[100],
+                    color: textOnDark,
                     p: 2,
                     display: "flex",
                     flexDirection: "column",
