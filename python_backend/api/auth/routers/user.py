@@ -5,7 +5,7 @@ from python_backend.api.auth.database import get_db
 from python_backend.api.auth.models import User
 from python_backend.api.auth.auth_utils import get_current_user
 from python_backend.api.auth import schemas
-from python_backend.api.auth.schemas import UserMe
+from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
 
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -40,4 +40,20 @@ def upload_avatar(
 
 @router.get("/me", response_model=UserMe)
 def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+@router.put("/profile", response_model=UserMe)
+def update_profile(
+    data: UserProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if data.name is not None:
+        current_user.name = data.name
+
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+
     return current_user

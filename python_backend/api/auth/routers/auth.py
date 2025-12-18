@@ -33,7 +33,8 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
 
     new_user = User(
         username=data.username,
-        password=hash_password(data.password)
+        password=hash_password(data.password),
+        name=data.username,  # default display name
     )
 
     db.add(new_user)

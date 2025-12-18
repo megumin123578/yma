@@ -19,7 +19,7 @@ import ExitToAppIcon from "@mui/icons-material/ExitToApp";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import ChangePasswordDialog from "./ChangePasswordDialog";
 import { logout } from "../../services/authService";
-import { uploadAvatar } from "../../services/userService";
+import { uploadAvatar, updateProfile } from "../../services/userService";
 import { useNavigate } from "react-router-dom";
 
 const Transition = forwardRef(function Transition(props, ref) {
@@ -70,10 +70,14 @@ const ProfileDialog = ({ open, onClose }) => {
         avatarUrl = res.data.avatarUrl;
       }
 
+      const updatedUser = await updateProfile({ name });
+
       setUser((prev) => ({
         ...prev,
-        name,
-        avatar: avatarUrl,
+        ...updatedUser,
+        name: updatedUser.name,
+        // Prefer freshly uploaded avatar if any
+        avatar: avatarUrl ?? updatedUser.avatar ?? prev?.avatar ?? null,
       }));
 
       onClose();

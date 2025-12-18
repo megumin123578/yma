@@ -21,6 +21,7 @@ class ChangePassword(BaseModel):
 class UserResponse(BaseModel):
     id: int
     username: str
+    name: Optional[str] = None
     avatar_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -33,7 +34,12 @@ class TokenWithUser(BaseModel):
 class UserMe(BaseModel):
     id: int
     username: str
+    name: Optional[str] = None
     avatar_url: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+
+class UserProfileUpdate(BaseModel):
+    name: Optional[str] = None

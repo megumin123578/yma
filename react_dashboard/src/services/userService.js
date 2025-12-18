@@ -22,3 +22,8 @@ export const getMe = async () => {
   const res = await api.get("/api/users/me");
   return mapUser(res.data);
 };
+
+export const updateProfile = async (payload) => {
+  const res = await api.put("/api/users/profile", payload);
+  return mapUser(res.data);
+};
