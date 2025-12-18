@@ -5,7 +5,6 @@ const mapUser = (data) => {
 
   return {
     ...data,
-    // Normalize fields so the UI always has what it expects
     avatar: data.avatar ?? data.avatar_url ?? null,
     name: data.name ?? data.username ?? "",
   };

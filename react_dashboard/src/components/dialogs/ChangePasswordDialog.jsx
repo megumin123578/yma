@@ -8,13 +8,29 @@ import {
   Typography,
   Alert,
   Snackbar,
-  useTheme,
+  LinearProgress,
 } from "@mui/material";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { changePassword } from "../../services/authService";
 
+const getPasswordStrength = (password) => {
+  let score = 0;
+  if (password.length >= 8) score++;
+  if (/[A-Z]/.test(password)) score++;
+  if (/[0-9]/.test(password)) score++;
+  if (/[^A-Za-z0-9]/.test(password)) score++;
+  return score;
+};
+
+const strengthMap = [
+  { label: "Very weak", color: "error" },
+  { label: "Weak", color: "error" },
+  { label: "Fair", color: "warning" },
+  { label: "Good", color: "info" },
+  { label: "Strong", color: "success" },
+];
+
 const ChangePasswordDialog = ({ open, onClose }) => {
-  const theme = useTheme();
 
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -23,6 +39,11 @@ const ChangePasswordDialog = ({ open, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+
+  const strength = useMemo(
+    () => getPasswordStrength(next),
+    [next]
+  );
 
   const resetForm = () => {
     setCurrent("");
@@ -45,12 +66,16 @@ const ChangePasswordDialog = ({ open, onClose }) => {
       return;
     }
 
+    if (strength < 3) {
+      setError("Password is too weak");
+      return;
+    }
+
     try {
       setLoading(true);
       await changePassword(current, next);
       setSuccess(true);
 
-      // đóng dialog nhẹ nhàng sau khi success
       setTimeout(() => {
         resetForm();
         onClose();
@@ -61,6 +86,8 @@ const ChangePasswordDialog = ({ open, onClose }) => {
       setLoading(false);
     }
   };
+
+  const strengthInfo = strengthMap[strength];
 
   return (
     <>
@@ -73,16 +100,30 @@ const ChangePasswordDialog = ({ open, onClose }) => {
         slotProps={{
           paper: {
             sx: {
-              borderRadius: 3,
-              width: 360,
-              backgroundColor: theme.palette.background.paper,
+              borderRadius: 4,
+              width: 380,
+              background: "linear-gradient(180deg, #1e1e2f, #1a1a27)",
+              boxShadow: "0 20px 50px rgba(0,0,0,0.45)",
+              color: "white",
             },
           },
         }}
       >
         <DialogTitle>
-          <Typography fontWeight="bold">
+          <Typography
+            component="div"
+            variant="h6"
+            fontWeight="bold"
+            color="white"
+          >
             Change Password
+          </Typography>
+          <Typography
+            component="div"
+            variant="body2"
+            color="rgba(255,255,255,0.65)"
+          >
+            Choose a strong password to protect your account
           </Typography>
         </DialogTitle>
 
@@ -90,30 +131,82 @@ const ChangePasswordDialog = ({ open, onClose }) => {
           <Box display="flex" flexDirection="column" gap={2} mt={1}>
             {error && <Alert severity="error">{error}</Alert>}
 
+            {/* CURRENT */}
             <TextField
               label="Current Password"
               type="password"
               fullWidth
               value={current}
               onChange={(e) => setCurrent(e.target.value)}
+              InputLabelProps={{ style: { color: "#bdbdbd" } }}
+              InputProps={{ style: { color: "white" } }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 2,
+                  "& fieldset": { borderColor: "#555" },
+                  "&:hover fieldset": { borderColor: "#90caf9" },
+                  "&.Mui-focused fieldset": { borderColor: "#90caf9" },
+                },
+              }}
             />
 
+            {/* NEW */}
             <TextField
               label="New Password"
               type="password"
               fullWidth
               value={next}
               onChange={(e) => setNext(e.target.value)}
+              InputLabelProps={{ style: { color: "#bdbdbd" } }}
+              InputProps={{ style: { color: "white" } }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 2,
+                  "& fieldset": { borderColor: "#555" },
+                  "&:hover fieldset": { borderColor: "#90caf9" },
+                  "&.Mui-focused fieldset": { borderColor: "#90caf9" },
+                },
+              }}
             />
 
+            {/* STRENGTH */}
+            {next && (
+              <Box>
+                <LinearProgress
+                  variant="determinate"
+                  value={(strength / 4) * 100}
+                  color={strengthInfo.color}
+                  sx={{ height: 6, borderRadius: 3, mb: 0.5 }}
+                />
+                <Typography
+                  variant="caption"
+                  color={`${strengthInfo.color}.main`}
+                >
+                  Strength: {strengthInfo.label}
+                </Typography>
+              </Box>
+            )}
+
+            {/* CONFIRM */}
             <TextField
               label="Confirm New Password"
               type="password"
               fullWidth
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
+              InputLabelProps={{ style: { color: "#bdbdbd" } }}
+              InputProps={{ style: { color: "white" } }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 2,
+                  "& fieldset": { borderColor: "#555" },
+                  "&:hover fieldset": { borderColor: "#90caf9" },
+                  "&.Mui-focused fieldset": { borderColor: "#90caf9" },
+                },
+              }}
             />
 
+            {/* ACTIONS */}
             <Box display="flex" gap={1} mt={1}>
               <Button
                 fullWidth
@@ -123,6 +216,14 @@ const ChangePasswordDialog = ({ open, onClose }) => {
                   onClose();
                 }}
                 disabled={loading}
+                sx={{
+                  color: "#e0e0e0",
+                  borderColor: "#666",
+                  "&:hover": {
+                    borderColor: "#90caf9",
+                    backgroundColor: "rgba(144,202,249,0.08)",
+                  },
+                }}
               >
                 Cancel
               </Button>
@@ -132,6 +233,17 @@ const ChangePasswordDialog = ({ open, onClose }) => {
                 variant="contained"
                 onClick={handleSubmit}
                 disabled={loading || success}
+                sx={{
+                  fontWeight: 600,
+                  background:
+                    "linear-gradient(90deg, #42a5f5, #478ed1)",
+                  "&:hover": {
+                    background:
+                      "linear-gradient(90deg, #64b5f6, #5e92f3)",
+                    boxShadow:
+                      "0 10px 25px rgba(66,165,245,0.4)",
+                  },
+                }}
               >
                 {loading ? "Saving..." : "Save"}
               </Button>
@@ -140,7 +252,7 @@ const ChangePasswordDialog = ({ open, onClose }) => {
         </DialogContent>
       </Dialog>
 
-      {/* SUCCESS POPUP */}
+      {/* SUCCESS */}
       <Snackbar
         open={success}
         autoHideDuration={2000}

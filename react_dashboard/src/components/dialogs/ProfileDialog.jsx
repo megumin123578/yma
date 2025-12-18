@@ -10,7 +10,6 @@ import {
   Slide,
   Typography,
   IconButton,
-  useTheme,
 } from "@mui/material";
 import { useContext, useEffect, useState, forwardRef } from "react";
 import { UserContext } from "../../context/UserContext";
@@ -27,7 +26,7 @@ const Transition = forwardRef(function Transition(props, ref) {
 });
 
 const ProfileDialog = ({ open, onClose }) => {
-  const theme = useTheme();
+  
   const { user, setUser } = useContext(UserContext);
   const navigate = useNavigate();
 
@@ -103,16 +102,25 @@ const ProfileDialog = ({ open, onClose }) => {
       slotProps={{
         paper: {
           sx: {
-            borderRadius: 3,
-            width: 380,
-            backgroundColor: theme.palette.background.paper,
+            borderRadius: 4,
+            width: 420,
+            background: "linear-gradient(180deg, #1e1e2f, #1a1a27)",
+            boxShadow: "0 20px 50px rgba(0,0,0,0.45)",
+            color: "white",
           },
         },
       }}
     >
-      <DialogTitle>
-        <Typography variant="h5" component="span" fontWeight="bold">
+      <DialogTitle component='div'>
+        <Typography variant="h5" fontWeight="bold" color="white">
           Profile Settings
+        </Typography>
+        <Typography
+          variant="body2"
+          color="rgba(255,255,255,0.65)"
+          mt={0.5}
+        >
+          Manage your personal information
         </Typography>
       </DialogTitle>
 
@@ -122,7 +130,7 @@ const ProfileDialog = ({ open, onClose }) => {
             display="flex"
             flexDirection="column"
             alignItems="center"
-            gap={2.5}
+            gap={3}
             mt={1}
           >
             {/* AVATAR */}
@@ -133,7 +141,12 @@ const ProfileDialog = ({ open, onClose }) => {
                     ? `${process.env.REACT_APP_API_URL || ""}${previewAvatar}`
                     : undefined
                 }
-                sx={{ width: 96, height: 96, boxShadow: 3 }}
+                sx={{
+                  width: 96,
+                  height: 96,
+                  boxShadow: "0 10px 30px rgba(0,0,0,0.6)",
+                  border: "2px solid #2f80ed",
+                }}
               />
 
               <IconButton
@@ -142,8 +155,12 @@ const ProfileDialog = ({ open, onClose }) => {
                   position: "absolute",
                   bottom: -6,
                   right: -6,
-                  backgroundColor: theme.palette.primary.main,
+                  background: "linear-gradient(90deg, #42a5f5, #478ed1)",
                   color: "#fff",
+                  boxShadow: "0 6px 18px rgba(66,165,245,0.5)",
+                  "&:hover": {
+                    background: "linear-gradient(90deg, #64b5f6, #5e92f3)",
+                  },
                 }}
               >
                 <PhotoCameraIcon fontSize="small" />
@@ -162,6 +179,16 @@ const ProfileDialog = ({ open, onClose }) => {
               label="Display Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              InputLabelProps={{ style: { color: "#bdbdbd" } }}
+              InputProps={{ style: { color: "white" } }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 2,
+                  "& fieldset": { borderColor: "#555" },
+                  "&:hover fieldset": { borderColor: "#90caf9" },
+                  "&.Mui-focused fieldset": { borderColor: "#90caf9" },
+                },
+              }}
             />
 
             {/* ACTIONS */}
@@ -172,6 +199,14 @@ const ProfileDialog = ({ open, onClose }) => {
                   variant="outlined"
                   onClick={onClose}
                   disabled={saving}
+                  sx={{
+                    color: "#e0e0e0",
+                    borderColor: "#666",
+                    "&:hover": {
+                      borderColor: "#90caf9",
+                      backgroundColor: "rgba(144,202,249,0.08)",
+                    },
+                  }}
                 >
                   Cancel
                 </Button>
@@ -181,6 +216,15 @@ const ProfileDialog = ({ open, onClose }) => {
                   variant="contained"
                   onClick={handleSave}
                   disabled={saving}
+                  sx={{
+                    fontWeight: 600,
+                    background: "linear-gradient(90deg, #42a5f5, #478ed1)",
+                    "&:hover": {
+                      background:
+                        "linear-gradient(90deg, #64b5f6, #5e92f3)",
+                      boxShadow: "0 10px 25px rgba(66,165,245,0.4)",
+                    },
+                  }}
                 >
                   {saving ? "Saving..." : "Save"}
                 </Button>
@@ -190,6 +234,13 @@ const ProfileDialog = ({ open, onClose }) => {
                 startIcon={<LockOutlinedIcon />}
                 variant="text"
                 onClick={() => setOpenPassword(true)}
+                sx={{
+                  color: "#90caf9",
+                  justifyContent: "flex-start",
+                  "&:hover": {
+                    backgroundColor: "rgba(144,202,249,0.08)",
+                  },
+                }}
               >
                 Change Password
               </Button>
@@ -198,7 +249,13 @@ const ProfileDialog = ({ open, onClose }) => {
                 startIcon={<ExitToAppIcon />}
                 variant="text"
                 onClick={handleLogout}
-                sx={{ color: theme.palette.error.main }}
+                sx={{
+                  color: "#ef5350",
+                  justifyContent: "flex-start",
+                  "&:hover": {
+                    backgroundColor: "rgba(239,83,80,0.08)",
+                  },
+                }}
               >
                 Logout
               </Button>
@@ -212,6 +269,7 @@ const ProfileDialog = ({ open, onClose }) => {
         </Fade>
       </DialogContent>
     </Dialog>
+
   );
 };
 
