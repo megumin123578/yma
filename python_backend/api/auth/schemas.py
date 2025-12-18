@@ -32,6 +32,7 @@ class TokenWithUser(BaseModel):
 
 class UserMe(BaseModel):
     id: int
+    username: str
     avatar_url: Optional[str] = None
 
     class Config:

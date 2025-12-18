@@ -30,7 +30,7 @@ const Login = () => {
     try {
       await login(username.trim(), password);
       const me = await getMe();
-      setUser(me.data);
+      setUser(me);
 
       navigate("/dashboard", { replace: true });
     } catch (err) {
