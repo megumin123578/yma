@@ -10,6 +10,7 @@ import {
   Slide,
   Typography,
   IconButton,
+  useTheme,
 } from "@mui/material";
 import { useContext, useEffect, useState, forwardRef } from "react";
 import { UserContext } from "../../context/UserContext";
@@ -26,7 +27,20 @@ const Transition = forwardRef(function Transition(props, ref) {
 });
 
 const ProfileDialog = ({ open, onClose }) => {
-  
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+  const paperBg = isDark
+    ? "linear-gradient(180deg, #1e1e2f, #1a1a27)"
+    : theme.palette.background.paper;
+  const titleColor = isDark ? "#fff" : theme.palette.text.primary;
+  const subtitleColor = isDark
+    ? "rgba(255,255,255,0.65)"
+    : theme.palette.text.secondary;
+  const labelColor = isDark ? "#bdbdbd" : theme.palette.text.secondary;
+  const inputColor = isDark ? "#fff" : theme.palette.text.primary;
+  const borderColor = isDark ? "#555" : "#d0d0d0";
+  const hoverBorder = isDark ? "#90caf9" : theme.palette.primary.main;
+
   const { user, setUser } = useContext(UserContext);
   const navigate = useNavigate();
 
@@ -104,20 +118,22 @@ const ProfileDialog = ({ open, onClose }) => {
           sx: {
             borderRadius: 4,
             width: 420,
-            background: "linear-gradient(180deg, #1e1e2f, #1a1a27)",
-            boxShadow: "0 20px 50px rgba(0,0,0,0.45)",
-            color: "white",
+            background: paperBg,
+            boxShadow: isDark
+              ? "0 20px 50px rgba(0,0,0,0.45)"
+              : "0 12px 30px rgba(0,0,0,0.15)",
+            color: inputColor,
           },
         },
       }}
     >
       <DialogTitle component='div'>
-        <Typography variant="h5" fontWeight="bold" color="white">
+        <Typography variant="h5" fontWeight="bold" color={titleColor}>
           Profile Settings
         </Typography>
         <Typography
           variant="body2"
-          color="rgba(255,255,255,0.65)"
+          color={subtitleColor}
           mt={0.5}
         >
           Manage your personal information
@@ -179,14 +195,14 @@ const ProfileDialog = ({ open, onClose }) => {
               label="Display Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              InputLabelProps={{ style: { color: "#bdbdbd" } }}
-              InputProps={{ style: { color: "white" } }}
+              InputLabelProps={{ style: { color: labelColor } }}
+              InputProps={{ style: { color: inputColor } }}
               sx={{
                 "& .MuiOutlinedInput-root": {
                   borderRadius: 2,
-                  "& fieldset": { borderColor: "#555" },
-                  "&:hover fieldset": { borderColor: "#90caf9" },
-                  "&.Mui-focused fieldset": { borderColor: "#90caf9" },
+                  "& fieldset": { borderColor },
+                  "&:hover fieldset": { borderColor: hoverBorder },
+                  "&.Mui-focused fieldset": { borderColor: hoverBorder },
                 },
               }}
             />
@@ -200,11 +216,13 @@ const ProfileDialog = ({ open, onClose }) => {
                   onClick={onClose}
                   disabled={saving}
                   sx={{
-                    color: "#e0e0e0",
-                    borderColor: "#666",
+                    color: inputColor,
+                    borderColor,
                     "&:hover": {
-                      borderColor: "#90caf9",
-                      backgroundColor: "rgba(144,202,249,0.08)",
+                      borderColor: hoverBorder,
+                      backgroundColor: isDark
+                        ? "rgba(144,202,249,0.08)"
+                        : "rgba(0,0,0,0.03)",
                     },
                   }}
                 >
@@ -235,10 +253,12 @@ const ProfileDialog = ({ open, onClose }) => {
                 variant="text"
                 onClick={() => setOpenPassword(true)}
                 sx={{
-                  color: "#90caf9",
+                  color: isDark ? "#90caf9" : theme.palette.primary.main,
                   justifyContent: "flex-start",
                   "&:hover": {
-                    backgroundColor: "rgba(144,202,249,0.08)",
+                    backgroundColor: isDark
+                      ? "rgba(144,202,249,0.08)"
+                      : "rgba(0,0,0,0.04)",
                   },
                 }}
               >

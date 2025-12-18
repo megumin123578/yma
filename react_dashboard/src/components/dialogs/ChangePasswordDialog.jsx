@@ -9,6 +9,7 @@ import {
   Alert,
   Snackbar,
   LinearProgress,
+  useTheme,
 } from "@mui/material";
 import { useState, useMemo } from "react";
 import { changePassword } from "../../services/authService";
@@ -38,6 +39,20 @@ const strengthMap = [
 ];
 
 const ChangePasswordDialog = ({ open, onClose }) => {
+
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+  const paperBg = isDark
+    ? "linear-gradient(180deg, #1e1e2f, #1a1a27)"
+    : theme.palette.background.paper;
+  const titleColor = isDark ? "#fff" : theme.palette.text.primary;
+  const subtitleColor = isDark
+    ? "rgba(255,255,255,0.65)"
+    : theme.palette.text.secondary;
+  const labelColor = isDark ? "#bdbdbd" : theme.palette.text.secondary;
+  const inputColor = isDark ? "#fff" : theme.palette.text.primary;
+  const borderColor = isDark ? "#555" : "#d0d0d0";
+  const hoverBorder = isDark ? "#90caf9" : theme.palette.primary.main;
 
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -113,9 +128,11 @@ const ChangePasswordDialog = ({ open, onClose }) => {
             sx: {
               borderRadius: 4,
               width: 380,
-              background: "linear-gradient(180deg, #1e1e2f, #1a1a27)",
-              boxShadow: "0 20px 50px rgba(0,0,0,0.45)",
-              color: "white",
+              background: paperBg,
+              boxShadow: isDark
+                ? "0 20px 50px rgba(0,0,0,0.45)"
+                : "0 12px 30px rgba(0,0,0,0.15)",
+              color: inputColor,
             },
           },
         }}
@@ -125,14 +142,14 @@ const ChangePasswordDialog = ({ open, onClose }) => {
             component="div"
             variant="h6"
             fontWeight="bold"
-            color="white"
+            color={titleColor}
           >
             Change Password
           </Typography>
           <Typography
             component="div"
             variant="body2"
-            color="rgba(255,255,255,0.65)"
+            color={subtitleColor}
           >
             Choose a strong password to protect your account
           </Typography>
@@ -149,15 +166,15 @@ const ChangePasswordDialog = ({ open, onClose }) => {
               fullWidth
               value={current}
               onChange={(e) => setCurrent(e.target.value)}
-              InputLabelProps={{ style: { color: "#bdbdbd" } }}
+              InputLabelProps={{ style: { color: labelColor } }}
               InputProps={{
-                style: { color: "white" },
+                style: { color: inputColor },
                 endAdornment: (
                   <InputAdornment position="end">
                     <IconButton
                       onClick={() => setShowCurrent((v) => !v)}
                       edge="end"
-                      sx={{ color: "#bdbdbd" }}
+                      sx={{ color: labelColor }}
                     >
                       {showCurrent ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
@@ -167,9 +184,9 @@ const ChangePasswordDialog = ({ open, onClose }) => {
               sx={{
                 "& .MuiOutlinedInput-root": {
                   borderRadius: 2,
-                  "& fieldset": { borderColor: "#555" },
-                  "&:hover fieldset": { borderColor: "#90caf9" },
-                  "&.Mui-focused fieldset": { borderColor: "#90caf9" },
+                  "& fieldset": { borderColor },
+                  "&:hover fieldset": { borderColor: hoverBorder },
+                  "&.Mui-focused fieldset": { borderColor: hoverBorder },
                 },
               }}
             />
@@ -182,15 +199,15 @@ const ChangePasswordDialog = ({ open, onClose }) => {
               fullWidth
               value={next}
               onChange={(e) => setNext(e.target.value)}
-              InputLabelProps={{ style: { color: "#bdbdbd" } }}
+              InputLabelProps={{ style: { color: labelColor } }}
               InputProps={{
-                style: { color: "white" },
+                style: { color: inputColor },
                 endAdornment: (
                   <InputAdornment position="end">
                     <IconButton
                       onClick={() => setShowNew((v) => !v)}
                       edge="end"
-                      sx={{ color: "#bdbdbd" }}
+                      sx={{ color: labelColor }}
                     >
                       {showNew ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
@@ -200,9 +217,9 @@ const ChangePasswordDialog = ({ open, onClose }) => {
               sx={{
                 "& .MuiOutlinedInput-root": {
                   borderRadius: 2,
-                  "& fieldset": { borderColor: "#555" },
-                  "&:hover fieldset": { borderColor: "#90caf9" },
-                  "&.Mui-focused fieldset": { borderColor: "#90caf9" },
+                  "& fieldset": { borderColor },
+                  "&:hover fieldset": { borderColor: hoverBorder },
+                  "&.Mui-focused fieldset": { borderColor: hoverBorder },
                 },
               }}
             />
@@ -231,15 +248,15 @@ const ChangePasswordDialog = ({ open, onClose }) => {
               fullWidth
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
-              InputLabelProps={{ style: { color: "#bdbdbd" } }}
+              InputLabelProps={{ style: { color: labelColor } }}
               InputProps={{
-                style: { color: "white" },
+                style: { color: inputColor },
                 endAdornment: (
                   <InputAdornment position="end">
                     <IconButton
                       onClick={() => setShowConfirm((v) => !v)}
                       edge="end"
-                      sx={{ color: "#bdbdbd" }}
+                      sx={{ color: labelColor }}
                     >
                       {showConfirm ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
@@ -249,9 +266,9 @@ const ChangePasswordDialog = ({ open, onClose }) => {
               sx={{
                 "& .MuiOutlinedInput-root": {
                   borderRadius: 2,
-                  "& fieldset": { borderColor: "#555" },
-                  "&:hover fieldset": { borderColor: "#90caf9" },
-                  "&.Mui-focused fieldset": { borderColor: "#90caf9" },
+                  "& fieldset": { borderColor },
+                  "&:hover fieldset": { borderColor: hoverBorder },
+                  "&.Mui-focused fieldset": { borderColor: hoverBorder },
                 },
               }}
             />
@@ -267,11 +284,13 @@ const ChangePasswordDialog = ({ open, onClose }) => {
                 }}
                 disabled={loading}
                 sx={{
-                  color: "#e0e0e0",
-                  borderColor: "#666",
+                  color: inputColor,
+                  borderColor,
                   "&:hover": {
-                    borderColor: "#90caf9",
-                    backgroundColor: "rgba(144,202,249,0.08)",
+                    borderColor: hoverBorder,
+                    backgroundColor: isDark
+                      ? "rgba(144,202,249,0.08)"
+                      : "rgba(0,0,0,0.03)",
                   },
                 }}
               >
