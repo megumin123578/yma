@@ -81,6 +81,3 @@ def change_password(
 
     return {"message": "Password changed successfully"}
 
-@router.get("/me")
-def get_me(current_user: User = Depends(get_current_user)):
-    return current_user

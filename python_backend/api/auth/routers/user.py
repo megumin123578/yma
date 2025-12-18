@@ -1,10 +1,12 @@
 import os
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
-
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.models import User
 from python_backend.api.auth.auth_utils import get_current_user
+from python_backend.api.auth import schemas
+from python_backend.api.auth.schemas import UserMe
+
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -36,6 +38,6 @@ def upload_avatar(
 
     return {"avatarUrl": avatar_url}
 
-@router.get("/me")
+@router.get("/me", response_model=UserMe)
 def get_me(current_user: User = Depends(get_current_user)):
     return current_user

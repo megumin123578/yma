@@ -31,4 +31,8 @@ app.include_router(overview_router)
 app.include_router(auth.router)
 app.include_router(user.router, prefix="/api") 
 
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount(
+    "/uploads",
+    StaticFiles(directory="python_backend/api/uploads"),
+    name="uploads",
+)

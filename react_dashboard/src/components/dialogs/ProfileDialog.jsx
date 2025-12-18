@@ -45,7 +45,6 @@ const ProfileDialog = ({ open, onClose }) => {
     }
   }, [open, user]);
 
-  // 👉 Chỉ chọn ảnh → preview
   const handleSelectAvatar = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -57,7 +56,7 @@ const ProfileDialog = ({ open, onClose }) => {
   const handleSave = async () => {
     if (!user) {
       console.error("User is null, cannot save profile");
-      return; // 🔴 CHẶN NGAY
+      return;
     }
 
     if (saving) return;
