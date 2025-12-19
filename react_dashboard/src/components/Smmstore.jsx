@@ -614,6 +614,36 @@ const Smmstore = () => {
                       size: "small",
                       sx: { minWidth: 200, flex: 1 },
                     },
+                    actionBar: {
+                      sx: {
+                        "& .MuiButton-root": {
+                          color:
+                            theme.palette.mode === "dark"
+                              ? theme.palette.common.white
+                              : "inherit",
+                        },
+                      },
+                    },
+                    popper: {
+                      sx: {
+                        "& .MuiPickersActionBar-root .MuiButton-root": {
+                          color:
+                            theme.palette.mode === "dark"
+                              ? theme.palette.common.white
+                              : "inherit",
+                        },
+                      },
+                    },
+                    dialog: {
+                      sx: {
+                        "& .MuiPickersActionBar-root .MuiButton-root": {
+                          color:
+                            theme.palette.mode === "dark"
+                              ? theme.palette.common.white
+                              : "inherit",
+                        },
+                      },
+                    },
                   }}
                 />
               </Stack>

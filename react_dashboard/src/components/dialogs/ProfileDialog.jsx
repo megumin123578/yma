@@ -10,6 +10,7 @@ import {
   Slide,
   Typography,
   IconButton,
+  InputAdornment,
   useTheme,
 } from "@mui/material";
 import { useContext, useEffect, useState, forwardRef } from "react";
@@ -25,6 +26,14 @@ import { useNavigate } from "react-router-dom";
 const Transition = forwardRef(function Transition(props, ref) {
   return <Slide direction="up" ref={ref} {...props} />;
 });
+
+const maskApiKey = (value, visibleStart = 4, visibleEnd = 4) => {
+  if (!value) return "";
+  const trimmed = String(value);
+  if (trimmed.length <= visibleStart + visibleEnd) return trimmed;
+  const maskedLength = trimmed.length - visibleStart - visibleEnd;
+  return `${trimmed.slice(0, visibleStart)}${"*".repeat(maskedLength)}${trimmed.slice(-visibleEnd)}`;
+};
 
 const ProfileDialog = ({ open, onClose }) => {
   const theme = useTheme();
@@ -50,6 +59,7 @@ const ProfileDialog = ({ open, onClose }) => {
   const [previewAvatar, setPreviewAvatar] = useState(null);
   const [openPassword, setOpenPassword] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isEditingApiKey, setIsEditingApiKey] = useState(false);
 
   useEffect(() => {
     if (open && user) {
@@ -57,6 +67,7 @@ const ProfileDialog = ({ open, onClose }) => {
       setSmmstoreApiKey(user.smmstore_api_key || "");
       setPreviewAvatar(user.avatar || null);
       setPendingAvatar(null);
+      setIsEditingApiKey(false);
     }
   }, [open, user]);
 
@@ -217,10 +228,32 @@ const ProfileDialog = ({ open, onClose }) => {
             <TextField
               fullWidth
               label="SMM Store API Key"
-              value={smmstoreApiKey}
-              onChange={(e) => setSmmstoreApiKey(e.target.value)}
+              value={
+                isEditingApiKey ? smmstoreApiKey : maskApiKey(smmstoreApiKey)
+              }
+              onChange={(e) => {
+                if (isEditingApiKey) setSmmstoreApiKey(e.target.value);
+              }}
+              type={isEditingApiKey ? "password" : "text"}
               slotProps={{ inputLabel: {style: { color: labelColor }} }}
-              InputProps={{ style: { color: inputColor } }}
+              InputProps={{
+                style: { color: inputColor },
+                readOnly: !isEditingApiKey,
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={() =>
+                        setIsEditingApiKey((prev) => !prev)
+                      }
+                      sx={{ minWidth: 0, px: 1, color: labelColor }}
+                    >
+                      {isEditingApiKey ? "Done" : "Edit"}
+                    </Button>
+                  </InputAdornment>
+                ),
+              }}
               sx={{
                 "& .MuiOutlinedInput-root": {
                   borderRadius: 2,
