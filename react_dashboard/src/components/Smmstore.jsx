@@ -2,7 +2,6 @@ import {
   Box,
   Button,
   Chip,
-  Divider,
   FormControl,
   IconButton,
   InputLabel,
@@ -64,6 +63,14 @@ const Smmstore = () => {
         theme.palette.mode === "dark"
           ? "0 10px 28px rgba(2,6,23,0.6)"
           : "0 10px 24px rgba(15,23,42,0.08)",
+      transition: "transform 180ms ease, box-shadow 180ms ease",
+      "&:hover": {
+        transform: "translateY(-2px)",
+        boxShadow:
+          theme.palette.mode === "dark"
+            ? "0 16px 32px rgba(2,6,23,0.7)"
+            : "0 16px 30px rgba(15,23,42,0.12)",
+      },
     }),
     [theme.palette.divider, theme.palette.mode]
   );
@@ -468,6 +475,23 @@ const Smmstore = () => {
                   }}
                   fullWidth
                   size="small"
+                  sx={{
+                    "& .MuiOutlinedInput-root": {
+                      transition: "box-shadow 160ms ease",
+                      "&:hover": {
+                        boxShadow:
+                          theme.palette.mode === "dark"
+                            ? "0 0 0 2px rgba(96,165,250,0.25)"
+                            : "0 0 0 2px rgba(56,189,248,0.18)",
+                      },
+                      "&.Mui-focused": {
+                        boxShadow:
+                          theme.palette.mode === "dark"
+                            ? "0 0 0 2px rgba(96,165,250,0.45)"
+                            : "0 0 0 2px rgba(56,189,248,0.35)",
+                      },
+                    },
+                  }}
                 />
 
                 {showSuggestions && search && filteredServices.length > 0 && (
@@ -495,7 +519,12 @@ const Smmstore = () => {
                           cursor: "pointer",
                           bgcolor:
                             item === service ? "action.selected" : "transparent",
-                          "&:hover": { bgcolor: "action.hover" },
+                          transition:
+                            "background-color 160ms ease, transform 160ms ease",
+                          "&:hover": {
+                            bgcolor: "action.hover",
+                            transform: "translateX(2px)",
+                          },
                         }}
                         onClick={() => handleSelectService(item)}
                       >
@@ -557,8 +586,6 @@ const Smmstore = () => {
             </Stack>
           </Stack>
 
-          <Divider />
-
           {/* Schedule */}
           <Stack spacing={1}>
             <Typography variant="subtitle1" fontWeight="700">
@@ -591,8 +618,6 @@ const Smmstore = () => {
               </Stack>
             </LocalizationProvider>
           </Stack>
-
-          <Divider />
 
           {/* Order Details (gọn hơn: Link + Quantity cùng hàng) */}
           <Stack spacing={1}>
@@ -631,6 +656,16 @@ const Smmstore = () => {
                 color={dripFeed ? "success" : "error"}
                 onClick={() => setDripFeed((prev) => !prev)}
                 size="small"
+                sx={{
+                  transition: "transform 160ms ease, box-shadow 160ms ease",
+                  "&:hover": {
+                    transform: "translateY(-1px)",
+                    boxShadow:
+                      theme.palette.mode === "dark"
+                        ? "0 6px 16px rgba(2,6,23,0.35)"
+                        : "0 6px 16px rgba(15,23,42,0.15)",
+                  },
+                }}
               >
                 Drip-Feed {dripFeed ? "On" : "Off"}
               </Button>
@@ -658,7 +693,18 @@ const Smmstore = () => {
               color="secondary"
               onClick={submitOrder}
               disabled={!hasKey || loadingServices}
-              sx={{ width: 180, ml: "auto" }}
+              sx={{
+                width: 180,
+                ml: "auto",
+                transition: "transform 160ms ease, box-shadow 160ms ease",
+                "&:hover": {
+                  transform: "translateY(-1px)",
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? "0 8px 18px rgba(2,6,23,0.35)"
+                      : "0 8px 18px rgba(15,23,42,0.18)",
+                },
+              }}
             >
               Submit
             </Button>
@@ -687,6 +733,14 @@ const Smmstore = () => {
             theme.palette.mode === "dark"
               ? "rgba(15,23,42,0.65)"
               : "transparent",
+          transition: "transform 180ms ease, box-shadow 180ms ease",
+          "&:hover": {
+            transform: "translateY(-2px)",
+            boxShadow:
+              theme.palette.mode === "dark"
+                ? "0 16px 32px rgba(2,6,23,0.6)"
+                : "0 16px 28px rgba(15,23,42,0.12)",
+          },
         }}
       >
         <TableContainer>
@@ -714,6 +768,13 @@ const Smmstore = () => {
                   key={order.id}
                   sx={{
                     bgcolor: index % 2 === 0 ? "transparent" : "action.hover",
+                    transition: "background-color 160ms ease",
+                    "&:hover": {
+                      bgcolor:
+                        theme.palette.mode === "dark"
+                          ? "rgba(30,41,59,0.6)"
+                          : "rgba(148,163,184,0.2)",
+                    },
                   }}
                 >
                   <TableCell>
