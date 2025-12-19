@@ -600,7 +600,7 @@ const Smmstore = () => {
                   slotProps={{
                     textField: {
                       size: "small",
-                      sx: { minWidth: 200 },
+                      sx: { minWidth: 240, flex: 1 },
                     },
                   }}
                 />
@@ -608,10 +608,11 @@ const Smmstore = () => {
                   label="Time"
                   value={runTime}
                   onChange={(value) => setRunTime(value)}
+                  ampm={false}
                   slotProps={{
                     textField: {
                       size: "small",
-                      sx: { minWidth: 160 },
+                      sx: { minWidth: 200, flex: 1 },
                     },
                   }}
                 />
