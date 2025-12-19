@@ -30,6 +30,7 @@ import { UserContext } from "../context/UserContext";
 import { tokens } from "../theme";
 import { API_BASE } from "../config";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import dayjs from "dayjs";
 
 const ORDERS_STORAGE_KEY = "smmstore.orders";
@@ -272,6 +273,10 @@ const Smmstore = () => {
     setOrders((prev) =>
       prev.map((order) => (order.id === id ? { ...order, ...changes } : order))
     );
+  }, []);
+
+  const removeOrder = useCallback((id) => {
+    setOrders((prev) => prev.filter((order) => order.id !== id));
   }, []);
 
   const sendOrder = useCallback(
@@ -689,6 +694,16 @@ const Smmstore = () => {
                 size="small"
                 sx={{
                   transition: "transform 160ms ease, box-shadow 160ms ease",
+                  ...(dripFeed
+                    ? {
+                        backgroundColor: "rgba(34,197,94,0.18)",
+                        color:
+                          theme.palette.mode === "dark" ? "#86efac" : "#166534",
+                        "&:hover": {
+                          backgroundColor: "rgba(34,197,94,0.28)",
+                        },
+                      }
+                    : {}),
                   "&:hover": {
                     transform: "translateY(-1px)",
                     boxShadow:
@@ -808,6 +823,7 @@ const Smmstore = () => {
                 <TableCell>Link</TableCell>
                 <TableCell>Quantity</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -849,11 +865,29 @@ const Smmstore = () => {
                       variant={order.status ? "filled" : "outlined"}
                     />
                   </TableCell>
+                  <TableCell align="right">
+                    <IconButton
+                      size="small"
+                      onClick={() => removeOrder(order.id)}
+                      aria-label="Remove order"
+                      sx={{
+                        color:
+                          theme.palette.mode === "dark"
+                            ? "rgba(248,250,252,0.8)"
+                            : "rgba(15,23,42,0.7)",
+                        "&:hover": {
+                          color: theme.palette.error.main,
+                        },
+                      }}
+                    >
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </TableCell>
                 </TableRow>
               ))}
               {orders.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={7}>
                     <Typography variant="body2" color="text.secondary">
                       No orders yet.
                     </Typography>
