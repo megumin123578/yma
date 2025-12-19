@@ -13,6 +13,14 @@ root,
 .app{
   display: flex;
   position: relative;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.content{
+  flex: 1 1 auto;
+  overflow: auto;
+  min-width: 0;
 }
 
 ::-webkit-scrollbar{
