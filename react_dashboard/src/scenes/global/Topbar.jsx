@@ -1,6 +1,6 @@
 import { Box, IconButton, useTheme, Avatar } from "@mui/material";
 import { useContext, useState } from "react";
-import { ColorModeContext, tokens } from "../../theme";
+import { ColorModeContext } from "../../theme";
 import { UserContext } from "../../context/UserContext";
 import ProfileDialog from "../../components/dialogs/ProfileDialog";
 
@@ -11,7 +11,7 @@ import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 
 const Topbar = () => {
   const theme = useTheme();
-  const colors = tokens(theme.palette.mode);
+  // const colors = tokens(theme.palette.mode);
   const colorMode = useContext(ColorModeContext);
 
   const { user } = useContext(UserContext);

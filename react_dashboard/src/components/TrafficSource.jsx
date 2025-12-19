@@ -79,17 +79,29 @@ const EXTRA_PERIODS = [
   { value: "month_prev2", label: "Preceding month" },
 ];
 
+const FILTERS_STORAGE_KEY = "trafficSource.filters";
+
+const loadStoredFilters = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(FILTERS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+};
+
 const TrafficSourceChart = () => {
   const theme = useTheme();
 
   /* === Controls === */
-  const [chartType, setChartType] = useState("pie");
-  const [metric, setMetric] = useState("views");
-  const [period, setPeriod] = useState("last28");
-  const [interval, setInterval] = useState("daily");
+  const [chartType, setChartType] = useState(() => loadStoredFilters()?.chartType || "pie");
+  const [metric, setMetric] = useState(() => loadStoredFilters()?.metric || "views");
+  const [period, setPeriod] = useState(() => loadStoredFilters()?.period || "last28");
+  const [interval, setInterval] = useState(() => loadStoredFilters()?.interval || "daily");
 
   const [channels, setChannels] = useState([]);
-  const [channel, setChannel] = useState("");
+  const [channel, setChannel] = useState(() => loadStoredFilters()?.channel || "");
 
   useEffect(() => {
     let stop = false;
@@ -107,7 +119,10 @@ const TrafficSourceChart = () => {
         });
         if (!stop) {
           setChannels(norm);
-          if (!channel && norm.length) setChannel(norm[0].value);
+          if (norm.length) {
+            const hasStored = channel && norm.some((opt) => opt.value === channel);
+            if (!hasStored) setChannel(norm[0].value);
+          }
         }
       } catch (e) {
         console.error("Load channels failed:", e);
@@ -117,8 +132,8 @@ const TrafficSourceChart = () => {
     return () => { stop = true; };
   }, [channel]);
 
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [startDate, setStartDate] = useState(() => loadStoredFilters()?.startDate || "");
+  const [endDate, setEndDate] = useState(() => loadStoredFilters()?.endDate || "");
 
   /* === Data === */
   const mconf = METRICS[metric];
@@ -208,8 +223,8 @@ const TrafficSourceChart = () => {
       return;
     }
 
-    if (chartType === "pie") fetchRange(start, end);
-    else fetchTimeseries(start, end, interval);
+    fetchRange(start, end);
+    if (chartType !== "pie") fetchTimeseries(start, end, interval);
   }, [
     chartType,
     period,
@@ -221,6 +236,26 @@ const TrafficSourceChart = () => {
     fetchRange,
     fetchTimeseries,
   ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        FILTERS_STORAGE_KEY,
+        JSON.stringify({
+          chartType,
+          metric,
+          period,
+          interval,
+          channel,
+          startDate,
+          endDate,
+        })
+      );
+    } catch (e) {
+      // ignore storage errors
+    }
+  }, [chartType, metric, period, interval, channel, startDate, endDate]);
 
   /* === Table aggregation (base for charts + header filter list) === */
   const { totals, rows } = useMemo(() => {

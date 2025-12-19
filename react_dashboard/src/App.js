@@ -9,15 +9,16 @@ import LoginPage from "./scenes/login";
 import RegisterPage from "./scenes/register";
 import ForgotPasswordPage from "./scenes/forgot_password";
 
-import { Box, CssBaseline, IconButton, ThemeProvider } from "@mui/material";
-import { ColorModeContext, useMode } from "./theme";
+import { Box, IconButton, useTheme } from "@mui/material";
+import { ColorModeContext } from "./theme";
 import GeographyChart from "./components/Geography";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import { UserContext } from "./context/UserContext";
 
 function App() {
-  const [theme, colorMode] = useMode();
+  const theme = useTheme();
+  const colorMode = useContext(ColorModeContext);
   const [isSidebar, setIsSidebar] = useState(true);
   const location = useLocation();
   const { user, loading } = useContext(UserContext);
@@ -32,71 +33,65 @@ function App() {
   };
 
   return (
-    <ColorModeContext.Provider value={colorMode}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
+    <div className="app">
+      {!isNoLayout && <Sidebar isSidebar={isSidebar} />}
 
-        <div className="app">
-          {!isNoLayout && <Sidebar isSidebar={isSidebar} />}
+      <main className="content">
+        {!isNoLayout && <Topbar setIsSidebar={setIsSidebar} />}
+        {isNoLayout && (
+          <Box display="flex" justifyContent="flex-end" pt={0} px={2}>
+            <IconButton onClick={colorMode.toggleColorMode}>
+              {theme.palette.mode === "dark" ? (
+                <DarkModeOutlinedIcon />
+              ) : (
+                <LightModeOutlinedIcon />
+              )}
+            </IconButton>
+          </Box>
+        )}
 
-          <main className="content">
-            {!isNoLayout && <Topbar setIsSidebar={setIsSidebar} />}
-            {isNoLayout && (
-              <Box display="flex" justifyContent="flex-end" pt={0} px={2}>
-                <IconButton onClick={colorMode.toggleColorMode}>
-                  {theme.palette.mode === "dark" ? (
-                    <DarkModeOutlinedIcon />
-                  ) : (
-                    <LightModeOutlinedIcon />
-                  )}
-                </IconButton>
-              </Box>
-            )}
+        <Routes>
+          {/* Auth */}
+          <Route path="/" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
-            <Routes>
-              {/* Auth */}
-              <Route path="/" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-
-              {/* App */}
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <Dashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/content"
-                element={
-                  <ProtectedRoute>
-                    <Daily />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/traffic_source"
-                element={
-                  <ProtectedRoute>
-                    <TrafficSource />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/geography"
-                element={
-                  <ProtectedRoute>
-                    <GeographyChart />
-                  </ProtectedRoute>
-                }
-              />
-            </Routes>
-          </main>
-        </div>
-      </ThemeProvider>
-    </ColorModeContext.Provider>
+          {/* App */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/content"
+            element={
+              <ProtectedRoute>
+                <Daily />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/traffic_source"
+            element={
+              <ProtectedRoute>
+                <TrafficSource />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/geography"
+            element={
+              <ProtectedRoute>
+                <GeographyChart />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </main>
+    </div>
   );
 }
 
