@@ -43,21 +43,15 @@ const Sidebar = () => {
 
   const { user } = useContext(UserContext);
 
-  /**
-   * ✅ CHỈ render avatar TỪ BACKEND
-   * ❌ TUYỆT ĐỐI không render blob preview
-   */
   const getSidebarAvatar = () => {
     if (!user?.avatar) {
       return "../../assets/user.jpg";
     }
 
-    // 🚫 Chặn avatar preview (blob URL)
     if (user.avatar.startsWith("blob:")) {
       return "../../assets/user.jpg";
     }
 
-    // ✅ Avatar backend
     return `${process.env.REACT_APP_API_URL || ""}${user.avatar}`;
   };
 
@@ -102,8 +96,21 @@ const Sidebar = () => {
                 alignItems="center"
                 ml="15px"
               >
-                <Typography variant="h3" color={colors.grey[100]}>
-                  FUNTIME MC
+                <Typography
+                  variant="h3"
+                  color={colors.grey[100]}
+                  sx={{
+                    fontSize: "1.1rem",
+                    lineHeight: 1.2,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    pr: "8px",
+                    flexGrow: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  FUNTIME MEDIA
                 </Typography>
                 <IconButton onClick={() => setIsCollapsed(!isCollapsed)}>
                   <MenuOutlinedIcon />
@@ -139,9 +146,6 @@ const Sidebar = () => {
                   {user?.name || "Admin"}
                 </Typography>
 
-                <Typography variant="h5" color={colors.greenAccent[500]}>
-                  FMC Admin
-                </Typography>
               </Box>
             </Box>
           )}
