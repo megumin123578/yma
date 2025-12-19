@@ -727,13 +727,30 @@ const Smmstore = () => {
               sx={{
                 width: 180,
                 ml: "auto",
-                transition: "transform 160ms ease, box-shadow 160ms ease",
+                position: "relative",
+                overflow: "hidden",
+                transition:
+                  "transform 220ms ease, box-shadow 220ms ease, letter-spacing 220ms ease",
+                "&::after": {
+                  content: '""',
+                  position: "absolute",
+                  inset: 0,
+                  background:
+                    "linear-gradient(120deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.28) 45%, rgba(255,255,255,0) 70%)",
+                  transform: "translateX(-130%)",
+                  transition: "transform 520ms ease",
+                  pointerEvents: "none",
+                },
                 "&:hover": {
                   transform: "translateY(-1px)",
                   boxShadow:
                     theme.palette.mode === "dark"
                       ? "0 8px 18px rgba(2,6,23,0.35)"
                       : "0 8px 18px rgba(15,23,42,0.18)",
+                  letterSpacing: "0.3px",
+                  "&::after": {
+                    transform: "translateX(130%)",
+                  },
                 },
               }}
             >
