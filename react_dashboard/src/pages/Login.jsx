@@ -9,11 +9,29 @@ import {
   Paper,
   Alert,
   Typography,
+  useTheme,
 } from "@mui/material";
 import { Link, useNavigate } from "react-router-dom";
 import { login } from "../services/authService";
 
 const Login = () => {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+  const paperBg = isDark
+    ? "linear-gradient(180deg, #1e1e2f, #1a1a27)"
+    : theme.palette.background.paper;
+  const paperShadow = isDark
+    ? "0 20px 50px rgba(0,0,0,0.35)"
+    : "0 14px 40px rgba(0,0,0,0.15)";
+  const titleColor = isDark ? "white" : theme.palette.text.primary;
+  const subtitleColor = isDark
+    ? "rgba(255,255,255,0.7)"
+    : theme.palette.text.secondary;
+  const labelColor = isDark ? "#bdbdbd" : theme.palette.text.secondary;
+  const inputColor = isDark ? "white" : theme.palette.text.primary;
+  const borderColor = isDark ? "#555" : "#d0d0d0";
+  const hoverBorder = isDark ? "#90caf9" : theme.palette.primary.main;
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -47,8 +65,8 @@ const Login = () => {
         p: 5,
         width: 520,
         borderRadius: 4,
-        background: "linear-gradient(180deg, #1e1e2f, #1a1a27)",
-        boxShadow: "0 20px 50px rgba(0,0,0,0.35)",
+        background: paperBg,
+        boxShadow: paperShadow,
         animation: "fadeInUp 0.6s ease",
         "@keyframes fadeInUp": {
           from: { opacity: 0, transform: "translateY(30px)" },
@@ -56,19 +74,21 @@ const Login = () => {
         },
         transition: "all 0.3s ease",
         "&:hover": {
-          transform: "translateY(-4px)",
-          boxShadow: "0 28px 70px rgba(0,0,0,0.45)",
-        },
-      }}
-    >
-      <Typography variant="h5" fontWeight="bold" mb={1} color="white">
+            transform: "translateY(-4px)",
+            boxShadow: isDark
+              ? "0 28px 70px rgba(0,0,0,0.45)"
+              : "0 18px 40px rgba(0,0,0,0.12)",
+          },
+        }}
+      >
+      <Typography variant="h5" fontWeight="bold" mb={1} color={titleColor}>
         Login
       </Typography>
 
       <Typography
         variant="body2"
         mb={3}
-        color="rgba(255,255,255,0.7)"
+        color={subtitleColor}
       >
         Enter your credentials to access your account.
       </Typography>
@@ -88,14 +108,14 @@ const Login = () => {
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           required
-          InputLabelProps={{ style: { color: "#bdbdbd" } }}
-          InputProps={{ style: { color: "white" } }}
+          InputLabelProps={{ style: { color: labelColor } }}
+          InputProps={{ style: { color: inputColor } }}
           sx={{
             "& .MuiOutlinedInput-root": {
               borderRadius: 2,
-              "& fieldset": { borderColor: "#555" },
-              "&:hover fieldset": { borderColor: "#90caf9" },
-              "&.Mui-focused fieldset": { borderColor: "#90caf9" },
+              "& fieldset": { borderColor },
+              "&:hover fieldset": { borderColor: hoverBorder },
+              "&.Mui-focused fieldset": { borderColor: hoverBorder },
             },
           }}
         />
@@ -109,14 +129,14 @@ const Login = () => {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          InputLabelProps={{ style: { color: "#bdbdbd" } }}
-          InputProps={{ style: { color: "white" } }}
+          InputLabelProps={{ style: { color: labelColor } }}
+          InputProps={{ style: { color: inputColor } }}
           sx={{
             "& .MuiOutlinedInput-root": {
               borderRadius: 2,
-              "& fieldset": { borderColor: "#555" },
-              "&:hover fieldset": { borderColor: "#90caf9" },
-              "&.Mui-focused fieldset": { borderColor: "#90caf9" },
+              "& fieldset": { borderColor },
+              "&:hover fieldset": { borderColor: hoverBorder },
+              "&.Mui-focused fieldset": { borderColor: hoverBorder },
             },
           }}
         />

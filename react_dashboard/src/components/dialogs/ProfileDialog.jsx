@@ -195,7 +195,7 @@ const ProfileDialog = ({ open, onClose }) => {
               label="Display Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              InputLabelProps={{ style: { color: labelColor } }}
+              slotProps={{ inputLabel: {style: { color: labelColor }} }}
               InputProps={{ style: { color: inputColor } }}
               sx={{
                 "& .MuiOutlinedInput-root": {
