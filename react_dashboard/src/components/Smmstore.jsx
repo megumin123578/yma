@@ -4,6 +4,7 @@ import {
   Chip,
   Divider,
   FormControl,
+  IconButton,
   InputLabel,
   MenuItem,
   Paper,
@@ -18,11 +19,19 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import {
+  DatePicker,
+  LocalizationProvider,
+  TimePicker,
+} from "@mui/x-date-pickers";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { useTheme } from "@mui/material/styles";
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { UserContext } from "../context/UserContext";
 import { tokens } from "../theme";
 import { API_BASE } from "../config";
+import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
+import dayjs from "dayjs";
 
 const ORDERS_STORAGE_KEY = "smmstore.orders";
 
@@ -43,14 +52,17 @@ const Smmstore = () => {
     () => ({
       p: 2.5,
       borderRadius: 2.5,
-      border: `1px solid ${theme.palette.divider}`,
+      border:
+        theme.palette.mode === "dark"
+          ? "1px solid rgba(148,163,184,0.25)"
+          : `1px solid ${theme.palette.divider}`,
       bgcolor:
         theme.palette.mode === "dark"
-          ? "rgba(17,17,17,0.65)"
+          ? "rgba(17,24,39,0.85)"
           : "rgba(255,255,255,0.92)",
       boxShadow:
         theme.palette.mode === "dark"
-          ? "0 10px 24px rgba(0,0,0,0.35)"
+          ? "0 10px 28px rgba(2,6,23,0.6)"
           : "0 10px 24px rgba(15,23,42,0.08)",
     }),
     [theme.palette.divider, theme.palette.mode]
@@ -66,15 +78,8 @@ const Smmstore = () => {
   const [link, setLink] = useState("");
   const [quantity, setQuantity] = useState("1000");
 
-  const [runDate, setRunDate] = useState(() =>
-    new Date().toISOString().slice(0, 10)
-  );
-  const [runTime, setRunTime] = useState(() => {
-    const now = new Date();
-    return `${String(now.getHours()).padStart(2, "0")}:${String(
-      now.getMinutes()
-    ).padStart(2, "0")}`;
-  });
+  const [runDate, setRunDate] = useState(() => dayjs());
+  const [runTime, setRunTime] = useState(() => dayjs());
 
   const [dripFeed, setDripFeed] = useState(false);
   const [runs, setRuns] = useState("");
@@ -119,8 +124,9 @@ const Smmstore = () => {
       setBalanceError("");
 
       try {
-        const data = await apiRequest("/api/smmstore/balance", {}, signal);
-        if (data?.error) throw new Error(data.error);
+      const data = await apiRequest("/api/smmstore/balance", {}, signal);
+      if (data?.error === "aborted") return;
+      if (data?.error) throw new Error(data.error);
 
         const value = data?.balance ?? null;
         setBalance(value !== null ? Number(value) : null);
@@ -243,7 +249,12 @@ const Smmstore = () => {
 
   const buildRunAt = useCallback(() => {
     if (!runDate || !runTime) return new Date();
-    return new Date(`${runDate}T${runTime}:00`);
+    const merged = runDate
+      .hour(runTime.hour())
+      .minute(runTime.minute())
+      .second(0)
+      .millisecond(0);
+    return merged.toDate();
   }, [runDate, runTime]);
 
   const addOrderToQueue = useCallback((data) => {
@@ -409,14 +420,14 @@ const Smmstore = () => {
             </Typography>
           </Box>
 
-          <Button
-            variant="outlined"
+          <IconButton
             size="small"
             onClick={() => fetchBalance()}
             disabled={!hasKey || loadingBalance}
+            aria-label="Refresh balance"
           >
-            Refresh
-          </Button>
+            <RefreshOutlinedIcon fontSize="small" />
+          </IconButton>
         </Stack>
       </Stack>
 
@@ -553,26 +564,32 @@ const Smmstore = () => {
             <Typography variant="subtitle1" fontWeight="700">
               Schedule
             </Typography>
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-              <TextField
-                label="Run Date"
-                type="date"
-                value={runDate}
-                onChange={(e) => setRunDate(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-                size="small"
-                sx={{ minWidth: 200 }}
-              />
-              <TextField
-                label="Time"
-                type="time"
-                value={runTime}
-                onChange={(e) => setRunTime(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-                size="small"
-                sx={{ minWidth: 160 }}
-              />
-            </Stack>
+            <LocalizationProvider dateAdapter={AdapterDayjs}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <DatePicker
+                  label="Run Date"
+                  value={runDate}
+                  onChange={(value) => setRunDate(value)}
+                  slotProps={{
+                    textField: {
+                      size: "small",
+                      sx: { minWidth: 200 },
+                    },
+                  }}
+                />
+                <TimePicker
+                  label="Time"
+                  value={runTime}
+                  onChange={(value) => setRunTime(value)}
+                  slotProps={{
+                    textField: {
+                      size: "small",
+                      sx: { minWidth: 160 },
+                    },
+                  }}
+                />
+              </Stack>
+            </LocalizationProvider>
           </Stack>
 
           <Divider />
@@ -600,33 +617,51 @@ const Smmstore = () => {
             </Stack>
           </Stack>
 
-          {/* Drip feed */}
-          <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+          {/* Drip feed + Submit */}
+          <Stack
+            direction="row"
+            spacing={2}
+            alignItems="center"
+            flexWrap="wrap"
+            justifyContent="space-between"
+          >
+            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+              <Button
+                variant={dripFeed ? "contained" : "outlined"}
+                color={dripFeed ? "success" : "error"}
+                onClick={() => setDripFeed((prev) => !prev)}
+                size="small"
+              >
+                Drip-Feed {dripFeed ? "On" : "Off"}
+              </Button>
+              {dripFeed && (
+                <>
+                  <TextField
+                    label="Runs"
+                    value={runs}
+                    onChange={(e) => setRuns(e.target.value)}
+                    size="small"
+                    sx={{ width: 140 }}
+                  />
+                  <TextField
+                    label="Interval (min)"
+                    value={interval}
+                    onChange={(e) => setInterval(e.target.value)}
+                    size="small"
+                    sx={{ width: 180 }}
+                  />
+                </>
+              )}
+            </Stack>
             <Button
-              variant={dripFeed ? "contained" : "outlined"}
-              onClick={() => setDripFeed((prev) => !prev)}
-              size="small"
+              variant="contained"
+              color="secondary"
+              onClick={submitOrder}
+              disabled={!hasKey || loadingServices}
+              sx={{ width: 180, ml: "auto" }}
             >
-              Drip-Feed {dripFeed ? "On" : "Off"}
+              Submit
             </Button>
-            {dripFeed && (
-              <>
-                <TextField
-                  label="Runs"
-                  value={runs}
-                  onChange={(e) => setRuns(e.target.value)}
-                  size="small"
-                  sx={{ width: 140 }}
-                />
-                <TextField
-                  label="Interval (min)"
-                  value={interval}
-                  onChange={(e) => setInterval(e.target.value)}
-                  size="small"
-                  sx={{ width: 180 }}
-                />
-              </>
-            )}
           </Stack>
 
           {orderError && (
@@ -635,15 +670,6 @@ const Smmstore = () => {
             </Typography>
           )}
 
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={submitOrder}
-            disabled={!hasKey || loadingServices}
-            sx={{ width: 180 }}
-          >
-            Submit
-          </Button>
         </Stack>
       </Paper>
 
@@ -652,14 +678,28 @@ const Smmstore = () => {
         elevation={0}
         sx={{
           borderRadius: 2.5,
-          border: `1px solid ${theme.palette.divider}`,
+          border:
+            theme.palette.mode === "dark"
+              ? "1px solid rgba(148,163,184,0.25)"
+              : `1px solid ${theme.palette.divider}`,
           overflow: "hidden",
+          bgcolor:
+            theme.palette.mode === "dark"
+              ? "rgba(15,23,42,0.65)"
+              : "transparent",
         }}
       >
         <TableContainer>
           <Table size="small">
             <TableHead>
-              <TableRow sx={{ bgcolor: "action.hover" }}>
+              <TableRow
+                sx={{
+                  bgcolor:
+                    theme.palette.mode === "dark"
+                      ? "rgba(30,41,59,0.7)"
+                      : "action.hover",
+                }}
+              >
                 <TableCell>Run Time</TableCell>
                 <TableCell>Order ID</TableCell>
                 <TableCell>Service</TableCell>
