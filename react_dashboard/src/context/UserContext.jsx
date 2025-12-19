@@ -52,6 +52,10 @@ export const UserProvider = ({ children }) => {
             userData?.avatar !== undefined
               ? userData.avatar
               : storedUser?.avatar || null,
+          smmstore_api_key:
+            userData?.smmstore_api_key !== undefined
+              ? userData.smmstore_api_key
+              : storedUser?.smmstore_api_key || "",
         };
         setUser(merged);
       })

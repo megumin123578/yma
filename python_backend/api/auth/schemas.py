@@ -30,6 +30,7 @@ class UserResponse(BaseModel):
     username: str
     name: Optional[str] = None
     avatar_url: Optional[str] = None
+    smmstore_api_key: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,6 +44,7 @@ class UserMe(BaseModel):
     username: str
     name: Optional[str] = None
     avatar_url: Optional[str] = None
+    smmstore_api_key: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -50,3 +52,4 @@ class UserMe(BaseModel):
 
 class UserProfileUpdate(BaseModel):
     name: Optional[str] = None
+    smmstore_api_key: Optional[str] = None

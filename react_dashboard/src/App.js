@@ -8,6 +8,7 @@ import TrafficSource from "./scenes/traffic_source";
 import LoginPage from "./scenes/login";
 import RegisterPage from "./scenes/register";
 import ForgotPasswordPage from "./scenes/forgot_password";
+import SmmstoreScene from "./scenes/smmstore";
 
 import { Box, IconButton, useTheme } from "@mui/material";
 import { ColorModeContext } from "./theme";
@@ -86,6 +87,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <GeographyChart />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/smmstore"
+            element={
+              <ProtectedRoute>
+                <SmmstoreScene />
               </ProtectedRoute>
             }
           />

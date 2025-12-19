@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from python_backend.api.auth.database import engine, Base
+from sqlalchemy import text
 from python_backend.api.auth import models
 
 from python_backend.routes.traffic_timeseries import router as ts_router
@@ -15,6 +16,19 @@ from python_backend.api.auth.routers import auth, user
 app = FastAPI()
 
 Base.metadata.create_all(bind=engine)
+
+
+def ensure_user_smmstore_column():
+    with engine.begin() as conn:
+        columns = conn.exec_driver_sql("PRAGMA table_info(users)").fetchall()
+        has_column = any(row[1] == "smmstore_api_key" for row in columns)
+        if not has_column:
+            conn.exec_driver_sql(
+                "ALTER TABLE users ADD COLUMN smmstore_api_key VARCHAR"
+            )
+
+
+ensure_user_smmstore_column()
 
 app.add_middleware(
     CORSMiddleware,

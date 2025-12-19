@@ -10,7 +10,7 @@ import DatasetIcon from "@mui/icons-material/Dataset";
 import DeviceUnknownIcon from "@mui/icons-material/DeviceUnknown";
 import YouTubeIcon from "@mui/icons-material/YouTube";
 import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
-import PieChartOutlineOutlinedIcon from "@mui/icons-material/PieChartOutlineOutlined";
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
 import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 // import FileUploadIcon from "@mui/icons-material/FileUpload";
@@ -245,8 +245,8 @@ const Sidebar = () => {
 
             <Item
               title="SMMStore"
-              to="/pie"
-              icon={<PieChartOutlineOutlinedIcon />}
+              to="/smmstore"
+              icon={<AttachMoneyIcon />}
               selected={selected}
               setSelected={setSelected}
             />

@@ -9,3 +9,4 @@ class User(Base):
     password = Column(String, nullable=False)
     name = Column(String, nullable=True)
     avatar_url = Column(String, nullable=True)
+    smmstore_api_key = Column(String, nullable=True)

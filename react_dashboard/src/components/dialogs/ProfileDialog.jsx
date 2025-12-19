@@ -45,6 +45,7 @@ const ProfileDialog = ({ open, onClose }) => {
   const navigate = useNavigate();
 
   const [name, setName] = useState("");
+  const [smmstoreApiKey, setSmmstoreApiKey] = useState("");
   const [pendingAvatar, setPendingAvatar] = useState(null); // File chưa upload
   const [previewAvatar, setPreviewAvatar] = useState(null);
   const [openPassword, setOpenPassword] = useState(false);
@@ -53,6 +54,7 @@ const ProfileDialog = ({ open, onClose }) => {
   useEffect(() => {
     if (open && user) {
       setName(user.name || "");
+      setSmmstoreApiKey(user.smmstore_api_key || "");
       setPreviewAvatar(user.avatar || null);
       setPendingAvatar(null);
     }
@@ -83,12 +85,16 @@ const ProfileDialog = ({ open, onClose }) => {
         avatarUrl = res.data.avatarUrl;
       }
 
-      const updatedUser = await updateProfile({ name });
+      const updatedUser = await updateProfile({
+        name,
+        smmstore_api_key: smmstoreApiKey,
+      });
 
       setUser((prev) => ({
         ...prev,
         ...updatedUser,
         name: updatedUser.name,
+        smmstore_api_key: updatedUser.smmstore_api_key ?? smmstoreApiKey,
         // Prefer freshly uploaded avatar if any
         avatar: avatarUrl ?? updatedUser.avatar ?? prev?.avatar ?? null,
       }));
@@ -195,6 +201,24 @@ const ProfileDialog = ({ open, onClose }) => {
               label="Display Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              slotProps={{ inputLabel: {style: { color: labelColor }} }}
+              InputProps={{ style: { color: inputColor } }}
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 2,
+                  "& fieldset": { borderColor },
+                  "&:hover fieldset": { borderColor: hoverBorder },
+                  "&.Mui-focused fieldset": { borderColor: hoverBorder },
+                },
+              }}
+            />
+
+            {/* SMM STORE API KEY */}
+            <TextField
+              fullWidth
+              label="SMM Store API Key"
+              value={smmstoreApiKey}
+              onChange={(e) => setSmmstoreApiKey(e.target.value)}
               slotProps={{ inputLabel: {style: { color: labelColor }} }}
               InputProps={{ style: { color: inputColor } }}
               sx={{

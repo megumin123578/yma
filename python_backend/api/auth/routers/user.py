@@ -51,6 +51,8 @@ def update_profile(
 ):
     if data.name is not None:
         current_user.name = data.name
+    if data.smmstore_api_key is not None:
+        current_user.smmstore_api_key = data.smmstore_api_key
 
     db.add(current_user)
     db.commit()

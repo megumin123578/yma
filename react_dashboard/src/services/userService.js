@@ -7,6 +7,7 @@ const mapUser = (data) => {
     ...data,
     avatar: data.avatar ?? data.avatar_url ?? null,
     name: data.name ?? data.username ?? "",
+    smmstore_api_key: data.smmstore_api_key ?? data.smmstoreApiKey ?? "",
   };
 };
 
