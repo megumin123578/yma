@@ -243,22 +243,6 @@ const GeographyChart = ({ isDashboard = false }) => {
           </Select>
         </FormControl>
 
-        {/* Channel */}
-        <FormControl size="small" sx={{ minWidth: 160 }}>
-          <InputLabel>Channel</InputLabel>
-          <Select
-            label="Channel"
-            value={channel}
-            onChange={(e) => setChannel(e.target.value)}
-          >
-            {channels.map((c) => (
-              <MenuItem key={c} value={c}>
-                {c}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-
         {/* ⭐ Metrics = Map metric + Table columns */}
         <FormControl size="small" sx={{ minWidth: 160 }}>
         <InputLabel>Metrics</InputLabel>
@@ -319,6 +303,22 @@ const GeographyChart = ({ isDashboard = false }) => {
           ))}
         </Select>
       </FormControl>
+
+        {/* Channel */}
+        <FormControl size="small" sx={{ minWidth: 160 }}>
+          <InputLabel>Channel</InputLabel>
+          <Select
+            label="Channel"
+            value={channel}
+            onChange={(e) => setChannel(e.target.value)}
+          >
+            {channels.map((c) => (
+              <MenuItem key={c} value={c}>
+                {c}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
 
       </Stack>
 

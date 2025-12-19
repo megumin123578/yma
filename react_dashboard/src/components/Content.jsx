@@ -302,22 +302,6 @@ const ContentAnalytics = () => {
     <Stack spacing={2}>
       {/* FILTERS */}
       <Stack direction="row" spacing={2} flexWrap="wrap">
-        {/* Channel */}
-        <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel>Channel</InputLabel>
-          <Select
-            value={channelId}
-            label="Channel"
-            onChange={(e) => setChannelId(e.target.value)}
-          >
-            {channelList.map((c) => (
-              <MenuItem key={c.id} value={c.id}>
-                {c.title}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-
         {/* Metric */}
         <FormControl size="small" sx={{ minWidth: 180 }}>
           <InputLabel>Metric</InputLabel>
@@ -361,6 +345,22 @@ const ContentAnalytics = () => {
               </MenuItem>
             ))}
             <MenuItem value="custom">Custom</MenuItem>
+          </Select>
+        </FormControl>
+
+        {/* Channel */}
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel>Channel</InputLabel>
+          <Select
+            value={channelId}
+            label="Channel"
+            onChange={(e) => setChannelId(e.target.value)}
+          >
+            {channelList.map((c) => (
+              <MenuItem key={c.id} value={c.id}>
+                {c.title}
+              </MenuItem>
+            ))}
           </Select>
         </FormControl>
 
