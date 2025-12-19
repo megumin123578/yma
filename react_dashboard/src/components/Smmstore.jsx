@@ -17,7 +17,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useTheme } from "@mui/material/styles";
-import { useContext, useEffect, useMemo, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { UserContext } from "../context/UserContext";
 import { tokens } from "../theme";
 import { API_BASE } from "../config";
@@ -61,7 +61,7 @@ const Smmstore = () => {
   const [orderError, setOrderError] = useState("");
   const [loadingServices, setLoadingServices] = useState(false);
 
-  const apiRequest = async (endpoint, payload, signal) => {
+  const apiRequest = useCallback(async (endpoint, payload, signal) => {
     if (!hasKey) {
       return { error: "Missing API key. Set it in Profile." };
     }
@@ -85,9 +85,9 @@ const Smmstore = () => {
       if (err?.name === "AbortError") return { error: "aborted" };
       return { error: err?.message || "Request failed" };
     }
-  };
+  }, [hasKey]);
 
-  const fetchBalance = async (signal) => {
+  const fetchBalance = useCallback(async (signal) => {
     if (!hasKey) return;
     setLoadingBalance(true);
     setBalanceError("");
@@ -107,13 +107,13 @@ const Smmstore = () => {
     } finally {
       setLoadingBalance(false);
     }
-  };
+  }, [apiRequest, hasKey]);
 
   useEffect(() => {
     const controller = new AbortController();
     fetchBalance(controller.signal);
     return () => controller.abort();
-  }, [apiKey, hasKey]);
+  }, [fetchBalance]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -148,7 +148,7 @@ const Smmstore = () => {
     };
     loadServices();
     return () => controller.abort();
-  }, [apiKey, hasKey]);
+  }, [apiRequest, hasKey]);
 
   useEffect(() => {
     try {
@@ -185,27 +185,27 @@ const Smmstore = () => {
     return results.slice(0, 100);
   }, [search, servicesByCategory]);
 
-  const handleSelectService = (label) => {
+  const handleSelectService = useCallback((label) => {
     setService(label);
     setSearch(label);
-  };
+  }, []);
 
-  const buildRunAt = () => {
+  const buildRunAt = useCallback(() => {
     if (!runDate || !runTime) return new Date();
     return new Date(`${runDate}T${runTime}:00`);
-  };
+  }, [runDate, runTime]);
 
-  const addOrderToQueue = (data) => {
+  const addOrderToQueue = useCallback((data) => {
     setOrders((prev) => [...prev, data]);
-  };
+  }, []);
 
-  const updateOrder = (id, changes) => {
+  const updateOrder = useCallback((id, changes) => {
     setOrders((prev) =>
       prev.map((order) => (order.id === id ? { ...order, ...changes } : order))
     );
-  };
+  }, []);
 
-  const sendOrder = async (order) => {
+  const sendOrder = useCallback(async (order) => {
     const params = {
       action: "add",
       service: order.serviceId,
@@ -227,9 +227,9 @@ const Smmstore = () => {
       return;
     }
     updateOrder(order.id, { orderId, status: "In Queue" });
-  };
+  }, [apiRequest, updateOrder]);
 
-  const submitOrder = () => {
+  const submitOrder = useCallback(() => {
     setOrderError("");
     if (!hasKey) {
       setOrderError("Missing API key. Set it in Profile.");
@@ -272,7 +272,19 @@ const Smmstore = () => {
     if (runAt <= now) {
       sendOrder(newOrder);
     }
-  };
+  }, [
+    addOrderToQueue,
+    buildRunAt,
+    dripFeed,
+    hasKey,
+    interval,
+    link,
+    quantity,
+    runs,
+    sendOrder,
+    service,
+    serviceIdMap,
+  ]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -285,7 +297,7 @@ const Smmstore = () => {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [orders]);
+  }, [orders, sendOrder]);
 
   useEffect(() => {
     const poll = setInterval(() => {
@@ -311,7 +323,7 @@ const Smmstore = () => {
       });
     }, 15000);
     return () => clearInterval(poll);
-  }, [orders]);
+  }, [apiRequest, orders, updateOrder]);
 
   return (
     <Stack spacing={2}>
