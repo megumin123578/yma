@@ -17,7 +17,7 @@ const Topbar = () => {
   const { user } = useContext(UserContext);
   const [openProfile, setOpenProfile] = useState(false);
 
-  // ✅ GUARD: chưa login
+  // GUARD: chưa login
   const avatarSrc =
     user?.avatar && !user.avatar.startsWith("blob:")
       ? `${process.env.REACT_APP_API_URL || ""}${user.avatar}`
