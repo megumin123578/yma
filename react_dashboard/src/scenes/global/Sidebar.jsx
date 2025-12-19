@@ -241,20 +241,20 @@ const Sidebar = () => {
             />
 
             <Item
-              title="Tool Upload"
+              title="SMMStore"
               to="/pie"
               icon={<PieChartOutlineOutlinedIcon />}
               selected={selected}
               setSelected={setSelected}
             />
 
-            <Item
+            {/* <Item
               title="Tool Upload Short"
               to="/tool_upload_short"
               icon={<FileUploadIcon />}
               selected={selected}
               setSelected={setSelected}
-            />
+            /> */}
           </Box>
         </Menu>
       </ProSidebar>
