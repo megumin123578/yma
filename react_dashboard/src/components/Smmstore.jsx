@@ -842,7 +842,7 @@ const Smmstore = () => {
                   }}
                 >
                   <TableCell>
-                    {order.runAt ? new Date(order.runAt).toLocaleString() : ""}
+                    {order.runAt ? dayjs(order.runAt).format("DD/MM/YYYY HH:mm") : ""}
                   </TableCell>
                   <TableCell>{order.orderId}</TableCell>
                   <TableCell>{order.serviceId}</TableCell>
