@@ -612,6 +612,7 @@ const TrafficSourceChart = () => {
       <Box sx={{ height: 420 }}>
         {chartType === "pie" && (
           <ResponsivePie
+            debounceResize={150}
             data={pieData}
             colors={(d) => colorMap[String(d.id)] ?? "#888"}
             borderWidth={1}
@@ -664,6 +665,7 @@ const TrafficSourceChart = () => {
 
         {chartType === "line" && (
           <ResponsiveLine
+            debounceResize={150}
             data={lineSeries}
             colors={({ id }) => colorMap[String(id)] ?? "#888"}
             margin={{ top: 30, right: 24, bottom: 70, left: 60 }}
@@ -753,6 +755,7 @@ const TrafficSourceChart = () => {
 
         {chartType === "bar" && (
           <ResponsiveBar
+            debounceResize={150}
             data={barPrep.data}
             keys={barPrep.keys}
             indexBy="bucket"

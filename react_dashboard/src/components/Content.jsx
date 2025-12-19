@@ -403,6 +403,7 @@ const ContentAnalytics = () => {
       >
         {chartType === "line" && lineData.length > 0 && (
           <ResponsiveLine
+            debounceResize={150}
             data={lineData}
             margin={{ top: 32, right: 24, bottom: 64, left: 56 }}
             xScale={{ type: "time", format: "native", useUTC: false, precision: "day" }}
@@ -564,6 +565,7 @@ const ContentAnalytics = () => {
 
         {chartType === "bar" && hasBarData && (
           <ResponsiveBar
+            debounceResize={150}
             data={barPrep.data}
             keys={barPrep.keys}
             indexBy="video"

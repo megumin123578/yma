@@ -64,6 +64,9 @@ const Sidebar = () => {
           background: `${colors.primary[400]} !important`,
           cursor: "pointer",
         },
+        "& .pro-sidebar, & .pro-sidebar-inner, & .pro-sidebar-layout": {
+          transition: "none !important",
+        },
         "& .pro-icon-wrapper": {
           backgroundColor: "transparent !important",
         },

@@ -325,6 +325,7 @@ const GeographyChart = ({ isDashboard = false }) => {
       {/* ===== MAP ===== */}
       <Box sx={{ height: isDashboard ? 360 : 520 }}>
         <ResponsiveChoropleth
+          debounceResize={150}
           data={mapData}
           features={geoFeatures.features}
           valueFormat={mconf.fmt}
