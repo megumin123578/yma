@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.models import User
@@ -12,6 +12,8 @@ from python_backend.api.auth.schemas import (
     UserLogin,
     ChangePassword,
     TokenWithUser,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
 )
 from python_backend.api.auth.auth_utils import get_current_user
 
@@ -19,6 +21,7 @@ router = APIRouter(
     prefix="/api/auth",
     tags=["Auth"]
 )
+
 
 @router.post("/register")
 def register(data: UserCreate, db: Session = Depends(get_db)):
@@ -81,4 +84,26 @@ def change_password(
     db.refresh(current_user)
 
     return {"message": "Password changed successfully"}
+
+
+@router.post("/forgot-password")
+def forgot_password(data: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == data.username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"message": "Username verified. You can reset password."}
+
+
+@router.post("/reset-password")
+def reset_password(data: ResetPasswordRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == data.username).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.password = hash_password(data.new_password)
+    db.commit()
+    db.refresh(user)
+
+    return {"message": "Password reset successfully"}
 

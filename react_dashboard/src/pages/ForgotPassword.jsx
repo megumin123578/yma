@@ -6,11 +6,39 @@ import {
   Paper,
   Alert,
   Typography,
+  LinearProgress,
   useTheme,
 } from "@mui/material";
-import { forgot } from "../services/authService";
+import { resetPassword } from "../services/authService";
+import { useNavigate } from "react-router-dom";
+
+const getPasswordStrength = (password) => {
+  let score = 0;
+  if (password.length >= 8) score++;
+  if (/[a-z]/.test(password)) score++;
+  if (/[A-Z]/.test(password)) score++;
+  if (/[0-9]/.test(password)) score++;
+  if (/[^A-Za-z0-9]/.test(password)) score++;
+  return score;
+};
+
+const strengthLabel = (score) => {
+  switch (score) {
+    case 1:
+    case 2:
+      return { label: "Weak", color: "error" };
+    case 3:
+      return { label: "Medium", color: "warning" };
+    case 4:
+    case 5:
+      return { label: "Strong", color: "success" };
+    default:
+      return { label: "", color: "inherit" };
+  }
+};
 
 const ForgotPassword = () => {
+  const navigate = useNavigate();
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const paperBg = isDark
@@ -29,21 +57,41 @@ const ForgotPassword = () => {
   const hoverBorder = isDark ? "#90caf9" : theme.palette.primary.main;
 
   const [username, setUsername] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const strength = getPasswordStrength(newPassword);
+  const strengthInfo = strengthLabel(strength);
 
-  const handleSubmit = async (e) => {
+  const handleReset = async (e) => {
     e.preventDefault();
     setError("");
     setSuccess("");
-    setLoading(true);
 
+    if (!username || !newPassword || !confirm) {
+      setError("Please fill in all fields");
+      return;
+    }
+
+    if (newPassword !== confirm) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    if (strength < 3) {
+      setError("Password is too weak");
+      return;
+    }
+
+    setLoading(true);
     try {
-      await forgot(username.trim());
-      setSuccess("Please check your email to reset your password.");
+      await resetPassword(username.trim(), newPassword);
+      setSuccess("Password reset successfully. You can login now.");
+      setTimeout(() => navigate("/"), 1200);
     } catch (err) {
-      setError("Can't find this account or something went wrong.");
+      setError("Username not found or reset failed.");
     } finally {
       setLoading(false);
     }
@@ -86,7 +134,7 @@ const ForgotPassword = () => {
         mb={3}
         color={subtitleColor}
       >
-        Enter your username and we’ll send you a reset link.
+        Enter your username and a new password to reset.
       </Typography>
 
       {success && (
@@ -101,13 +149,86 @@ const ForgotPassword = () => {
         </Alert>
       )}
 
-      <Box component="form" onSubmit={handleSubmit}>
+      <Box component="form" onSubmit={handleReset}>
         <TextField
           label="Username"
           fullWidth
           margin="normal"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
+          required
+          InputLabelProps={{ style: { color: labelColor } }}
+          InputProps={{
+            style: { color: inputColor },
+          }}
+          sx={{
+            "& .MuiOutlinedInput-root": {
+              borderRadius: 2,
+              "& fieldset": {
+                borderColor,
+              },
+              "&:hover fieldset": {
+                borderColor: hoverBorder,
+              },
+              "&.Mui-focused fieldset": {
+                borderColor: hoverBorder,
+              },
+            },
+          }}
+        />
+
+        <TextField
+          label="New Password"
+          type="password"
+          fullWidth
+          margin="normal"
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          required
+          InputLabelProps={{ style: { color: labelColor } }}
+          InputProps={{
+            style: { color: inputColor },
+          }}
+          sx={{
+            "& .MuiOutlinedInput-root": {
+              borderRadius: 2,
+              "& fieldset": {
+                borderColor,
+              },
+              "&:hover fieldset": {
+                borderColor: hoverBorder,
+              },
+              "&.Mui-focused fieldset": {
+                borderColor: hoverBorder,
+              },
+            },
+          }}
+        />
+
+        {newPassword && (
+          <Box mt={1}>
+            <LinearProgress
+              variant="determinate"
+              value={(strength / 5) * 100}
+              color={strengthInfo.color}
+              sx={{ height: 8, borderRadius: 4 }}
+            />
+            <Typography
+              variant="caption"
+              color={`${strengthInfo.color}.main`}
+            >
+              {strengthInfo.label}
+            </Typography>
+          </Box>
+        )}
+
+        <TextField
+          label="Confirm New Password"
+          type="password"
+          fullWidth
+          margin="normal"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
           required
           InputLabelProps={{ style: { color: labelColor } }}
           InputProps={{
@@ -151,7 +272,24 @@ const ForgotPassword = () => {
             },
           }}
         >
-          {loading ? "Sending..." : "Send reset link"}
+          {loading ? "Resetting..." : "Reset Password"}
+        </Button>
+
+        <Button
+          variant="text"
+          fullWidth
+          sx={{
+            mt: 1,
+            color: "#90caf9",
+            textTransform: "none",
+            "&:hover": {
+              backgroundColor: "transparent",
+              textDecoration: "underline",
+            },
+          }}
+          onClick={() => navigate("/")}
+        >
+          Back to Login
         </Button>
       </Box>
     </Paper>

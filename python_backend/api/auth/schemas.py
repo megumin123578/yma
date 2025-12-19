@@ -17,6 +17,13 @@ class Token(BaseModel):
 class ChangePassword(BaseModel):
     current_password: str
     new_password: str
+
+class ForgotPasswordRequest(BaseModel):
+    username: str
+
+class ResetPasswordRequest(BaseModel):
+    username: str
+    new_password: str
     
 class UserResponse(BaseModel):
     id: int

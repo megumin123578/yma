@@ -31,6 +31,13 @@ export const forgot = (username) => {
   return axios.post(`${API_URL}/forgot-password`, { username });
 };
 
+export const resetPassword = (username, newPassword) => {
+  return axios.post(`${API_URL}/reset-password`, {
+    username,
+    new_password: newPassword,
+  });
+};
+
 // ================= CHANGE PASSWORD =================
 export const changePassword = async (currentPassword, newPassword) => {
   const token = localStorage.getItem("access_token");

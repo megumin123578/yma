@@ -262,7 +262,7 @@ const Register = () => {
           fullWidth
           sx={{
             mt: 1,
-            color: theme.palette.primary.main,
+            color: "#90caf9",
             textTransform: "none",
             "&:hover": {
               backgroundColor: "transparent",
