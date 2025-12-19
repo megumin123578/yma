@@ -1,6 +1,8 @@
 import {
   Box,
   Button,
+  Chip,
+  Divider,
   FormControl,
   InputLabel,
   MenuItem,
@@ -24,12 +26,11 @@ import { API_BASE } from "../config";
 
 const ORDERS_STORAGE_KEY = "smmstore.orders";
 
-
-
 const Smmstore = () => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
   const { user } = useContext(UserContext);
+
   const [balance, setBalance] = useState(null);
   const [balanceCurrency, setBalanceCurrency] = useState("");
   const [balanceError, setBalanceError] = useState("");
@@ -37,6 +38,23 @@ const Smmstore = () => {
 
   const apiKey = user?.smmstore_api_key || "";
   const hasKey = useMemo(() => apiKey.trim().length > 0, [apiKey]);
+
+  const cardSx = useMemo(
+    () => ({
+      p: 2.5,
+      borderRadius: 2.5,
+      border: `1px solid ${theme.palette.divider}`,
+      bgcolor:
+        theme.palette.mode === "dark"
+          ? "rgba(17,17,17,0.65)"
+          : "rgba(255,255,255,0.92)",
+      boxShadow:
+        theme.palette.mode === "dark"
+          ? "0 10px 24px rgba(0,0,0,0.35)"
+          : "0 10px 24px rgba(15,23,42,0.08)",
+    }),
+    [theme.palette.divider, theme.palette.mode]
+  );
 
   const [servicesByCategory, setServicesByCategory] = useState({});
   const [category, setCategory] = useState("");
@@ -61,53 +79,59 @@ const Smmstore = () => {
   const [orderError, setOrderError] = useState("");
   const [loadingServices, setLoadingServices] = useState(false);
 
-  const apiRequest = useCallback(async (endpoint, payload, signal) => {
-    if (!hasKey) {
-      return { error: "Missing API key. Set it in Profile." };
-    }
-    const token = localStorage.getItem("access_token");
-    try {
-      const resp = await fetch(`${API_BASE}${endpoint}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(payload || {}),
-        signal,
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        return { error: data?.detail || data?.error || "Request failed" };
+  const apiRequest = useCallback(
+    async (endpoint, payload, signal) => {
+      if (!hasKey) {
+        return { error: "Missing API key. Set it in Profile." };
       }
-      return data;
-    } catch (err) {
-      if (err?.name === "AbortError") return { error: "aborted" };
-      return { error: err?.message || "Request failed" };
-    }
-  }, [hasKey]);
+      const token = localStorage.getItem("access_token");
+      try {
+        const resp = await fetch(`${API_BASE}${endpoint}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(payload || {}),
+          signal,
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          return { error: data?.detail || data?.error || "Request failed" };
+        }
+        return data;
+      } catch (err) {
+        if (err?.name === "AbortError") return { error: "aborted" };
+        return { error: err?.message || "Request failed" };
+      }
+    },
+    [hasKey]
+  );
 
-  const fetchBalance = useCallback(async (signal) => {
-    if (!hasKey) return;
-    setLoadingBalance(true);
-    setBalanceError("");
+  const fetchBalance = useCallback(
+    async (signal) => {
+      if (!hasKey) return;
+      setLoadingBalance(true);
+      setBalanceError("");
 
-    try {
-      const data = await apiRequest("/api/smmstore/balance", {}, signal);
-      if (data?.error) throw new Error(data.error);
+      try {
+        const data = await apiRequest("/api/smmstore/balance", {}, signal);
+        if (data?.error) throw new Error(data.error);
 
-      const value = data?.balance ?? null;
-      setBalance(value !== null ? Number(value) : null);
-      setBalanceCurrency(data?.currency || "");
-    } catch (err) {
-      if (err?.name === "AbortError") return;
-      setBalance(null);
-      setBalanceCurrency("");
-      setBalanceError(err?.message || "Unable to load balance");
-    } finally {
-      setLoadingBalance(false);
-    }
-  }, [apiRequest, hasKey]);
+        const value = data?.balance ?? null;
+        setBalance(value !== null ? Number(value) : null);
+        setBalanceCurrency(data?.currency || "");
+      } catch (err) {
+        if (err?.name === "AbortError") return;
+        setBalance(null);
+        setBalanceCurrency("");
+        setBalanceError(err?.message || "Unable to load balance");
+      } finally {
+        setLoadingBalance(false);
+      }
+    },
+    [apiRequest, hasKey]
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -120,7 +144,11 @@ const Smmstore = () => {
     const loadServices = async () => {
       if (!hasKey) return;
       setLoadingServices(true);
-      const data = await apiRequest("/api/smmstore/services", {}, controller.signal);
+      const data = await apiRequest(
+        "/api/smmstore/services",
+        {},
+        controller.signal
+      );
       if (data?.error || data === "aborted") {
         setLoadingServices(false);
         return;
@@ -190,6 +218,15 @@ const Smmstore = () => {
     setSearch(label);
   }, []);
 
+  const getStatusColor = useCallback((status) => {
+    const label = String(status || "").toLowerCase();
+    if (label.includes("completed")) return "success";
+    if (label.includes("partial")) return "warning";
+    if (label.includes("cancel") || label.includes("fail")) return "error";
+    if (label.includes("queue") || label.includes("processing")) return "info";
+    return "default";
+  }, []);
+
   const buildRunAt = useCallback(() => {
     if (!runDate || !runTime) return new Date();
     return new Date(`${runDate}T${runTime}:00`);
@@ -205,29 +242,32 @@ const Smmstore = () => {
     );
   }, []);
 
-  const sendOrder = useCallback(async (order) => {
-    const params = {
-      action: "add",
-      service: order.serviceId,
-      link: order.link,
-      quantity: order.quantity,
-    };
-    if (order.dripFeed) {
-      params.runs = order.runs;
-      params.interval = order.interval;
-    }
-    const resp = await apiRequest("/api/smmstore/order", params);
-    if (resp?.error) {
-      updateOrder(order.id, { status: "Failed" });
-      return;
-    }
-    const orderId = String(resp?.order || "").trim();
-    if (!orderId) {
-      updateOrder(order.id, { status: "Failed" });
-      return;
-    }
-    updateOrder(order.id, { orderId, status: "In Queue" });
-  }, [apiRequest, updateOrder]);
+  const sendOrder = useCallback(
+    async (order) => {
+      const params = {
+        action: "add",
+        service: order.serviceId,
+        link: order.link,
+        quantity: order.quantity,
+      };
+      if (order.dripFeed) {
+        params.runs = order.runs;
+        params.interval = order.interval;
+      }
+      const resp = await apiRequest("/api/smmstore/order", params);
+      if (resp?.error) {
+        updateOrder(order.id, { status: "Failed" });
+        return;
+      }
+      const orderId = String(resp?.order || "").trim();
+      if (!orderId) {
+        updateOrder(order.id, { status: "Failed" });
+        return;
+      }
+      updateOrder(order.id, { orderId, status: "In Queue" });
+    },
+    [apiRequest, updateOrder]
+  );
 
   const submitOrder = useCallback(() => {
     setOrderError("");
@@ -326,73 +366,59 @@ const Smmstore = () => {
   }, [apiRequest, orders, updateOrder]);
 
   return (
-    <Stack spacing={2}>
-      <Paper
-        elevation={0}
-        sx={{
-          p: 2,
-          borderRadius: 2,
-          border: `1px solid ${theme.palette.divider}`,
-          bgcolor:
-            theme.palette.mode === "dark"
-              ? "rgba(17,17,17,0.6)"
-              : "rgba(255,255,255,0.9)",
-        }}
+    <Stack spacing={2.5}>
+      {/* ===== HEADER (LEFT) + BALANCE (RIGHT) - NOT INSIDE PAPER ===== */}
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        gap={2}
+        flexWrap="wrap"
       >
-        <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
-          <Box>
-            <Typography variant="h6" fontWeight="700">
-              SMM Balance
-            </Typography>
-            {!hasKey && (
-              <Typography variant="body2" color="text.secondary">
-                Set your API key in Profile to load balance.
-              </Typography>
-            )}
-            {hasKey && balanceError && (
-              <Typography variant="body2" color="error">
-                {balanceError}
-              </Typography>
-            )}
-          </Box>
+        <Box>
 
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <Typography variant="h4" fontWeight="800" color={colors.greenAccent[400]}>
+          {!hasKey && (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              Set your API key in Profile to load balance.
+            </Typography>
+          )}
+          {hasKey && balanceError && (
+            <Typography variant="body2" color="error" sx={{ mt: 0.5 }}>
+              {balanceError}
+            </Typography>
+          )}
+        </Box>
+
+        <Stack direction="row" alignItems="center" spacing={1.5}>
+          <Box textAlign="right">
+            <Typography
+              variant="h4"
+              fontWeight="800"
+              color={colors.greenAccent[400]}
+              lineHeight={1.1}
+            >
               {loadingBalance
                 ? "..."
                 : balance !== null
-                  ? `${balance.toLocaleString()} ${balanceCurrency}`
-                  : "--"}
+                ? `${balance.toLocaleString()} ${balanceCurrency}`
+                : "--"}
             </Typography>
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={() => fetchBalance()}
-              disabled={!hasKey || loadingBalance}
-            >
-              Refresh
-            </Button>
-          </Stack>
+          </Box>
+
         </Stack>
-      </Paper>
+      </Stack>
 
-
-      <Paper
-        elevation={0}
-        sx={{
-          p: 2,
-          borderRadius: 2,
-          border: `1px solid ${theme.palette.divider}`,
-          bgcolor:
-            theme.palette.mode === "dark"
-              ? "rgba(17,17,17,0.6)"
-              : "rgba(255,255,255,0.9)",
-        }}
-      >
+      {/* ===== ORDER FORM (UNCHANGED) ===== */}
+      <Paper elevation={0} sx={cardSx}>
         <Stack spacing={2}>
-          <Typography variant="h6" fontWeight="700">
-            Order Information
-          </Typography>
+          <Box>
+            <Typography variant="h6" fontWeight="700">
+              Order Information
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Select a service, schedule a run time, and submit your order.
+            </Typography>
+          </Box>
 
           <TextField
             label="Search Service"
@@ -401,7 +427,15 @@ const Smmstore = () => {
             fullWidth
           />
           {search && filteredServices.length > 0 && (
-            <Paper variant="outlined" sx={{ maxHeight: 240, overflow: "auto" }}>
+            <Paper
+              variant="outlined"
+              sx={{
+                maxHeight: 240,
+                overflow: "auto",
+                borderRadius: 2,
+                borderColor: theme.palette.divider,
+              }}
+            >
               {filteredServices.map((item) => (
                 <Box
                   key={item}
@@ -409,6 +443,7 @@ const Smmstore = () => {
                     px: 1.5,
                     py: 1,
                     cursor: "pointer",
+                    bgcolor: item === service ? "action.selected" : "transparent",
                     "&:hover": { bgcolor: "action.hover" },
                   }}
                   onClick={() => handleSelectService(item)}
@@ -420,7 +455,7 @@ const Smmstore = () => {
           )}
 
           <Stack direction="row" spacing={2} flexWrap="wrap">
-            <FormControl size="small" sx={{ minWidth: 180 }}>
+            <FormControl size="small" sx={{ minWidth: 180 }} fullWidth>
               <InputLabel>Category</InputLabel>
               <Select
                 value={category}
@@ -444,7 +479,7 @@ const Smmstore = () => {
               </Select>
             </FormControl>
 
-            <FormControl size="small" sx={{ minWidth: 320 }}>
+            <FormControl size="small" sx={{ minWidth: 320 }} fullWidth>
               <InputLabel>Service</InputLabel>
               <Select
                 value={service}
@@ -466,39 +501,55 @@ const Smmstore = () => {
             </FormControl>
           </Stack>
 
-          <Stack direction="row" spacing={2} flexWrap="wrap">
-            <TextField
-              label="Run Date"
-              type="date"
-              value={runDate}
-              onChange={(e) => setRunDate(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              size="small"
-            />
-            <TextField
-              label="Time"
-              type="time"
-              value={runTime}
-              onChange={(e) => setRunTime(e.target.value)}
-              InputLabelProps={{ shrink: true }}
-              size="small"
-            />
+          <Divider />
+
+          <Stack spacing={1.5}>
+            <Typography variant="subtitle1" fontWeight="600">
+              Schedule
+            </Typography>
+            <Stack direction="row" spacing={2} flexWrap="wrap">
+              <TextField
+                label="Run Date"
+                type="date"
+                value={runDate}
+                onChange={(e) => setRunDate(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                size="small"
+                sx={{ minWidth: 200 }}
+              />
+              <TextField
+                label="Time"
+                type="time"
+                value={runTime}
+                onChange={(e) => setRunTime(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                size="small"
+                sx={{ minWidth: 160 }}
+              />
+            </Stack>
           </Stack>
 
-          <TextField
-            label="Link"
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
-            fullWidth
-            size="small"
-          />
-          <TextField
-            label="Quantity"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            size="small"
-            sx={{ maxWidth: 180 }}
-          />
+          <Divider />
+
+          <Stack spacing={1.5}>
+            <Typography variant="subtitle1" fontWeight="600">
+              Order Details
+            </Typography>
+            <TextField
+              label="Link"
+              value={link}
+              onChange={(e) => setLink(e.target.value)}
+              fullWidth
+              size="small"
+            />
+            <TextField
+              label="Quantity"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              size="small"
+              sx={{ maxWidth: 180 }}
+            />
+          </Stack>
 
           <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
             <Button
@@ -545,10 +596,11 @@ const Smmstore = () => {
         </Stack>
       </Paper>
 
+      {/* ===== TABLE (UNCHANGED) ===== */}
       <Paper
         elevation={0}
         sx={{
-          borderRadius: 2,
+          borderRadius: 2.5,
           border: `1px solid ${theme.palette.divider}`,
           overflow: "hidden",
         }}
@@ -556,7 +608,7 @@ const Smmstore = () => {
         <TableContainer>
           <Table size="small">
             <TableHead>
-              <TableRow>
+              <TableRow sx={{ bgcolor: "action.hover" }}>
                 <TableCell>Run Time</TableCell>
                 <TableCell>Order ID</TableCell>
                 <TableCell>Service</TableCell>
@@ -566,12 +618,15 @@ const Smmstore = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {orders.map((order) => (
-                <TableRow key={order.id}>
+              {orders.map((order, index) => (
+                <TableRow
+                  key={order.id}
+                  sx={{
+                    bgcolor: index % 2 === 0 ? "transparent" : "action.hover",
+                  }}
+                >
                   <TableCell>
-                    {order.runAt
-                      ? new Date(order.runAt).toLocaleString()
-                      : ""}
+                    {order.runAt ? new Date(order.runAt).toLocaleString() : ""}
                   </TableCell>
                   <TableCell>{order.orderId}</TableCell>
                   <TableCell>{order.serviceId}</TableCell>
@@ -586,7 +641,14 @@ const Smmstore = () => {
                     </a>
                   </TableCell>
                   <TableCell>{order.quantity}</TableCell>
-                  <TableCell>{order.status}</TableCell>
+                  <TableCell>
+                    <Chip
+                      label={order.status || "Unknown"}
+                      size="small"
+                      color={getStatusColor(order.status)}
+                      variant={order.status ? "filled" : "outlined"}
+                    />
+                  </TableCell>
                 </TableRow>
               ))}
               {orders.length === 0 && (
@@ -603,8 +665,7 @@ const Smmstore = () => {
         </TableContainer>
       </Paper>
 
-      <Stack direction="row" spacing={2} flexWrap="wrap">
-      </Stack>
+      <Stack direction="row" spacing={2} flexWrap="wrap"></Stack>
     </Stack>
   );
 };
