@@ -4,8 +4,8 @@ import Login from '../../pages/Login'
 
 const LoginPage = () => {
   return (
-    <Box m="20px">
-      <Header title="Youtube Manager" />
+    <Box mx="20px" mt="0" mb="20px">
+      <Header title="Login Page" />
       <Box mt={3}
       display="flex"
       justifyContent="center"

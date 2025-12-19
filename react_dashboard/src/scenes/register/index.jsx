@@ -5,8 +5,8 @@ import Register from "../../pages/Register";
 
 const RegisterAccount = () => {
   return (
-    <Box m="20px">
-      <Header title="Register" />
+    <Box mx="20px" mt="0" mb="20px">
+      <Header title="Register Page" />
     <Box mt={3}
       display="flex"
       justifyContent="center"

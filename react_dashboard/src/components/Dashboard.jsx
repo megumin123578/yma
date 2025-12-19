@@ -127,7 +127,7 @@ const VideoList = () => {
 
 
   return (
-    <Box m="20px">
+    <Box mx="20px" mt="0" mb="20px">
       <Header title="Overview" subtitle="Overview Channel Statistic" />
 
       {/* Filter hàng đầu */}

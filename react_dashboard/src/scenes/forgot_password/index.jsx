@@ -4,8 +4,8 @@ import ForgotPassword from "../../pages/ForgotPassword";
 
 const Forgot = () => {
   return (
-    <Box m="20px">
-      <Header title="Forgot Password" />
+    <Box mx="20px" mt="0" mb="20px">
+      <Header title="Forgot Password Page" />
 
       <Box
         mt={3}

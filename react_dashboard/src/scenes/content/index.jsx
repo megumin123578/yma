@@ -4,7 +4,7 @@ import ContentAnalytics from "../../components/Content";
 
 const Dashboard = () => {
     return (
-        <Box m="20px">
+        <Box mx="20px" mt="0" mb="20px">
             <Header title="CONTENT" subtitle="Welcome to your content" />
             <Box mt={3}>
                 <ContentAnalytics />

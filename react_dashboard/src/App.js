@@ -9,9 +9,11 @@ import LoginPage from "./scenes/login";
 import RegisterPage from "./scenes/register";
 import ForgotPasswordPage from "./scenes/forgot_password";
 
-import { CssBaseline, ThemeProvider } from "@mui/material";
+import { Box, CssBaseline, IconButton, ThemeProvider } from "@mui/material";
 import { ColorModeContext, useMode } from "./theme";
 import GeographyChart from "./components/Geography";
+import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
+import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import { UserContext } from "./context/UserContext";
 
 function App() {
@@ -39,6 +41,17 @@ function App() {
 
           <main className="content">
             {!isNoLayout && <Topbar setIsSidebar={setIsSidebar} />}
+            {isNoLayout && (
+              <Box display="flex" justifyContent="flex-end" pt={0} px={2}>
+                <IconButton onClick={colorMode.toggleColorMode}>
+                  {theme.palette.mode === "dark" ? (
+                    <DarkModeOutlinedIcon />
+                  ) : (
+                    <LightModeOutlinedIcon />
+                  )}
+                </IconButton>
+              </Box>
+            )}
 
             <Routes>
               {/* Auth */}
