@@ -10,6 +10,7 @@ from python_backend.routes.traffic_timeseries import router as ts_router
 from python_backend.routes.geography import router as geo_router
 from python_backend.routes.content import router as content_router
 from python_backend.routes.overview import router as overview_router
+from python_backend.routes.smmstore import router as smmstore_router
 from fastapi.staticfiles import StaticFiles
 from python_backend.api.auth.routers import auth, user
 
@@ -42,6 +43,7 @@ app.include_router(ts_router)
 app.include_router(geo_router)
 app.include_router(content_router)
 app.include_router(overview_router)
+app.include_router(smmstore_router)
 app.include_router(auth.router)
 app.include_router(user.router, prefix="/api") 
 
