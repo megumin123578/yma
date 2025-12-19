@@ -61,8 +61,11 @@ const Smmstore = () => {
   const [service, setService] = useState("");
   const [serviceIdMap, setServiceIdMap] = useState({});
   const [search, setSearch] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
   const [link, setLink] = useState("");
   const [quantity, setQuantity] = useState("1000");
+
   const [runDate, setRunDate] = useState(() =>
     new Date().toISOString().slice(0, 10)
   );
@@ -72,19 +75,20 @@ const Smmstore = () => {
       now.getMinutes()
     ).padStart(2, "0")}`;
   });
+
   const [dripFeed, setDripFeed] = useState(false);
   const [runs, setRuns] = useState("");
   const [interval, setInterval] = useState("");
+
   const [orders, setOrders] = useState([]);
   const [orderError, setOrderError] = useState("");
   const [loadingServices, setLoadingServices] = useState(false);
 
   const apiRequest = useCallback(
     async (endpoint, payload, signal) => {
-      if (!hasKey) {
-        return { error: "Missing API key. Set it in Profile." };
-      }
+      if (!hasKey) return { error: "Missing API key. Set it in Profile." };
       const token = localStorage.getItem("access_token");
+
       try {
         const resp = await fetch(`${API_BASE}${endpoint}`, {
           method: "POST",
@@ -144,6 +148,7 @@ const Smmstore = () => {
     const loadServices = async () => {
       if (!hasKey) return;
       setLoadingServices(true);
+
       const data = await apiRequest(
         "/api/smmstore/services",
         {},
@@ -153,27 +158,33 @@ const Smmstore = () => {
         setLoadingServices(false);
         return;
       }
+
       const list = Array.isArray(data) ? data : data?.services || [];
       const grouped = {};
       const idMap = {};
+
       list.forEach((item) => {
         const cat = item?.category || "Unknown";
         grouped[cat] = grouped[cat] || [];
         grouped[cat].push(item);
+
         const label = `${item.service} - ${item.name}`;
         idMap[label] = item.service;
       });
+
       setServicesByCategory(grouped);
       setServiceIdMap(idMap);
+
       const firstCat = Object.keys(grouped)[0] || "";
       setCategory(firstCat);
       if (firstCat && grouped[firstCat]?.length) {
         const firstLabel = `${grouped[firstCat][0].service} - ${grouped[firstCat][0].name}`;
         setService(firstLabel);
-        setSearch(firstLabel);
       }
+
       setLoadingServices(false);
     };
+
     loadServices();
     return () => controller.abort();
   }, [apiRequest, hasKey]);
@@ -199,6 +210,7 @@ const Smmstore = () => {
     const keyword = search.trim().toLowerCase();
     if (!keyword) return [];
     const results = [];
+
     Object.values(servicesByCategory).forEach((items) => {
       items.forEach((item) => {
         const label = `${item.service} - ${item.name}`;
@@ -210,12 +222,14 @@ const Smmstore = () => {
         }
       });
     });
+
     return results.slice(0, 100);
   }, [search, servicesByCategory]);
 
   const handleSelectService = useCallback((label) => {
     setService(label);
     setSearch(label);
+    setShowSuggestions(false);
   }, []);
 
   const getStatusColor = useCallback((status) => {
@@ -271,26 +285,16 @@ const Smmstore = () => {
 
   const submitOrder = useCallback(() => {
     setOrderError("");
-    if (!hasKey) {
-      setOrderError("Missing API key. Set it in Profile.");
-      return;
-    }
-    if (!service) {
-      setOrderError("Please select a service.");
-      return;
-    }
-    if (!link.trim()) {
-      setOrderError("Please enter a link.");
-      return;
-    }
-    if (!quantity || Number(quantity) <= 0) {
-      setOrderError("Quantity must be greater than 0.");
-      return;
-    }
+    if (!hasKey) return setOrderError("Missing API key. Set it in Profile.");
+    if (!service) return setOrderError("Please select a service.");
+    if (!link.trim()) return setOrderError("Please enter a link.");
+    if (!quantity || Number(quantity) <= 0)
+      return setOrderError("Quantity must be greater than 0.");
 
     const runAt = buildRunAt();
     const now = new Date();
     const orderId = `ord_${Date.now()}`;
+
     const newOrder = {
       id: orderId,
       runAt: runAt.toISOString(),
@@ -367,23 +371,22 @@ const Smmstore = () => {
 
   return (
     <Stack spacing={2.5}>
-      {/* ===== HEADER (LEFT) + BALANCE (RIGHT) - NOT INSIDE PAPER ===== */}
+      {/* Header (left) + Balance (right) */}
       <Stack
         direction="row"
         justifyContent="space-between"
-        alignItems="center"
+        alignItems="flex-start"
         gap={2}
         flexWrap="wrap"
       >
         <Box>
-
           {!hasKey && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
               Set your API key in Profile to load balance.
             </Typography>
           )}
           {hasKey && balanceError && (
-            <Typography variant="body2" color="error" sx={{ mt: 0.5 }}>
+            <Typography variant="body2" color="error" sx={{ mt: 0.75 }}>
               {balanceError}
             </Typography>
           )}
@@ -391,6 +394,7 @@ const Smmstore = () => {
 
         <Stack direction="row" alignItems="center" spacing={1.5}>
           <Box textAlign="right">
+
             <Typography
               variant="h4"
               fontWeight="800"
@@ -405,109 +409,151 @@ const Smmstore = () => {
             </Typography>
           </Box>
 
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => fetchBalance()}
+            disabled={!hasKey || loadingBalance}
+          >
+            Refresh
+          </Button>
         </Stack>
       </Stack>
 
-      {/* ===== ORDER FORM (UNCHANGED) ===== */}
+      {/* Form */}
       <Paper elevation={0} sx={cardSx}>
         <Stack spacing={2}>
-          <Box>
-            <Typography variant="h6" fontWeight="700">
-              Order Information
+          {/* Service Selection */}
+          <Stack spacing={1}>
+            <Typography variant="subtitle1" fontWeight="700">
+              Service Selection
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Select a service, schedule a run time, and submit your order.
-            </Typography>
-          </Box>
 
-          <TextField
-            label="Search Service"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            fullWidth
-          />
-          {search && filteredServices.length > 0 && (
-            <Paper
-              variant="outlined"
-              sx={{
-                maxHeight: 240,
-                overflow: "auto",
-                borderRadius: 2,
-                borderColor: theme.palette.divider,
-              }}
+            {/* Search + Category + Service (same row, responsive) */}
+            <Stack
+              direction={{ xs: "column", md: "row" }}
+              spacing={2}
+              alignItems="flex-start"
             >
-              {filteredServices.map((item) => (
-                <Box
-                  key={item}
-                  sx={{
-                    px: 1.5,
-                    py: 1,
-                    cursor: "pointer",
-                    bgcolor: item === service ? "action.selected" : "transparent",
-                    "&:hover": { bgcolor: "action.hover" },
+              {/* Search */}
+              <Box
+                sx={{
+                  flex: 1.4,
+                  minWidth: { xs: "100%", md: 320 },
+                  position: "relative",
+                }}
+              >
+                <TextField
+                  label="Search Service"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setShowSuggestions(true);
                   }}
-                  onClick={() => handleSelectService(item)}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => {
+                    // delay để click được suggestion
+                    setTimeout(() => setShowSuggestions(false), 150);
+                  }}
+                  fullWidth
+                  size="small"
+                />
+
+                {showSuggestions && search && filteredServices.length > 0 && (
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      position: "absolute",
+                      top: "calc(100% + 6px)",
+                      left: 0,
+                      right: 0,
+                      zIndex: 20,
+                      maxHeight: 260,
+                      overflow: "auto",
+                      borderRadius: 2,
+                      borderColor: theme.palette.divider,
+                    }}
+                    onMouseDown={(e) => e.preventDefault()}
+                  >
+                    {filteredServices.map((item) => (
+                      <Box
+                        key={item}
+                        sx={{
+                          px: 1.5,
+                          py: 1,
+                          cursor: "pointer",
+                          bgcolor:
+                            item === service ? "action.selected" : "transparent",
+                          "&:hover": { bgcolor: "action.hover" },
+                        }}
+                        onClick={() => handleSelectService(item)}
+                      >
+                        <Typography variant="body2">{item}</Typography>
+                      </Box>
+                    ))}
+                  </Paper>
+                )}
+              </Box>
+
+              {/* Category */}
+              <FormControl
+                size="small"
+                sx={{ flex: 0.8, minWidth: { xs: "100%", md: 200 } }}
+              >
+                <InputLabel>Category</InputLabel>
+                <Select
+                  value={category}
+                  label="Category"
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setCategory(next);
+                    const items = servicesByCategory[next] || [];
+                    if (items.length) {
+                      const label = `${items[0].service} - ${items[0].name}`;
+                      setService(label);
+                    }
+                  }}
                 >
-                  <Typography variant="body2">{item}</Typography>
-                </Box>
-              ))}
-            </Paper>
-          )}
-
-          <Stack direction="row" spacing={2} flexWrap="wrap">
-            <FormControl size="small" sx={{ minWidth: 180 }} fullWidth>
-              <InputLabel>Category</InputLabel>
-              <Select
-                value={category}
-                label="Category"
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setCategory(next);
-                  const items = servicesByCategory[next] || [];
-                  if (items.length) {
-                    const label = `${items[0].service} - ${items[0].name}`;
-                    setService(label);
-                    setSearch(label);
-                  }
-                }}
-              >
-                {Object.keys(servicesByCategory).map((cat) => (
-                  <MenuItem key={cat} value={cat}>
-                    {cat}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <FormControl size="small" sx={{ minWidth: 320 }} fullWidth>
-              <InputLabel>Service</InputLabel>
-              <Select
-                value={service}
-                label="Service"
-                onChange={(e) => {
-                  setService(e.target.value);
-                  setSearch(e.target.value);
-                }}
-              >
-                {(servicesByCategory[category] || []).map((item) => {
-                  const label = `${item.service} - ${item.name}`;
-                  return (
-                    <MenuItem key={label} value={label}>
-                      {label}
+                  {Object.keys(servicesByCategory).map((cat) => (
+                    <MenuItem key={cat} value={cat}>
+                      {cat}
                     </MenuItem>
-                  );
-                })}
-              </Select>
-            </FormControl>
+                  ))}
+                </Select>
+              </FormControl>
+
+              {/* Service */}
+              <FormControl
+                size="small"
+                sx={{ flex: 1.2, minWidth: { xs: "100%", md: 320 } }}
+              >
+                <InputLabel>Service</InputLabel>
+                <Select
+                  value={service}
+                  label="Service"
+                  onChange={(e) => setService(e.target.value)}
+                >
+                  {(servicesByCategory[category] || []).map((item) => {
+                    const label = `${item.service} - ${item.name}`;
+                    return (
+                      <MenuItem key={label} value={label}>
+                        {label}
+                      </MenuItem>
+                    );
+                  })}
+                </Select>
+              </FormControl>
+            </Stack>
           </Stack>
 
           <Divider />
 
-          <Stack spacing={1.5}>
-            <Typography variant="subtitle1" fontWeight="600">
+          {/* Schedule */}
+          <Stack spacing={1}>
+            <Typography variant="subtitle1" fontWeight="700">
               Schedule
             </Typography>
-            <Stack direction="row" spacing={2} flexWrap="wrap">
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
               <TextField
                 label="Run Date"
                 type="date"
@@ -531,30 +577,35 @@ const Smmstore = () => {
 
           <Divider />
 
-          <Stack spacing={1.5}>
-            <Typography variant="subtitle1" fontWeight="600">
+          {/* Order Details (gọn hơn: Link + Quantity cùng hàng) */}
+          <Stack spacing={1}>
+            <Typography variant="subtitle1" fontWeight="700">
               Order Details
             </Typography>
-            <TextField
-              label="Link"
-              value={link}
-              onChange={(e) => setLink(e.target.value)}
-              fullWidth
-              size="small"
-            />
-            <TextField
-              label="Quantity"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              size="small"
-              sx={{ maxWidth: 180 }}
-            />
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+              <TextField
+                label="Link"
+                value={link}
+                onChange={(e) => setLink(e.target.value)}
+                fullWidth
+                size="small"
+              />
+              <TextField
+                label="Quantity"
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                size="small"
+                sx={{ width: { xs: "100%", sm: 200 } }}
+              />
+            </Stack>
           </Stack>
 
+          {/* Drip feed */}
           <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
             <Button
               variant={dripFeed ? "contained" : "outlined"}
               onClick={() => setDripFeed((prev) => !prev)}
+              size="small"
             >
               Drip-Feed {dripFeed ? "On" : "Off"}
             </Button>
@@ -565,14 +616,14 @@ const Smmstore = () => {
                   value={runs}
                   onChange={(e) => setRuns(e.target.value)}
                   size="small"
-                  sx={{ maxWidth: 120 }}
+                  sx={{ width: 140 }}
                 />
                 <TextField
                   label="Interval (min)"
                   value={interval}
                   onChange={(e) => setInterval(e.target.value)}
                   size="small"
-                  sx={{ maxWidth: 150 }}
+                  sx={{ width: 180 }}
                 />
               </>
             )}
@@ -589,14 +640,14 @@ const Smmstore = () => {
             color="secondary"
             onClick={submitOrder}
             disabled={!hasKey || loadingServices}
-            sx={{ maxWidth: 180 }}
+            sx={{ width: 180 }}
           >
             Submit
           </Button>
         </Stack>
       </Paper>
 
-      {/* ===== TABLE (UNCHANGED) ===== */}
+      {/* Table */}
       <Paper
         elevation={0}
         sx={{
@@ -665,7 +716,7 @@ const Smmstore = () => {
         </TableContainer>
       </Paper>
 
-      <Stack direction="row" spacing={2} flexWrap="wrap"></Stack>
+      <Stack direction="row" spacing={2} flexWrap="wrap" />
     </Stack>
   );
 };
