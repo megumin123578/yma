@@ -187,7 +187,7 @@ const Login = () => {
 
       {/* Register */}
       <Box mt={3} textAlign="center">
-        <Typography variant="body2" color="rgba(255,255,255,0.7)">
+        <Typography variant="body2" color={subtitleColor}>
           Don’t have an account?
           <Button
             component={Link}
