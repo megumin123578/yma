@@ -17,6 +17,10 @@ import {
   Chip,
   CircularProgress,
   Divider,
+  Switch,
+  FormControlLabel,
+  Checkbox,
+  ListItemText,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { ResponsiveBar } from "@nivo/bar";
@@ -35,21 +39,37 @@ const PERIOD_OPTIONS = [
 ];
 
 const ANOMALY_PCT = 50;
+const STORAGE_KEY = "channelCompare.filters";
+
+const loadStoredCompare = () => {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
 
 const ChannelCompare = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
+  const stored = loadStoredCompare();
 
   const [metric, setMetric] = useState("views");
   const [period, setPeriod] = useState("last28");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [limit, setLimit] = useState(20);
+  const [manualPick, setManualPick] = useState(() => stored.manualPick ?? false);
+  const [channels, setChannels] = useState([]);
+  const [selectedChannels, setSelectedChannels] = useState(
+    () => stored.selectedChannels || []
+  );
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [rangeInfo, setRangeInfo] = useState(null);
 
   useEffect(() => {
     if (period === "custom") return;
@@ -79,21 +99,14 @@ const ChannelCompare = () => {
             start: startDate,
             end: endDate,
             metric,
-            limit,
+            limit: manualPick ? 200 : limit,
           }),
         });
         if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
         const data = await resp.json();
         setItems(Array.isArray(data?.items) ? data.items : []);
-        setRangeInfo({
-          start: data?.start || startDate,
-          end: data?.end || endDate,
-          prev_start: data?.prev_start,
-          prev_end: data?.prev_end,
-        });
       } catch (e) {
         setItems([]);
-        setRangeInfo(null);
         setErrorMsg(e?.message || "Failed to load data");
       } finally {
         setLoading(false);
@@ -101,7 +114,40 @@ const ChannelCompare = () => {
     };
 
     fetchData();
-  }, [canFetch, startDate, endDate, metric, limit]);
+  }, [canFetch, startDate, endDate, metric, limit, manualPick]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          manualPick,
+          selectedChannels,
+        })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [manualPick, selectedChannels]);
+
+  useEffect(() => {
+    let stop = false;
+    (async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/api/traffic_source/channels`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const list = Array.isArray(data?.items) ? data.items : [];
+        if (!stop) setChannels(list);
+      } catch {
+        if (!stop) setChannels([]);
+      }
+    })();
+    return () => {
+      stop = true;
+    };
+  }, []);
 
   const rows = useMemo(() => {
     return items.map((it, idx) => {
@@ -123,19 +169,25 @@ const ChannelCompare = () => {
     });
   }, [items]);
 
+  const visibleRows = useMemo(() => {
+    if (!manualPick) return rows;
+    if (!selectedChannels.length) return rows;
+    return rows.filter((r) => selectedChannels.includes(r.accountTag));
+  }, [rows, manualPick, selectedChannels]);
+
   const barData = useMemo(
     () =>
-      rows.map((r) => ({
+      visibleRows.map((r) => ({
         channel: r.accountTag,
         value: r.currentValue,
         deltaPct: r.deltaPct,
         trend: r.trend,
         isAnomaly: r.isAnomaly,
       })),
-    [rows]
+    [visibleRows]
   );
 
-  const barHeight = Math.max(320, rows.length * 28);
+  const barHeight = Math.max(320, visibleRows.length * 28);
 
   const barColor = (bar) => {
     const trend = bar.data.trend;
@@ -183,9 +235,75 @@ const ChannelCompare = () => {
               ? "0 22px 40px rgba(2,6,23,0.6)"
               : "0 20px 34px rgba(15,23,42,0.12)",
           },
+          position: "relative",
         }}
       >
         <Stack spacing={2}>
+          <FormControlLabel
+            sx={{
+              position: "absolute",
+              top: 14,
+              right: 16,
+              ".MuiFormControlLabel-label": {
+                fontWeight: 600,
+                color: isDark ? "rgba(226,232,240,0.9)" : "rgba(30,41,59,0.9)",
+                marginLeft: 1,
+              },
+              ".MuiSwitch-root": {
+                width: 44,
+                height: 24,
+                padding: 0,
+              },
+              ".MuiSwitch-track": {
+                borderRadius: 999,
+                backgroundColor: isDark
+                  ? "rgba(148,163,184,0.35)"
+                  : "rgba(148,163,184,0.45)",
+                opacity: 1,
+                transition: "background-color 220ms ease",
+              },
+              ".MuiSwitch-thumb": {
+                width: 20,
+                height: 20,
+                backgroundColor: isDark ? "#e2e8f0" : "#0f172a",
+                boxShadow: isDark
+                  ? "0 0 10px rgba(56,189,248,0.35)"
+                  : "0 4px 10px rgba(15,23,42,0.2)",
+                transition: "transform 220ms ease, box-shadow 220ms ease",
+              },
+              ".MuiSwitch-switchBase": {
+                padding: 0,
+                top: 2,
+                left: 2,
+                transition: "transform 220ms ease",
+                "&.Mui-checked": {
+                  color: "#38bdf8",
+                  transform: "translateX(20px)",
+                },
+                "&.Mui-checked + .MuiSwitch-track": {
+                  backgroundColor: isDark ? "#0ea5e9" : "#38bdf8",
+                  boxShadow: isDark
+                    ? "0 0 18px rgba(14,165,233,0.55)"
+                    : "0 0 14px rgba(56,189,248,0.4)",
+                },
+                "&.Mui-checked .MuiSwitch-thumb": {
+                  animation: "switchGlow 1.6s ease-in-out infinite",
+                },
+              },
+              "@keyframes switchGlow": {
+                "0%": { boxShadow: "0 0 8px rgba(56,189,248,0.35)" },
+                "50%": { boxShadow: "0 0 14px rgba(56,189,248,0.65)" },
+                "100%": { boxShadow: "0 0 8px rgba(56,189,248,0.35)" },
+              },
+            }}
+            control={
+              <Switch
+                checked={manualPick}
+                onChange={(e) => setManualPick(e.target.checked)}
+              />
+            }
+            label="Pick channels"
+          />
           <Box>
             <Typography variant="h6" fontWeight={700}>
               Channel Compare
@@ -253,44 +371,55 @@ const ChannelCompare = () => {
               </LocalizationProvider>
             )}
 
-            <FormControl size="small" sx={{ minWidth: 120 }}>
-              <InputLabel id="limit-label">Top</InputLabel>
-              <Select
-                labelId="limit-label"
-                label="Top"
-                value={limit}
-                onChange={(e) => setLimit(Number(e.target.value))}
-              >
-                {[10, 20, 30, 50].map((n) => (
-                  <MenuItem key={n} value={n}>
-                    {n}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            {!manualPick ? (
+              <FormControl size="small" sx={{ minWidth: 120 }}>
+                <InputLabel id="limit-label">Top</InputLabel>
+                <Select
+                  labelId="limit-label"
+                  label="Top"
+                  value={limit}
+                  onChange={(e) => setLimit(Number(e.target.value))}
+                >
+                  {[10, 20, 30, 50].map((n) => (
+                    <MenuItem key={n} value={n}>
+                      {n}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : (
+              <FormControl size="small" sx={{ minWidth: 260 }}>
+                <InputLabel id="channel-pick-label">Channels</InputLabel>
+                <Select
+                  labelId="channel-pick-label"
+                  label="Channels"
+                  multiple
+                  value={selectedChannels}
+                  onChange={(e) => setSelectedChannels(e.target.value)}
+                  renderValue={(selected) =>
+                    selected.length
+                      ? selected.slice(0, 2).join(", ") +
+                        (selected.length > 2
+                          ? ` (+${selected.length - 2})`
+                          : "")
+                      : "All"
+                  }
+                >
+                  {channels.map((opt) => (
+                    <MenuItem key={opt.value} value={opt.value}>
+                      <Checkbox
+                        size="small"
+                        checked={selectedChannels.indexOf(opt.value) > -1}
+                      />
+                      <ListItemText primary={opt.label || opt.value} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
           </Stack>
 
-          {rangeInfo && (
-            <Box
-              sx={{
-                p: 1.25,
-                borderRadius: 1.5,
-                bgcolor: isDark
-                  ? "rgba(30,41,59,0.6)"
-                  : alpha(theme.palette.primary.main, 0.06),
-                border: isDark
-                  ? "1px solid rgba(148,163,184,0.2)"
-                  : `1px solid ${theme.palette.divider}`,
-              }}
-            >
-              <Typography variant="body2" color="text.secondary">
-                Current: {rangeInfo.start} ~ {rangeInfo.end}
-                {rangeInfo.prev_start && rangeInfo.prev_end
-                  ? ` | Previous: ${rangeInfo.prev_start} ~ ${rangeInfo.prev_end}`
-                  : ""}
-              </Typography>
-            </Box>
-          )}
         </Stack>
       </Paper>
 
@@ -448,7 +577,7 @@ const ChannelCompare = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {rows.map((row) => (
+            {visibleRows.map((row) => (
               <TableRow
                 key={row.accountTag}
                 sx={{
@@ -475,7 +604,7 @@ const ChannelCompare = () => {
                 <TableCell align="center">{deltaChip(row)}</TableCell>
               </TableRow>
             ))}
-            {!rows.length && !loading && (
+            {!visibleRows.length && !loading && (
               <TableRow>
                 <TableCell colSpan={7}>
                   <Typography variant="body2" color="text.secondary">
