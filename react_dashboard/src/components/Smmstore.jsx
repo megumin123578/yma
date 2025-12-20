@@ -32,6 +32,7 @@ import { API_BASE } from "../config";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
+import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import dayjs from "dayjs";
 
 const ORDERS_STORAGE_KEY = "smmstore.orders";
@@ -75,6 +76,96 @@ const Smmstore = () => {
       },
     }),
     [theme.palette.divider, theme.palette.mode]
+  );
+
+  const outlinedFieldSx = useMemo(
+    () => ({
+      "& .MuiOutlinedInput-root": {
+        "& fieldset, & .MuiOutlinedInput-notchedOutline": {
+          borderColor:
+            theme.palette.mode === "dark"
+              ? "rgba(148,163,184,0.45)"
+              : theme.palette.divider,
+        },
+        "&:hover fieldset, &:hover .MuiOutlinedInput-notchedOutline": {
+          borderColor:
+            theme.palette.mode === "dark"
+              ? "rgba(226,232,240,0.7)"
+              : theme.palette.text.primary,
+        },
+        "&.Mui-focused fieldset, &.Mui-focused .MuiOutlinedInput-notchedOutline":
+          {
+            borderColor:
+              theme.palette.mode === "dark"
+                ? "rgba(96,165,250,0.8)"
+                : theme.palette.primary.main,
+          },
+        "&.Mui-focused": {
+          boxShadow:
+            theme.palette.mode === "dark"
+              ? "0 0 0 2px rgba(96,165,250,0.45)"
+              : "0 0 0 2px rgba(56,189,248,0.35)",
+        },
+      },
+    }),
+    [
+      theme.palette.divider,
+      theme.palette.mode,
+      theme.palette.primary.main,
+      theme.palette.text.primary,
+    ]
+  );
+
+  const outlinedSelectSx = useMemo(
+    () => ({
+      "& .MuiOutlinedInput-notchedOutline": {
+        borderColor:
+          theme.palette.mode === "dark"
+            ? "rgba(148,163,184,0.45)"
+            : theme.palette.divider,
+      },
+      "&:hover .MuiOutlinedInput-notchedOutline": {
+        borderColor:
+          theme.palette.mode === "dark"
+            ? "rgba(226,232,240,0.7)"
+            : theme.palette.text.primary,
+      },
+      "&.Mui-focused .MuiOutlinedInput-notchedOutline, & .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline":
+        {
+        borderColor:
+          theme.palette.mode === "dark"
+            ? "rgba(96,165,250,0.8)"
+            : theme.palette.primary.main,
+        },
+      "& .MuiOutlinedInput-root.Mui-focused": {
+        boxShadow:
+          theme.palette.mode === "dark"
+            ? "0 0 0 2px rgba(96,165,250,0.45)"
+            : "0 0 0 2px rgba(56,189,248,0.35)",
+      },
+    }),
+    [
+      theme.palette.divider,
+      theme.palette.mode,
+      theme.palette.primary.main,
+      theme.palette.text.primary,
+    ]
+  );
+
+  const inputLabelSx = useMemo(
+    () => ({
+      color:
+        theme.palette.mode === "dark"
+          ? "rgba(226,232,240,0.8)"
+          : theme.palette.text.secondary,
+      "&.Mui-focused": {
+        color:
+          theme.palette.mode === "dark"
+            ? "rgba(148,163,184,0.9)"
+            : theme.palette.text.primary,
+      },
+    }),
+    [theme.palette.mode, theme.palette.text.primary, theme.palette.text.secondary]
   );
 
   const [servicesByCategory, setServicesByCategory] = useState({});
@@ -484,7 +575,7 @@ const Smmstore = () => {
                 }}
               >
                 <TextField
-                  label="Search Service"
+                  label="Search"
                   value={search}
                   onChange={(e) => {
                     setSearch(e.target.value);
@@ -497,7 +588,20 @@ const Smmstore = () => {
                   }}
                   fullWidth
                   size="small"
+                  InputLabelProps={{ sx: inputLabelSx }}
                   InputProps={{
+                    startAdornment: (
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          color: "text.secondary",
+                          mr: 0.5,
+                        }}
+                      >
+                        <SearchOutlinedIcon fontSize="small" />
+                      </Box>
+                    ),
                     endAdornment: search ? (
                       <IconButton
                         size="small"
@@ -578,7 +682,7 @@ const Smmstore = () => {
                 size="small"
                 sx={{ flex: 0.8, minWidth: { xs: "100%", md: 200 } }}
               >
-                <InputLabel>Category</InputLabel>
+                <InputLabel sx={inputLabelSx}>Category</InputLabel>
                 <Select
                   value={category}
                   label="Category"
@@ -591,6 +695,7 @@ const Smmstore = () => {
                       setService(label);
                     }
                   }}
+                  sx={outlinedSelectSx}
                 >
                   {Object.keys(servicesByCategory).map((cat) => (
                     <MenuItem key={cat} value={cat}>
@@ -605,11 +710,12 @@ const Smmstore = () => {
                 size="small"
                 sx={{ flex: 1.2, minWidth: { xs: "100%", md: 320 } }}
               >
-                <InputLabel>Service</InputLabel>
+                <InputLabel sx={inputLabelSx}>Service</InputLabel>
                 <Select
                   value={service}
                   label="Service"
                   onChange={(e) => setService(e.target.value)}
+                  sx={outlinedSelectSx}
                 >
                   {(servicesByCategory[category] || []).map((item) => {
                     const label = `${item.service} - ${item.name}`;
@@ -639,7 +745,8 @@ const Smmstore = () => {
                   slotProps={{
                     textField: {
                       size: "small",
-                      sx: { minWidth: 240, flex: 1 },
+                      sx: { ...outlinedFieldSx, minWidth: 240, flex: 1 },
+                      InputLabelProps: { sx: inputLabelSx },
                     },
                   }}
                 />
@@ -651,7 +758,8 @@ const Smmstore = () => {
                   slotProps={{
                     textField: {
                       size: "small",
-                      sx: { minWidth: 200, flex: 1 },
+                      sx: { ...outlinedFieldSx, minWidth: 200, flex: 1 },
+                      InputLabelProps: { sx: inputLabelSx },
                     },
                     actionBar: {
                       sx: {
@@ -695,20 +803,23 @@ const Smmstore = () => {
               Order Details
             </Typography>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-              <TextField
-                label="Link"
-                value={link}
-                onChange={(e) => setLink(e.target.value)}
-                fullWidth
-                size="small"
-              />
-              <TextField
-                label="Quantity"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                size="small"
-                sx={{ width: { xs: "100%", sm: 200 } }}
-              />
+                <TextField
+                  label="Link"
+                  value={link}
+                  onChange={(e) => setLink(e.target.value)}
+                  fullWidth
+                  size="small"
+                  sx={outlinedFieldSx}
+                  InputLabelProps={{ sx: inputLabelSx }}
+                />
+                <TextField
+                  label="Quantity"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  size="small"
+                  sx={[outlinedFieldSx, { width: { xs: "100%", sm: 200 } }]}
+                  InputLabelProps={{ sx: inputLabelSx }}
+                />
             </Stack>
           </Stack>
 
@@ -756,14 +867,16 @@ const Smmstore = () => {
                     value={runs}
                     onChange={(e) => setRuns(e.target.value)}
                     size="small"
-                    sx={{ width: 140 }}
+                    sx={[outlinedFieldSx, { width: 140 }]}
+                    InputLabelProps={{ sx: inputLabelSx }}
                   />
                   <TextField
                     label="Interval (min)"
                     value={interval}
                     onChange={(e) => setInterval(e.target.value)}
                     size="small"
-                    sx={{ width: 180 }}
+                    sx={[outlinedFieldSx, { width: 180 }]}
+                    InputLabelProps={{ sx: inputLabelSx }}
                   />
                 </>
               )}

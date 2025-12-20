@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 SECRET_KEY = "CHANGE_ME_SECRET_KEY"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 #Expire in 24h
 
 pwd_context = CryptContext(
     schemes=["argon2"],
