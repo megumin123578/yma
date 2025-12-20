@@ -180,6 +180,14 @@ const Sidebar = () => {
             />
 
             <Item
+              title="Channel Compare"
+              to="/channel_compare"
+              icon={<BarChartOutlinedIcon />}
+              selected={selected}
+              setSelected={setSelected}
+            />
+
+            <Item
               title="Traffic Source"
               to="/traffic_source"
               icon={<DeviceUnknownIcon />}

@@ -9,6 +9,7 @@ import LoginPage from "./scenes/login";
 import RegisterPage from "./scenes/register";
 import ForgotPasswordPage from "./scenes/forgot_password";
 import SmmstoreScene from "./scenes/smmstore";
+import ChannelCompareScene from "./scenes/channel_compare";
 
 import { Box, IconButton, useTheme } from "@mui/material";
 import { ColorModeContext } from "./theme";
@@ -87,6 +88,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <GeographyChart />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/channel_compare"
+            element={
+              <ProtectedRoute>
+                <ChannelCompareScene />
               </ProtectedRoute>
             }
           />
