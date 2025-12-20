@@ -29,13 +29,17 @@ const toDate = (iso) => {
   if (!iso) return "-";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString();
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = String(d.getFullYear());
+  return `${day}/${month}/${year}`;
 };
 
 const RivalsChannel = () => {
   const [query, setQuery] = useState("");
   const [channel, setChannel] = useState(null);
   const [videos, setVideos] = useState([]);
+  const [shorts, setShorts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [savedChannels, setSavedChannels] = useState([]);
@@ -48,6 +52,7 @@ const RivalsChannel = () => {
       setError("");
       setChannel(null);
       setVideos([]);
+      setShorts([]);
 
       const resp = await fetch(
         `${API_BASE}/api/youtube/channel?query=${encodeURIComponent(q)}`
@@ -56,6 +61,7 @@ const RivalsChannel = () => {
       const data = await resp.json();
       setChannel(data.channel || null);
       setVideos(Array.isArray(data.videos) ? data.videos : []);
+      setShorts(Array.isArray(data.shorts) ? data.shorts : []);
     } catch (e) {
       setError(e?.message || "Failed to load channel data");
     } finally {
@@ -257,7 +263,7 @@ const RivalsChannel = () => {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Video</TableCell>
+                  <TableCell>Latest videos</TableCell>
                   <TableCell>Published</TableCell>
                   <TableCell align="right">Views</TableCell>
                   <TableCell align="right">Likes</TableCell>
@@ -267,7 +273,15 @@ const RivalsChannel = () => {
               <TableBody>
                 {videos.map((v) => (
                   <TableRow key={v.videoId}>
-                    <TableCell>{v.title}</TableCell>
+                    <TableCell>
+                      <a
+                        href={`https://www.youtube.com/watch?v=${v.videoId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {v.title}
+                      </a>
+                    </TableCell>
                     <TableCell>{toDate(v.publishedAt)}</TableCell>
                     <TableCell align="right">{formatNumber(v.views)}</TableCell>
                     <TableCell align="right">{formatNumber(v.likes)}</TableCell>
@@ -279,6 +293,48 @@ const RivalsChannel = () => {
                     <TableCell colSpan={5}>
                       <Typography variant="body2" color="text.secondary">
                         No recent videos found.
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+
+          <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 2 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Latest shorts</TableCell>
+                  <TableCell>Published</TableCell>
+                  <TableCell align="right">Views</TableCell>
+                  <TableCell align="right">Likes</TableCell>
+                  <TableCell align="right">Comments</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {shorts.map((v) => (
+                  <TableRow key={v.videoId}>
+                    <TableCell>
+                      <a
+                        href={`https://www.youtube.com/watch?v=${v.videoId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {v.title}
+                      </a>
+                    </TableCell>
+                    <TableCell>{toDate(v.publishedAt)}</TableCell>
+                    <TableCell align="right">{formatNumber(v.views)}</TableCell>
+                    <TableCell align="right">{formatNumber(v.likes)}</TableCell>
+                    <TableCell align="right">{formatNumber(v.comments)}</TableCell>
+                  </TableRow>
+                ))}
+                {!shorts.length && (
+                  <TableRow>
+                    <TableCell colSpan={5}>
+                      <Typography variant="body2" color="text.secondary">
+                        No recent shorts found.
                       </Typography>
                     </TableCell>
                   </TableRow>

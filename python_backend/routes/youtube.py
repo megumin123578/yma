@@ -97,35 +97,7 @@ def _fetch_channel(youtube, params: Dict[str, str]) -> Optional[Dict]:
     }
 
 
-def _fetch_uploads(youtube, playlist_id: str, max_items: int = 12):
-    if not playlist_id:
-        return []
-
-    videos = []
-    req = youtube.playlistItems().list(
-        part="snippet,contentDetails",
-        playlistId=playlist_id,
-        maxResults=50,
-    )
-
-    while req and len(videos) < max_items:
-        resp = req.execute() or {}
-        for item in resp.get("items", []):
-            snippet = item.get("snippet", {})
-            content = item.get("contentDetails", {})
-            vid = content.get("videoId")
-            if not vid:
-                continue
-            videos.append({
-                "videoId": vid,
-                "title": snippet.get("title", ""),
-                "publishedAt": snippet.get("publishedAt", ""),
-                "thumbnail": snippet.get("thumbnails", {}).get("medium", {}).get("url", ""),
-            })
-            if len(videos) >= max_items:
-                break
-        req = youtube.playlistItems().list_next(req, resp)
-
+def _enrich_video_stats(youtube, videos):
     if not videos:
         return videos
 
@@ -148,6 +120,63 @@ def _fetch_uploads(youtube, playlist_id: str, max_items: int = 12):
     return list(id_map.values())
 
 
+def _fetch_latest_videos(youtube, channel_id: str, max_items: int = 10):
+    if not channel_id:
+        return []
+
+    resp = youtube.search().list(
+        part="snippet",
+        channelId=channel_id,
+        order="date",
+        type="video",
+        maxResults=max_items,
+    ).execute() or {}
+
+    videos = []
+    for item in resp.get("items", []):
+        vid = item.get("id", {}).get("videoId")
+        snippet = item.get("snippet", {})
+        if not vid:
+            continue
+        videos.append({
+            "videoId": vid,
+            "title": snippet.get("title", ""),
+            "publishedAt": snippet.get("publishedAt", ""),
+            "thumbnail": snippet.get("thumbnails", {}).get("medium", {}).get("url", ""),
+        })
+
+    return _enrich_video_stats(youtube, videos)
+
+
+def _fetch_latest_shorts(youtube, channel_id: str, max_items: int = 10):
+    if not channel_id:
+        return []
+
+    resp = youtube.search().list(
+        part="snippet",
+        channelId=channel_id,
+        order="date",
+        type="video",
+        videoDuration="short",
+        maxResults=max_items,
+    ).execute() or {}
+
+    videos = []
+    for item in resp.get("items", []):
+        vid = item.get("id", {}).get("videoId")
+        snippet = item.get("snippet", {})
+        if not vid:
+            continue
+        videos.append({
+            "videoId": vid,
+            "title": snippet.get("title", ""),
+            "publishedAt": snippet.get("publishedAt", ""),
+            "thumbnail": snippet.get("thumbnails", {}).get("medium", {}).get("url", ""),
+        })
+
+    return _enrich_video_stats(youtube, videos)
+
+
 @router.get("/channel")
 def channel_detail(query: str = Query(..., min_length=1)):
     api_key = os.getenv("YOUTUBE_API_KEY", "").strip()
@@ -165,9 +194,12 @@ def channel_detail(query: str = Query(..., min_length=1)):
     if not channel:
         raise HTTPException(404, "Channel not found")
 
-    videos = _fetch_uploads(youtube, channel.get("uploadsPlaylistId", ""))
+    channel_id = channel.get("id", "")
+    videos = _fetch_latest_videos(youtube, channel_id, max_items=10)
+    shorts = _fetch_latest_shorts(youtube, channel_id, max_items=10)
 
     return {
         "channel": channel,
         "videos": videos,
+        "shorts": shorts,
     }
