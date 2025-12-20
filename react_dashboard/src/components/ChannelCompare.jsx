@@ -228,24 +228,30 @@ const ChannelCompare = () => {
               </Select>
             </FormControl>
 
-            <LocalizationProvider dateAdapter={AdapterDayjs}>
-              <DatePicker
-                label="Start"
-                value={startDate ? dayjs(startDate) : null}
-                onChange={(v) => setStartDate(v ? v.format("YYYY-MM-DD") : "")}
-                format="DD/MM/YYYY"
-                disabled={period !== "custom"}
-                slotProps={{ textField: { size: "small", sx: { width: 170 } } }}
-              />
-              <DatePicker
-                label="End"
-                value={endDate ? dayjs(endDate) : null}
-                onChange={(v) => setEndDate(v ? v.format("YYYY-MM-DD") : "")}
-                format="DD/MM/YYYY"
-                disabled={period !== "custom"}
-                slotProps={{ textField: { size: "small", sx: { width: 170 } } }}
-              />
-            </LocalizationProvider>
+            {period === "custom" && (
+              <LocalizationProvider dateAdapter={AdapterDayjs}>
+                <DatePicker
+                  label="Start"
+                  value={startDate ? dayjs(startDate) : null}
+                  onChange={(v) =>
+                    setStartDate(v ? v.format("YYYY-MM-DD") : "")
+                  }
+                  format="DD/MM/YYYY"
+                  slotProps={{
+                    textField: { size: "small", sx: { width: 170 } },
+                  }}
+                />
+                <DatePicker
+                  label="End"
+                  value={endDate ? dayjs(endDate) : null}
+                  onChange={(v) => setEndDate(v ? v.format("YYYY-MM-DD") : "")}
+                  format="DD/MM/YYYY"
+                  slotProps={{
+                    textField: { size: "small", sx: { width: 170 } },
+                  }}
+                />
+              </LocalizationProvider>
+            )}
 
             <FormControl size="small" sx={{ minWidth: 120 }}>
               <InputLabel id="limit-label">Top</InputLabel>

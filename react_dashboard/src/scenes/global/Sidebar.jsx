@@ -180,14 +180,6 @@ const Sidebar = () => {
             />
 
             <Item
-              title="Channel Compare"
-              to="/channel_compare"
-              icon={<BarChartOutlinedIcon />}
-              selected={selected}
-              setSelected={setSelected}
-            />
-
-            <Item
               title="Traffic Source"
               to="/traffic_source"
               icon={<DeviceUnknownIcon />}
@@ -203,37 +195,23 @@ const Sidebar = () => {
               setSelected={setSelected}
             />
 
+            
+
             <Typography
               variant="h6"
               color={colors.grey[300]}
               sx={{ m: "15px 0 5px 20px" }}
             >
-              Rival's Channel
+              Statistics
             </Typography>
 
-            <SubMenu title="Rival's Channels" icon={<YouTubeIcon />}>
-              <Item
-                title="Channel 1"
-                to="/bar1"
-                icon={<YouTubeIcon />}
-                selected={selected}
-                setSelected={setSelected}
-              />
-              <Item
-                title="Channel 2"
-                to="/bar2"
-                icon={<YouTubeIcon />}
-                selected={selected}
-                setSelected={setSelected}
-              />
-              <Item
-                title="Channel 3"
-                to="/bar3"
-                icon={<YouTubeIcon />}
-                selected={selected}
-                setSelected={setSelected}
-              />
-            </SubMenu>
+            <Item
+              title="Channel Compare"
+              to="/channel_compare"
+              icon={<BarChartOutlinedIcon />}
+              selected={selected}
+              setSelected={setSelected}
+            />
 
             <Typography
               variant="h6"
