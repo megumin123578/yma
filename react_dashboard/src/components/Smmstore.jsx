@@ -31,6 +31,7 @@ import { tokens } from "../theme";
 import { API_BASE } from "../config";
 import RefreshOutlinedIcon from "@mui/icons-material/RefreshOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 import dayjs from "dayjs";
 
 const ORDERS_STORAGE_KEY = "smmstore.orders";
@@ -240,11 +241,27 @@ const Smmstore = () => {
     return results.slice(0, 100);
   }, [search, servicesByCategory]);
 
-  const handleSelectService = useCallback((label) => {
-    setService(label);
-    setSearch(label);
-    setShowSuggestions(false);
-  }, []);
+  const handleSelectService = useCallback(
+    (label) => {
+      setService(label);
+      setSearch(label);
+      setShowSuggestions(false);
+
+      let nextCategory = "";
+      for (const [cat, items] of Object.entries(servicesByCategory)) {
+        const match = items?.some(
+          (item) => `${item.service} - ${item.name}` === label
+        );
+        if (match) {
+          nextCategory = cat;
+          break;
+        }
+      }
+
+      if (nextCategory) setCategory(nextCategory);
+    },
+    [servicesByCategory]
+  );
 
   const getStatusColor = useCallback((status) => {
     const label = String(status || "").toLowerCase();
@@ -480,6 +497,22 @@ const Smmstore = () => {
                   }}
                   fullWidth
                   size="small"
+                  InputProps={{
+                    endAdornment: search ? (
+                      <IconButton
+                        size="small"
+                        aria-label="Clear search"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setSearch("");
+                          setShowSuggestions(false);
+                        }}
+                        sx={{ color: "text.secondary" }}
+                      >
+                        <CloseOutlinedIcon fontSize="small" />
+                      </IconButton>
+                    ) : null,
+                  }}
                   sx={{
                     "& .MuiOutlinedInput-root": {
                       transition: "box-shadow 160ms ease",
@@ -602,6 +635,7 @@ const Smmstore = () => {
                   label="Run Date"
                   value={runDate}
                   onChange={(value) => setRunDate(value)}
+                  format="DD/MM/YYYY"
                   slotProps={{
                     textField: {
                       size: "small",
