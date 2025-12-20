@@ -215,7 +215,7 @@ const Sidebar = () => {
 
             <Item
               title="Rivals Channel"
-              to="/rivals_channel"
+              to="/rivals"
               icon={<WebhookIcon />}
               selected={selected}
               setSelected={setSelected}

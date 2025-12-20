@@ -10,6 +10,7 @@ import RegisterPage from "./scenes/register";
 import ForgotPasswordPage from "./scenes/forgot_password";
 import SmmstoreScene from "./scenes/smmstore";
 import ChannelCompareScene from "./scenes/channel_compare";
+import RivalsData from "./scenes/rivals";
 
 import { Box, IconButton, useTheme } from "@mui/material";
 import { ColorModeContext } from "./theme";
@@ -17,6 +18,7 @@ import GeographyChart from "./components/Geography";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import { UserContext } from "./context/UserContext";
+
 
 function App() {
   const theme = useTheme();
@@ -96,6 +98,15 @@ function App() {
             element={
               <ProtectedRoute>
                 <ChannelCompareScene />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/rivals"
+            element={
+              <ProtectedRoute>
+                <RivalsData />
               </ProtectedRoute>
             }
           />
