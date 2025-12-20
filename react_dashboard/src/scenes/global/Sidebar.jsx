@@ -14,7 +14,7 @@ import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
 import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 // import FileUploadIcon from "@mui/icons-material/FileUpload";
-
+import WebhookIcon from '@mui/icons-material/Webhook';
 import { UserContext } from "../../context/UserContext";
 
 const Item = ({ title, to, icon, selected, setSelected }) => {
@@ -209,6 +209,14 @@ const Sidebar = () => {
               title="Channel Compare"
               to="/channel_compare"
               icon={<BarChartOutlinedIcon />}
+              selected={selected}
+              setSelected={setSelected}
+            />
+
+            <Item
+              title="Rivals Channel"
+              to="/rivals_channel"
+              icon={<WebhookIcon />}
               selected={selected}
               setSelected={setSelected}
             />
