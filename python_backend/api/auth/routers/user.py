@@ -1,8 +1,9 @@
 import os
+from typing import List
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
 from python_backend.api.auth.database import get_db
-from python_backend.api.auth.models import User
+from python_backend.api.auth.models import User, RivalChannel
 from python_backend.api.auth.auth_utils import get_current_user
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
@@ -59,3 +60,78 @@ def update_profile(
     db.refresh(current_user)
 
     return current_user
+
+
+@router.get("/rivals", response_model=List[schemas.RivalChannelOut])
+def list_rivals(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = (
+        db.query(RivalChannel)
+        .filter(RivalChannel.user_id == current_user.id)
+        .order_by(RivalChannel.id.desc())
+        .all()
+    )
+    return rows
+
+
+@router.post("/rivals", response_model=schemas.RivalChannelOut)
+def add_rival(
+    data: schemas.RivalChannelCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    channel_id = (data.channel_id or "").strip()
+    if not channel_id:
+        raise HTTPException(status_code=400, detail="channel_id is required")
+
+    row = (
+        db.query(RivalChannel)
+        .filter(
+            RivalChannel.user_id == current_user.id,
+            RivalChannel.channel_id == channel_id,
+        )
+        .first()
+    )
+    if row:
+        if data.channel_name:
+            row.channel_name = data.channel_name
+        if data.channel_url:
+            row.channel_url = data.channel_url
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row
+
+    row = RivalChannel(
+        user_id=current_user.id,
+        channel_id=channel_id,
+        channel_name=data.channel_name,
+        channel_url=data.channel_url,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/rivals/{channel_id}")
+def delete_rival(
+    channel_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(RivalChannel)
+        .filter(
+            RivalChannel.user_id == current_user.id,
+            RivalChannel.channel_id == channel_id,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}

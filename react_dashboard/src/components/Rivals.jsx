@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Avatar,
   Box,
@@ -38,15 +38,11 @@ const RivalsChannel = () => {
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [savedChannels, setSavedChannels] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-    const q = query.trim();
-    if (!q) {
-      setError("Please enter a channel ID or URL");
-      return;
-    }
-
+  const fetchChannel = async (q) => {
     try {
       setLoading(true);
       setError("");
@@ -66,6 +62,92 @@ const RivalsChannel = () => {
       setLoading(false);
     }
   };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const q = query.trim();
+    if (!q) {
+      setError("Please enter a channel ID or URL");
+      return;
+    }
+    fetchChannel(q);
+  };
+
+  const loadSavedChannels = async () => {
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      setSavedChannels([]);
+      return;
+    }
+    try {
+      const resp = await fetch(`${API_BASE}/api/users/rivals`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
+      const data = await resp.json();
+      setSavedChannels(Array.isArray(data) ? data : []);
+    } catch {
+      setSavedChannels([]);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!channel?.id) return;
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      setSaveError("Please login to save channels.");
+      return;
+    }
+
+    const channelUrl = channel.customUrl
+      ? `https://www.youtube.com/${channel.customUrl}`
+      : `https://www.youtube.com/channel/${channel.id}`;
+
+    try {
+      setSaving(true);
+      setSaveError("");
+      const resp = await fetch(`${API_BASE}/api/users/rivals`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          channel_id: channel.id,
+          channel_name: channel.title,
+          channel_url: channelUrl,
+        }),
+      });
+      if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
+      await loadSavedChannels();
+    } catch (e) {
+      setSaveError(e?.message || "Failed to save channel");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (channelId) => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+    try {
+      const resp = await fetch(
+        `${API_BASE}/api/users/rivals/${encodeURIComponent(channelId)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
+      await loadSavedChannels();
+    } catch {
+      // ignore delete errors
+    }
+  };
+
+  useEffect(() => {
+    loadSavedChannels();
+  }, []);
 
   const stats = channel?.statistics || {};
   const subsHidden =
@@ -96,6 +178,14 @@ const RivalsChannel = () => {
             <Button type="submit" variant="contained" disabled={loading}>
               {loading ? "Loading..." : "Load"}
             </Button>
+            <Button
+              type="button"
+              variant="outlined"
+              disabled={!channel || saving}
+              onClick={handleSave}
+            >
+              {saving ? "Saving..." : "Save"}
+            </Button>
           </Stack>
         </Stack>
       </Paper>
@@ -103,6 +193,12 @@ const RivalsChannel = () => {
       {error && (
         <Typography color="error" variant="body2">
           {error}
+        </Typography>
+      )}
+
+      {saveError && (
+        <Typography color="error" variant="body2">
+          {saveError}
         </Typography>
       )}
 
@@ -191,6 +287,50 @@ const RivalsChannel = () => {
             </Table>
           </TableContainer>
         </Stack>
+      )}
+
+      {!!savedChannels.length && (
+        <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 2 }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Saved channels</TableCell>
+                <TableCell>Channel ID</TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {savedChannels.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell>{row.channel_name || "-"}</TableCell>
+                  <TableCell>{row.channel_id}</TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => {
+                          setQuery(row.channel_id);
+                          fetchChannel(row.channel_id);
+                        }}
+                      >
+                        Load
+                      </Button>
+                      <Button
+                        size="small"
+                        color="error"
+                        variant="text"
+                        onClick={() => handleDelete(row.channel_id)}
+                      >
+                        Remove
+                      </Button>
+                    </Stack>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
     </Stack>
   );

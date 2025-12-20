@@ -53,3 +53,19 @@ class UserMe(BaseModel):
 class UserProfileUpdate(BaseModel):
     name: Optional[str] = None
     smmstore_api_key: Optional[str] = None
+
+
+class RivalChannelCreate(BaseModel):
+    channel_id: str
+    channel_name: Optional[str] = None
+    channel_url: Optional[str] = None
+
+
+class RivalChannelOut(BaseModel):
+    id: int
+    channel_id: str
+    channel_name: Optional[str] = None
+    channel_url: Optional[str] = None
+
+    class Config:
+        from_attributes = True
