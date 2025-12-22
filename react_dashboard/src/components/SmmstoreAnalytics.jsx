@@ -75,7 +75,7 @@ const formatMonthLabel = (value) => {
   return `${match[2]}-${match[1]}`;
 };
 
-const SmmstoreAnalytics = ({ viewMode = "orders" }) => {
+const SmmstoreAnalytics = ({ viewMode = "orders", onDataChange }) => {
   const theme = useTheme();
   const [cookies, setCookies] = useState("");
   const [loading, setLoading] = useState(false);
@@ -85,8 +85,6 @@ const SmmstoreAnalytics = ({ viewMode = "orders" }) => {
   const [selectedMonth, setSelectedMonth] = useState("");
 
   const totals = useMemo(() => data?.totals?.by_channel || [], [data]);
-  const hasOrders = (data?.orders || []).length > 0;
-  const hasTotals = totals.length > 0;
   const totalSum = data?.totals?.total;
   const cardSx = useMemo(
     () => ({
@@ -245,6 +243,12 @@ const SmmstoreAnalytics = ({ viewMode = "orders" }) => {
 
     fetchCached();
   }, [fetchMonths, selectedMonth]);
+
+  useEffect(() => {
+    if (typeof onDataChange === "function") {
+      onDataChange(data);
+    }
+  }, [data, onDataChange]);
 
   useEffect(() => {
     fetchMonths();
