@@ -92,7 +92,8 @@ def order_status(payload: OrderStatus, current_user: User = Depends(get_current_
 
 
 class AnalyticsRequest(BaseModel):
-    cookies: str
+    cookies: str = ""
+    month: Optional[str] = None
 
 
 def _parse_cookie_string(raw: str) -> Dict[str, str]:
@@ -237,6 +238,54 @@ def _previous_month_range(now: datetime) -> tuple[datetime, datetime]:
     return first_day_prev_month, first_day_this_month
 
 
+def _month_range_from_key(month_key: str) -> Optional[tuple[datetime, datetime]]:
+    try:
+        dt = datetime.strptime(month_key, "%Y-%m")
+    except ValueError:
+        return None
+    start = dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if start.month == 12:
+        end = start.replace(year=start.year + 1, month=1)
+    else:
+        end = start.replace(month=start.month + 1)
+    return start, end
+
+
+@router.get("/analytics/months")
+def list_cached_months(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(SmmstoreAnalyticsCache.month, SmmstoreAnalyticsCache.updated_at)
+        .filter(SmmstoreAnalyticsCache.user_id == current_user.id)
+        .order_by(SmmstoreAnalyticsCache.month.desc())
+        .all()
+    )
+    return [{"month": r[0], "updated_at": r[1].isoformat() if r[1] else None} for r in rows]
+
+
+@router.delete("/analytics/months/{month_key}")
+def delete_cached_month(
+    month_key: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = (
+        db.query(SmmstoreAnalyticsCache)
+        .filter(
+            SmmstoreAnalyticsCache.user_id == current_user.id,
+            SmmstoreAnalyticsCache.month == month_key,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Month not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/analytics")
 def smmstore_analytics(
     payload: AnalyticsRequest,
@@ -244,8 +293,15 @@ def smmstore_analytics(
     db: Session = Depends(get_db),
 ):
     try:
-        start_date, end_date = _previous_month_range(datetime.now())
-        month_key = start_date.strftime("%Y-%m")
+        if payload.month:
+            range_pair = _month_range_from_key(payload.month)
+            if not range_pair:
+                raise HTTPException(status_code=400, detail="Invalid month format")
+            start_date, end_date = range_pair
+            month_key = payload.month
+        else:
+            start_date, end_date = _previous_month_range(datetime.now())
+            month_key = start_date.strftime("%Y-%m")
         cached = (
             db.query(SmmstoreAnalyticsCache)
             .filter(
