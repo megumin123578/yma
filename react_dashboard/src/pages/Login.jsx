@@ -10,7 +10,11 @@ import {
   Alert,
   Typography,
   useTheme,
+  IconButton,
+  InputAdornment,
 } from "@mui/material";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
+import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import { Link, useNavigate } from "react-router-dom";
 import { login } from "../services/authService";
 
@@ -34,6 +38,7 @@ const Login = () => {
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const { setUser } = useContext(UserContext);
@@ -123,14 +128,32 @@ const Login = () => {
         {/* Password */}
         <TextField
           label="Password"
-          type="password"
+          type={showPassword ? "text" : "password"}
           fullWidth
           margin="normal"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
           InputLabelProps={{ style: { color: labelColor } }}
-          InputProps={{ style: { color: inputColor } }}
+          InputProps={{
+            style: { color: inputColor },
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  edge="end"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  sx={{ color: labelColor }}
+                >
+                  {showPassword ? (
+                    <VisibilityOffOutlinedIcon fontSize="small" />
+                  ) : (
+                    <VisibilityOutlinedIcon fontSize="small" />
+                  )}
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
           sx={{
             "& .MuiOutlinedInput-root": {
               borderRadius: 2,
