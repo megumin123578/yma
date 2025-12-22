@@ -243,21 +243,7 @@ def smmstore_analytics(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    raw_cookie = (payload.cookies or "").strip()
-    cookies = _parse_cookie_string(raw_cookie)
-    if not cookies:
-        raise HTTPException(status_code=400, detail="Missing PHPSESSID in cookies")
-
     try:
-        session = requests.Session()
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://10000smm.top/api",
-        }
-        if raw_cookie:
-            headers["Cookie"] = raw_cookie
-
         start_date, end_date = _previous_month_range(datetime.now())
         month_key = start_date.strftime("%Y-%m")
         cached = (
@@ -273,6 +259,21 @@ def smmstore_analytics(
                 return json.loads(cached.payload)
             except Exception:
                 pass
+
+        raw_cookie = (payload.cookies or "").strip()
+        cookies = _parse_cookie_string(raw_cookie)
+        if not cookies:
+            raise HTTPException(status_code=400, detail="Missing PHPSESSID in cookies")
+
+        session = requests.Session()
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://10000smm.top/api",
+        }
+        if raw_cookie:
+            headers["Cookie"] = raw_cookie
+
         max_pages = 200
         results: List[Dict] = []
 

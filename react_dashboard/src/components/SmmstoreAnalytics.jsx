@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Button,
@@ -30,7 +30,26 @@ const columns = [
   "Remains",
 ];
 
+const formatDateTime = (value) => {
+  if (!value) return "";
+  const cleaned = String(value)
+    .replace("\u00a0", " ")
+    .replace(/(\d{4}-\d{2}-\d{2})(\d{2}:\d{2}:\d{2})/, "$1 $2")
+    .trim();
+  const parsed = new Date(cleaned);
+  if (Number.isNaN(parsed.getTime())) return cleaned;
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(
+    parsed.getDate()
+  )} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}:${pad(
+    parsed.getSeconds()
+  )}`;
+};
+
 const renderCell = (col, value) => {
+  if (col === "Date") {
+    return formatDateTime(value);
+  }
   if (col === "Link" && typeof value === "string" && value.startsWith("http")) {
     return (
       <a
@@ -58,6 +77,77 @@ const SmmstoreAnalytics = () => {
   const hasOrders = (data?.orders || []).length > 0;
   const hasTotals = totals.length > 0;
   const totalSum = data?.totals?.total;
+  const cardSx = useMemo(
+    () => ({
+      p: 2.5,
+      borderRadius: 3,
+      border: "1px solid",
+      borderColor:
+        theme.palette.mode === "dark"
+          ? "rgba(148,163,184,0.2)"
+          : "rgba(15,23,42,0.12)",
+      background:
+        theme.palette.mode === "dark"
+          ? "linear-gradient(140deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 50%, rgba(13,148,136,0.5) 100%)"
+          : "linear-gradient(140deg, rgba(248,250,252,0.95) 0%, rgba(226,232,240,0.92) 50%, rgba(186,230,253,0.75) 100%)",
+      boxShadow:
+        theme.palette.mode === "dark"
+          ? "0 18px 35px rgba(15,23,42,0.4)"
+          : "0 18px 30px rgba(148,163,184,0.35)",
+      position: "relative",
+      overflow: "hidden",
+      "&:before": {
+        content: '""',
+        position: "absolute",
+        inset: 0,
+        background:
+          theme.palette.mode === "dark"
+            ? "radial-gradient(600px 200px at 10% 0%, rgba(56,189,248,0.2), transparent 60%), radial-gradient(400px 200px at 80% 0%, rgba(16,185,129,0.18), transparent 60%)"
+            : "radial-gradient(600px 200px at 10% 0%, rgba(14,165,233,0.2), transparent 60%), radial-gradient(400px 200px at 80% 0%, rgba(251,191,36,0.22), transparent 60%)",
+        opacity: 0.75,
+        pointerEvents: "none",
+      },
+    }),
+    [theme.palette.mode]
+  );
+
+  const tablePaperSx = useMemo(
+    () => ({
+      borderRadius: 3,
+      border: "1px solid",
+      borderColor: theme.palette.divider,
+      background:
+        theme.palette.mode === "dark"
+          ? "rgba(10,15,24,0.8)"
+          : "rgba(255,255,255,0.94)",
+      boxShadow:
+        theme.palette.mode === "dark"
+          ? "0 14px 28px rgba(15,23,42,0.4)"
+          : "0 14px 26px rgba(148,163,184,0.25)",
+      overflow: "hidden",
+    }),
+    [theme.palette.divider, theme.palette.mode]
+  );
+
+  const tableHeadSx = useMemo(
+    () => ({
+      background:
+        theme.palette.mode === "dark"
+          ? "rgba(15,23,42,0.9)"
+          : "rgba(226,232,240,0.85)",
+      "& .MuiTableCell-root": {
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        fontSize: "0.72rem",
+        color:
+          theme.palette.mode === "dark"
+            ? "rgba(226,232,240,0.85)"
+            : "rgba(15,23,42,0.75)",
+      },
+    }),
+    [theme.palette.mode]
+  );
 
   const handleLoad = async () => {
     setError("");
@@ -93,23 +183,41 @@ const SmmstoreAnalytics = () => {
     }
   };
 
+  useEffect(() => {
+    const token = localStorage.getItem("access_token");
+    if (!token) return;
+
+    const fetchCached = async () => {
+      setError("");
+      setLoading(true);
+      try {
+        const resp = await fetch(`${API_BASE}/api/smmstore/analytics`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ cookies: "" }),
+        });
+        if (!resp.ok) {
+          setLoading(false);
+          return;
+        }
+        const json = await resp.json();
+        setData(json);
+      } catch {
+        // ignore cache load errors
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCached();
+  }, []);
+
   return (
     <Stack spacing={2.5}>
-      <Paper
-        elevation={0}
-        sx={{
-          p: 2.5,
-          borderRadius: 2.5,
-          border:
-            theme.palette.mode === "dark"
-              ? "1px solid rgba(148,163,184,0.25)"
-              : `1px solid ${theme.palette.divider}`,
-          bgcolor:
-            theme.palette.mode === "dark"
-              ? "rgba(17,24,39,0.85)"
-              : "rgba(255,255,255,0.92)",
-        }}
-      >
+      <Paper elevation={0} sx={cardSx}>
         <Stack spacing={2}>
           <Typography variant="subtitle1" fontWeight={700}>
             Cookies
@@ -122,7 +230,24 @@ const SmmstoreAnalytics = () => {
             minRows={4}
             sx={{
               "& .MuiOutlinedInput-root": {
+                backgroundColor:
+                  theme.palette.mode === "dark"
+                    ? "rgba(15,23,42,0.45)"
+                    : "rgba(255,255,255,0.9)",
                 borderRadius: 2,
+                transition: "box-shadow 0.2s ease",
+                "&:hover": {
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? "0 0 0 1px rgba(56,189,248,0.35)"
+                      : "0 0 0 1px rgba(14,165,233,0.3)",
+                },
+                "&.Mui-focused": {
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? "0 0 0 2px rgba(56,189,248,0.45)"
+                      : "0 0 0 2px rgba(14,165,233,0.45)",
+                },
               },
             }}
           />
@@ -131,6 +256,17 @@ const SmmstoreAnalytics = () => {
               variant="contained"
               onClick={handleLoad}
               disabled={loading || !cookies.trim()}
+              sx={{
+                textTransform: "none",
+                fontWeight: 700,
+                borderRadius: 2,
+                boxShadow: "0 12px 20px rgba(15,23,42,0.25)",
+                transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                "&:hover": {
+                  transform: "translateY(-1px)",
+                  boxShadow: "0 16px 26px rgba(15,23,42,0.3)",
+                },
+              }}
             >
               {loading ? "Loading..." : "Load last month"}
             </Button>
@@ -166,19 +302,12 @@ const SmmstoreAnalytics = () => {
       {(data?.orders || totals.length) && (
         <Paper
           elevation={0}
-          sx={{
-            borderRadius: 2.5,
-            border:
-              theme.palette.mode === "dark"
-                ? "1px solid rgba(148,163,184,0.25)"
-                : `1px solid ${theme.palette.divider}`,
-            overflow: "hidden",
-          }}
+          sx={tablePaperSx}
         >
           <TableContainer>
             {viewMode === "totals" ? (
               <Table size="small">
-                <TableHead>
+                <TableHead sx={tableHeadSx}>
                   <TableRow
                     sx={{
                       bgcolor:
@@ -197,6 +326,14 @@ const SmmstoreAnalytics = () => {
                       key={`${item.link}-${index}`}
                       sx={{
                         bgcolor: index % 2 === 0 ? "transparent" : "action.hover",
+                        transition: "transform 0.2s ease, background-color 0.2s ease",
+                        "&:hover": {
+                          backgroundColor:
+                            theme.palette.mode === "dark"
+                              ? "rgba(51,65,85,0.55)"
+                              : "rgba(226,232,240,0.6)",
+                          transform: "translateY(-1px)",
+                        },
                       }}
                     >
                       <TableCell>{item.link}</TableCell>
@@ -232,7 +369,7 @@ const SmmstoreAnalytics = () => {
               </Table>
             ) : (
               <Table size="small">
-                <TableHead>
+                <TableHead sx={tableHeadSx}>
                   <TableRow
                     sx={{
                       bgcolor:
@@ -252,10 +389,39 @@ const SmmstoreAnalytics = () => {
                       key={`${row.ID}-${index}`}
                       sx={{
                         bgcolor: index % 2 === 0 ? "transparent" : "action.hover",
+                        transition: "transform 0.2s ease, background-color 0.2s ease",
+                        "&:hover": {
+                          backgroundColor:
+                            theme.palette.mode === "dark"
+                              ? "rgba(51,65,85,0.55)"
+                              : "rgba(226,232,240,0.6)",
+                          transform: "translateY(-1px)",
+                        },
                       }}
                     >
                       {columns.map((col) => (
-                        <TableCell key={col}>
+                        <TableCell
+                          key={col}
+                          sx={
+                            col === "Date"
+                              ? {
+                                  minWidth: 160,
+                                  whiteSpace: "nowrap",
+                                }
+                              : col === "Link"
+                              ? {
+                                  maxWidth: 220,
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }
+                              : col === "Service"
+                              ? {
+                                  minWidth: 320,
+                                }
+                              : undefined
+                          }
+                        >
                           {renderCell(col, row[col])}
                         </TableCell>
                       ))}
