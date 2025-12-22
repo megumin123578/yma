@@ -1,24 +1,18 @@
 import {
   Box,
-  IconButton,
-  Menu,
-  MenuItem,
+  Button,
   Stack,
   Switch,
-  Tooltip,
   Typography,
 } from "@mui/material";
 import { useCallback, useMemo, useState } from "react";
 import Header from "../../components/Header";
 import SmmstoreAnalytics from "../../components/SmmstoreAnalytics";
 import * as XLSX from "xlsx";
-import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 
 const SmmstoreAnalyticsScene = () => {
   const [viewMode, setViewMode] = useState("orders");
   const [analyticsData, setAnalyticsData] = useState(null);
-  const [downloadAnchor, setDownloadAnchor] = useState(null);
-  const downloadOpen = Boolean(downloadAnchor);
 
   const currentRows = useMemo(() => {
     if (!analyticsData) return [];
@@ -121,50 +115,56 @@ const SmmstoreAnalyticsScene = () => {
           subtitle="Manage how much money spent last month"
         />
         <Stack direction="row" alignItems="center" spacing={1.2}>
-          <Tooltip title="Download">
-            <span>
-              <IconButton
-                size="small"
-                onClick={(e) => setDownloadAnchor(e.currentTarget)}
-                disabled={!currentRows.length}
-                sx={{
-                  borderRadius: 2,
-                  border: "1px solid rgba(148,163,184,0.5)",
-                  color: "rgba(226,232,240,0.9)",
-                  "&:hover": {
-                    borderColor: "rgba(56,189,248,0.7)",
-                    backgroundColor: "rgba(56,189,248,0.12)",
-                  },
-                }}
-              >
-                <DownloadOutlinedIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Menu
-            anchorEl={downloadAnchor}
-            open={downloadOpen}
-            onClose={() => setDownloadAnchor(null)}
-            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-            transformOrigin={{ vertical: "top", horizontal: "right" }}
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={toCsv}
+            disabled={!currentRows.length}
+            sx={(theme) => ({
+              textTransform: "none",
+              fontWeight: 600,
+              border: `1px solid ${
+                theme.palette.mode === "dark"
+                  ? "rgba(148,163,184,0.5)"
+                  : "rgba(71,85,105,0.45)"
+              }`,
+              color:
+                theme.palette.mode === "dark"
+                  ? "rgba(226,232,240,0.9)"
+                  : "rgba(15,23,42,0.92)",
+              "&:hover": {
+                borderColor: "rgba(56,189,248,0.7)",
+                backgroundColor: "rgba(56,189,248,0.12)",
+              },
+            })}
           >
-            <MenuItem
-              onClick={() => {
-                setDownloadAnchor(null);
-                toCsv();
-              }}
-            >
-              Download CSV
-            </MenuItem>
-            <MenuItem
-              onClick={() => {
-                setDownloadAnchor(null);
-                toExcel();
-              }}
-            >
-              Download Excel
-            </MenuItem>
-          </Menu>
+            Download CSV
+          </Button>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={toExcel}
+            disabled={!currentRows.length}
+            sx={(theme) => ({
+              textTransform: "none",
+              fontWeight: 600,
+              border: `1px solid ${
+                theme.palette.mode === "dark"
+                  ? "rgba(148,163,184,0.5)"
+                  : "rgba(71,85,105,0.45)"
+              }`,
+              color:
+                theme.palette.mode === "dark"
+                  ? "rgba(226,232,240,0.9)"
+                  : "rgba(15,23,42,0.92)",
+              "&:hover": {
+                borderColor: "rgba(34,197,94,0.7)",
+                backgroundColor: "rgba(34,197,94,0.12)",
+              },
+            })}
+          >
+            Download Excel
+          </Button>
           <Typography variant="body2" fontWeight={600}>
             Orders
           </Typography>
