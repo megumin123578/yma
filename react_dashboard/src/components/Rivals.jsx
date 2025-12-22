@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Avatar,
   Box,
@@ -25,6 +25,16 @@ import {
 import { API_BASE } from "../config";
 import { formatNumber } from "./Module";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import {
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 const pickThumb = (thumbs) =>
   thumbs?.high?.url || thumbs?.medium?.url || thumbs?.default?.url || "";
@@ -50,7 +60,7 @@ const fadeUpSx = {
   },
 };
 
-const RivalsChannel = () => {
+const RivalsChannel = ({ viewMode = "list" }) => {
   const [query, setQuery] = useState("");
   const [channel, setChannel] = useState(null);
   const [videos, setVideos] = useState([]);
@@ -200,6 +210,21 @@ const RivalsChannel = () => {
   const subsHidden =
     stats.hiddenSubscriberCount === true ||
     stats.hiddenSubscriberCount === "true";
+
+  const toChartRows = (items) =>
+    items
+      .map((v) => ({
+        name: v.title || "Untitled",
+        date: toDate(v.publishedAt),
+        publishedAt: v.publishedAt || "",
+        views: Number(v.views || 0),
+        likes: Number(v.likes || 0),
+        comments: Number(v.comments || 0),
+      }))
+      .sort((a, b) => new Date(a.publishedAt) - new Date(b.publishedAt));
+
+  const videoChartData = useMemo(() => toChartRows(videos), [videos]);
+  const shortChartData = useMemo(() => toChartRows(shorts), [shorts]);
 
   return (
     <Stack spacing={2}>
@@ -560,203 +585,363 @@ const RivalsChannel = () => {
             </Stack>
           </Paper>
 
-          <TableContainer
-            component={Paper}
-            elevation={0}
-            sx={(theme) => ({
-              borderRadius: 3,
-              border: "1px solid",
-              borderColor: theme.palette.divider,
-              background:
-                theme.palette.mode === "dark"
-                  ? "rgba(10,15,24,0.8)"
-                  : "rgba(255,255,255,0.94)",
-              boxShadow:
-                theme.palette.mode === "dark"
-                  ? "0 14px 28px rgba(15,23,42,0.4)"
-                  : "0 14px 26px rgba(148,163,184,0.25)",
-              overflow: "hidden",
-              ...fadeUpSx,
-              "& a": {
-                color: theme.palette.mode === "dark" ? "#7dd3fc" : "#0ea5e9",
-                textDecoration: "none",
-                fontWeight: 600,
-              },
-              "& a:hover": {
-                textDecoration: "underline",
-              },
-            })}
-          >
-            <Table size="small">
-              <TableHead
+          {viewMode === "chart" ? (
+            <Stack spacing={2}>
+              <Paper
+                elevation={0}
                 sx={(theme) => ({
+                  borderRadius: 3,
+                  border: "1px solid",
+                  borderColor: theme.palette.divider,
                   background:
                     theme.palette.mode === "dark"
-                      ? "rgba(15,23,42,0.9)"
-                      : "rgba(226,232,240,0.85)",
-                  "& .MuiTableCell-root": {
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                    fontSize: "0.72rem",
-                    color:
-                      theme.palette.mode === "dark"
-                        ? "rgba(226,232,240,0.85)"
-                        : "rgba(15,23,42,0.75)",
-                  },
+                      ? "rgba(10,15,24,0.8)"
+                      : "rgba(255,255,255,0.94)",
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? "0 14px 28px rgba(15,23,42,0.4)"
+                      : "0 14px 26px rgba(148,163,184,0.25)",
+                  overflow: "hidden",
+                  p: 2,
+                  ...fadeUpSx,
                 })}
               >
-                <TableRow>
-                  <TableCell>Latest videos</TableCell>
-                  <TableCell>Published</TableCell>
-                  <TableCell align="right">Views</TableCell>
-                  <TableCell align="right">Likes</TableCell>
-                  <TableCell align="right">Comments</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {videos.map((v) => (
-                  <TableRow
-                    key={v.videoId}
-                    sx={(theme) => ({
-                      transition: "transform 0.2s ease, background-color 0.2s ease",
-                      "&:hover": {
-                        backgroundColor:
-                          theme.palette.mode === "dark"
-                            ? "rgba(51,65,85,0.55)"
-                            : "rgba(226,232,240,0.6)",
-                        transform: "translateY(-1px)",
-                      },
-                    })}
-                  >
-                    <TableCell>
-                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                        <a
-                          href={`https://www.youtube.com/watch?v=${v.videoId}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {v.title}
-                        </a>
-                      </Stack>
-                    </TableCell>
-                    <TableCell>{toDate(v.publishedAt)}</TableCell>
-                    <TableCell align="right">{formatNumber(v.views)}</TableCell>
-                    <TableCell align="right">{formatNumber(v.likes)}</TableCell>
-                    <TableCell align="right">{formatNumber(v.comments)}</TableCell>
-                  </TableRow>
-                ))}
-                {!videos.length && (
-                  <TableRow>
-                    <TableCell colSpan={5}>
-                      <Typography variant="body2" color="text.secondary">
-                        No recent videos found.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
+                <Typography variant="subtitle2" fontWeight={700} mb={2}>
+                  Videos over time
+                </Typography>
+                {videoChartData.length ? (
+                  <Box height={320}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={videoChartData}
+                        margin={{ top: 10, right: 20, left: 0, bottom: 50 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="rgba(148,163,184,0.3)"
+                        />
+                        <XAxis
+                          dataKey="date"
+                          angle={-20}
+                          textAnchor="end"
+                          interval={0}
+                          height={70}
+                          tick={{ fontSize: 11 }}
+                        />
+                        <YAxis tickFormatter={formatNumber} />
+                        <Tooltip
+                          formatter={(value) => formatNumber(value)}
+                          contentStyle={{
+                            borderRadius: 12,
+                            border: "1px solid rgba(148,163,184,0.35)",
+                            boxShadow: "0 12px 24px rgba(15,23,42,0.2)",
+                          }}
+                        />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="views"
+                          name="Views"
+                          stroke="#f59e0b"
+                          strokeWidth={2.5}
+                          dot={{ r: 2 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="likes"
+                          name="Likes"
+                          stroke="#22c55e"
+                          strokeWidth={2}
+                          dot={{ r: 2 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </Box>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No video data to display.
+                  </Typography>
                 )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+              </Paper>
 
-          <TableContainer
-            component={Paper}
-            elevation={0}
-            sx={(theme) => ({
-              borderRadius: 3,
-              border: "1px solid",
-              borderColor: theme.palette.divider,
-              background:
-                theme.palette.mode === "dark"
-                  ? "rgba(10,15,24,0.8)"
-                  : "rgba(255,255,255,0.94)",
-              boxShadow:
-                theme.palette.mode === "dark"
-                  ? "0 14px 28px rgba(15,23,42,0.4)"
-                  : "0 14px 26px rgba(148,163,184,0.25)",
-              overflow: "hidden",
-              ...fadeUpSx,
-              "& a": {
-                color: theme.palette.mode === "dark" ? "#7dd3fc" : "#0ea5e9",
-                textDecoration: "none",
-                fontWeight: 600,
-              },
-              "& a:hover": {
-                textDecoration: "underline",
-              },
-            })}
-          >
-            <Table size="small">
-              <TableHead
+              <Paper
+                elevation={0}
                 sx={(theme) => ({
+                  borderRadius: 3,
+                  border: "1px solid",
+                  borderColor: theme.palette.divider,
                   background:
                     theme.palette.mode === "dark"
-                      ? "rgba(15,23,42,0.9)"
-                      : "rgba(226,232,240,0.85)",
-                  "& .MuiTableCell-root": {
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.08em",
-                    fontSize: "0.72rem",
-                    color:
-                      theme.palette.mode === "dark"
-                        ? "rgba(226,232,240,0.85)"
-                        : "rgba(15,23,42,0.75)",
+                      ? "rgba(10,15,24,0.8)"
+                      : "rgba(255,255,255,0.94)",
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? "0 14px 28px rgba(15,23,42,0.4)"
+                      : "0 14px 26px rgba(148,163,184,0.25)",
+                  overflow: "hidden",
+                  p: 2,
+                  ...fadeUpSx,
+                })}
+              >
+                <Typography variant="subtitle2" fontWeight={700} mb={2}>
+                  Shorts over time
+                </Typography>
+                {shortChartData.length ? (
+                  <Box height={320}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart
+                        data={shortChartData}
+                        margin={{ top: 10, right: 20, left: 0, bottom: 50 }}
+                      >
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="rgba(148,163,184,0.3)"
+                        />
+                        <XAxis
+                          dataKey="date"
+                          angle={-20}
+                          textAnchor="end"
+                          interval={0}
+                          height={70}
+                          tick={{ fontSize: 11 }}
+                        />
+                        <YAxis tickFormatter={formatNumber} />
+                        <Tooltip
+                          formatter={(value) => formatNumber(value)}
+                          contentStyle={{
+                            borderRadius: 12,
+                            border: "1px solid rgba(148,163,184,0.35)",
+                            boxShadow: "0 12px 24px rgba(15,23,42,0.2)",
+                          }}
+                        />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="views"
+                          name="Views"
+                          stroke="#38bdf8"
+                          strokeWidth={2.5}
+                          dot={{ r: 2 }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="likes"
+                          name="Likes"
+                          stroke="#a855f7"
+                          strokeWidth={2}
+                          dot={{ r: 2 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </Box>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No shorts data to display.
+                  </Typography>
+                )}
+              </Paper>
+            </Stack>
+          ) : (
+            <>
+              <TableContainer
+                component={Paper}
+                elevation={0}
+                sx={(theme) => ({
+                  borderRadius: 3,
+                  border: "1px solid",
+                  borderColor: theme.palette.divider,
+                  background:
+                    theme.palette.mode === "dark"
+                      ? "rgba(10,15,24,0.8)"
+                      : "rgba(255,255,255,0.94)",
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? "0 14px 28px rgba(15,23,42,0.4)"
+                      : "0 14px 26px rgba(148,163,184,0.25)",
+                  overflow: "hidden",
+                  ...fadeUpSx,
+                  "& a": {
+                    color: theme.palette.mode === "dark" ? "#7dd3fc" : "#0ea5e9",
+                    textDecoration: "none",
+                    fontWeight: 600,
+                  },
+                  "& a:hover": {
+                    textDecoration: "underline",
                   },
                 })}
               >
-                <TableRow>
-                  <TableCell>Latest shorts</TableCell>
-                  <TableCell>Published</TableCell>
-                  <TableCell align="right">Views</TableCell>
-                  <TableCell align="right">Likes</TableCell>
-                  <TableCell align="right">Comments</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {shorts.map((v) => (
-                  <TableRow
-                    key={v.videoId}
+                <Table size="small">
+                  <TableHead
                     sx={(theme) => ({
-                      transition: "transform 0.2s ease, background-color 0.2s ease",
-                      "&:hover": {
-                        backgroundColor:
+                      background:
+                        theme.palette.mode === "dark"
+                          ? "rgba(15,23,42,0.9)"
+                          : "rgba(226,232,240,0.85)",
+                      "& .MuiTableCell-root": {
+                        fontWeight: 700,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.08em",
+                        fontSize: "0.72rem",
+                        color:
                           theme.palette.mode === "dark"
-                            ? "rgba(51,65,85,0.55)"
-                            : "rgba(226,232,240,0.6)",
-                        transform: "translateY(-1px)",
+                            ? "rgba(226,232,240,0.85)"
+                            : "rgba(15,23,42,0.75)",
                       },
                     })}
                   >
-                    <TableCell>
-                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                        <a
-                          href={`https://www.youtube.com/watch?v=${v.videoId}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {v.title}
-                        </a>
-                      </Stack>
-                    </TableCell>
-                    <TableCell>{toDate(v.publishedAt)}</TableCell>
-                    <TableCell align="right">{formatNumber(v.views)}</TableCell>
-                    <TableCell align="right">{formatNumber(v.likes)}</TableCell>
-                    <TableCell align="right">{formatNumber(v.comments)}</TableCell>
-                  </TableRow>
-                ))}
-                {!shorts.length && (
-                  <TableRow>
-                    <TableCell colSpan={5}>
-                      <Typography variant="body2" color="text.secondary">
-                        No recent shorts found.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                    <TableRow>
+                      <TableCell>Latest videos</TableCell>
+                      <TableCell>Published</TableCell>
+                      <TableCell align="right">Views</TableCell>
+                      <TableCell align="right">Likes</TableCell>
+                      <TableCell align="right">Comments</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {videos.map((v) => (
+                      <TableRow
+                        key={v.videoId}
+                        sx={(theme) => ({
+                          transition: "transform 0.2s ease, background-color 0.2s ease",
+                          "&:hover": {
+                            backgroundColor:
+                              theme.palette.mode === "dark"
+                                ? "rgba(51,65,85,0.55)"
+                                : "rgba(226,232,240,0.6)",
+                            transform: "translateY(-1px)",
+                          },
+                        })}
+                      >
+                        <TableCell>
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                            <a
+                              href={`https://www.youtube.com/watch?v=${v.videoId}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {v.title}
+                            </a>
+                          </Stack>
+                        </TableCell>
+                        <TableCell>{toDate(v.publishedAt)}</TableCell>
+                        <TableCell align="right">{formatNumber(v.views)}</TableCell>
+                        <TableCell align="right">{formatNumber(v.likes)}</TableCell>
+                        <TableCell align="right">{formatNumber(v.comments)}</TableCell>
+                      </TableRow>
+                    ))}
+                    {!videos.length && (
+                      <TableRow>
+                        <TableCell colSpan={5}>
+                          <Typography variant="body2" color="text.secondary">
+                            No recent videos found.
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              <TableContainer
+                component={Paper}
+                elevation={0}
+                sx={(theme) => ({
+                  borderRadius: 3,
+                  border: "1px solid",
+                  borderColor: theme.palette.divider,
+                  background:
+                    theme.palette.mode === "dark"
+                      ? "rgba(10,15,24,0.8)"
+                      : "rgba(255,255,255,0.94)",
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? "0 14px 28px rgba(15,23,42,0.4)"
+                      : "0 14px 26px rgba(148,163,184,0.25)",
+                  overflow: "hidden",
+                  ...fadeUpSx,
+                  "& a": {
+                    color: theme.palette.mode === "dark" ? "#7dd3fc" : "#0ea5e9",
+                    textDecoration: "none",
+                    fontWeight: 600,
+                  },
+                  "& a:hover": {
+                    textDecoration: "underline",
+                  },
+                })}
+              >
+                <Table size="small">
+                  <TableHead
+                    sx={(theme) => ({
+                      background:
+                        theme.palette.mode === "dark"
+                          ? "rgba(15,23,42,0.9)"
+                          : "rgba(226,232,240,0.85)",
+                      "& .MuiTableCell-root": {
+                        fontWeight: 700,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.08em",
+                        fontSize: "0.72rem",
+                        color:
+                          theme.palette.mode === "dark"
+                            ? "rgba(226,232,240,0.85)"
+                            : "rgba(15,23,42,0.75)",
+                      },
+                    })}
+                  >
+                    <TableRow>
+                      <TableCell>Latest shorts</TableCell>
+                      <TableCell>Published</TableCell>
+                      <TableCell align="right">Views</TableCell>
+                      <TableCell align="right">Likes</TableCell>
+                      <TableCell align="right">Comments</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {shorts.map((v) => (
+                      <TableRow
+                        key={v.videoId}
+                        sx={(theme) => ({
+                          transition: "transform 0.2s ease, background-color 0.2s ease",
+                          "&:hover": {
+                            backgroundColor:
+                              theme.palette.mode === "dark"
+                                ? "rgba(51,65,85,0.55)"
+                                : "rgba(226,232,240,0.6)",
+                            transform: "translateY(-1px)",
+                          },
+                        })}
+                      >
+                        <TableCell>
+                          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                            <a
+                              href={`https://www.youtube.com/watch?v=${v.videoId}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {v.title}
+                            </a>
+                          </Stack>
+                        </TableCell>
+                        <TableCell>{toDate(v.publishedAt)}</TableCell>
+                        <TableCell align="right">{formatNumber(v.views)}</TableCell>
+                        <TableCell align="right">{formatNumber(v.likes)}</TableCell>
+                        <TableCell align="right">{formatNumber(v.comments)}</TableCell>
+                      </TableRow>
+                    ))}
+                    {!shorts.length && (
+                      <TableRow>
+                        <TableCell colSpan={5}>
+                          <Typography variant="body2" color="text.secondary">
+                            No recent shorts found.
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </>
+          )}
         </Stack>
       )}
 
