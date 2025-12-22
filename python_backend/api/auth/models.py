@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, Text, DateTime
+from datetime import datetime
 from python_backend.api.auth.database import Base
 
 class User(Base):
@@ -24,3 +25,16 @@ class RivalChannel(Base):
     channel_name = Column(String, nullable=True)
     channel_url = Column(String, nullable=True)
     channel_avatar_url = Column(String, nullable=True)
+
+
+class SmmstoreAnalyticsCache(Base):
+    __tablename__ = "smmstore_analytics_cache"
+    __table_args__ = (
+        UniqueConstraint("user_id", "month", name="uq_smmstore_user_month"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    month = Column(String, nullable=False, index=True)
+    payload = Column(Text, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)

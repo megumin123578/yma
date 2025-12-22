@@ -1,12 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Dict
+from sqlalchemy.orm import Session
 from python_backend.api.auth.auth_utils import get_current_user
-from python_backend.api.auth.models import User
+from python_backend.api.auth.database import get_db
+from python_backend.api.auth.models import User, SmmstoreAnalyticsCache
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import json
+import os
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from bs4 import BeautifulSoup
 import re
@@ -14,6 +18,7 @@ import re
 API_URL = "https://10000smm.top/api/v2"
 
 router = APIRouter(prefix="/api/smmstore", tags=["smmstore"])
+_channel_cache: Dict[str, str] = {}
 
 
 def smm_request(api_key: str, params: dict):
@@ -146,6 +151,82 @@ def _clean_link(value: str) -> str:
     if match:
         return match.group(1)
     return cleaned.split("Additional data", 1)[0].strip()
+
+
+def _extract_video_id(url: str) -> Optional[str]:
+    if not url:
+        return None
+    match = re.search(r"(?:v=|youtu\.be/|/shorts/)([A-Za-z0-9_-]{11})", url)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _is_quota_exceeded(payload: Dict) -> bool:
+    try:
+        error = payload.get("error") or {}
+        for item in error.get("errors", []):
+            if item.get("reason") == "quotaExceeded":
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _fetch_channel_title(video_id: str) -> Optional[str]:
+    api_keys = [
+        os.getenv("YOUTUBE_API_KEY1", "").strip(),
+        os.getenv("YOUTUBE_API_KEY2", "").strip(),
+        os.getenv("YOUTUBE_API_KEY", "").strip(),
+    ]
+    api_keys = [k for k in api_keys if k]
+    if not api_keys:
+        return None
+
+    url = "https://www.googleapis.com/youtube/v3/videos"
+    params = {"part": "snippet", "id": video_id}
+
+    for key in api_keys:
+        params["key"] = key
+        try:
+            resp = requests.get(url, params=params, timeout=20)
+            data = resp.json()
+        except Exception:
+            continue
+
+        if _is_quota_exceeded(data):
+            continue
+
+        items = data.get("items") or []
+        if not items:
+            return None
+        snippet = items[0].get("snippet") or {}
+        return snippet.get("channelTitle") or None
+
+    return None
+
+
+def _map_links_to_channels(links: List[str]) -> Dict[str, str]:
+    mapping: Dict[str, str] = {}
+    unique_links = [link for link in set(links) if link]
+
+    def fetch_one(link: str):
+        if link in _channel_cache:
+            return link, _channel_cache[link]
+        video_id = _extract_video_id(link)
+        if not video_id:
+            return link, link
+        title = _fetch_channel_title(video_id)
+        return link, title or link
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {executor.submit(fetch_one, link): link for link in unique_links}
+        for future in as_completed(futures):
+            link, title = future.result()
+            mapping[link] = title
+            _channel_cache[link] = title
+
+    return mapping
     return None
 
 
@@ -157,107 +238,153 @@ def _previous_month_range(now: datetime) -> tuple[datetime, datetime]:
 
 
 @router.post("/analytics")
-def smmstore_analytics(payload: AnalyticsRequest, current_user: User = Depends(get_current_user)):
+def smmstore_analytics(
+    payload: AnalyticsRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     raw_cookie = (payload.cookies or "").strip()
     cookies = _parse_cookie_string(raw_cookie)
     if not cookies:
         raise HTTPException(status_code=400, detail="Missing PHPSESSID in cookies")
 
-    session = requests.Session()
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://10000smm.top/api",
-    }
-    if raw_cookie:
-        headers["Cookie"] = raw_cookie
+    try:
+        session = requests.Session()
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://10000smm.top/api",
+        }
+        if raw_cookie:
+            headers["Cookie"] = raw_cookie
 
-    start_date, end_date = _previous_month_range(datetime.now())
-    max_pages = 200
-    results: List[Dict] = []
-
-    for page in range(1, max_pages + 1):
-        url = f"https://10000smm.top/orders?page={page}"
-        resp = session.get(url, headers=headers, cookies=cookies, timeout=30)
-        if resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="Failed to fetch orders")
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-        table = soup.find("table")
-        if not table:
-            snippet = resp.text[:400].replace("\n", " ").strip()
-            raise HTTPException(
-                status_code=401,
-                detail=f"Không thấy bảng orders. Có thể cookie hết hạn hoặc bị redirect/login. Snippet: {snippet}",
+        start_date, end_date = _previous_month_range(datetime.now())
+        month_key = start_date.strftime("%Y-%m")
+        cached = (
+            db.query(SmmstoreAnalyticsCache)
+            .filter(
+                SmmstoreAnalyticsCache.user_id == current_user.id,
+                SmmstoreAnalyticsCache.month == month_key,
             )
+            .first()
+        )
+        if cached:
+            try:
+                return json.loads(cached.payload)
+            except Exception:
+                pass
+        max_pages = 200
+        results: List[Dict] = []
 
-        rows = table.find_all("tr")[1:]
-        if not rows:
-            break
+        for page in range(1, max_pages + 1):
+            url = f"https://10000smm.top/orders?page={page}"
+            resp = session.get(url, headers=headers, cookies=cookies, timeout=30)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=502, detail="Failed to fetch orders")
 
-        page_has_target = False
-        page_all_older = True
-        parsed_any = False
+            soup = BeautifulSoup(resp.text, "html.parser")
+            table = soup.find("table")
+            if not table:
+                snippet = resp.text[:400].replace("\n", " ").strip()
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"Không thấy bảng orders. Có thể cookie hết hạn hoặc bị redirect/login. Snippet: {snippet}",
+                )
 
-        for tr in rows:
-            tds = tr.find_all("td")
-            if not tds:
-                continue
-            cols = [td.get_text(strip=True) for td in tds[:9]]
-            if len(cols) < 9:
-                continue
+            rows = table.find_all("tr")[1:]
+            if not rows:
+                break
 
-            date_value = _parse_date(cols[1])
-            if not date_value:
-                continue
-            parsed_any = True
+            page_has_target = False
+            page_all_older = True
+            parsed_any = False
 
-            if start_date <= date_value < end_date:
-                page_has_target = True
-                page_all_older = False
-                results.append({
-                    "ID": cols[0],
-                    "Date": cols[1],
-                    "Link": _clean_link(cols[2]),
-                    "Charge": cols[3],
-                    "Start count": cols[4],
-                    "Quantity": cols[5],
-                    "Service": cols[6],
-                    "Status": cols[7],
-                    "Remains": cols[8],
-                })
-            elif date_value >= end_date:
-                page_all_older = False
+            for tr in rows:
+                tds = tr.find_all("td")
+                if not tds:
+                    continue
+                cols = [td.get_text(strip=True) for td in tds[:9]]
+                if len(cols) < 9:
+                    continue
 
-        if not parsed_any:
-            raise HTTPException(status_code=422, detail="Cannot parse Date column in orders table")
+                date_value = _parse_date(cols[1])
+                if not date_value:
+                    continue
+                parsed_any = True
 
-        if not page_has_target and page_all_older:
-            break
+                if start_date <= date_value < end_date:
+                    page_has_target = True
+                    page_all_older = False
+                    results.append({
+                        "ID": cols[0],
+                        "Date": cols[1],
+                        "Link": _clean_link(cols[2]),
+                        "Charge": cols[3],
+                        "Start count": cols[4],
+                        "Quantity": cols[5],
+                        "Service": cols[6],
+                        "Status": cols[7],
+                        "Remains": cols[8],
+                    })
+                elif date_value >= end_date:
+                    page_all_older = False
 
-    totals_by_channel: Dict[str, float] = {}
-    total_sum = 0.0
-    for row in results:
-        link = row.get("Link") or "Unidentified"
-        charge_raw = row.get("Charge", "").replace("$", "").replace(",", "").strip()
+            if not parsed_any:
+                raise HTTPException(status_code=422, detail="Cannot parse Date column in orders table")
+
+            if not page_has_target and page_all_older:
+                break
+
+        link_map = {}
+        if results:
+            link_map = _map_links_to_channels([row.get("Link", "") for row in results])
+
+        totals_by_channel: Dict[str, float] = {}
+        total_sum = 0.0
+        for row in results:
+            raw_link = row.get("Link") or "Unidentified"
+            link = link_map.get(raw_link, raw_link)
+            charge_raw = row.get("Charge", "").replace("$", "").replace(",", "").strip()
+            try:
+                charge_val = float(charge_raw)
+            except ValueError:
+                charge_val = 0.0
+            totals_by_channel[link] = totals_by_channel.get(link, 0.0) + charge_val
+            total_sum += charge_val
+
+        totals_list = [
+            {"link": k, "charge": round(v, 2)}
+            for k, v in sorted(totals_by_channel.items(), key=lambda x: x[1], reverse=True)
+        ]
+
+        response_payload = {
+            "month": start_date.strftime("%Y-%m"),
+            "count": len(results),
+            "orders": results,
+            "totals": {
+                "by_channel": totals_list,
+                "total": round(total_sum, 2),
+            },
+        }
         try:
-            charge_val = float(charge_raw)
-        except ValueError:
-            charge_val = 0.0
-        totals_by_channel[link] = totals_by_channel.get(link, 0.0) + charge_val
-        total_sum += charge_val
-
-    totals_list = [
-        {"link": k, "charge": round(v, 2)}
-        for k, v in sorted(totals_by_channel.items(), key=lambda x: x[1], reverse=True)
-    ]
-
-    return {
-        "month": start_date.strftime("%Y-%m"),
-        "count": len(results),
-        "orders": results,
-        "totals": {
-            "by_channel": totals_list,
-            "total": round(total_sum, 2),
-        },
-    }
+            payload_str = json.dumps(response_payload, ensure_ascii=False)
+            if cached:
+                cached.payload = payload_str
+                cached.updated_at = datetime.utcnow()
+            else:
+                db.add(
+                    SmmstoreAnalyticsCache(
+                        user_id=current_user.id,
+                        month=month_key,
+                        payload=payload_str,
+                        updated_at=datetime.utcnow(),
+                    )
+                )
+            db.commit()
+        except Exception:
+            db.rollback()
+        return response_payload
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

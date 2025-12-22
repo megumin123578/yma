@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import {
   Alert,
-  Box,
   Button,
   FormControlLabel,
   Paper,
@@ -30,6 +29,22 @@ const columns = [
   "Status",
   "Remains",
 ];
+
+const renderCell = (col, value) => {
+  if (col === "Link" && typeof value === "string" && value.startsWith("http")) {
+    return (
+      <a
+        href={value}
+        target="_blank"
+        rel="noreferrer"
+        style={{ color: "#38bdf8" }}
+      >
+        {value}
+      </a>
+    );
+  }
+  return value ?? "";
+};
 
 const SmmstoreAnalytics = () => {
   const theme = useTheme();
@@ -240,7 +255,9 @@ const SmmstoreAnalytics = () => {
                       }}
                     >
                       {columns.map((col) => (
-                        <TableCell key={col}>{row[col] ?? ""}</TableCell>
+                        <TableCell key={col}>
+                          {renderCell(col, row[col])}
+                        </TableCell>
                       ))}
                     </TableRow>
                   ))}

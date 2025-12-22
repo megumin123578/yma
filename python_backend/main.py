@@ -50,6 +50,26 @@ def ensure_rival_channel_avatar_column():
 
 ensure_rival_channel_avatar_column()
 
+
+def ensure_smmstore_analytics_cache_table():
+    with engine.begin() as conn:
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS smmstore_analytics_cache (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                month TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                updated_at DATETIME NOT NULL
+            );
+        """)
+        conn.exec_driver_sql("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_smmstore_user_month
+            ON smmstore_analytics_cache (user_id, month);
+        """)
+
+
+ensure_smmstore_analytics_cache_table()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
