@@ -2,14 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Button,
-  FormControlLabel,
   IconButton,
   InputLabel,
   MenuItem,
   Paper,
   Select,
   Stack,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -77,13 +75,12 @@ const formatMonthLabel = (value) => {
   return `${match[2]}-${match[1]}`;
 };
 
-const SmmstoreAnalytics = () => {
+const SmmstoreAnalytics = ({ viewMode = "orders" }) => {
   const theme = useTheme();
   const [cookies, setCookies] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
-  const [viewMode, setViewMode] = useState("orders");
   const [months, setMonths] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState("");
 
@@ -277,134 +274,153 @@ const SmmstoreAnalytics = () => {
     <Stack spacing={2.5}>
       <Paper elevation={0} sx={cardSx}>
         <Stack spacing={2}>
-          <Typography variant="subtitle1" fontWeight={700}>
-            Cookies
-          </Typography>
-          <TextField
-            placeholder="Paste cookie string here..."
-            value={cookies}
-            onChange={(e) => setCookies(e.target.value)}
-            multiline
-            minRows={4}
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                backgroundColor:
-                  theme.palette.mode === "dark"
-                    ? "rgba(15,23,42,0.45)"
-                    : "rgba(255,255,255,0.9)",
-                borderRadius: 2,
-                transition: "box-shadow 0.2s ease",
-                "&:hover": {
-                  boxShadow:
-                    theme.palette.mode === "dark"
-                      ? "0 0 0 1px rgba(56,189,248,0.35)"
-                      : "0 0 0 1px rgba(14,165,233,0.3)",
-                },
-                "&.Mui-focused": {
-                  boxShadow:
-                    theme.palette.mode === "dark"
-                      ? "0 0 0 2px rgba(56,189,248,0.45)"
-                      : "0 0 0 2px rgba(14,165,233,0.45)",
-                },
-              },
-            }}
-          />
-          <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-            <Button
-              variant="contained"
-              onClick={handleLoad}
-              disabled={loading || (!cookies.trim() && !selectedMonth)}
-              sx={{
-                textTransform: "none",
-                fontWeight: 700,
-                borderRadius: 2,
-                px: 2.6,
-                position: "relative",
-                overflow: "hidden",
-                backgroundColor:
-                  theme.palette.mode === "dark" ? "#22c55e" : "#16a34a",
-                color: theme.palette.mode === "dark" ? "#052e16" : "#052e16",
-                boxShadow: "0 12px 20px rgba(15,23,42,0.25)",
-                transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                "&:before": {
-                  content: '""',
-                  position: "absolute",
-                  top: "-50%",
-                  left: "-20%",
-                  width: "140%",
-                  height: "200%",
-                  background:
-                    "linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.45) 45%, transparent 90%)",
-                  transform: "translateX(-120%)",
-                  transition: "transform 0.6s ease",
-                  opacity: 0.8,
-                },
-                "&:hover": {
-                  transform: "translateY(-1px)",
-                  boxShadow: "0 16px 26px rgba(15,23,42,0.3)",
-                  backgroundColor:
-                    theme.palette.mode === "dark" ? "#4ade80" : "#15803d",
-                },
-                "&:hover:before": {
-                  transform: "translateX(0%)",
-                },
-              }}
-            >
-              {loading ? "Loading..." : "Get last month"}
-            </Button>
-            {data?.month && (
-              <Typography variant="body2" color="text.secondary">
-                Month: {formatMonthLabel(data.month)}
+          <Stack direction="row" spacing={2} alignItems="flex-start" flexWrap="wrap">
+            <Stack spacing={1} sx={{ minWidth: 220 }}>
+              <Typography variant="subtitle1" fontWeight={700}>
+                Cookies
               </Typography>
-            )}
-            {data?.count !== undefined && (
-              <Typography variant="body2" color="text.secondary">
-                Orders: {data.count}
-              </Typography>
-            )}
-            {!!months.length && (
-              <Stack direction="row" spacing={1} alignItems="center">
-                <InputLabel shrink>Month</InputLabel>
-                <Select
-                  size="small"
-                  value={selectedMonth}
-                  displayEmpty
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  sx={{ minWidth: 140 }}
-                >
-                  <MenuItem value="">
-                    <em>Last month</em>
-                  </MenuItem>
+              {!!months.length && (
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <InputLabel shrink>Month</InputLabel>
+                  <Select
+                    size="small"
+                    value={selectedMonth}
+                    displayEmpty
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    sx={{ minWidth: 140 }}
+                    renderValue={(value) => {
+                      if (!value) return "Last month";
+                      return formatMonthLabel(value);
+                    }}
+                  >
+                    <MenuItem value="">
+                      <em>Last month</em>
+                    </MenuItem>
                   {months.map((item) => (
-                    <MenuItem key={item.month} value={item.month}>
-                      {formatMonthLabel(item.month)}
+                    <MenuItem
+                      key={item.month}
+                      value={item.month}
+                      sx={{
+                        pr: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 1,
+                      }}
+                    >
+                      <span>{formatMonthLabel(item.month)}</span>
+                      <IconButton
+                        size="small"
+                        edge="end"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedMonth(item.month);
+                          handleDeleteMonth();
+                        }}
+                        aria-label={`Delete ${item.month}`}
+                        sx={{
+                          color: theme.palette.text.secondary,
+                          "&:hover": {
+                            color: theme.palette.error.main,
+                          },
+                        }}
+                      >
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
                     </MenuItem>
                   ))}
                 </Select>
-                <IconButton
-                  size="small"
-                  onClick={handleDeleteMonth}
-                  disabled={!selectedMonth}
-                  aria-label="Delete cached month"
-                >
-                  <DeleteOutlineIcon fontSize="small" />
-                </IconButton>
+                </Stack>
+              )}
+            </Stack>
+            <Stack spacing={1} sx={{ flex: 1, minWidth: 320 }}>
+              <Stack direction="row" justifyContent="flex-end" spacing={2}>
+                {data?.month && (
+                  <Typography variant="body2" color="text.secondary">
+                    Month: {formatMonthLabel(data.month)}
+                  </Typography>
+                )}
+                {data?.count !== undefined && (
+                  <Typography variant="body2" color="text.secondary">
+                    Orders: {data.count}
+                  </Typography>
+                )}
               </Stack>
-            )}
-            {(hasOrders || hasTotals) && (
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={viewMode === "totals"}
-                    onChange={(e) =>
-                      setViewMode(e.target.checked ? "totals" : "orders")
-                    }
-                    color="warning"
-                  />
-                }
-                label={viewMode === "totals" ? "Totals by channel" : "Orders"}
+              <TextField
+                placeholder="Paste cookie string here..."
+                value={cookies}
+                onChange={(e) => setCookies(e.target.value)}
+                multiline
+                minRows={4}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    backgroundColor:
+                      theme.palette.mode === "dark"
+                        ? "rgba(15,23,42,0.45)"
+                        : "rgba(255,255,255,0.9)",
+                    borderRadius: 2,
+                    transition: "box-shadow 0.2s ease",
+                    "&:hover": {
+                      boxShadow:
+                        theme.palette.mode === "dark"
+                          ? "0 0 0 1px rgba(56,189,248,0.35)"
+                          : "0 0 0 1px rgba(14,165,233,0.3)",
+                    },
+                    "&.Mui-focused": {
+                      boxShadow:
+                        theme.palette.mode === "dark"
+                          ? "0 0 0 2px rgba(56,189,248,0.45)"
+                          : "0 0 0 2px rgba(14,165,233,0.45)",
+                    },
+                  },
+                }}
               />
-            )}
+              <Stack direction="row" justifyContent="flex-end">
+                <Button
+                  variant="contained"
+                  onClick={handleLoad}
+                  disabled={loading || (!cookies.trim() && !selectedMonth)}
+                  sx={{
+                    textTransform: "none",
+                    fontWeight: 700,
+                    borderRadius: 2,
+                    px: 2.6,
+                    position: "relative",
+                    overflow: "hidden",
+                    backgroundColor:
+                      theme.palette.mode === "dark" ? "#22c55e" : "#16a34a",
+                    color: theme.palette.mode === "dark" ? "#052e16" : "#052e16",
+                    boxShadow: "0 12px 20px rgba(15,23,42,0.25)",
+                    transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                    "&:before": {
+                      content: '""',
+                      position: "absolute",
+                      top: "-50%",
+                      left: "-20%",
+                      width: "140%",
+                      height: "200%",
+                      background:
+                        "linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.45) 45%, transparent 90%)",
+                      transform: "translateX(-120%)",
+                      transition: "transform 0.6s ease",
+                      opacity: 0.8,
+                    },
+                    "&:hover": {
+                      transform: "translateY(-1px)",
+                      boxShadow: "0 16px 26px rgba(15,23,42,0.3)",
+                      backgroundColor:
+                        theme.palette.mode === "dark" ? "#4ade80" : "#15803d",
+                    },
+                    "&:hover:before": {
+                      transform: "translateX(0%)",
+                    },
+                  }}
+                >
+                  {loading ? "Loading..." : "Get last month"}
+                </Button>
+              </Stack>
+            </Stack>
           </Stack>
           {error && <Alert severity="error">{error}</Alert>}
         </Stack>
