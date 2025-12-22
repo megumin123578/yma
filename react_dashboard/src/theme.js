@@ -1,4 +1,4 @@
-import { createContext, useState, useMemo } from "react";
+import { createContext, useEffect, useMemo, useState } from "react";
 import { createTheme } from "@mui/material/styles";
 
 // color design tokens export
@@ -199,8 +199,18 @@ export const ColorModeContext = createContext({
   toggleColorMode: () => {},
 });
 
-export const useMode = () => {
-  const [mode, setMode] = useState("dark");
+const loadStoredMode = (storageKey) => {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    return raw === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+};
+
+export const useMode = (userId) => {
+  const storageKey = `theme.mode.${userId || "guest"}`;
+  const [mode, setMode] = useState(() => loadStoredMode(storageKey));
 
   const colorMode = useMemo(
     () => ({
@@ -209,6 +219,18 @@ export const useMode = () => {
     }),
     []
   );
+
+  useEffect(() => {
+    setMode(loadStoredMode(storageKey));
+  }, [storageKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(storageKey, mode);
+    } catch {
+      // ignore storage errors
+    }
+  }, [storageKey, mode]);
 
   const theme = useMemo(() => createTheme(themeSettings(mode)), [mode]);
   return [theme, colorMode];
