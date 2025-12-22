@@ -230,17 +230,17 @@ const Sidebar = () => {
             </Typography>
 
             <Item
-              title="Tool Concatenate"
-              to="/bar"
-              icon={<BarChartOutlinedIcon />}
+              title="SMMStore Orders"
+              to="/smmstore"
+              icon={<AttachMoneyIcon />}
               selected={selected}
               setSelected={setSelected}
             />
 
             <Item
-              title="SMMStore"
-              to="/smmstore"
-              icon={<AttachMoneyIcon />}
+              title="SMMStore Analytics"
+              to="/smmstore_analytics"
+              icon={<BarChartOutlinedIcon />}
               selected={selected}
               setSelected={setSelected}
             />

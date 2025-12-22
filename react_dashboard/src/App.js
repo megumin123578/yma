@@ -18,6 +18,7 @@ import GeographyChart from "./components/Geography";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import { UserContext } from "./context/UserContext";
+import SmmstoreAnalyticsScene from "./scenes/smmstore_analytics";
 
 
 function App() {
@@ -117,6 +118,14 @@ function App() {
                 <SmmstoreScene />
               </ProtectedRoute>
             }
+          />
+          <Route
+          path="smmstore_analytics"
+          element={
+            <ProtectedRoute>
+              <SmmstoreAnalyticsScene/>
+            </ProtectedRoute>
+          }
           />
         </Routes>
       </main>
