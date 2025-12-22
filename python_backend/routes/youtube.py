@@ -1,6 +1,7 @@
 # routes/youtube.py
 import os
 import re
+from datetime import datetime
 from typing import Dict, Optional
 from urllib.parse import urlparse
 
@@ -11,6 +12,7 @@ from googleapiclient.errors import HttpError
 router = APIRouter(prefix="/api/youtube", tags=["youtube"])
 
 CHANNEL_ID_RE = re.compile(r"^UC[a-zA-Z0-9_-]{22}$")
+_channel_cache: dict[str, dict] = {}
 
 
 def _normalize_query(raw: str) -> Dict[str, str]:
@@ -177,36 +179,82 @@ def _fetch_latest_shorts(youtube, channel_id: str, max_items: int = 10):
     return _enrich_video_stats(youtube, videos)
 
 
+def _prune_cache(day_key: str) -> None:
+    stale = [k for k in _channel_cache.keys() if not k.startswith(f"{day_key}:")]
+    for key in stale:
+        _channel_cache.pop(key, None)
+
+
+def _get_cache(cache_key: str) -> Optional[Dict]:
+    cached = _channel_cache.get(cache_key)
+    return cached["data"] if cached else None
+
+
+def _set_cache(cache_key: str, data: Dict) -> None:
+    _channel_cache[cache_key] = {"data": data}
+
+
+def _is_quota_exceeded(err: HttpError) -> bool:
+    try:
+        details = err.error_details or []
+        for item in details:
+            if item.get("reason") == "quotaExceeded":
+                return True
+    except Exception:
+        pass
+    return "quotaExceeded" in str(err)
+
+
 @router.get("/channel")
 def channel_detail(
     query: str = Query(..., min_length=1),
 ):
-    api_key = os.getenv("YOUTUBE_API_KEY", "").strip()
-    if not api_key:
-        raise HTTPException(500, "Missing YOUTUBE_API_KEY")
+    api_keys = [
+        os.getenv("YOUTUBE_API_KEY1", "").strip(),
+        os.getenv("YOUTUBE_API_KEY2", "").strip(),
+    ]
+    api_keys = [k for k in api_keys if k]
+    if not api_keys:
+        raise HTTPException(500, "Missing YOUTUBE_API_KEY1 or YOUTUBE_API_KEY2")
 
-    youtube = build("youtube", "v3", developerKey=api_key)
-    params = _normalize_query(query)
+    day_key = datetime.utcnow().strftime("%Y-%m-%d")
+    _prune_cache(day_key)
+    cache_key = f"{day_key}:{query.strip().lower()}"
+    cached = _get_cache(cache_key)
+    if cached:
+        return cached
 
-    try:
-        channel = _fetch_channel(youtube, params)
-    except HttpError as e:
-        raise HTTPException(502, f"YouTube API error: {e}")
+    last_error = None
+    for api_key in api_keys:
+        youtube = build("youtube", "v3", developerKey=api_key)
+        params = _normalize_query(query)
+        try:
+            channel = _fetch_channel(youtube, params)
+            if not channel:
+                raise HTTPException(404, "Channel not found")
 
-    if not channel:
-        raise HTTPException(404, "Channel not found")
+            channel_id = channel.get("id", "")
+            videos = _fetch_latest_videos(youtube, channel_id, max_items=10)
+            shorts = _fetch_latest_shorts(youtube, channel_id, max_items=10)
 
-    channel_id = channel.get("id", "")
-    videos = _fetch_latest_videos(youtube, channel_id, max_items=10)
-    shorts = _fetch_latest_shorts(youtube, channel_id, max_items=10)
+            for v in videos:
+                v["isNew"] = False
+            for v in shorts:
+                v["isNew"] = False
 
-    for v in videos:
-        v["isNew"] = False
-    for v in shorts:
-        v["isNew"] = False
+            payload = {
+                "channel": channel,
+                "videos": videos,
+                "shorts": shorts,
+            }
+            _set_cache(cache_key, payload)
+            return payload
+        except HttpError as e:
+            last_error = e
+            if _is_quota_exceeded(e):
+                continue
+            raise HTTPException(502, f"YouTube API error: {e}")
 
-    return {
-        "channel": channel,
-        "videos": videos,
-        "shorts": shorts,
-    }
+    if last_error:
+        raise HTTPException(502, f"YouTube API error: {last_error}")
+    raise HTTPException(502, "YouTube API error")
