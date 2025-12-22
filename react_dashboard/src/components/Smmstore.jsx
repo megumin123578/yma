@@ -53,29 +53,79 @@ const Smmstore = () => {
   const cardSx = useMemo(
     () => ({
       p: 2.5,
-      borderRadius: 2.5,
-      border:
+      borderRadius: 3,
+      border: "1px solid",
+      borderColor:
         theme.palette.mode === "dark"
-          ? "1px solid rgba(148,163,184,0.25)"
-          : `1px solid ${theme.palette.divider}`,
-      bgcolor:
+          ? "rgba(148,163,184,0.2)"
+          : "rgba(15,23,42,0.12)",
+      background:
         theme.palette.mode === "dark"
-          ? "rgba(17,24,39,0.85)"
-          : "rgba(255,255,255,0.92)",
+          ? "linear-gradient(140deg, rgba(15,23,42,0.92) 0%, rgba(30,41,59,0.88) 60%, rgba(14,165,233,0.16) 100%)"
+          : "linear-gradient(140deg, rgba(248,250,252,0.96) 0%, rgba(226,232,240,0.92) 55%, rgba(191,219,254,0.6) 100%)",
       boxShadow:
         theme.palette.mode === "dark"
-          ? "0 10px 28px rgba(2,6,23,0.6)"
-          : "0 10px 24px rgba(15,23,42,0.08)",
+          ? "0 18px 36px rgba(15,23,42,0.45)"
+          : "0 18px 30px rgba(148,163,184,0.25)",
       transition: "transform 180ms ease, box-shadow 180ms ease",
       "&:hover": {
         transform: "translateY(-2px)",
         boxShadow:
           theme.palette.mode === "dark"
-            ? "0 16px 32px rgba(2,6,23,0.7)"
-            : "0 16px 30px rgba(15,23,42,0.12)",
+            ? "0 22px 40px rgba(15,23,42,0.6)"
+            : "0 22px 34px rgba(148,163,184,0.32)",
       },
     }),
-    [theme.palette.divider, theme.palette.mode]
+    [theme.palette.mode]
+  );
+
+  const tablePaperSx = useMemo(
+    () => ({
+      borderRadius: 3,
+      border: "1px solid",
+      borderColor:
+        theme.palette.mode === "dark"
+          ? "rgba(148,163,184,0.22)"
+          : "rgba(15,23,42,0.12)",
+      background:
+        theme.palette.mode === "dark"
+          ? "rgba(10,15,24,0.82)"
+          : "rgba(255,255,255,0.94)",
+      boxShadow:
+        theme.palette.mode === "dark"
+          ? "0 14px 28px rgba(15,23,42,0.4)"
+          : "0 14px 26px rgba(148,163,184,0.25)",
+      overflow: "hidden",
+      transition: "transform 180ms ease, box-shadow 180ms ease",
+      "&:hover": {
+        transform: "translateY(-2px)",
+        boxShadow:
+          theme.palette.mode === "dark"
+            ? "0 18px 34px rgba(15,23,42,0.45)"
+            : "0 18px 30px rgba(148,163,184,0.3)",
+      },
+    }),
+    [theme.palette.mode]
+  );
+
+  const tableHeadSx = useMemo(
+    () => ({
+      background:
+        theme.palette.mode === "dark"
+          ? "rgba(15,23,42,0.9)"
+          : "rgba(226,232,240,0.85)",
+      "& .MuiTableCell-root": {
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        fontSize: "0.72rem",
+        color:
+          theme.palette.mode === "dark"
+            ? "rgba(226,232,240,0.85)"
+            : "rgba(15,23,42,0.75)",
+      },
+    }),
+    [theme.palette.mode]
   );
 
   const outlinedFieldSx = useMemo(
@@ -932,38 +982,12 @@ const Smmstore = () => {
       {/* Table */}
       <Paper
         elevation={0}
-        sx={{
-          borderRadius: 2.5,
-          border:
-            theme.palette.mode === "dark"
-              ? "1px solid rgba(148,163,184,0.25)"
-              : `1px solid ${theme.palette.divider}`,
-          overflow: "hidden",
-          bgcolor:
-            theme.palette.mode === "dark"
-              ? "rgba(15,23,42,0.65)"
-              : "transparent",
-          transition: "transform 180ms ease, box-shadow 180ms ease",
-          "&:hover": {
-            transform: "translateY(-2px)",
-            boxShadow:
-              theme.palette.mode === "dark"
-                ? "0 16px 32px rgba(2,6,23,0.6)"
-                : "0 16px 28px rgba(15,23,42,0.12)",
-          },
-        }}
+        sx={tablePaperSx}
       >
         <TableContainer>
           <Table size="small">
-            <TableHead>
-              <TableRow
-                sx={{
-                  bgcolor:
-                    theme.palette.mode === "dark"
-                      ? "rgba(30,41,59,0.7)"
-                      : "action.hover",
-                }}
-              >
+            <TableHead sx={tableHeadSx}>
+              <TableRow>
                 <TableCell>Run Time</TableCell>
                 <TableCell>Order ID</TableCell>
                 <TableCell>Service</TableCell>
@@ -978,13 +1002,19 @@ const Smmstore = () => {
                 <TableRow
                   key={order.id}
                   sx={{
-                    bgcolor: index % 2 === 0 ? "transparent" : "action.hover",
-                    transition: "background-color 160ms ease",
+                    bgcolor:
+                      index % 2 === 0
+                        ? "transparent"
+                        : theme.palette.mode === "dark"
+                        ? "rgba(30,41,59,0.35)"
+                        : "rgba(226,232,240,0.5)",
+                    transition: "transform 0.2s ease, background-color 0.2s ease",
                     "&:hover": {
                       bgcolor:
                         theme.palette.mode === "dark"
-                          ? "rgba(30,41,59,0.6)"
-                          : "rgba(148,163,184,0.2)",
+                          ? "rgba(51,65,85,0.55)"
+                          : "rgba(226,232,240,0.6)",
+                      transform: "translateY(-1px)",
                     },
                   }}
                 >

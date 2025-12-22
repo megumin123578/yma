@@ -206,6 +206,61 @@ const ChannelCompare = () => {
     return alpha("#f59e0b", 0.18);
   };
 
+  const panelSx = useMemo(
+    () => ({
+      p: 2.5,
+      borderRadius: 3,
+      border: "1px solid",
+      borderColor: isDark
+        ? "rgba(148,163,184,0.2)"
+        : "rgba(15,23,42,0.12)",
+      background: isDark
+        ? "linear-gradient(140deg, rgba(15,23,42,0.92) 0%, rgba(30,41,59,0.88) 60%, rgba(14,165,233,0.16) 100%)"
+        : "linear-gradient(140deg, rgba(248,250,252,0.96) 0%, rgba(226,232,240,0.92) 55%, rgba(191,219,254,0.6) 100%)",
+      boxShadow: isDark
+        ? "0 18px 36px rgba(15,23,42,0.45)"
+        : "0 18px 30px rgba(148,163,184,0.25)",
+      transition: "transform 220ms ease, box-shadow 220ms ease",
+      "&:hover": {
+        transform: "translateY(-2px)",
+        boxShadow: isDark
+          ? "0 22px 40px rgba(15,23,42,0.6)"
+          : "0 22px 34px rgba(148,163,184,0.32)",
+      },
+    }),
+    [isDark]
+  );
+
+  const tablePaperSx = useMemo(
+    () => ({
+      borderRadius: 3,
+      border: "1px solid",
+      borderColor: isDark
+        ? "rgba(148,163,184,0.22)"
+        : "rgba(15,23,42,0.12)",
+      background: isDark ? "rgba(10,15,24,0.82)" : "rgba(255,255,255,0.94)",
+      boxShadow: isDark
+        ? "0 14px 28px rgba(15,23,42,0.4)"
+        : "0 14px 26px rgba(148,163,184,0.25)",
+      overflow: "hidden",
+    }),
+    [isDark]
+  );
+
+  const tableHeadSx = useMemo(
+    () => ({
+      background: isDark ? "rgba(15,23,42,0.9)" : "rgba(226,232,240,0.85)",
+      "& .MuiTableCell-root": {
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        fontSize: "0.72rem",
+        color: isDark ? "rgba(226,232,240,0.85)" : "rgba(15,23,42,0.75)",
+      },
+    }),
+    [isDark]
+  );
+
   const deltaChip = (row) => {
     if (row.isNew) return <Chip size="small" label="NEW" color="warning" />;
     if (row.deltaPct === null) return <Chip size="small" label="-" />;
@@ -219,22 +274,7 @@ const ChannelCompare = () => {
       <Paper
         elevation={0}
         sx={{
-          p: 2.5,
-          borderRadius: 2.5,
-          border: isDark
-            ? "1px solid rgba(148,163,184,0.25)"
-            : `1px solid ${theme.palette.divider}`,
-          bgcolor: isDark ? "rgba(15,23,42,0.6)" : "background.paper",
-          boxShadow: isDark
-            ? "0 18px 36px rgba(2,6,23,0.45)"
-            : "0 16px 30px rgba(15,23,42,0.08)",
-          transition: "transform 220ms ease, box-shadow 220ms ease",
-          "&:hover": {
-            transform: "translateY(-2px)",
-            boxShadow: isDark
-              ? "0 22px 40px rgba(2,6,23,0.6)"
-              : "0 20px 34px rgba(15,23,42,0.12)",
-          },
+          ...panelSx,
           position: "relative",
         }}
       >
@@ -432,15 +472,9 @@ const ChannelCompare = () => {
       <Paper
         elevation={0}
         sx={{
-          p: 2.5,
-          borderRadius: 2.5,
-          border: isDark
-            ? "1px solid rgba(148,163,184,0.2)"
-            : `1px solid ${theme.palette.divider}`,
-          bgcolor: isDark ? "rgba(17,24,39,0.65)" : "background.paper",
+          ...panelSx,
           position: "relative",
           overflow: "hidden",
-          transition: "transform 220ms ease, box-shadow 220ms ease",
           "&::after": {
             content: '""',
             position: "absolute",
@@ -453,10 +487,6 @@ const ChannelCompare = () => {
             pointerEvents: "none",
           },
           "&:hover": {
-            transform: "translateY(-2px)",
-            boxShadow: isDark
-              ? "0 22px 40px rgba(2,6,23,0.6)"
-              : "0 20px 34px rgba(15,23,42,0.12)",
             "&::after": { opacity: 1 },
           },
         }}
@@ -550,23 +580,10 @@ const ChannelCompare = () => {
       <TableContainer
         component={Paper}
         elevation={0}
-        sx={{
-          borderRadius: 2.5,
-          border: isDark
-            ? "1px solid rgba(148,163,184,0.2)"
-            : `1px solid ${theme.palette.divider}`,
-          overflow: "hidden",
-          transition: "transform 220ms ease, box-shadow 220ms ease",
-          "&:hover": {
-            transform: "translateY(-2px)",
-            boxShadow: isDark
-              ? "0 20px 38px rgba(2,6,23,0.55)"
-              : "0 18px 30px rgba(15,23,42,0.1)",
-          },
-        }}
+        sx={tablePaperSx}
       >
         <Table size="small">
-          <TableHead>
+          <TableHead sx={tableHeadSx}>
             <TableRow>
               <TableCell>Rank</TableCell>
               <TableCell>Channel</TableCell>

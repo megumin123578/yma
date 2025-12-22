@@ -201,28 +201,36 @@ const VideoList = () => {
         <Grid container spacing={2}>
           {videos.map((v, idx) => (
             <Grid item xs={12} sm={6} md={4} lg={3} key={v.video_id}>
-              <MotionCard
-                variants={cardVariants}
-                initial="rest"
-                whileHover="hover"
-                transition={{ duration: 0.2, delay: idx * 0.03 }}
-                onClick={() =>
-                  window.open(
-                    `https://www.youtube.com/watch?v=${v.video_id}`,
-                    "_blank"
-                  )
-                }
-                sx={{
-                  position: "relative",
-                  bgcolor: colors.primary[400],
-                  borderRadius: "16px",
-                  overflow: "hidden",
-                  cursor: "pointer",
-                  display: "flex",
-                  flexDirection: "column",
-                  height: "100%",
-                }}
-              >
+                <MotionCard
+                  variants={cardVariants}
+                  initial="rest"
+                  whileHover="hover"
+                  transition={{ duration: 0.2, delay: idx * 0.03 }}
+                  onClick={() =>
+                    window.open(
+                      `https://www.youtube.com/watch?v=${v.video_id}`,
+                      "_blank"
+                    )
+                  }
+                  sx={{
+                    position: "relative",
+                    borderRadius: 3,
+                    border: "1px solid",
+                    borderColor:
+                      theme.palette.mode === "dark"
+                        ? "rgba(148,163,184,0.2)"
+                        : "rgba(15,23,42,0.12)",
+                    background:
+                      theme.palette.mode === "dark"
+                        ? "linear-gradient(140deg, rgba(15,23,42,0.92) 0%, rgba(30,41,59,0.88) 60%, rgba(14,165,233,0.18) 100%)"
+                        : "linear-gradient(140deg, rgba(248,250,252,0.96) 0%, rgba(226,232,240,0.92) 55%, rgba(191,219,254,0.6) 100%)",
+                    overflow: "hidden",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    height: "100%",
+                  }}
+                >
                 {/* Thumbnail */}
                 {v.thumbnail && (
                   <CardMedia

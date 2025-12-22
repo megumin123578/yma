@@ -367,6 +367,48 @@ const TrafficSourceChart = () => {
 
   const top5Ids = useMemo(() => rows.slice(0, 5).map(r => String(r.id)), [rows]);
 
+  const tablePaperSx = useMemo(
+    () => ({
+      mt: 1,
+      borderRadius: 3,
+      border: "1px solid",
+      borderColor:
+        theme.palette.mode === "dark"
+          ? "rgba(148,163,184,0.22)"
+          : "rgba(15,23,42,0.12)",
+      background:
+        theme.palette.mode === "dark"
+          ? "rgba(10,15,24,0.82)"
+          : "rgba(255,255,255,0.94)",
+      boxShadow:
+        theme.palette.mode === "dark"
+          ? "0 14px 28px rgba(15,23,42,0.4)"
+          : "0 14px 26px rgba(148,163,184,0.25)",
+      overflow: "auto",
+    }),
+    [theme.palette.mode]
+  );
+
+  const tableHeadSx = useMemo(
+    () => ({
+      background:
+        theme.palette.mode === "dark"
+          ? "rgba(15,23,42,0.9)"
+          : "rgba(226,232,240,0.85)",
+      "& .MuiTableCell-root": {
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        fontSize: "0.72rem",
+        color:
+          theme.palette.mode === "dark"
+            ? "rgba(226,232,240,0.85)"
+            : "rgba(15,23,42,0.75)",
+      },
+    }),
+    [theme.palette.mode]
+  );
+
 
 
   /* === Pie data (filtered by selectedSources) === */
@@ -809,15 +851,10 @@ const TrafficSourceChart = () => {
       <TableContainer
         component={Paper}
         elevation={0}
-        sx={{
-          mt: 1,
-          border: `1px solid ${theme.palette.mode === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"}`,
-          borderRadius: 1.5,
-          overflowX: "auto",
-        }}
+        sx={tablePaperSx}
       >
         <Table size="small" stickyHeader sx={{ minWidth: 1120 }}>
-          <TableHead>
+          <TableHead sx={tableHeadSx}>
             <TableRow>
               {/* Header Source + inline Select filter */}
               <TableCell sx={{ fontWeight: 700, whiteSpace: "nowrap" }}>
@@ -970,7 +1007,19 @@ const TrafficSourceChart = () => {
               <TableCell align="right" sx={{ fontWeight: 700 }}>{formatNumber(totals.engagedViews)}</TableCell>
             </TableRow>
             {rows.map((r) => (
-              <TableRow key={r.id} hover>
+              <TableRow
+                key={r.id}
+                sx={{
+                  transition: "transform 0.2s ease, background-color 0.2s ease",
+                  "&:hover": {
+                    backgroundColor:
+                      theme.palette.mode === "dark"
+                        ? "rgba(51,65,85,0.55)"
+                        : "rgba(226,232,240,0.6)",
+                    transform: "translateY(-1px)",
+                  },
+                }}
+              >
                 <TableCell>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                     {top5Ids.includes(String(r.id)) && (

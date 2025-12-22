@@ -222,6 +222,48 @@ const GeographyChart = ({ isDashboard = false }) => {
     return [`map:${metric}`, ...colsSelected];
   }, [metric, visibleColumns]);
 
+  const tablePaperSx = useMemo(
+    () => ({
+      mt: 2,
+      borderRadius: 3,
+      border: "1px solid",
+      borderColor:
+        theme.palette.mode === "dark"
+          ? "rgba(148,163,184,0.22)"
+          : "rgba(15,23,42,0.12)",
+      background:
+        theme.palette.mode === "dark"
+          ? "rgba(10,15,24,0.82)"
+          : "rgba(255,255,255,0.94)",
+      boxShadow:
+        theme.palette.mode === "dark"
+          ? "0 14px 28px rgba(15,23,42,0.4)"
+          : "0 14px 26px rgba(148,163,184,0.25)",
+      overflow: "hidden",
+    }),
+    [theme.palette.mode]
+  );
+
+  const tableHeadSx = useMemo(
+    () => ({
+      background:
+        theme.palette.mode === "dark"
+          ? "rgba(15,23,42,0.9)"
+          : "rgba(226,232,240,0.85)",
+      "& .MuiTableCell-root": {
+        fontWeight: 700,
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
+        fontSize: "0.72rem",
+        color:
+          theme.palette.mode === "dark"
+            ? "rgba(226,232,240,0.85)"
+            : "rgba(15,23,42,0.75)",
+      },
+    }),
+    [theme.palette.mode]
+  );
+
   return (
     <Stack spacing={1.5}>
 
@@ -367,11 +409,11 @@ const GeographyChart = ({ isDashboard = false }) => {
       </Box>
 
       {/* ===== TABLE ===== */}
-      <TableContainer component={Paper} sx={{ mt: 2 }}>
+      <TableContainer component={Paper} elevation={0} sx={tablePaperSx}>
         <Table size="small">
-          <TableHead>
-          <TableRow sx={{ backgroundColor: "#062a5fff" }}>
-            <TableCell sx={{ color: "#ffffff", fontWeight: 700 }}>Country</TableCell>
+          <TableHead sx={tableHeadSx}>
+          <TableRow>
+            <TableCell>Country</TableCell>
 
             {TABLE_COLUMNS.map(col =>
               visibleColumns[col.key] && (
@@ -382,8 +424,6 @@ const GeographyChart = ({ isDashboard = false }) => {
                     width: col.width,
                     minWidth: col.width,
                     maxWidth: col.width,
-                    color: "#ffffff",
-                    fontWeight: 700,
                   }}
                 >
                   {col.label}
@@ -396,7 +436,14 @@ const GeographyChart = ({ isDashboard = false }) => {
 
           <TableBody>
             {/* ⭐ TOTAL ROW TRÊN CÙNG ⭐ */}
-            <TableRow sx={{ bgcolor: "rgba(0,0,0,0.04)" }}>
+            <TableRow
+              sx={{
+                bgcolor:
+                  theme.palette.mode === "dark"
+                    ? "rgba(30,41,59,0.55)"
+                    : "rgba(226,232,240,0.6)",
+              }}
+            >
               <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
               {TABLE_COLUMNS.map(
                 (col) =>
@@ -418,7 +465,19 @@ const GeographyChart = ({ isDashboard = false }) => {
 
             {/* DATA ROWS */}
             {rows.map((r) => (
-              <TableRow key={r.id}>
+              <TableRow
+                key={r.id}
+                sx={{
+                  transition: "transform 0.2s ease, background-color 0.2s ease",
+                  "&:hover": {
+                    backgroundColor:
+                      theme.palette.mode === "dark"
+                        ? "rgba(51,65,85,0.55)"
+                        : "rgba(226,232,240,0.6)",
+                    transform: "translateY(-1px)",
+                  },
+                }}
+              >
                 <TableCell sx={{ width: 160 }}>{r.label}</TableCell>
 
                 {TABLE_COLUMNS.map(
