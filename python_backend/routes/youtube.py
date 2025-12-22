@@ -4,9 +4,14 @@ import re
 from typing import Dict, Optional
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Header
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from jose import JWTError, jwt
+
+from python_backend.api.auth.auth_utils import SECRET_KEY, ALGORITHM
+from python_backend.api.auth.database import SessionLocal as AuthSessionLocal
+from python_backend.api.auth.models import RivalVideo, User
 
 router = APIRouter(prefix="/api/youtube", tags=["youtube"])
 
@@ -120,6 +125,94 @@ def _enrich_video_stats(youtube, videos):
     return list(id_map.values())
 
 
+def _get_user_from_token(authorization: Optional[str]) -> Optional[User]:
+    if not authorization:
+        return None
+
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+
+    token = parts[1].strip()
+    if not token:
+        return None
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+    except JWTError:
+        return None
+
+    if not username:
+        return None
+
+    db = AuthSessionLocal()
+    try:
+        return db.query(User).filter(User.username == username).first()
+    finally:
+        db.close()
+
+
+def _fetch_existing_rival_ids(user_id: int, video_ids):
+    if not video_ids:
+        return set()
+
+    db = AuthSessionLocal()
+    try:
+        rows = (
+            db.query(RivalVideo.video_id)
+            .filter(RivalVideo.user_id == user_id, RivalVideo.video_id.in_(video_ids))
+            .all()
+        )
+        return {row[0] for row in rows}
+    except Exception as e:
+        print("[DB ERROR] Failed to check rival videos:", e)
+        return set()
+    finally:
+        db.close()
+
+
+def _save_rival_videos(user_id: int, channel_id: str, videos, is_short: bool):
+    if not videos:
+        return
+
+    ids = [v.get("videoId") for v in videos if v.get("videoId")]
+    if not ids:
+        return
+
+    db = AuthSessionLocal()
+    try:
+        existing = (
+            db.query(RivalVideo.video_id)
+            .filter(RivalVideo.user_id == user_id, RivalVideo.video_id.in_(ids))
+            .all()
+        )
+        existing_ids = {row[0] for row in existing}
+
+        for v in videos:
+            vid = v.get("videoId")
+            if not vid or vid in existing_ids:
+                continue
+            row = RivalVideo(
+                user_id=user_id,
+                channel_id=channel_id or "",
+                video_id=vid,
+                title=v.get("title") or "",
+                published_at=v.get("publishedAt") or "",
+                is_short=is_short,
+                views=int(v.get("views") or 0),
+                likes=int(v.get("likes") or 0),
+                comments=int(v.get("comments") or 0),
+            )
+            db.add(row)
+        db.commit()
+    except Exception as e:
+        print("[DB ERROR] Failed to save rival videos:", e)
+        db.rollback()
+    finally:
+        db.close()
+
+
 def _fetch_latest_videos(youtube, channel_id: str, max_items: int = 10):
     if not channel_id:
         return []
@@ -178,7 +271,10 @@ def _fetch_latest_shorts(youtube, channel_id: str, max_items: int = 10):
 
 
 @router.get("/channel")
-def channel_detail(query: str = Query(..., min_length=1)):
+def channel_detail(
+    query: str = Query(..., min_length=1),
+    authorization: Optional[str] = Header(default=None),
+):
     api_key = os.getenv("YOUTUBE_API_KEY", "").strip()
     if not api_key:
         raise HTTPException(500, "Missing YOUTUBE_API_KEY")
@@ -197,6 +293,22 @@ def channel_detail(query: str = Query(..., min_length=1)):
     channel_id = channel.get("id", "")
     videos = _fetch_latest_videos(youtube, channel_id, max_items=10)
     shorts = _fetch_latest_shorts(youtube, channel_id, max_items=10)
+
+    user = _get_user_from_token(authorization)
+    if user:
+        all_ids = [v.get("videoId") for v in videos] + [s.get("videoId") for s in shorts]
+        existing_ids = _fetch_existing_rival_ids(user.id, [vid for vid in all_ids if vid])
+        for v in videos:
+            v["isNew"] = v.get("videoId") not in existing_ids
+        for v in shorts:
+            v["isNew"] = v.get("videoId") not in existing_ids
+        _save_rival_videos(user.id, channel_id, videos, is_short=False)
+        _save_rival_videos(user.id, channel_id, shorts, is_short=True)
+    else:
+        for v in videos:
+            v["isNew"] = False
+        for v in shorts:
+            v["isNew"] = False
 
     return {
         "channel": channel,
