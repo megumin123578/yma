@@ -29,13 +29,18 @@ const SmmstoreAnalyticsScene = () => {
               color="warning"
               sx={{
                 "& .MuiSwitch-track": {
-                  backgroundColor: "rgba(15,23,42,0.25)",
+                  backgroundColor: "rgba(148,163,184,0.35)",
+                  opacity: 1,
                 },
                 "& .MuiSwitch-thumb": {
                   boxShadow: "0 6px 14px rgba(15,23,42,0.35)",
                 },
+                "&.Mui-checked .MuiSwitch-track": {
+                  backgroundColor: "rgba(34,197,94,0.45)",
+                  opacity: 1,
+                },
                 "&.Mui-checked .MuiSwitch-thumb": {
-                  boxShadow: "0 6px 16px rgba(34,197,94,0.35)",
+                  boxShadow: "0 6px 16px rgba(34,197,94,0.45)",
                 },
               }}
             />
