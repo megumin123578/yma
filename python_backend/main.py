@@ -37,6 +37,19 @@ def ensure_user_smmstore_column():
 
 ensure_user_smmstore_column()
 
+
+def ensure_rival_channel_avatar_column():
+    with engine.begin() as conn:
+        columns = conn.exec_driver_sql("PRAGMA table_info(rival_channels)").fetchall()
+        has_column = any(row[1] == "channel_avatar_url" for row in columns)
+        if not has_column:
+            conn.exec_driver_sql(
+                "ALTER TABLE rival_channels ADD COLUMN channel_avatar_url VARCHAR"
+            )
+
+
+ensure_rival_channel_avatar_column()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

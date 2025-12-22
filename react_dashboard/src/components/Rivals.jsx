@@ -3,7 +3,6 @@ import {
   Avatar,
   Box,
   Button,
-  Chip,
   CircularProgress,
   FormControl,
   Grid,
@@ -71,10 +70,8 @@ const RivalsChannel = () => {
       setVideos([]);
       setShorts([]);
 
-      const token = localStorage.getItem("access_token");
       const resp = await fetch(
-        `${API_BASE}/api/youtube/channel?query=${encodeURIComponent(q)}`,
-        token ? { headers: { Authorization: `Bearer ${token}` } } : undefined
+        `${API_BASE}/api/youtube/channel?query=${encodeURIComponent(q)}`
       );
       if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
       const data = await resp.json();
@@ -141,6 +138,7 @@ const RivalsChannel = () => {
           channel_id: channel.id,
           channel_name: channel.title,
           channel_url: channelUrl,
+          channel_avatar_url: pickThumb(channel.thumbnails),
         }),
       });
       if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
@@ -283,6 +281,7 @@ const RivalsChannel = () => {
             <Button
               type="submit"
               variant="contained"
+              color="warning"
               disabled={loading}
               sx={(theme) => ({
                 textTransform: "none",
@@ -291,6 +290,9 @@ const RivalsChannel = () => {
                 px: 2.4,
                 position: "relative",
                 overflow: "hidden",
+                color: theme.palette.mode === "dark" ? "#1f2937" : "#1f2937",
+                backgroundColor:
+                  theme.palette.mode === "dark" ? "#facc15" : "#fbbf24",
                 boxShadow:
                   theme.palette.mode === "dark"
                     ? "0 12px 20px rgba(15,23,42,0.35)"
@@ -315,6 +317,8 @@ const RivalsChannel = () => {
                     theme.palette.mode === "dark"
                       ? "0 16px 26px rgba(15,23,42,0.45)"
                       : "0 16px 26px rgba(15,23,42,0.28)",
+                  backgroundColor:
+                    theme.palette.mode === "dark" ? "#fde047" : "#f59e0b",
                 },
                 "&:hover:before": {
                   transform: "translateX(0%)",
@@ -325,7 +329,8 @@ const RivalsChannel = () => {
             </Button>
             <Button
               type="button"
-              variant="outlined"
+              variant="contained"
+              color="success"
               disabled={!channel || saving}
               onClick={handleSave}
               sx={(theme) => ({
@@ -333,7 +338,9 @@ const RivalsChannel = () => {
                 fontWeight: 700,
                 borderRadius: 2,
                 px: 2.2,
-                borderWidth: 1.5,
+                color: theme.palette.mode === "dark" ? "#052e16" : "#052e16",
+                backgroundColor:
+                  theme.palette.mode === "dark" ? "#22c55e" : "#16a34a",
                 position: "relative",
                 overflow: "hidden",
                 transition: "transform 0.2s ease, box-shadow 0.2s ease",
@@ -354,6 +361,8 @@ const RivalsChannel = () => {
                     theme.palette.mode === "dark"
                       ? "0 14px 22px rgba(15,23,42,0.35)"
                       : "0 14px 22px rgba(15,23,42,0.2)",
+                  backgroundColor:
+                    theme.palette.mode === "dark" ? "#4ade80" : "#15803d",
                 },
                 "&:hover:after": {
                   opacity: 1,
@@ -414,6 +423,23 @@ const RivalsChannel = () => {
                         value={row.channel_id}
                         sx={{ pr: 1 }}
                       >
+                        <Avatar
+                          src={row.channel_avatar_url || ""}
+                          alt={row.channel_name || row.channel_id}
+                          sx={{
+                            width: 28,
+                            height: 28,
+                            mr: 1,
+                            bgcolor: "rgba(148,163,184,0.4)",
+                            fontSize: "0.75rem",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {(row.channel_name || row.channel_id || "?")
+                            .trim()
+                            .charAt(0)
+                            .toUpperCase()}
+                        </Avatar>
                         <ListItemText
                           primary={row.channel_name || row.channel_id}
                           secondary={row.channel_name ? row.channel_id : undefined}
@@ -612,15 +638,6 @@ const RivalsChannel = () => {
                         >
                           {v.title}
                         </a>
-                        {v.isNew && (
-                          <Chip
-                            label="NEW"
-                            size="small"
-                            color="success"
-                            variant="outlined"
-                            sx={{ fontWeight: 700, letterSpacing: "0.08em" }}
-                          />
-                        )}
                       </Stack>
                     </TableCell>
                     <TableCell>{toDate(v.publishedAt)}</TableCell>
@@ -720,15 +737,6 @@ const RivalsChannel = () => {
                         >
                           {v.title}
                         </a>
-                        {v.isNew && (
-                          <Chip
-                            label="NEW"
-                            size="small"
-                            color="success"
-                            variant="outlined"
-                            sx={{ fontWeight: 700, letterSpacing: "0.08em" }}
-                          />
-                        )}
                       </Stack>
                     </TableCell>
                     <TableCell>{toDate(v.publishedAt)}</TableCell>

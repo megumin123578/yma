@@ -99,6 +99,8 @@ def add_rival(
             row.channel_name = data.channel_name
         if data.channel_url:
             row.channel_url = data.channel_url
+        if data.channel_avatar_url:
+            row.channel_avatar_url = data.channel_avatar_url
         db.add(row)
         db.commit()
         db.refresh(row)
@@ -109,6 +111,7 @@ def add_rival(
         channel_id=channel_id,
         channel_name=data.channel_name,
         channel_url=data.channel_url,
+        channel_avatar_url=data.channel_avatar_url,
     )
     db.add(row)
     db.commit()
