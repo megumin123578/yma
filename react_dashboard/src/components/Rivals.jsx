@@ -21,6 +21,7 @@ import {
   TableRow,
   TextField,
   Typography,
+  useTheme,
 } from "@mui/material";
 import { API_BASE } from "../config";
 import { formatNumber } from "./Module";
@@ -60,17 +61,33 @@ const fadeUpSx = {
   },
 };
 
+const STORAGE_KEY = "rivals.ui.state";
+
+const loadUiState = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
 const RivalsChannel = ({ viewMode = "list" }) => {
-  const [query, setQuery] = useState("");
+  const theme = useTheme();
+  const initialState = loadUiState();
+  const [query, setQuery] = useState(initialState.query || "");
   const [channel, setChannel] = useState(null);
   const [videos, setVideos] = useState([]);
   const [shorts, setShorts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [savedChannels, setSavedChannels] = useState([]);
+  const [savedLoaded, setSavedLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [selectedSavedId, setSelectedSavedId] = useState("");
+  const [selectedSavedId, setSelectedSavedId] = useState(
+    initialState.selectedSavedId || ""
+  );
 
   const fetchChannel = async (q) => {
     try {
@@ -109,6 +126,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
     const token = localStorage.getItem("access_token");
     if (!token) {
       setSavedChannels([]);
+      setSavedLoaded(true);
       return;
     }
     try {
@@ -120,6 +138,8 @@ const RivalsChannel = ({ viewMode = "list" }) => {
       setSavedChannels(Array.isArray(data) ? data : []);
     } catch {
       setSavedChannels([]);
+    } finally {
+      setSavedLoaded(true);
     }
   };
 
@@ -198,13 +218,26 @@ const RivalsChannel = ({ viewMode = "list" }) => {
   }, []);
 
   useEffect(() => {
-    if (
-      selectedSavedId &&
-      !savedChannels.some((row) => row.channel_id === selectedSavedId)
-    ) {
-      setSelectedSavedId("");
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ query, selectedSavedId })
+      );
+    } catch {
+      // ignore storage errors
     }
-  }, [savedChannels, selectedSavedId]);
+  }, [query, selectedSavedId]);
+
+  const missingSelected =
+    !!selectedSavedId &&
+    !savedChannels.some((row) => row.channel_id === selectedSavedId);
+
+  useEffect(() => {
+    if (savedLoaded && selectedSavedId && !channel) {
+      setQuery(selectedSavedId);
+      fetchChannel(selectedSavedId);
+    }
+  }, [savedLoaded, selectedSavedId, channel]);
 
   const stats = channel?.statistics || {};
   const subsHidden =
@@ -436,12 +469,22 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                     onChange={(e) => handleSavedSelect(e.target.value)}
                     renderValue={(value) => {
                       const row = savedChannels.find((item) => item.channel_id === value);
-                      return row?.channel_name || value || "";
+                      if (row) return row.channel_name || row.channel_id;
+                      if (missingSelected) return `Missing: ${value}`;
+                      return value || "";
                     }}
                   >
                     <MenuItem value="">
                       <em>Select saved channel</em>
                     </MenuItem>
+                    {missingSelected && (
+                      <MenuItem value={selectedSavedId}>
+                        <ListItemText
+                          primary={`Missing: ${selectedSavedId}`}
+                          secondary="Channel not in saved list"
+                        />
+                      </MenuItem>
+                    )}
                     {savedChannels.map((row) => (
                       <MenuItem
                         key={row.id}
@@ -595,7 +638,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                   borderColor: theme.palette.divider,
                   background:
                     theme.palette.mode === "dark"
-                      ? "rgba(10,15,24,0.8)"
+                      ? "linear-gradient(140deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 50%, rgba(13,148,136,0.5) 100%)"
                       : "rgba(255,255,255,0.94)",
                   boxShadow:
                     theme.palette.mode === "dark"
@@ -631,11 +674,19 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                         <YAxis tickFormatter={formatNumber} />
                         <Tooltip
                           formatter={(value) => formatNumber(value)}
+                          labelFormatter={(_, payload) =>
+                            payload?.[0]?.payload?.name || ""
+                          }
                           contentStyle={{
                             borderRadius: 12,
                             border: "1px solid rgba(148,163,184,0.35)",
                             boxShadow: "0 12px 24px rgba(15,23,42,0.2)",
                           }}
+                          labelStyle={
+                            theme.palette.mode === "dark"
+                              ? { color: "#000000", fontWeight: 700 }
+                              : undefined
+                          }
                         />
                         <Legend />
                         <Line
@@ -672,7 +723,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                   borderColor: theme.palette.divider,
                   background:
                     theme.palette.mode === "dark"
-                      ? "rgba(10,15,24,0.8)"
+                      ? "linear-gradient(140deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 50%, rgba(13,148,136,0.5) 100%)"
                       : "rgba(255,255,255,0.94)",
                   boxShadow:
                     theme.palette.mode === "dark"
@@ -708,11 +759,19 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                         <YAxis tickFormatter={formatNumber} />
                         <Tooltip
                           formatter={(value) => formatNumber(value)}
+                          labelFormatter={(_, payload) =>
+                            payload?.[0]?.payload?.name || ""
+                          }
                           contentStyle={{
                             borderRadius: 12,
                             border: "1px solid rgba(148,163,184,0.35)",
                             boxShadow: "0 12px 24px rgba(15,23,42,0.2)",
                           }}
+                          labelStyle={
+                            theme.palette.mode === "dark"
+                              ? { color: "#000000", fontWeight: 700 }
+                              : undefined
+                          }
                         />
                         <Legend />
                         <Line

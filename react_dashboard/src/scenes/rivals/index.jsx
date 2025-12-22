@@ -1,12 +1,27 @@
 
 
 import { Box, FormControlLabel, Stack, Switch } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Header from "../../components/Header";
 import RivalsChannel from "../../components/Rivals";
 
 const RivalsData = () => {
-    const [viewMode, setViewMode] = useState("list");
+    const VIEW_MODE_KEY = "rivals.viewMode";
+    const [viewMode, setViewMode] = useState(() => {
+        try {
+            return localStorage.getItem(VIEW_MODE_KEY) === "chart" ? "chart" : "list";
+        } catch {
+            return "list";
+        }
+    });
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(VIEW_MODE_KEY, viewMode);
+        } catch {
+            // ignore storage errors
+        }
+    }, [viewMode]);
 
     return (
         <Box mx="20px" mt="0" mb="20px">
