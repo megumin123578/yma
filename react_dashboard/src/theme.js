@@ -202,7 +202,9 @@ export const ColorModeContext = createContext({
 const loadStoredMode = (storageKey) => {
   try {
     const raw = localStorage.getItem(storageKey);
-    return raw === "light" ? "light" : "dark";
+    if (raw === "light") return "light";
+    if (raw === "dark") return "dark";
+    return "light";
   } catch {
     return "light";
   }
