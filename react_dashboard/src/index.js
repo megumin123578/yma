@@ -15,7 +15,6 @@ const root = ReactDOM.createRoot(document.getElementById("root"));
 const ThemeShell = () => {
   const { user } = useContext(UserContext);
   const [theme, colorMode] = useMode(user?.id);
-
   return (
     <ColorModeContext.Provider value={colorMode}>
       <ThemeProvider theme={theme}>
