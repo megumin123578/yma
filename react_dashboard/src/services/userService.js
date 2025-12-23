@@ -22,7 +22,7 @@ export const uploadCredentials = (file) => {
   const formData = new FormData();
   formData.append("credentials", file);
 
-  return api.post("/api/users/credentials", formData);
+  return api.post("/api/users/credentials", formData).then((res) => res.data);
 };
 
 export const getMe = async () => {

@@ -17,12 +17,14 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [file, setFile] = useState(null);
   const [status, setStatus] = useState({ type: "", message: "" });
   const [uploading, setUploading] = useState(false);
+  const [authUrl, setAuthUrl] = useState("");
 
   useEffect(() => {
     if (open) {
       setFile(null);
       setStatus({ type: "", message: "" });
       setUploading(false);
+      setAuthUrl("");
     }
   }, [open]);
 
@@ -50,12 +52,15 @@ const CredentialsDialog = ({ open, onClose }) => {
     setStatus({ type: "", message: "" });
 
     try {
-      await uploadCredentials(file);
+      const data = await uploadCredentials(file);
+      const nextUrl = data?.auth_url || "";
+      setAuthUrl(nextUrl);
       setStatus({
         type: "success",
-        message: "Credentials uploaded successfully.",
+        message: nextUrl
+          ? "Credentials uploaded. Click the link to authorize."
+          : "Credentials uploaded successfully.",
       });
-      onClose();
     } catch (err) {
       const message =
         err?.response?.data?.detail || "Upload failed. Please try again.";
@@ -99,6 +104,18 @@ const CredentialsDialog = ({ open, onClose }) => {
             >
               {status.message}
             </Typography>
+          )}
+
+          {authUrl && (
+            <Button
+              variant="contained"
+              color="success"
+              href={authUrl}
+              target="_blank"
+              rel="noopener"
+            >
+              Open Authorization Link
+            </Button>
           )}
         </Box>
       </DialogContent>

@@ -2,15 +2,17 @@ import os
 import json
 import re
 import time
+import pickle
 from typing import List
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
+from google_auth_oauthlib.flow import InstalledAppFlow
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.models import User, RivalChannel
 from python_backend.api.auth.auth_utils import get_current_user
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
-from python_backend.module_trafficsource import create_token_from_credentials
+from python_backend.module_trafficsource import SCOPES
 
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -20,6 +22,16 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 CREDENTIALS_DIR = "python_backend/credentials"
 os.makedirs(CREDENTIALS_DIR, exist_ok=True)
+
+TOKEN_DIR = "python_backend/token"
+os.makedirs(TOKEN_DIR, exist_ok=True)
+
+OAUTH_REDIRECT_URL = os.getenv(
+    "OAUTH_REDIRECT_URL",
+    "http://localhost:8000/api/users/credentials/callback",
+)
+
+PENDING_OAUTH = {}
 
 
 def _safe_filename(name: str) -> str:
@@ -78,12 +90,42 @@ def upload_credentials(
     with open(file_path, "wb") as f:
         f.write(content)
 
-    try:
-        create_token_from_credentials(file_path)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create token: {e}")
+    flow = InstalledAppFlow.from_client_secrets_file(file_path, SCOPES)
+    flow.redirect_uri = OAUTH_REDIRECT_URL
+    auth_url, state = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent",
+    )
+    PENDING_OAUTH[state] = {"cred_path": file_path, "created_at": time.time()}
 
-    return {"filename": stamped}
+    return {"filename": stamped, "auth_url": auth_url, "state": state}
+
+
+@router.get("/credentials/callback")
+def credentials_callback(state: str = "", code: str = "", error: str = ""):
+    if error:
+        raise HTTPException(status_code=400, detail=f"Authorization failed: {error}")
+
+    pending = PENDING_OAUTH.get(state)
+    if not pending:
+        raise HTTPException(status_code=400, detail="Invalid or expired state")
+
+    cred_path = pending["cred_path"]
+    flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
+    flow.redirect_uri = OAUTH_REDIRECT_URL
+    try:
+        flow.fetch_token(code=code)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to fetch token: {e}")
+
+    token_filename = os.path.splitext(os.path.basename(cred_path))[0] + ".pickle"
+    token_path = os.path.join(TOKEN_DIR, token_filename)
+    with open(token_path, "wb") as f:
+        pickle.dump(flow.credentials, f)
+
+    PENDING_OAUTH.pop(state, None)
+    return {"ok": True, "token": token_filename}
 
 @router.get("/me", response_model=UserMe)
 def get_me(current_user: User = Depends(get_current_user)):
