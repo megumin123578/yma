@@ -10,6 +10,7 @@ from python_backend.api.auth.models import User, RivalChannel
 from python_backend.api.auth.auth_utils import get_current_user
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
+from python_backend.module_trafficsource import create_token_from_credentials
 
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -76,6 +77,11 @@ def upload_credentials(
 
     with open(file_path, "wb") as f:
         f.write(content)
+
+    try:
+        create_token_from_credentials(file_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create token: {e}")
 
     return {"filename": stamped}
 
