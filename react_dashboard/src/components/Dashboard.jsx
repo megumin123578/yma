@@ -19,6 +19,7 @@ import CommentOutlinedIcon from "@mui/icons-material/CommentOutlined";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import { tokens } from "../theme";
 import Header from "./Header";
+import { API_BASE } from "../config";
 
 const MotionCard = motion.create(Card);
 
@@ -46,6 +47,7 @@ const VideoList = () => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
   const textOnDark = "#fff";
+  const apiBase = API_BASE;
 
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState("");
@@ -53,8 +55,6 @@ const VideoList = () => {
   const [loadingChannels, setLoadingChannels] = useState(true);
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [error, setError] = useState("");
-
-  const apiBase = "http://localhost:8000"; // chỉnh theo backend
 
   // Fetch danh sách account_tag
   useEffect(() => {
@@ -70,14 +70,16 @@ const VideoList = () => {
         }
       } catch (err) {
         console.error(err);
-        setError("Không load được danh sách kênh.");
+        setError(
+          "Không load được danh sách kênh. Hãy chạy backend: uvicorn python_backend.main:app --host 0.0.0.0 --port 8000 --reload"
+        );
       } finally {
         setLoadingChannels(false);
       }
     };
 
     fetchChannels();
-  }, []);
+  }, [apiBase]);
 
   // Fetch video theo accountTag
   useEffect(() => {
@@ -104,7 +106,7 @@ const VideoList = () => {
     };
 
     fetchVideos();
-  }, [selectedChannel]);
+  }, [apiBase, selectedChannel]);
 
   const formatNumber = (n) => {
     if (n == null) return "-";

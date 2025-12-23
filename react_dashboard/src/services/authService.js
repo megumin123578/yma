@@ -1,7 +1,8 @@
 import axios from "axios";
 import api from "./api";
+import { API_BASE } from "../config";
 
-const API_URL = "http://localhost:8000/api/auth";
+const API_URL = `${API_BASE}/api/auth`;
 
 // ================= REGISTER =================
 export const register = (data) => {

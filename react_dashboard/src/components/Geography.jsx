@@ -22,6 +22,7 @@ import {
 import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { ResponsiveChoropleth } from "@nivo/geo";
 import { geoFeatures } from "../data/mockGeoFeatures";
+import { API_BASE } from "../config";
 
 // ===== Helpers =====
 const n = (v) => Number(v) || 0;
@@ -106,7 +107,7 @@ const GeographyChart = ({ isDashboard = false }) => {
 
   // ===== Fetch data =====
   useEffect(() => {
-    const url = `http://localhost:8000/api/geography?range=${range}${
+    const url = `${API_BASE}/api/geography?range=${range}${
       channel ? `&channel=${channel}` : ""
     }`;
 
