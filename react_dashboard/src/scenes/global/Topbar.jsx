@@ -3,10 +3,11 @@ import { useContext, useState } from "react";
 import { ColorModeContext } from "../../theme";
 import { UserContext } from "../../context/UserContext";
 import ProfileDialog from "../../components/dialogs/ProfileDialog";
+import CredentialsDialog from "../../components/dialogs/CredentialsDialog";
 
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
-import NotificationsOutlinedIcon from "@mui/icons-material/NotificationsOutlined";
+import SettingsIcon from '@mui/icons-material/Settings';
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 
 const Topbar = () => {
@@ -16,6 +17,7 @@ const Topbar = () => {
 
   const { user } = useContext(UserContext);
   const [openProfile, setOpenProfile] = useState(false);
+  const [openCredentials, setOpenCredentials] = useState(false);
 
   // GUARD: chưa login
   const avatarSrc =
@@ -37,8 +39,8 @@ const Topbar = () => {
             )}
           </IconButton>
 
-          <IconButton>
-            <NotificationsOutlinedIcon />
+          <IconButton onClick={() => setOpenCredentials(true)}>
+            <SettingsIcon />
           </IconButton>
 
           {/* PROFILE */}
@@ -56,6 +58,11 @@ const Topbar = () => {
       <ProfileDialog
         open={openProfile}
         onClose={() => setOpenProfile(false)}
+      />
+
+      <CredentialsDialog
+        open={openCredentials}
+        onClose={() => setOpenCredentials(false)}
       />
     </>
   );

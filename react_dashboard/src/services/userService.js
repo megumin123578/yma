@@ -18,6 +18,13 @@ export const uploadAvatar = (file) => {
   return api.post("/api/users/avatar", formData);
 };
 
+export const uploadCredentials = (file) => {
+  const formData = new FormData();
+  formData.append("credentials", file);
+
+  return api.post("/api/users/credentials", formData);
+};
+
 export const getMe = async () => {
   const res = await api.get("/api/users/me");
   return mapUser(res.data);

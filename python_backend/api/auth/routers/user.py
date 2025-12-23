@@ -1,4 +1,7 @@
 import os
+import json
+import re
+import time
 from typing import List
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
@@ -13,6 +16,16 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 UPLOAD_DIR = "python_backend/api/uploads/avatars"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+CREDENTIALS_DIR = "python_backend/credentials"
+os.makedirs(CREDENTIALS_DIR, exist_ok=True)
+
+
+def _safe_filename(name: str) -> str:
+    base = os.path.basename(name or "")
+    if not base:
+        return "credentials.json"
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", base)
 
 
 @router.post("/avatar")
@@ -38,6 +51,33 @@ def upload_avatar(
     db.refresh(current_user)
 
     return {"avatarUrl": avatar_url}
+
+
+@router.post("/credentials")
+def upload_credentials(
+    credentials: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    filename = _safe_filename(credentials.filename)
+    if not filename.lower().endswith(".json"):
+        raise HTTPException(status_code=400, detail="Credentials must be a .json file")
+
+    content = credentials.file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty credentials file")
+
+    try:
+        json.loads(content.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON file")
+
+    stamped = f"user_{current_user.id}_{int(time.time())}_{filename}"
+    file_path = os.path.join(CREDENTIALS_DIR, stamped)
+
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    return {"filename": stamped}
 
 @router.get("/me", response_model=UserMe)
 def get_me(current_user: User = Depends(get_current_user)):
