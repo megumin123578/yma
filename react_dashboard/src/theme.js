@@ -204,7 +204,7 @@ const loadStoredMode = (storageKey) => {
     const raw = localStorage.getItem(storageKey);
     return raw === "light" ? "light" : "dark";
   } catch {
-    return "dark";
+    return "light";
   }
 };
 
