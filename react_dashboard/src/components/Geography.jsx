@@ -91,6 +91,10 @@ const GeographyChart = ({ isDashboard = false }) => {
   const [range, setRange] = useState("28d");
   const [channel, setChannel] = useState("");
   const [channels, setChannels] = useState([]);
+  const authHeaders = useMemo(() => {
+    const token = localStorage.getItem("access_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }, []);
 
   // hiện / ẩn cột bảng
   const [visibleColumns, setVisibleColumns] = useState({
@@ -111,7 +115,7 @@ const GeographyChart = ({ isDashboard = false }) => {
       channel ? `&channel=${channel}` : ""
     }`;
 
-    fetch(url)
+    fetch(url, { headers: authHeaders })
       .then((r) => r.json())
       .then((json) => {
         setRawData(json.rows || []);
@@ -124,7 +128,7 @@ const GeographyChart = ({ isDashboard = false }) => {
         }
       })
       .catch((err) => console.error("Geography API error:", err));
-  }, [range, channel]);
+  }, [range, channel, authHeaders]);
 
   // ===== ISO Resolver =====
   const resolvers = useMemo(() => {

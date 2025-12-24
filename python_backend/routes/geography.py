@@ -1,9 +1,15 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from datetime import datetime, timedelta
 from python_backend.module_trafficsource import create_token_from_credentials
 from python_backend.module_geography import fetch_geography
 
 import os
+from sqlalchemy.orm import Session
+
+from python_backend.api.auth.auth_utils import get_current_user_optional
+from python_backend.api.auth.database import get_db
+from python_backend.api.auth.visibility import get_hidden_account_tags
+from python_backend.module_trafficsource import sanitize_filename
 
 router = APIRouter(prefix="/api/geography")
 
@@ -43,8 +49,16 @@ def api_geography(
     start: str = None,
     end: str = None,
     channel: str = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
 ):
     CHANNEL_CREDENTIALS = load_all_credentials()
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        CHANNEL_CREDENTIALS = {
+            k: v for k, v in CHANNEL_CREDENTIALS.items() if k not in hidden_all
+        }
 
     # Nếu channel = None → không chọn gì → trả về availableChannels
     if not channel:

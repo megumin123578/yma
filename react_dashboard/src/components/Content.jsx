@@ -78,6 +78,10 @@ const ContentAnalytics = () => {
   const [channelId, setChannelId] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const authHeaders = useMemo(() => {
+    const token = localStorage.getItem("access_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }, []);
 
   /* ================================
      LOAD CHANNELS
@@ -85,7 +89,9 @@ const ContentAnalytics = () => {
   useEffect(() => {
     (async () => {
       try {
-        const resp = await fetch(`${API_BASE}/api/content/channels`);
+        const resp = await fetch(`${API_BASE}/api/content/channels`, {
+          headers: authHeaders,
+        });
         const data = await resp.json();
 
         const items =
@@ -103,7 +109,7 @@ const ContentAnalytics = () => {
         console.error("Load channels failed:", err);
       }
     })();
-  }, [channelId]);
+  }, [channelId, authHeaders]);
 
   /* ================================
      API CALLS
@@ -114,7 +120,7 @@ const ContentAnalytics = () => {
       try {
         const resp = await fetch(`${API_BASE}/api/content/list`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({ start, end, channelId }),
         });
 
@@ -125,7 +131,7 @@ const ContentAnalytics = () => {
         setVideos([]);
       }
     },
-    [channelId]
+    [channelId, authHeaders]
   );
 
   const fetchTimeseries = useCallback(
@@ -134,7 +140,7 @@ const ContentAnalytics = () => {
       try {
         const resp = await fetch(`${API_BASE}/api/content/timeseries`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({ start, end, channelId }),
         });
 
@@ -145,7 +151,7 @@ const ContentAnalytics = () => {
         setTimeseries([]);
       }
     },
-    [channelId]
+    [channelId, authHeaders]
   );
 
   /* ================================

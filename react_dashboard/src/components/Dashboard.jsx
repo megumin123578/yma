@@ -48,6 +48,10 @@ const VideoList = () => {
   const colors = tokens(theme.palette.mode);
   const textOnDark = "#fff";
   const apiBase = API_BASE;
+  const authHeaders = (() => {
+    const token = localStorage.getItem("access_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  })();
 
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState("");
@@ -61,7 +65,9 @@ const VideoList = () => {
     const fetchChannels = async () => {
       try {
         setLoadingChannels(true);
-        const res = await fetch(`${apiBase}/api/video_overview/channels`);
+        const res = await fetch(`${apiBase}/api/video_overview/channels`, {
+          headers: authHeaders,
+        });
         if (!res.ok) throw new Error("Failed to load channels");
         const data = await res.json();
         setChannels(data.items || []);
@@ -79,7 +85,7 @@ const VideoList = () => {
     };
 
     fetchChannels();
-  }, [apiBase]);
+  }, [apiBase, authHeaders]);
 
   // Fetch video theo accountTag
   useEffect(() => {
@@ -92,7 +98,8 @@ const VideoList = () => {
         const res = await fetch(
           `${apiBase}/api/video_overview/videos?accountTag=${encodeURIComponent(
             selectedChannel
-          )}`
+          )}`,
+          { headers: authHeaders }
         );
         if (!res.ok) throw new Error("Failed to load videos");
         const data = await res.json();
@@ -106,7 +113,7 @@ const VideoList = () => {
     };
 
     fetchVideos();
-  }, [apiBase, selectedChannel]);
+  }, [apiBase, selectedChannel, authHeaders]);
 
   const formatNumber = (n) => {
     if (n == null) return "-";

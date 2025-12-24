@@ -15,7 +15,10 @@ from python_backend.api.auth.models import User, RivalChannel
 from python_backend.api.auth.auth_utils import get_current_user
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
+from python_backend.api.auth.models import UserHiddenChannel
+from python_backend.api.auth.visibility import get_hidden_account_tags
 from python_backend.module_trafficsource import SCOPES, sanitize_filename
+from pydantic import BaseModel
 
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -230,13 +233,53 @@ def credentials_callback(state: str = "", code: str = "", error: str = ""):
 
 
 @router.get("/tokens")
-def list_tokens(current_user: User = Depends(get_current_user)):
+def list_tokens(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    hidden = get_hidden_account_tags(db, current_user.id)
     files = []
     for name in os.listdir(TOKEN_DIR):
         if name.lower().endswith(".pickle"):
-            files.append(name)
-    files.sort()
+            base = os.path.splitext(name)[0]
+            files.append({"name": name, "hidden": base in hidden})
+    files.sort(key=lambda x: x["name"])
     return {"tokens": files}
+
+
+class TokenVisibilityUpdate(BaseModel):
+    token: str
+    hidden: bool
+
+
+@router.post("/tokens/visibility")
+def set_token_visibility(
+    payload: TokenVisibilityUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    token_name = _safe_token_filename(payload.token)
+    if token_name != payload.token or ".." in token_name:
+        raise HTTPException(status_code=400, detail="Invalid token filename")
+
+    base_name = os.path.splitext(token_name)[0]
+    row = (
+        db.query(UserHiddenChannel)
+        .filter(
+            UserHiddenChannel.user_id == current_user.id,
+            UserHiddenChannel.account_tag == base_name,
+        )
+        .first()
+    )
+    if payload.hidden:
+        if not row:
+            db.add(UserHiddenChannel(user_id=current_user.id, account_tag=base_name))
+            db.commit()
+    else:
+        if row:
+            db.delete(row)
+            db.commit()
+    return {"ok": True, "hidden": payload.hidden}
 
 
 @router.get("/tokens/{token_name}/progress")
@@ -262,6 +305,7 @@ def get_token_progress(
 @router.delete("/tokens/{token_name}")
 def delete_token(
     token_name: str,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     safe_name = _safe_token_filename(token_name)
@@ -283,6 +327,11 @@ def delete_token(
             os.remove(progress_path)
         except Exception:
             pass
+    db.query(UserHiddenChannel).filter(
+        UserHiddenChannel.user_id == current_user.id,
+        UserHiddenChannel.account_tag == base_name,
+    ).delete()
+    db.commit()
     _purge_postgres_account(base_name)
     return {"ok": True}
 

@@ -2,11 +2,17 @@
 from datetime import date, timedelta
 from typing import List
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
 
 from python_backend.db import engine
+from sqlalchemy.orm import Session
+
+from python_backend.api.auth.auth_utils import get_current_user_optional
+from python_backend.api.auth.database import get_db
+from python_backend.api.auth.visibility import get_hidden_account_tags
+from python_backend.module_trafficsource import sanitize_filename
 
 router = APIRouter(prefix="/api/channel_compare", tags=["channel_compare"])
 
@@ -53,7 +59,11 @@ def _agg_range(start: date, end: date):
 
 
 @router.post("/rank")
-def compare_rank(req: CompareRequest):
+def compare_rank(
+    req: CompareRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
     if req.metric not in _ALLOWED_METRICS:
         raise HTTPException(400, "metric khong hop le")
 
@@ -105,6 +115,11 @@ def compare_rank(req: CompareRequest):
 
     items.sort(key=lambda x: x.get("currentValue", 0), reverse=True)
     limit = max(1, min(int(req.limit or 20), 200))
+
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        items = [r for r in items if r.get("accountTag") not in hidden_all]
 
     return {
         "start": req.start.isoformat(),

@@ -1,10 +1,15 @@
 # routes/content.py
 import os
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from datetime import date
 from sqlalchemy import text
 from python_backend.db import engine
+from sqlalchemy.orm import Session
+
+from python_backend.api.auth.auth_utils import get_current_user_optional
+from python_backend.api.auth.database import get_db
+from python_backend.api.auth.visibility import get_hidden_account_tags
 from python_backend.module_trafficsource import sanitize_filename  # dùng lại hàm này
 
 router = APIRouter(prefix="/api/content", tags=["content"])
@@ -26,15 +31,24 @@ def query_all_safe(sql: str, params=None):
 
 
 @router.get("/channels")
-def list_channels():
+def list_channels(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
     items = []
     try:
+        hidden_all = set()
+        if current_user:
+            hidden = get_hidden_account_tags(db, current_user.id)
+            hidden_all = hidden | {sanitize_filename(t) for t in hidden}
         for fname in os.listdir(CREDENTIALS_DIR):
             if not fname.endswith(".json"):
                 continue
 
             raw = fname[:-5]               # bỏ .json
             value = sanitize_filename(raw) 
+            if hidden_all and (value in hidden_all or raw in hidden_all):
+                continue
             items.append({
                 "value": value,  
                 "label": raw,   
@@ -52,7 +66,16 @@ class ContentListRequest(BaseModel):
 
 
 @router.post("/list")
-def content_list(req: ContentListRequest):
+def content_list(
+    req: ContentListRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        if req.channelId in hidden_all:
+            return {"items": []}
     sql = """
     SELECT
         v.video_id      AS "videoId",
@@ -102,7 +125,16 @@ class TimeSeriesRequest(BaseModel):
 
 
 @router.post("/timeseries")
-def content_timeseries(req: TimeSeriesRequest):
+def content_timeseries(
+    req: TimeSeriesRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        if req.channelId in hidden_all:
+            return {"items": []}
 
     sql = """
         SELECT

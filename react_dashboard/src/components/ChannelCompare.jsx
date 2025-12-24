@@ -70,6 +70,10 @@ const ChannelCompare = () => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const authHeaders = useMemo(() => {
+    const token = localStorage.getItem("access_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }, []);
 
   useEffect(() => {
     if (period === "custom") return;
@@ -94,7 +98,7 @@ const ChannelCompare = () => {
       try {
         const resp = await fetch(`${API_BASE}/api/channel_compare/rank`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({
             start: startDate,
             end: endDate,
@@ -114,7 +118,7 @@ const ChannelCompare = () => {
     };
 
     fetchData();
-  }, [canFetch, startDate, endDate, metric, limit, manualPick]);
+  }, [canFetch, startDate, endDate, metric, limit, manualPick, authHeaders]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -135,7 +139,9 @@ const ChannelCompare = () => {
     let stop = false;
     (async () => {
       try {
-        const resp = await fetch(`${API_BASE}/api/traffic_source/channels`);
+        const resp = await fetch(`${API_BASE}/api/traffic_source/channels`, {
+          headers: authHeaders,
+        });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         const list = Array.isArray(data?.items) ? data.items : [];
@@ -147,7 +153,7 @@ const ChannelCompare = () => {
     return () => {
       stop = true;
     };
-  }, []);
+  }, [authHeaders]);
 
   const rows = useMemo(() => {
     return items.map((it, idx) => {

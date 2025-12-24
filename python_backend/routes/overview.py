@@ -1,10 +1,16 @@
 # routes/overview.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from datetime import date
 from sqlalchemy import text
 from python_backend.db import engine
 from typing import Optional
+from sqlalchemy.orm import Session
+
+from python_backend.api.auth.auth_utils import get_current_user_optional
+from python_backend.api.auth.database import get_db
+from python_backend.api.auth.visibility import get_hidden_account_tags
+from python_backend.module_trafficsource import sanitize_filename
 
 router = APIRouter(prefix="/api/video_overview", tags=["video_overview"])
 
@@ -35,13 +41,21 @@ class VideoFilter(BaseModel):
 # 1) LẤY DANH SÁCH ACCOUNT
 # ---------------------------------------------------------------------
 @router.get("/channels")
-def list_channels():
+def list_channels(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
     rows = query("""
         SELECT DISTINCT account_tag AS value, account_tag AS label
         FROM video_overview
         WHERE account_tag IS NOT NULL
         ORDER BY account_tag;
     """)
+
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        rows = [r for r in rows if r["value"] not in hidden_all]
 
     return {"items": rows}
 
@@ -50,7 +64,16 @@ def list_channels():
 # 2) LẤY DANH SÁCH VIDEO THEO ACCOUNT_TAG
 # ---------------------------------------------------------------------
 @router.get("/videos")
-def list_videos(accountTag: str):
+def list_videos(
+    accountTag: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        if accountTag in hidden_all:
+            return []
     rows = query("""
         SELECT
             account_tag,
@@ -82,7 +105,16 @@ def list_videos(accountTag: str):
 # 3) LỌC VIDEO THEO NGÀY ĐĂNG
 # ---------------------------------------------------------------------
 @router.post("/list")
-def list_filtered(req: VideoFilter):
+def list_filtered(
+    req: VideoFilter,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        if req.accountTag in hidden_all:
+            return []
     sql = """
         SELECT
             video_id, title, thumbnail, publish_date,
@@ -141,7 +173,16 @@ class AggRequest(BaseModel):
 
 
 @router.post("/stats")
-def overview_stats(req: AggRequest):
+def overview_stats(
+    req: AggRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        if req.accountTag in hidden_all:
+            return {}
     rows = query("""
         SELECT
             COUNT(*) AS totalVideos,

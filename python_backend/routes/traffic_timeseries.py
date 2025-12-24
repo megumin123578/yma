@@ -1,9 +1,15 @@
 # routes/traffic_timeseries.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from datetime import date
 from sqlalchemy import text
 from python_backend.db import engine 
+from sqlalchemy.orm import Session
+
+from python_backend.api.auth.auth_utils import get_current_user_optional
+from python_backend.api.auth.database import get_db
+from python_backend.api.auth.visibility import get_hidden_account_tags
+from python_backend.module_trafficsource import sanitize_filename
 
 
 def query_all_safe(sql: str, params=None):
@@ -26,7 +32,10 @@ def resolve_channel(channel_root: str):
     return {"account_tag": account_tag, "channel_id": channel_id}
 
 @router.get("/channels")
-def list_channels():
+def list_channels(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
     rows_acc = query_all_safe("""
         SELECT DISTINCT
             account_tag,
@@ -36,6 +45,10 @@ def list_channels():
         ORDER BY 2;
     """)
     items = [{"value": r["account_tag"], "label": r["account_tag"]} for r in rows_acc]
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        items = [r for r in items if r["value"] not in hidden_all]
     return {"items": items}
 
 
@@ -47,12 +60,21 @@ class TSRequest(BaseModel):
     interval: str  # daily | weekly | monthly | yearly
 
 @router.post("/timeseries")
-def timeseries(req: TSRequest):
+def timeseries(
+    req: TSRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
     interval_map = {"daily": "day", "weekly": "week", "monthly": "month", "yearly": "year"}
     if req.interval not in interval_map:
         raise HTTPException(400, "interval phải là daily/weekly/monthly/yearly")
 
     ch = resolve_channel(req.channelRoot)
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        if ch["account_tag"] in hidden_all:
+            return []
     cond_channel = "AND channel_id = :channel_id" if ch["channel_id"] is not None else ""
 
     sql = text(f"""
@@ -97,8 +119,17 @@ class RangeRequest(BaseModel):
     channelRoot: str
 
 @router.post("/range")
-def range_aggregate(req: RangeRequest):
+def range_aggregate(
+    req: RangeRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
     ch = resolve_channel(req.channelRoot)
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        if ch["account_tag"] in hidden_all:
+            return []
     cond_channel = "AND channel_id = :channel_id" if ch["channel_id"] is not None else ""
 
     sql = text(f"""

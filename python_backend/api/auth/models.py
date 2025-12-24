@@ -38,3 +38,14 @@ class SmmstoreAnalyticsCache(Base):
     month = Column(String, nullable=False, index=True)
     payload = Column(Text, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class UserHiddenChannel(Base):
+    __tablename__ = "user_hidden_channels"
+    __table_args__ = (
+        UniqueConstraint("user_id", "account_tag", name="uq_hidden_user_tag"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    account_tag = Column(String, nullable=False, index=True)

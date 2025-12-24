@@ -102,12 +102,18 @@ const TrafficSourceChart = () => {
 
   const [channels, setChannels] = useState([]);
   const [channel, setChannel] = useState(() => loadStoredFilters()?.channel || "");
+  const authHeaders = useMemo(() => {
+    const token = localStorage.getItem("access_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }, []);
 
   useEffect(() => {
     let stop = false;
     (async () => {
       try {
-        const resp = await fetch(`${API_BASE}/api/traffic_source/channels`);
+        const resp = await fetch(`${API_BASE}/api/traffic_source/channels`, {
+          headers: authHeaders,
+        });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         const norm = (Array.isArray(data?.items) ? data.items : data).map((x) => {
@@ -130,7 +136,7 @@ const TrafficSourceChart = () => {
       }
     })();
     return () => { stop = true; };
-  }, [channel]);
+  }, [channel, authHeaders]);
 
   const [startDate, setStartDate] = useState(() => loadStoredFilters()?.startDate || "");
   const [endDate, setEndDate] = useState(() => loadStoredFilters()?.endDate || "");
@@ -150,7 +156,7 @@ const TrafficSourceChart = () => {
       try {
         const resp = await fetch(`${API_BASE}/api/traffic_source/range`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({ start, end, channelRoot: channel }),
         });
         if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
@@ -165,7 +171,7 @@ const TrafficSourceChart = () => {
         setLoading(false);
       }
     },
-    [channel]
+    [channel, authHeaders]
   );
 
   const fetchTimeseries = useCallback(
@@ -175,7 +181,7 @@ const TrafficSourceChart = () => {
       try {
         const resp = await fetch(`${API_BASE}/api/traffic_source/timeseries`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders },
           body: JSON.stringify({ start, end, channelRoot: channel, interval: intervalValue }),
         });
         if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
@@ -189,7 +195,7 @@ const TrafficSourceChart = () => {
         setLoading(false);
       }
     },
-    [channel]
+    [channel, authHeaders]
   );
 
   const computeRange = useCallback((periodValue, now = new Date()) => {

@@ -9,13 +9,19 @@ import {
   TextField,
   Divider,
   Fade,
-  CircularProgress,
+  Checkbox,
   useTheme,
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import { uploadCredentials, listTokens, deleteToken, getTokenProgress } from "../../services/userService";
+import {
+  uploadCredentials,
+  listTokens,
+  deleteToken,
+  getTokenProgress,
+  setTokenVisibility,
+} from "../../services/userService";
 
 const CredentialsDialog = ({ open, onClose }) => {
   const theme = useTheme();
@@ -31,7 +37,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [authUrl, setAuthUrl] = useState("");
   const [tokens, setTokens] = useState([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
-  const [tokenSyncing, setTokenSyncing] = useState(false);
+  const [setTokenSyncing] = useState(false);
   const [progress, setProgress] = useState({ status: "idle", percent: 0, stage: "" });
   const [autoReloaded, setAutoReloaded] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -60,7 +66,7 @@ const CredentialsDialog = ({ open, onClose }) => {
         const data = await listTokens();
         const nextTokens = data?.tokens || [];
         setTokens(nextTokens);
-        if (nextTokens.includes(`${filename}.pickle`)) {
+        if (nextTokens.some((t) => t.name === `${filename}.pickle`)) {
           stopped = true;
           setTokenSyncing(false);
         }
@@ -79,7 +85,7 @@ const CredentialsDialog = ({ open, onClose }) => {
     poll();
 
     return () => clearInterval(intervalId);
-  }, [authUrl, filename]);
+  }, [authUrl, filename, setTokenSyncing]);
 
   useEffect(() => {
     if (!filename) return;
@@ -215,6 +221,17 @@ const CredentialsDialog = ({ open, onClose }) => {
     } catch (err) {
       const message =
         err?.response?.data?.detail || "Delete failed. Please try again.";
+      setStatus({ type: "error", message });
+    }
+  };
+
+  const handleToggleToken = async (tokenName, checked) => {
+    try {
+      await setTokenVisibility(tokenName, !checked);
+      await loadTokens();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Update failed. Please try again.";
       setStatus({ type: "error", message });
     }
   };
@@ -374,15 +391,6 @@ const CredentialsDialog = ({ open, onClose }) => {
             </Button>
           )}
 
-          {tokenSyncing && (
-            <Box display="flex" alignItems="center" gap={1}>
-              <CircularProgress size={18} />
-              <Typography variant="body2" color="text.secondary">
-                Syncing token & loading data...
-              </Typography>
-            </Box>
-          )}
-
           {progress.status !== "idle" && (
             <Box display="flex" flexDirection="column" gap={0.5}>
               <Box display="flex" alignItems="center" justifyContent="space-between">
@@ -405,7 +413,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                   sx={{
                     height: "100%",
                     width: `${Math.min(100, Math.max(0, progress.percent))}%`,
-                    bgcolor: isDark ? "#7de0d2" : theme.palette.primary.main,
+                    bgcolor: isDark ? "#7de0d2" : "#1aa86c",
                     transition: "width 200ms ease",
                   }}
                 />
@@ -461,13 +469,15 @@ const CredentialsDialog = ({ open, onClose }) => {
               </Typography>
             ) : (
               <Box display="flex" flexDirection="column" gap={1}>
-                {tokens.map((name) => {
-                  const displayName = name.toLowerCase().endsWith(".pickle")
-                    ? name.slice(0, -7)
-                    : name;
+                {tokens.map((token) => {
+                  const tokenName = typeof token === "string" ? token : token.name || "";
+                  const displayName = tokenName.toLowerCase().endsWith(".pickle")
+                    ? tokenName.slice(0, -7)
+                    : tokenName;
+                  const isHidden = typeof token === "string" ? false : !!token.hidden;
                   return (
                     <Box
-                      key={name}
+                      key={tokenName}
                       display="flex"
                       alignItems="center"
                       justifyContent="space-between"
@@ -485,11 +495,20 @@ const CredentialsDialog = ({ open, onClose }) => {
                         },
                       }}
                     >
-                      <Typography variant="body2">{displayName}</Typography>
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <Checkbox
+                          size="small"
+                          checked={!isHidden}
+                          onChange={(event) =>
+                            handleToggleToken(tokenName, event.target.checked)
+                          }
+                        />
+                        <Typography variant="body2">{displayName}</Typography>
+                      </Box>
                       <Button
                         size="small"
                         color="error"
-                        onClick={() => requestDeleteToken(name)}
+                        onClick={() => requestDeleteToken(tokenName)}
                       >
                         Delete
                       </Button>
