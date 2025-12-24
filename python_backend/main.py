@@ -73,6 +73,54 @@ def ensure_smmstore_analytics_cache_table():
 
 ensure_smmstore_analytics_cache_table()
 
+
+def ensure_user_schedules_nullable_token():
+    with engine.begin() as conn:
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS user_schedules (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                token_name VARCHAR,
+                mode VARCHAR NOT NULL,
+                time_of_day VARCHAR,
+                every_minutes INTEGER,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                last_run_at DATETIME,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            );
+        """)
+        cols = conn.exec_driver_sql("PRAGMA table_info(user_schedules)").fetchall()
+        col_map = {row[1]: row for row in cols}
+        token_col = col_map.get("token_name")
+        if token_col and token_col[3] == 1:
+            conn.exec_driver_sql("""
+                CREATE TABLE user_schedules_new (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    token_name VARCHAR,
+                    mode VARCHAR NOT NULL,
+                    time_of_day VARCHAR,
+                    every_minutes INTEGER,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    last_run_at DATETIME,
+                    created_at DATETIME NOT NULL,
+                    updated_at DATETIME NOT NULL
+                );
+            """)
+            conn.exec_driver_sql("""
+                INSERT INTO user_schedules_new
+                  (id, user_id, token_name, mode, time_of_day, every_minutes, enabled, last_run_at, created_at, updated_at)
+                SELECT
+                  id, user_id, NULL, mode, time_of_day, every_minutes, enabled, last_run_at, created_at, updated_at
+                FROM user_schedules;
+            """)
+            conn.exec_driver_sql("DROP TABLE user_schedules;")
+            conn.exec_driver_sql("ALTER TABLE user_schedules_new RENAME TO user_schedules;")
+
+
+ensure_user_schedules_nullable_token()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

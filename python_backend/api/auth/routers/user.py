@@ -338,16 +338,13 @@ def delete_token(
 
 
 class ScheduleCreate(BaseModel):
-    mode: str  # daily | interval
     time_of_day: Optional[str] = None
-    every_minutes: Optional[int] = None
     enabled: bool = True
 
 
 class ScheduleUpdate(BaseModel):
     enabled: Optional[bool] = None
     time_of_day: Optional[str] = None
-    every_minutes: Optional[int] = None
 
 
 @router.get("/schedules")
@@ -365,9 +362,7 @@ def list_schedules(
         "items": [
             {
                 "id": r.id,
-                "mode": r.mode,
                 "time_of_day": r.time_of_day,
-                "every_minutes": r.every_minutes,
                 "enabled": bool(r.enabled),
                 "last_run_at": r.last_run_at.isoformat() if r.last_run_at else None,
             }
@@ -382,18 +377,14 @@ def create_schedule(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if payload.mode not in {"daily", "interval"}:
-        raise HTTPException(status_code=400, detail="Invalid schedule mode")
-    if payload.mode == "daily" and not payload.time_of_day:
+    if not payload.time_of_day:
         raise HTTPException(status_code=400, detail="time_of_day is required")
-    if payload.mode == "interval" and not payload.every_minutes:
-        raise HTTPException(status_code=400, detail="every_minutes is required")
 
     row = UserSchedule(
         user_id=current_user.id,
-        mode=payload.mode,
+        mode="daily",
         time_of_day=payload.time_of_day,
-        every_minutes=payload.every_minutes,
+        every_minutes=None,
         enabled=1 if payload.enabled else 0,
         updated_at=datetime.utcnow(),
     )
@@ -425,8 +416,8 @@ def update_schedule(
         row.enabled = 1 if payload.enabled else 0
     if payload.time_of_day is not None:
         row.time_of_day = payload.time_of_day
-    if payload.every_minutes is not None:
-        row.every_minutes = payload.every_minutes
+    if payload.time_of_day is not None:
+        row.time_of_day = payload.time_of_day
     row.updated_at = datetime.utcnow()
     db.add(row)
     db.commit()

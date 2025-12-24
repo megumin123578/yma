@@ -57,26 +57,15 @@ def _should_run(schedule: UserSchedule, now: datetime) -> bool:
         return False
 
     last = schedule.last_run_at
-    if schedule.mode == "interval":
-        if not schedule.every_minutes or schedule.every_minutes <= 0:
-            return False
-        if last is None:
-            return True
-        delta = now - last
-        return delta.total_seconds() >= schedule.every_minutes * 60
-
-    if schedule.mode == "daily":
-        tod = _parse_time_of_day(schedule.time_of_day or "")
-        if tod is None:
-            return False
-        today_at = datetime.combine(now.date(), tod)
-        if now < today_at:
-            return False
-        if last is None:
-            return True
-        return last.date() < now.date()
-
-    return False
+    tod = _parse_time_of_day(schedule.time_of_day or "")
+    if tod is None:
+        return False
+    today_at = datetime.combine(now.date(), tod)
+    if now < today_at:
+        return False
+    if last is None:
+        return True
+    return last.date() < now.date()
 
 
 def _run_loop():

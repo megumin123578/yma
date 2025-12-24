@@ -10,7 +10,6 @@ import {
   Divider,
   Fade,
   Checkbox,
-  MenuItem,
   Switch,
   useTheme,
 } from "@mui/material";
@@ -51,9 +50,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [activeTab, setActiveTab] = useState("add");
   const [schedules, setSchedules] = useState([]);
   const [scheduleForm, setScheduleForm] = useState({
-    mode: "daily",
     time_of_day: "08:00",
-    every_minutes: 60,
   });
 
   useEffect(() => {
@@ -274,11 +271,13 @@ const CredentialsDialog = ({ open, onClose }) => {
   };
 
   const handleCreateSchedule = async () => {
+    if (!scheduleForm.time_of_day) {
+      setStatus({ type: "error", message: "Please set a time." });
+      return;
+    }
     try {
       await createSchedule({
-        mode: scheduleForm.mode,
-        time_of_day: scheduleForm.mode === "daily" ? scheduleForm.time_of_day : undefined,
-        every_minutes: scheduleForm.mode === "interval" ? Number(scheduleForm.every_minutes) : undefined,
+        time_of_day: scheduleForm.time_of_day,
         enabled: true,
       });
       setStatus({ type: "success", message: "Schedule saved." });
@@ -681,36 +680,26 @@ const CredentialsDialog = ({ open, onClose }) => {
                   Schedule
                 </Typography>
                 <Box display="flex" flexDirection="column" gap={2} mt={1}>
-                  <TextField
-                    select
-                    label="Mode"
-                    size="small"
-                    value={scheduleForm.mode}
-                    onChange={(e) => handleScheduleField("mode", e.target.value)}
-                  >
-                    <MenuItem value="daily">Daily</MenuItem>
-                    <MenuItem value="interval">Every N minutes</MenuItem>
-                  </TextField>
-
-                  {scheduleForm.mode === "daily" ? (
-                    <TextField
-                      label="Time"
-                      type="time"
-                      size="small"
-                      value={scheduleForm.time_of_day}
-                      onChange={(e) => handleScheduleField("time_of_day", e.target.value)}
-                      InputLabelProps={{ shrink: true }}
-                    />
-                  ) : (
-                    <TextField
-                      label="Every (minutes)"
-                      type="number"
-                      size="small"
-                      value={scheduleForm.every_minutes}
-                      onChange={(e) => handleScheduleField("every_minutes", e.target.value)}
-                      inputProps={{ min: 1 }}
-                    />
+                  {status.message && (
+                    <Typography
+                      variant="body2"
+                      color={
+                        status.type === "error"
+                          ? theme.palette.error.main
+                          : theme.palette.success.main
+                      }
+                    >
+                      {status.message}
+                    </Typography>
                   )}
+                  <TextField
+                    label="Time"
+                    type="time"
+                    size="small"
+                    value={scheduleForm.time_of_day}
+                    onChange={(e) => handleScheduleField("time_of_day", e.target.value)}
+                    InputLabelProps={{ shrink: true }}
+                  />
 
                   <Button variant="contained" onClick={handleCreateSchedule}>
                     Save Schedule
@@ -739,9 +728,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                         >
                           <Box display="flex" flexDirection="column">
                             <Typography variant="body2">
-                              {s.mode === "daily"
-                                ? `Daily at ${s.time_of_day || "--:--"}`
-                                : `Every ${s.every_minutes || 0} minutes`}
+                              {`Daily at ${s.time_of_day || "--:--"}`}
                             </Typography>
                           </Box>
                           <Box display="flex" alignItems="center" gap={1}>
