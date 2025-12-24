@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Box,
   Grid,
@@ -48,10 +48,10 @@ const VideoList = () => {
   const colors = tokens(theme.palette.mode);
   const textOnDark = "#fff";
   const apiBase = API_BASE;
-  const authHeaders = (() => {
+  const authHeaders = useMemo(() => {
     const token = localStorage.getItem("access_token");
     return token ? { Authorization: `Bearer ${token}` } : {};
-  })();
+  }, []);
 
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState("");
@@ -191,7 +191,7 @@ const VideoList = () => {
       )}
 
       {/* Loading */}
-      {loadingVideos ? (
+      {loadingVideos && videos.length === 0 ? (
         <Box
           mt={4}
           display="flex"

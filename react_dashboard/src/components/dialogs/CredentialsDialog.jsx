@@ -37,11 +37,12 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [authUrl, setAuthUrl] = useState("");
   const [tokens, setTokens] = useState([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
-  const [setTokenSyncing] = useState(false);
+  const [, setTokenSyncing] = useState(false);
   const [progress, setProgress] = useState({ status: "idle", percent: 0, stage: "" });
   const [autoReloaded, setAutoReloaded] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState("");
+  const [needsReload, setNeedsReload] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -52,6 +53,7 @@ const CredentialsDialog = ({ open, onClose }) => {
       setAuthUrl("");
       setProgress({ status: "idle", percent: 0, stage: "" });
       setAutoReloaded(false);
+      setNeedsReload(false);
       loadTokens();
     }
   }, [open]);
@@ -176,6 +178,7 @@ const CredentialsDialog = ({ open, onClose }) => {
       ? selected.name.slice(0, -5)
       : selected.name;
     setFilename(base);
+    handleUpload(selected, base);
   };
 
   const handleFilenameChange = (event) => {
@@ -183,8 +186,10 @@ const CredentialsDialog = ({ open, onClose }) => {
     setFilename(raw.toLowerCase().endsWith(".json") ? raw.slice(0, -5) : raw);
   };
 
-  const handleUpload = async () => {
-    if (!file || uploading) return;
+  const handleUpload = async (fileOverride, nameOverride) => {
+    const targetFile = fileOverride || file;
+    const targetName = typeof nameOverride === "string" ? nameOverride : filename;
+    if (!targetFile || uploading) return;
 
     setUploading(true);
     setStatus({ type: "", message: "" });
@@ -192,8 +197,8 @@ const CredentialsDialog = ({ open, onClose }) => {
     setAutoReloaded(false);
 
     try {
-      const safeName = filename.trim() ? `${filename.trim()}.json` : "";
-      const data = await uploadCredentials(file, safeName);
+      const safeName = targetName.trim() ? `${targetName.trim()}.json` : "";
+      const data = await uploadCredentials(targetFile, safeName);
       const nextUrl = data?.auth_url || "";
       setAuthUrl(nextUrl);
       if (!nextUrl) {
@@ -218,6 +223,7 @@ const CredentialsDialog = ({ open, onClose }) => {
     try {
       await deleteToken(tokenName);
       await loadTokens();
+      setNeedsReload(true);
     } catch (err) {
       const message =
         err?.response?.data?.detail || "Delete failed. Please try again.";
@@ -250,6 +256,11 @@ const CredentialsDialog = ({ open, onClose }) => {
     if (!pendingDelete) return;
     await handleDeleteToken(pendingDelete);
     handleConfirmClose();
+  };
+
+  const handleDone = () => {
+    onClose();
+    window.location.reload();
   };
 
   return (
@@ -528,12 +539,8 @@ const CredentialsDialog = ({ open, onClose }) => {
         >
           Cancel
         </Button>
-        <Button
-          variant="contained"
-          onClick={handleUpload}
-          disabled={!file || uploading}
-        >
-          {uploading ? "Uploading..." : "Upload"}
+        <Button variant="contained" onClick={handleDone} disabled={uploading}>
+          Done
         </Button>
       </DialogActions>
       <Dialog
