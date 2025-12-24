@@ -119,6 +119,10 @@ def _kickoff_get_data(account_tag: str) -> None:
     script_path = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "get_data.py")
     )
+    if not os.path.exists(script_path):
+        script_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "..", "python_backend", "get_data.py")
+        )
     repo_root = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
     )
