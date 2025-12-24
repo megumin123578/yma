@@ -11,6 +11,7 @@ from python_backend.api.auth.models import UserSchedule, UserScheduleRun
 
 _STOP_EVENT = Event()
 _THREAD = None
+_RUNS_MAX = int(os.getenv("SCHEDULE_RUNS_MAX", "200"))
 
 
 def _kickoff_get_data(account_tag: Optional[str], env_extra: Optional[dict] = None) -> None:
@@ -106,6 +107,19 @@ def _run_loop():
                 db.add(run)
                 db.commit()
                 db.refresh(run)
+                if _RUNS_MAX > 0:
+                    cutoff = (
+                        db.query(UserScheduleRun.id)
+                        .order_by(UserScheduleRun.id.desc())
+                        .offset(_RUNS_MAX)
+                        .all()
+                    )
+                    if cutoff:
+                        ids = [r[0] for r in cutoff]
+                        db.query(UserScheduleRun).filter(UserScheduleRun.id.in_(ids)).delete(
+                            synchronize_session=False
+                        )
+                        db.commit()
                 _kickoff_get_data(
                     token_base or None,
                     env_extra={"SCHEDULE_RUN_ID": str(run.id)},
