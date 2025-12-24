@@ -42,7 +42,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [autoReloaded, setAutoReloaded] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState("");
-  const [, setNeedsReload] = useState(false);
+  const [activeTab, setActiveTab] = useState("add");
 
   useEffect(() => {
     if (open) {
@@ -53,7 +53,7 @@ const CredentialsDialog = ({ open, onClose }) => {
       setAuthUrl("");
       setProgress({ status: "idle", percent: 0, stage: "" });
       setAutoReloaded(false);
-      setNeedsReload(false);
+      setActiveTab("add");
       loadTokens();
     }
   }, [open]);
@@ -223,7 +223,6 @@ const CredentialsDialog = ({ open, onClose }) => {
     try {
       await deleteToken(tokenName);
       await loadTokens();
-      setNeedsReload(true);
     } catch (err) {
       const message =
         err?.response?.data?.detail || "Delete failed. Please try again.";
@@ -267,7 +266,7 @@ const CredentialsDialog = ({ open, onClose }) => {
     <Dialog
       open={open}
       onClose={onClose}
-      maxWidth="xs"
+      maxWidth="md"
       fullWidth
       TransitionComponent={Fade}
       transitionDuration={220}
@@ -281,6 +280,9 @@ const CredentialsDialog = ({ open, onClose }) => {
           position: "relative",
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
+          width: { xs: "95vw", md: 860 },
+          maxWidth: "95vw",
+          minHeight: 620,
           "&:before": {
             content: '""',
             position: "absolute",
@@ -303,209 +305,270 @@ const CredentialsDialog = ({ open, onClose }) => {
           </Typography>
         </Box>
       </DialogTitle>
-      <DialogContent sx={{ position: "relative", zIndex: 1 }}>
-        <Box display="flex" flexDirection="column" gap={2} mt={1}>
+      <DialogContent sx={{ position: "relative", zIndex: 1, minHeight: 520 }}>
+        <Box display="flex" gap={2} mt={1}>
           <Box
             sx={{
-              bgcolor: panel,
-              border: `1px solid ${border}`,
-              borderRadius: 2,
-              p: 2,
+              minWidth: 140,
               display: "flex",
               flexDirection: "column",
-              gap: 1.5,
-              transition: "transform 200ms ease, box-shadow 200ms ease",
-              boxShadow: isDark ? "0 10px 24px rgba(0,0,0,0.35)" : "0 10px 24px rgba(0,0,0,0.08)",
-              backdropFilter: "blur(12px)",
-              WebkitBackdropFilter: "blur(12px)",
-              "&:hover": {
-                transform: "translateY(-2px)",
-              },
+              gap: 1,
             }}
           >
-            <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
-              Upload credentials
-            </Typography>
-
             <Button
-              variant="outlined"
-              component="label"
-              startIcon={<UploadFileIcon />}
+              variant="text"
+              onClick={() => setActiveTab("add")}
               sx={{
-                borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
-                color: isDark ? "#e9edf2" : undefined,
-                transition: "all 180ms ease",
+                justifyContent: "flex-start",
+                border: "1px solid transparent",
+                color:
+                  activeTab === "add"
+                    ? "#ffffff"
+                    : isDark
+                    ? "#ffffff"
+                    : "rgba(15,23,42,0.9)",
+                bgcolor: activeTab === "add" ? accent : "transparent",
                 "&:hover": {
-                  borderColor: isDark ? "rgba(255,255,255,0.4)" : undefined,
-                  backgroundColor: isDark ? "rgba(255,255,255,0.06)" : undefined,
-                  transform: "translateY(-1px)",
+                  bgcolor: activeTab === "add"
+                    ? accent
+                    : isDark
+                    ? "rgba(255,255,255,0.06)"
+                    : "rgba(15,23,42,0.06)",
                 },
               }}
             >
-              {file ? file.name : "Choose Credentials file"}
-              <input
-                hidden
-                type="file"
-                accept=".json,application/json"
-                onChange={handleSelectFile}
-              />
+              Add channel
             </Button>
-
-            {file && (
-              <TextField
-                label="File name"
-                size="small"
-                value={filename}
-                onChange={handleFilenameChange}
-                placeholder="example.json"
-                InputLabelProps={{ style: { color: isDark ? "#aab4c2" : undefined } }}
-                sx={{
-                  input: { color: isDark ? "#e9edf2" : undefined },
-                  "& .MuiOutlinedInput-notchedOutline": {
-                    borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
-                  },
-                }}
-              />
-            )}
+            <Button
+              variant="text"
+              onClick={() => setActiveTab("schedule")}
+              sx={{
+                justifyContent: "flex-start",
+                border: "1px solid transparent",
+                color:
+                  activeTab === "schedule"
+                    ? "#ffffff"
+                    : isDark
+                    ? "#ffffff"
+                    : "rgba(15,23,42,0.9)",
+                bgcolor: activeTab === "schedule" ? accent : "transparent",
+                "&:hover": {
+                  bgcolor: activeTab === "schedule"
+                    ? accent
+                    : isDark
+                    ? "rgba(255,255,255,0.06)"
+                    : "rgba(15,23,42,0.06)",
+                },
+              }}
+            >
+              Schedule
+            </Button>
           </Box>
 
-          {status.message && (
-            <Typography
-              variant="body2"
-              color={
-                status.type === "error"
-                  ? theme.palette.error.main
-                  : theme.palette.success.main
-              }
-            >
-              {status.message}
-            </Typography>
-          )}
-
-          {authUrl && (
-            <Button
-              variant="contained"
-              color="success"
-              href={authUrl}
-              target="_blank"
-              rel="noopener"
-              sx={{
-                bgcolor: isDark ? "#2b8a7b" : undefined,
-                transition: "transform 180ms ease",
-                "&:hover": {
-                  bgcolor: isDark ? "#247468" : undefined,
-                  transform: "translateY(-1px)",
-                },
-              }}
-            >
-              Open Authorization Link
-            </Button>
-          )}
-
-          {progress.status !== "idle" && (
-            <Box display="flex" flexDirection="column" gap={0.5}>
-              <Box display="flex" alignItems="center" justifyContent="space-between">
-                <Typography variant="body2" color="text.secondary">
-                  {progress.stage || "Processing"}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {progress.percent}%
-                </Typography>
-              </Box>
-              <Box
-                sx={{
-                  height: 6,
-                  borderRadius: 999,
-                  overflow: "hidden",
-                  bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)",
-                }}
-              >
+          <Box display="flex" flexDirection="column" gap={2} flex={1}>
+            {activeTab === "add" ? (
+              <>
                 <Box
                   sx={{
-                    height: "100%",
-                    width: `${Math.min(100, Math.max(0, progress.percent))}%`,
-                    bgcolor: isDark ? "#7de0d2" : "#1aa86c",
-                    transition: "width 200ms ease",
+                    bgcolor: panel,
+                    border: `1px solid ${border}`,
+                    borderRadius: 2,
+                    p: 2,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 1.5,
+                    transition: "transform 200ms ease, box-shadow 200ms ease",
+                    boxShadow: isDark ? "0 10px 24px rgba(0,0,0,0.35)" : "0 10px 24px rgba(0,0,0,0.08)",
+                    backdropFilter: "blur(12px)",
+                    WebkitBackdropFilter: "blur(12px)",
+                    "&:hover": {
+                      transform: "translateY(-2px)",
+                    },
                   }}
-                />
-              </Box>
-              {progress.message && (
-                <Typography variant="caption" color="text.secondary">
-                  {progress.message}
-                </Typography>
-              )}
-            </Box>
-          )}
+                >
+                  <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
+                    Upload credentials
+                  </Typography>
 
-          <Divider />
+                  <Button
+                    variant="outlined"
+                    component="label"
+                    startIcon={<UploadFileIcon />}
+                    sx={{
+                      borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
+                      color: isDark ? "#e9edf2" : undefined,
+                      transition: "all 180ms ease",
+                      "&:hover": {
+                        borderColor: isDark ? "rgba(255,255,255,0.4)" : undefined,
+                        backgroundColor: isDark ? "rgba(255,255,255,0.06)" : undefined,
+                        transform: "translateY(-1px)",
+                      },
+                    }}
+                  >
+                    {file ? file.name : "Choose Credentials file"}
+                    <input
+                      hidden
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={handleSelectFile}
+                    />
+                  </Button>
 
-          <Box
-            sx={{
-              bgcolor: panel,
-              border: `1px solid ${border}`,
-              borderRadius: 2,
-              p: 2,
-              display: "flex",
-              flexDirection: "column",
-              gap: 1.5,
-              transition: "transform 200ms ease, box-shadow 200ms ease",
-              boxShadow: isDark ? "0 10px 24px rgba(0,0,0,0.35)" : "0 10px 24px rgba(0,0,0,0.08)",
-              backdropFilter: "blur(12px)",
-              WebkitBackdropFilter: "blur(12px)",
-              "&:hover": {
-                transform: "translateY(-2px)",
-              },
-            }}
-          >
-            <Box display="flex" alignItems="center" justifyContent="space-between">
-              <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
-                Tokens
-              </Typography>
-              <Button
-                size="small"
-                onClick={loadTokens}
-                disabled={loadingTokens}
-                sx={{
-                  minWidth: 0,
-                  color: isDark ? "#9fe3d6" : undefined,
-                }}
-              >
-                <RefreshIcon fontSize="small" />
-              </Button>
-            </Box>
-
-            {tokens.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                {loadingTokens ? "Loading tokens..." : "No tokens found."}
-              </Typography>
-            ) : (
-              <Box display="flex" flexDirection="column" gap={1}>
-                {tokens.map((token) => {
-                  const tokenName = typeof token === "string" ? token : token.name || "";
-                  const displayName = tokenName.toLowerCase().endsWith(".pickle")
-                    ? tokenName.slice(0, -7)
-                    : tokenName;
-                  const isHidden = typeof token === "string" ? false : !!token.hidden;
-                  return (
-                    <Box
-                      key={tokenName}
-                      display="flex"
-                      alignItems="center"
-                      justifyContent="space-between"
+                  {file && (
+                    <TextField
+                      label="File name"
+                      size="small"
+                      value={filename}
+                      onChange={handleFilenameChange}
+                      placeholder="example.json"
+                      InputLabelProps={{ style: { color: isDark ? "#aab4c2" : undefined } }}
                       sx={{
-                        border: `1px solid ${border}`,
-                        borderRadius: 1,
-                        p: 1,
-                        bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)",
-                        backdropFilter: "blur(10px)",
-                        WebkitBackdropFilter: "blur(10px)",
-                        transition: "all 180ms ease",
-                        "&:hover": {
-                          bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(25,118,210,0.08)",
-                          borderColor: isDark ? "rgba(255,255,255,0.2)" : "rgba(25,118,210,0.2)",
+                        input: { color: isDark ? "#e9edf2" : undefined },
+                        "& .MuiOutlinedInput-notchedOutline": {
+                          borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
                         },
                       }}
+                    />
+                  )}
+                </Box>
+
+                {status.message && (
+                  <Typography
+                    variant="body2"
+                    color={
+                      status.type === "error"
+                        ? theme.palette.error.main
+                        : theme.palette.success.main
+                    }
+                  >
+                    {status.message}
+                  </Typography>
+                )}
+
+                {authUrl && (
+                  <Button
+                    variant="contained"
+                    color="success"
+                    href={authUrl}
+                    target="_blank"
+                    rel="noopener"
+                    sx={{
+                      bgcolor: isDark ? "#2b8a7b" : undefined,
+                      transition: "transform 180ms ease",
+                      "&:hover": {
+                        bgcolor: isDark ? "#247468" : undefined,
+                        transform: "translateY(-1px)",
+                      },
+                    }}
+                  >
+                    Open Authorization Link
+                  </Button>
+                )}
+
+                {progress.status !== "idle" && (
+                  <Box display="flex" flexDirection="column" gap={0.5}>
+                    <Box display="flex" alignItems="center" justifyContent="space-between">
+                      <Typography variant="body2" color="text.secondary">
+                        {progress.stage || "Processing"}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {progress.percent}%
+                      </Typography>
+                    </Box>
+                    <Box
+                      sx={{
+                        height: 6,
+                        borderRadius: 999,
+                        overflow: "hidden",
+                        bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)",
+                      }}
                     >
+                      <Box
+                        sx={{
+                          height: "100%",
+                          width: `${Math.min(100, Math.max(0, progress.percent))}%`,
+                          bgcolor: isDark ? "#7de0d2" : "#1aa86c",
+                          transition: "width 200ms ease",
+                        }}
+                      />
+                    </Box>
+                    {progress.message && (
+                      <Typography variant="caption" color="text.secondary">
+                        {progress.message}
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+
+                <Divider />
+
+                <Box
+                  sx={{
+                    bgcolor: panel,
+                    border: `1px solid ${border}`,
+                    borderRadius: 2,
+                    p: 2,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 1.5,
+                    transition: "transform 200ms ease, box-shadow 200ms ease",
+                    boxShadow: isDark ? "0 10px 24px rgba(0,0,0,0.35)" : "0 10px 24px rgba(0,0,0,0.08)",
+                    backdropFilter: "blur(12px)",
+                    WebkitBackdropFilter: "blur(12px)",
+                    "&:hover": {
+                      transform: "translateY(-2px)",
+                    },
+                  }}
+                >
+                  <Box display="flex" alignItems="center" justifyContent="space-between">
+                    <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
+                      Tokens
+                    </Typography>
+                    <Button
+                      size="small"
+                      onClick={loadTokens}
+                      disabled={loadingTokens}
+                      sx={{
+                        minWidth: 0,
+                        color: isDark ? "#9fe3d6" : undefined,
+                      }}
+                    >
+                      <RefreshIcon fontSize="small" />
+                    </Button>
+                  </Box>
+
+                  {tokens.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      {loadingTokens ? "Loading tokens..." : "No tokens found."}
+                    </Typography>
+                  ) : (
+                    <Box display="flex" flexDirection="column" gap={1}>
+                      {tokens.map((token) => {
+                        const tokenName = typeof token === "string" ? token : token.name || "";
+                        const displayName = tokenName.toLowerCase().endsWith(".pickle")
+                          ? tokenName.slice(0, -7)
+                          : tokenName;
+                        const isHidden = typeof token === "string" ? false : !!token.hidden;
+                        return (
+                          <Box
+                            key={tokenName}
+                            display="flex"
+                            alignItems="center"
+                            justifyContent="space-between"
+                            sx={{
+                              border: `1px solid ${border}`,
+                              borderRadius: 1,
+                              p: 1,
+                              bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)",
+                              backdropFilter: "blur(10px)",
+                              WebkitBackdropFilter: "blur(10px)",
+                              transition: "all 180ms ease",
+                              "&:hover": {
+                                bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(25,118,210,0.08)",
+                                borderColor: isDark ? "rgba(255,255,255,0.2)" : "rgba(25,118,210,0.2)",
+                              },
+                            }}
+                          >
                       <Box display="flex" alignItems="center" gap={1}>
                         <Checkbox
                           size="small"
@@ -513,19 +576,42 @@ const CredentialsDialog = ({ open, onClose }) => {
                           onChange={(event) =>
                             handleToggleToken(tokenName, event.target.checked)
                           }
+                          sx={{
+                            color: isDark ? "#7ed6ff" : undefined,
+                            "&.Mui-checked": { color: isDark ? "#43c2ff" : undefined },
+                          }}
                         />
-                        <Typography variant="body2">{displayName}</Typography>
-                      </Box>
-                      <Button
-                        size="small"
-                        color="error"
-                        onClick={() => requestDeleteToken(tokenName)}
-                      >
-                        Delete
-                      </Button>
+                              <Typography variant="body2">{displayName}</Typography>
+                            </Box>
+                            <Button
+                              size="small"
+                              color="error"
+                              onClick={() => requestDeleteToken(tokenName)}
+                            >
+                              Delete
+                            </Button>
+                          </Box>
+                        );
+                      })}
                     </Box>
-                  );
-                })}
+                  )}
+                </Box>
+              </>
+            ) : (
+              <Box
+                sx={{
+                  bgcolor: panel,
+                  border: `1px solid ${border}`,
+                  borderRadius: 2,
+                  p: 2,
+                }}
+              >
+                <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
+                  Schedule
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Coming soon.
+                </Typography>
               </Box>
             )}
           </Box>
