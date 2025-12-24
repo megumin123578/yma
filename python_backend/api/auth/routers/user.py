@@ -42,7 +42,7 @@ OAUTH_REDIRECT_URL = os.getenv(
 )
 
 PENDING_OAUTH = {}
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+_ADMIN_ENV_KEY = "ADMIN_USERNAME"
 
 
 def _safe_filename(name: str) -> str:
@@ -57,8 +57,13 @@ def _safe_token_filename(name: str) -> str:
 
 
 def _require_admin(current_user: User) -> None:
-    if (current_user.username or "").lower() != ADMIN_USERNAME.lower():
+    if (current_user.username or "").lower() not in _get_admin_users():
         raise HTTPException(status_code=403, detail="Admin access required")
+
+
+def _get_admin_users() -> set:
+    raw = os.getenv(_ADMIN_ENV_KEY, "admin")
+    return {u.strip().lower() for u in raw.split(",") if u.strip()}
 
 
 def _write_progress_file(account_tag: str, status: str, percent: int, stage: str, message: str = "") -> None:
@@ -386,6 +391,7 @@ def list_schedule_runs(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
+    is_admin = bool(current_user and (current_user.username or "").lower() in _get_admin_users())
     rows = (
         db.query(UserScheduleRun)
         .order_by(UserScheduleRun.id.desc())
@@ -400,7 +406,7 @@ def list_schedule_runs(
                 "status": r.status,
                 "processed": r.processed,
                 "total": r.total,
-                "message": r.message,
+                "message": r.message if is_admin else None,
                 "started_at": r.started_at.isoformat() if r.started_at else None,
                 "finished_at": r.finished_at.isoformat() if r.finished_at else None,
             }
