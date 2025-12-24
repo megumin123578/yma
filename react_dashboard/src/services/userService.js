@@ -18,9 +18,12 @@ export const uploadAvatar = (file) => {
   return api.post("/api/users/avatar", formData);
 };
 
-export const uploadCredentials = (file) => {
+export const uploadCredentials = (file, filename) => {
   const formData = new FormData();
   formData.append("credentials", file);
+  if (filename) {
+    formData.append("filename", filename);
+  }
 
   return api.post("/api/users/credentials", formData).then((res) => res.data);
 };

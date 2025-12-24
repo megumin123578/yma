@@ -6,6 +6,7 @@ import {
   Button,
   Box,
   Typography,
+  TextField,
   useTheme,
 } from "@mui/material";
 import { useEffect, useState } from "react";
@@ -15,6 +16,7 @@ import { uploadCredentials } from "../../services/userService";
 const CredentialsDialog = ({ open, onClose }) => {
   const theme = useTheme();
   const [file, setFile] = useState(null);
+  const [filename, setFilename] = useState("");
   const [status, setStatus] = useState({ type: "", message: "" });
   const [uploading, setUploading] = useState(false);
   const [authUrl, setAuthUrl] = useState("");
@@ -22,6 +24,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   useEffect(() => {
     if (open) {
       setFile(null);
+      setFilename("");
       setStatus({ type: "", message: "" });
       setUploading(false);
       setAuthUrl("");
@@ -38,11 +41,13 @@ const CredentialsDialog = ({ open, onClose }) => {
         message: "Please select a .json credentials file.",
       });
       setFile(null);
+      setFilename("");
       return;
     }
 
     setStatus({ type: "", message: "" });
     setFile(selected);
+    setFilename(selected.name);
   };
 
   const handleUpload = async () => {
@@ -52,7 +57,7 @@ const CredentialsDialog = ({ open, onClose }) => {
     setStatus({ type: "", message: "" });
 
     try {
-      const data = await uploadCredentials(file);
+      const data = await uploadCredentials(file, filename);
       const nextUrl = data?.auth_url || "";
       setAuthUrl(nextUrl);
       setStatus({
@@ -92,6 +97,14 @@ const CredentialsDialog = ({ open, onClose }) => {
               onChange={handleSelectFile}
             />
           </Button>
+
+          <TextField
+            label="File name"
+            size="small"
+            value={filename}
+            onChange={(event) => setFilename(event.target.value)}
+            placeholder="example.json"
+          />
 
           {status.message && (
             <Typography

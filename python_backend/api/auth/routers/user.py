@@ -4,7 +4,7 @@ import re
 import time
 import pickle
 from typing import List
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from sqlalchemy.orm import Session
 from google_auth_oauthlib.flow import InstalledAppFlow
 from python_backend.api.auth.database import get_db
@@ -69,9 +69,13 @@ def upload_avatar(
 @router.post("/credentials")
 def upload_credentials(
     credentials: UploadFile = File(...),
+    filename: str = Form(None),
     current_user: User = Depends(get_current_user),
 ):
-    filename = _safe_filename(credentials.filename)
+    base_name = filename if filename is not None else credentials.filename
+    filename = _safe_filename(base_name)
+    if not filename.lower().endswith(".json"):
+        filename = f"{filename}.json"
     if not filename.lower().endswith(".json"):
         raise HTTPException(status_code=400, detail="Credentials must be a .json file")
 
@@ -84,8 +88,11 @@ def upload_credentials(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON file")
 
-    stamped = f"user_{current_user.id}_{int(time.time())}_{filename}"
-    file_path = os.path.join(CREDENTIALS_DIR, stamped)
+    file_path = os.path.join(CREDENTIALS_DIR, filename)
+    if os.path.exists(file_path):
+        name, ext = os.path.splitext(filename)
+        filename = f"{name}_{int(time.time())}{ext or '.json'}"
+        file_path = os.path.join(CREDENTIALS_DIR, filename)
 
     with open(file_path, "wb") as f:
         f.write(content)
@@ -98,7 +105,7 @@ def upload_credentials(
     )
     PENDING_OAUTH[state] = {"cred_path": file_path, "created_at": time.time()}
 
-    return {"filename": stamped, "auth_url": auth_url, "state": state}
+    return {"filename": filename, "auth_url": auth_url, "state": state}
 
 
 @router.get("/credentials/callback")
