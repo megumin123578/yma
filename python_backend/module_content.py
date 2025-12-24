@@ -8,7 +8,8 @@ from sqlalchemy import create_engine, text
 
 from module_trafficsource import (
     create_token_from_credentials,
-    sanitize_filename
+    sanitize_filename,
+    CREDENTIALS_FOLDER,
 )
 
 
@@ -304,7 +305,7 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url):
 
 
 def process_content(cred_file: str):
-    cred_path = os.path.join("credentials", cred_file)
+    cred_path = os.path.join(CREDENTIALS_FOLDER, cred_file)
     pg_url = os.getenv("PG_URL")
     if not pg_url:
         raise RuntimeError("Missing PG_URL env var")

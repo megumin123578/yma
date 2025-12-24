@@ -80,3 +80,10 @@ export const deleteSchedule = async (scheduleId) => {
   const res = await api.delete(`/api/users/schedules/${scheduleId}`);
   return res.data;
 };
+
+export const listScheduleRuns = async (limit = 10) => {
+  const res = await api.get("/api/users/schedules/runs", {
+    params: { limit },
+  });
+  return res.data;
+};

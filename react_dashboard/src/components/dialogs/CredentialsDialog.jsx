@@ -29,6 +29,7 @@ import {
   createSchedule,
   updateSchedule,
   deleteSchedule,
+  listScheduleRuns,
 } from "../../services/userService";
 
 const CredentialsDialog = ({ open, onClose }) => {
@@ -52,6 +53,8 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [pendingDelete, setPendingDelete] = useState("");
   const [activeTab, setActiveTab] = useState("add");
   const [schedules, setSchedules] = useState([]);
+  const [scheduleRuns, setScheduleRuns] = useState([]);
+  const [loadingRuns, setLoadingRuns] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({
     time_of_day: "08:00",
   });
@@ -76,6 +79,37 @@ const CredentialsDialog = ({ open, onClose }) => {
       loadSchedules();
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!open || activeTab !== "schedule") return;
+    let canceled = false;
+
+    const loadRuns = async () => {
+      setLoadingRuns(true);
+      try {
+        const data = await listScheduleRuns(10);
+        if (!canceled) {
+          setScheduleRuns(data?.items || []);
+        }
+      } catch (err) {
+        if (!canceled) {
+          setScheduleRuns([]);
+        }
+      } finally {
+        if (!canceled) {
+          setLoadingRuns(false);
+        }
+      }
+    };
+
+    loadRuns();
+    const intervalId = setInterval(loadRuns, 5000);
+
+    return () => {
+      canceled = true;
+      clearInterval(intervalId);
+    };
+  }, [open, activeTab]);
 
   useEffect(() => {
     if (!authUrl || !filename) return;
@@ -333,6 +367,17 @@ const CredentialsDialog = ({ open, onClose }) => {
   const handleDone = () => {
     onClose();
     window.location.reload();
+  };
+
+  const formatRunTime = (value) =>
+    value ? dayjs(value).format("MMM D, HH:mm") : "--";
+
+  const statusStyles = (status) => {
+    const lower = (status || "").toLowerCase();
+    if (lower === "done") return { bg: "rgba(34,197,94,0.18)", fg: "#22c55e" };
+    if (lower === "running") return { bg: "rgba(59,130,246,0.18)", fg: "#3b82f6" };
+    if (lower === "error") return { bg: "rgba(239,68,68,0.18)", fg: "#ef4444" };
+    return { bg: "rgba(148,163,184,0.2)", fg: "#94a3b8" };
   };
 
   return (
@@ -804,6 +849,78 @@ const CredentialsDialog = ({ open, onClose }) => {
                       ))}
                     </Box>
                   )}
+
+                  <Divider />
+
+                  <Box display="flex" flexDirection="column" gap={1}>
+                    <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
+                      Run Logs
+                    </Typography>
+                    {scheduleRuns.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        {loadingRuns ? "Loading logs..." : "No runs yet."}
+                      </Typography>
+                    ) : (
+                      <Box display="flex" flexDirection="column" gap={1}>
+                        {scheduleRuns.map((run) => {
+                          const styles = statusStyles(run.status);
+                          const processed = run.processed ?? 0;
+                          const total = run.total ?? 0;
+                          return (
+                            <Box
+                              key={run.id}
+                              display="flex"
+                              flexDirection="column"
+                              gap={0.5}
+                              sx={{
+                                border: `1px solid ${border}`,
+                                borderRadius: 1,
+                                p: 1,
+                                bgcolor: isDark
+                                  ? "rgba(255,255,255,0.06)"
+                                  : "rgba(255,255,255,0.75)",
+                              }}
+                            >
+                              <Box display="flex" alignItems="center" gap={1}>
+                                <Box
+                                  sx={{
+                                    px: 1,
+                                    py: 0.25,
+                                    borderRadius: 999,
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    letterSpacing: 0.4,
+                                    textTransform: "uppercase",
+                                    bgcolor: styles.bg,
+                                    color: styles.fg,
+                                  }}
+                                >
+                                  {run.status || "unknown"}
+                                </Box>
+                                <Typography variant="body2">
+                                  {run.message || "No details"}
+                                </Typography>
+                              </Box>
+                              <Box
+                                display="flex"
+                                alignItems="center"
+                                justifyContent="space-between"
+                              >
+                                <Typography variant="caption" color="text.secondary">
+                                  {`Accounts: ${processed}/${total}`}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {`${formatRunTime(run.started_at)} -> ${formatRunTime(
+                                    run.finished_at
+                                  )}`}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                    )}
+                  </Box>
                 </Box>
               </Box>
             )}

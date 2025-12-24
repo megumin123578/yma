@@ -6,7 +6,7 @@ from googleapiclient.errors import HttpError
 
 from sqlalchemy import create_engine, text
 
-from module_trafficsource import create_token_from_credentials
+from module_trafficsource import create_token_from_credentials, CREDENTIALS_FOLDER
 from module_content import get_upload_playlist_id, get_video_list
 
 
@@ -207,7 +207,7 @@ def process_overall(cred_file: str):
     account_tag = os.path.splitext(os.path.basename(cred_file))[0]
 
     # Load credentials
-    credentials = create_token_from_credentials(os.path.join("credentials", cred_file))
+    credentials = create_token_from_credentials(os.path.join(CREDENTIALS_FOLDER, cred_file))
 
     # Lấy toàn bộ video trên kênh
     playlist_id = get_upload_playlist_id(credentials)

@@ -6,14 +6,14 @@ from typing import Optional
 from threading import Event, Thread
 
 from python_backend.api.auth.database import SessionLocal
-from python_backend.api.auth.models import UserSchedule
+from python_backend.api.auth.models import UserSchedule, UserScheduleRun
 
 
 _STOP_EVENT = Event()
 _THREAD = None
 
 
-def _kickoff_get_data(account_tag: Optional[str]) -> None:
+def _kickoff_get_data(account_tag: Optional[str], env_extra: Optional[dict] = None) -> None:
     script_path = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "get_data.py")
     )
@@ -31,10 +31,13 @@ def _kickoff_get_data(account_tag: Optional[str]) -> None:
         cmd = [sys.executable, script_path]
         if account_tag:
             cmd.append(account_tag)
+        env = os.environ.copy()
+        if env_extra:
+            env.update(env_extra)
         subprocess.Popen(
             cmd,
             cwd=repo_root,
-            env=os.environ.copy(),
+            env=env,
         )
     except Exception as e:
         print(f"[WARN] Failed to start get_data.py: {e}")
@@ -90,7 +93,23 @@ def _run_loop():
                 row.updated_at = now
                 db.add(row)
                 db.commit()
-                _kickoff_get_data(token_base or None)
+
+                run = UserScheduleRun(
+                    user_id=row.user_id,
+                    schedule_id=row.id,
+                    status="running",
+                    started_at=now,
+                    processed=0,
+                    total=0,
+                    message="Started",
+                )
+                db.add(run)
+                db.commit()
+                db.refresh(run)
+                _kickoff_get_data(
+                    token_base or None,
+                    env_extra={"SCHEDULE_RUN_ID": str(run.id)},
+                )
         except Exception as e:
             print(f"[WARN] scheduler loop failed: {e}")
         finally:

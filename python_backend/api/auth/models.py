@@ -64,3 +64,17 @@ class UserSchedule(Base):
     last_run_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class UserScheduleRun(Base):
+    __tablename__ = "user_schedule_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    schedule_id = Column(Integer, ForeignKey("user_schedules.id"), nullable=True, index=True)
+    status = Column(String, nullable=False)  # running | done | error | empty
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = Column(DateTime, nullable=True)
+    processed = Column(Integer, nullable=False, default=0)
+    total = Column(Integer, nullable=False, default=0)
+    message = Column(Text, nullable=True)

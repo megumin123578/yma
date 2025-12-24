@@ -6,7 +6,7 @@ import pickle
 import subprocess
 import sys
 from typing import List, Optional
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, text
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -15,7 +15,7 @@ from python_backend.api.auth.models import User, RivalChannel
 from python_backend.api.auth.auth_utils import get_current_user
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
-from python_backend.api.auth.models import UserHiddenChannel, UserSchedule
+from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun
 from python_backend.api.auth.visibility import get_hidden_account_tags
 from python_backend.module_trafficsource import SCOPES, sanitize_filename
 from pydantic import BaseModel
@@ -375,6 +375,36 @@ def list_schedules(
     }
 
 
+@router.get("/schedules/runs")
+def list_schedule_runs(
+    limit: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = (
+        db.query(UserScheduleRun)
+        .filter(UserScheduleRun.user_id == current_user.id)
+        .order_by(UserScheduleRun.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "schedule_id": r.schedule_id,
+                "status": r.status,
+                "processed": r.processed,
+                "total": r.total,
+                "message": r.message,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+            }
+            for r in rows
+        ]
+    }
+
+
 @router.post("/schedules")
 def create_schedule(
     payload: ScheduleCreate,
@@ -418,8 +448,6 @@ def update_schedule(
 
     if payload.enabled is not None:
         row.enabled = 1 if payload.enabled else 0
-    if payload.time_of_day is not None:
-        row.time_of_day = payload.time_of_day
     if payload.time_of_day is not None:
         row.time_of_day = payload.time_of_day
     row.updated_at = datetime.utcnow()

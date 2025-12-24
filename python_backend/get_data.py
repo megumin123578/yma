@@ -2,10 +2,20 @@
 import os
 import sys
 import json
+import sqlite3
 from datetime import datetime
 from module_trafficsource import *
 from module_content import *
 from module_overall import *
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DEFAULT_CREDENTIALS = os.path.join(REPO_ROOT, "python_backend", "credentials")
+DEFAULT_TOKEN = os.path.join(REPO_ROOT, "python_backend", "token")
+
+if os.path.exists(DEFAULT_CREDENTIALS):
+    CREDENTIALS_FOLDER = DEFAULT_CREDENTIALS
+if os.path.exists(DEFAULT_TOKEN):
+    TOKEN_FOLDER = DEFAULT_TOKEN
 
 if not os.path.exists(CREDENTIALS_FOLDER):
     fallback_credentials = os.path.join(os.path.dirname(__file__), "credentials")
@@ -46,6 +56,34 @@ def _write_progress(account_tag: str, stage: str, percent: int, status: str, mes
         json.dump(payload, f)
 
 
+def _run_db_path() -> str:
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    return os.getenv("AUTH_DB_PATH", os.path.join(repo_root, "auth.db"))
+
+
+def _update_schedule_run(status: str, processed: int, total: int, message: str = "") -> None:
+    run_id = os.getenv("SCHEDULE_RUN_ID")
+    if not run_id:
+        return
+    try:
+        conn = sqlite3.connect(_run_db_path())
+        cur = conn.cursor()
+        finished_at = None
+        if status in {"done", "error", "empty"}:
+            finished_at = datetime.utcnow().isoformat(sep=" ")
+        cur.execute(
+            """
+            UPDATE user_schedule_runs
+            SET status = ?, processed = ?, total = ?, message = ?, finished_at = COALESCE(?, finished_at)
+            WHERE id = ?
+            """,
+            (status, processed, total, message, finished_at, int(run_id)),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
 def _run_for_credential(cred_file: str) -> None:
     account_tag = os.path.splitext(os.path.basename(cred_file))[0]
     _write_progress(account_tag, "traffic_source", 5, "running", "Starting traffic source")
@@ -82,26 +120,44 @@ def main():
             print(f"Credential file not found: {cred_file}")
             return
         try:
+            _update_schedule_run("running", 0, 1, "Processing 1 account")
             _run_for_credential(cred_file)
+            _update_schedule_run("done", 1, 1, "Completed")
         except Exception as e:
             _write_progress(account_tag, "error", 0, "error", str(e))
+            _update_schedule_run("error", 0, 1, str(e))
             raise
         return
 
-    token_set = {os.path.splitext(t)[0] for t in token_files}
-    runnable = [f for f in files if os.path.splitext(f)[0] in token_set]
-
-    if not runnable:
-        print("No credentials have tokens. Nothing to process.")
+    if not token_files:
+        print("No tokens found. Nothing to process.")
+        _update_schedule_run("empty", 0, 0, "No tokens found.")
         return
 
-    print(f"Processing {len(runnable)} account(s) with tokens...")
-    for cred_file in runnable:
+    total = len(token_files)
+    ok = 0
+    print(f"Processing {total} token(s)...")
+    _update_schedule_run("running", 0, total, "Processing tokens")
+    for token_file in token_files:
+        account_tag = os.path.splitext(os.path.basename(token_file))[0]
+        cred_file = _resolve_credential_file(token_file)
+        cred_path = os.path.join(CREDENTIALS_FOLDER, cred_file)
+        if not os.path.exists(cred_path):
+            _write_progress(account_tag, "error", 0, "error", "Credential file not found")
+            _update_schedule_run(
+                "running", ok, total, f"Missing credentials for {account_tag}"
+            )
+            continue
         try:
             _run_for_credential(cred_file)
+            ok += 1
+            _update_schedule_run("running", ok, total, f"Processed {ok}/{total}")
         except Exception as e:
-            account_tag = os.path.splitext(os.path.basename(cred_file))[0]
             _write_progress(account_tag, "error", 0, "error", str(e))
+            _update_schedule_run("error", ok, total, str(e))
+            break
+    if ok == total:
+        _update_schedule_run("done", ok, total, "Completed")
 
 if __name__ == "__main__":
     main()

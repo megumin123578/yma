@@ -15,8 +15,12 @@ from sqlalchemy import create_engine, text
 
 
 # ===== Config =====
-CREDENTIALS_FOLDER = "python_backend/credentials"
-TOKEN_FOLDER = "python_backend/token"
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_DEFAULT_CREDENTIALS = os.path.join(_REPO_ROOT, "python_backend", "credentials")
+_DEFAULT_TOKEN = os.path.join(_REPO_ROOT, "python_backend", "token")
+
+CREDENTIALS_FOLDER = _DEFAULT_CREDENTIALS if os.path.exists(_DEFAULT_CREDENTIALS) else "python_backend/credentials"
+TOKEN_FOLDER = _DEFAULT_TOKEN if os.path.exists(_DEFAULT_TOKEN) else "python_backend/token"
 
 CONTENT_OWNER_ID = os.environ.get("CONTENT_OWNER_ID", "").strip()
 IS_OWNER_MODE = bool(CONTENT_OWNER_ID)
