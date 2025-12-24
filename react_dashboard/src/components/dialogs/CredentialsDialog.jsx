@@ -42,7 +42,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [autoReloaded, setAutoReloaded] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState("");
-  const [needsReload, setNeedsReload] = useState(false);
+  const [, setNeedsReload] = useState(false);
 
   useEffect(() => {
     if (open) {
