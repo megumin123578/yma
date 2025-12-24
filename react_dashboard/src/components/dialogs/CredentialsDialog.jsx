@@ -9,12 +9,13 @@ import {
   TextField,
   Divider,
   Fade,
+  CircularProgress,
   useTheme,
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import { uploadCredentials, listTokens, deleteToken } from "../../services/userService";
+import { uploadCredentials, listTokens, deleteToken, getTokenProgress } from "../../services/userService";
 
 const CredentialsDialog = ({ open, onClose }) => {
   const theme = useTheme();
@@ -30,6 +31,9 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [authUrl, setAuthUrl] = useState("");
   const [tokens, setTokens] = useState([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
+  const [tokenSyncing, setTokenSyncing] = useState(false);
+  const [progress, setProgress] = useState({ status: "idle", percent: 0, stage: "" });
+  const [autoReloaded, setAutoReloaded] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState("");
 
@@ -40,6 +44,8 @@ const CredentialsDialog = ({ open, onClose }) => {
       setStatus({ type: "", message: "" });
       setUploading(false);
       setAuthUrl("");
+      setProgress({ status: "idle", percent: 0, stage: "" });
+      setAutoReloaded(false);
       loadTokens();
     }
   }, [open]);
@@ -47,6 +53,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   useEffect(() => {
     if (!authUrl || !filename) return;
     let stopped = false;
+    setTokenSyncing(true);
 
     const poll = async () => {
       try {
@@ -55,9 +62,11 @@ const CredentialsDialog = ({ open, onClose }) => {
         setTokens(nextTokens);
         if (nextTokens.includes(`${filename}.pickle`)) {
           stopped = true;
+          setTokenSyncing(false);
         }
       } catch (err) {
         setTokens([]);
+        setTokenSyncing(false);
       }
     };
 
@@ -71,6 +80,60 @@ const CredentialsDialog = ({ open, onClose }) => {
 
     return () => clearInterval(intervalId);
   }, [authUrl, filename]);
+
+  useEffect(() => {
+    if (!filename) return;
+    let canceled = false;
+    const tokenName = `${filename}.pickle`;
+
+    const pollProgress = async () => {
+      try {
+        const data = await getTokenProgress(tokenName);
+        if (!canceled) {
+          setProgress({
+            status: data?.status || "idle",
+            percent: data?.percent ?? 0,
+            stage: data?.stage || "",
+            message: data?.message || "",
+          });
+        }
+        if (data?.status === "done" || data?.status === "error") {
+          return true;
+        }
+      } catch (err) {
+        if (!canceled) {
+          setProgress({ status: "idle", percent: 0, stage: "" });
+        }
+      }
+      return false;
+    };
+
+    const intervalId = setInterval(async () => {
+      const done = await pollProgress();
+      if (done) {
+        clearInterval(intervalId);
+      }
+    }, 2000);
+
+    pollProgress();
+
+    return () => {
+      canceled = true;
+      clearInterval(intervalId);
+    };
+  }, [filename]);
+
+  useEffect(() => {
+    const shouldReload =
+      !autoReloaded &&
+      (progress.status === "done" || (progress.percent >= 100 && progress.status !== "error"));
+    if (!shouldReload) return;
+    setAutoReloaded(true);
+    const timer = setTimeout(() => {
+      window.location.reload();
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [progress.status, progress.percent, autoReloaded]);
 
   const loadTokens = async () => {
     setLoadingTokens(true);
@@ -100,6 +163,9 @@ const CredentialsDialog = ({ open, onClose }) => {
 
     setStatus({ type: "", message: "" });
     setFile(selected);
+    setAuthUrl("");
+    setProgress({ status: "idle", percent: 0, stage: "" });
+    setAutoReloaded(false);
     const base = selected.name.toLowerCase().endsWith(".json")
       ? selected.name.slice(0, -5)
       : selected.name;
@@ -116,6 +182,8 @@ const CredentialsDialog = ({ open, onClose }) => {
 
     setUploading(true);
     setStatus({ type: "", message: "" });
+    setProgress({ status: "idle", percent: 0, stage: "" });
+    setAutoReloaded(false);
 
     try {
       const safeName = filename.trim() ? `${filename.trim()}.json` : "";
@@ -304,6 +372,50 @@ const CredentialsDialog = ({ open, onClose }) => {
             >
               Open Authorization Link
             </Button>
+          )}
+
+          {tokenSyncing && (
+            <Box display="flex" alignItems="center" gap={1}>
+              <CircularProgress size={18} />
+              <Typography variant="body2" color="text.secondary">
+                Syncing token & loading data...
+              </Typography>
+            </Box>
+          )}
+
+          {progress.status !== "idle" && (
+            <Box display="flex" flexDirection="column" gap={0.5}>
+              <Box display="flex" alignItems="center" justifyContent="space-between">
+                <Typography variant="body2" color="text.secondary">
+                  {progress.stage || "Processing"}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {progress.percent}%
+                </Typography>
+              </Box>
+              <Box
+                sx={{
+                  height: 6,
+                  borderRadius: 999,
+                  overflow: "hidden",
+                  bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)",
+                }}
+              >
+                <Box
+                  sx={{
+                    height: "100%",
+                    width: `${Math.min(100, Math.max(0, progress.percent))}%`,
+                    bgcolor: isDark ? "#7de0d2" : theme.palette.primary.main,
+                    transition: "width 200ms ease",
+                  }}
+                />
+              </Box>
+              {progress.message && (
+                <Typography variant="caption" color="text.secondary">
+                  {progress.message}
+                </Typography>
+              )}
+            </Box>
           )}
 
           <Divider />

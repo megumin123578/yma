@@ -29,6 +29,9 @@ os.makedirs(CREDENTIALS_DIR, exist_ok=True)
 TOKEN_DIR = "python_backend/token"
 os.makedirs(TOKEN_DIR, exist_ok=True)
 
+PROGRESS_DIR = "python_backend/progress"
+os.makedirs(PROGRESS_DIR, exist_ok=True)
+
 OAUTH_REDIRECT_URL = os.getenv(
     "OAUTH_REDIRECT_URL",
     "http://localhost:8000/api/users/credentials/callback",
@@ -46,6 +49,22 @@ def _safe_filename(name: str) -> str:
 
 def _safe_token_filename(name: str) -> str:
     return os.path.basename(name or "")
+
+
+def _write_progress_file(account_tag: str, status: str, percent: int, stage: str, message: str = "") -> None:
+    payload = {
+        "account_tag": account_tag,
+        "status": status,
+        "percent": percent,
+        "stage": stage,
+        "message": message,
+        "updated_at": time.time(),
+    }
+    try:
+        with open(os.path.join(PROGRESS_DIR, f"{account_tag}.json"), "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+    except Exception:
+        pass
 
 
 def _purge_postgres_account(account_tag: str) -> None:
@@ -160,6 +179,12 @@ def upload_credentials(
         raise HTTPException(status_code=400, detail="Invalid JSON file")
 
     file_path = os.path.join(CREDENTIALS_DIR, filename)
+    progress_path = os.path.join(PROGRESS_DIR, f"{os.path.splitext(filename)[0]}.json")
+    if os.path.exists(progress_path):
+        try:
+            os.remove(progress_path)
+        except Exception:
+            pass
 
     with open(file_path, "wb") as f:
         f.write(content)
@@ -198,7 +223,9 @@ def credentials_callback(state: str = "", code: str = "", error: str = ""):
         pickle.dump(flow.credentials, f)
 
     PENDING_OAUTH.pop(state, None)
-    _kickoff_get_data(os.path.splitext(os.path.basename(cred_path))[0])
+    account_tag = os.path.splitext(os.path.basename(cred_path))[0]
+    _write_progress_file(account_tag, "queued", 0, "queued", "Waiting to start")
+    _kickoff_get_data(account_tag)
     return {"ok": True, "token": token_filename}
 
 
@@ -210,6 +237,26 @@ def list_tokens(current_user: User = Depends(get_current_user)):
             files.append(name)
     files.sort()
     return {"tokens": files}
+
+
+@router.get("/tokens/{token_name}/progress")
+def get_token_progress(
+    token_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    safe_name = _safe_token_filename(token_name)
+    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
+        raise HTTPException(status_code=400, detail="Invalid token filename")
+
+    account_tag = os.path.splitext(safe_name)[0]
+    progress_path = os.path.join(PROGRESS_DIR, f"{account_tag}.json")
+    if not os.path.exists(progress_path):
+        return {"status": "idle", "percent": 0}
+    try:
+        with open(progress_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to read progress")
 
 
 @router.delete("/tokens/{token_name}")
@@ -230,6 +277,12 @@ def delete_token(
     cred_path = os.path.join(CREDENTIALS_DIR, f"{base_name}.json")
     if os.path.exists(cred_path):
         os.remove(cred_path)
+    progress_path = os.path.join(PROGRESS_DIR, f"{base_name}.json")
+    if os.path.exists(progress_path):
+        try:
+            os.remove(progress_path)
+        except Exception:
+            pass
     _purge_postgres_account(base_name)
     return {"ok": True}
 

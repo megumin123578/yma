@@ -47,3 +47,8 @@ export const deleteToken = async (tokenName) => {
   const res = await api.delete(`/api/users/tokens/${encodeURIComponent(tokenName)}`);
   return res.data;
 };
+
+export const getTokenProgress = async (tokenName) => {
+  const res = await api.get(`/api/users/tokens/${encodeURIComponent(tokenName)}/progress`);
+  return res.data;
+};
