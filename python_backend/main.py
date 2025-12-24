@@ -17,12 +17,15 @@ from python_backend.routes.channel_compare import router as channel_compare_rout
 from python_backend.routes.youtube import router as youtube_router
 from fastapi.staticfiles import StaticFiles
 from python_backend.api.auth.routers import auth, user
+from python_backend.api.auth.scheduler import start_scheduler
 
 load_env()
 
 app = FastAPI()
 
 Base.metadata.create_all(bind=engine)
+
+start_scheduler()
 
 
 def ensure_user_smmstore_column():

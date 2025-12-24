@@ -60,3 +60,23 @@ export const setTokenVisibility = async (tokenName, hidden) => {
   });
   return res.data;
 };
+
+export const listSchedules = async () => {
+  const res = await api.get("/api/users/schedules");
+  return res.data;
+};
+
+export const createSchedule = async (payload) => {
+  const res = await api.post("/api/users/schedules", payload);
+  return res.data;
+};
+
+export const updateSchedule = async (scheduleId, payload) => {
+  const res = await api.patch(`/api/users/schedules/${scheduleId}`, payload);
+  return res.data;
+};
+
+export const deleteSchedule = async (scheduleId) => {
+  const res = await api.delete(`/api/users/schedules/${scheduleId}`);
+  return res.data;
+};

@@ -10,6 +10,8 @@ import {
   Divider,
   Fade,
   Checkbox,
+  MenuItem,
+  Switch,
   useTheme,
 } from "@mui/material";
 import { useEffect, useState } from "react";
@@ -21,6 +23,10 @@ import {
   deleteToken,
   getTokenProgress,
   setTokenVisibility,
+  listSchedules,
+  createSchedule,
+  updateSchedule,
+  deleteSchedule,
 } from "../../services/userService";
 
 const CredentialsDialog = ({ open, onClose }) => {
@@ -43,6 +49,12 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState("");
   const [activeTab, setActiveTab] = useState("add");
+  const [schedules, setSchedules] = useState([]);
+  const [scheduleForm, setScheduleForm] = useState({
+    mode: "daily",
+    time_of_day: "08:00",
+    every_minutes: 60,
+  });
 
   useEffect(() => {
     if (open) {
@@ -55,8 +67,15 @@ const CredentialsDialog = ({ open, onClose }) => {
       setAutoReloaded(false);
       setActiveTab("add");
       loadTokens();
+      loadSchedules();
     }
   }, [open]);
+
+  useEffect(() => {
+    if (activeTab === "schedule") {
+      loadSchedules();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (!authUrl || !filename) return;
@@ -155,6 +174,15 @@ const CredentialsDialog = ({ open, onClose }) => {
     }
   };
 
+  const loadSchedules = async () => {
+    try {
+      const data = await listSchedules();
+      setSchedules(data?.items || []);
+    } catch (err) {
+      setSchedules([]);
+    }
+  };
+
   const handleSelectFile = (event) => {
     const selected = event.target.files?.[0];
     if (!selected) return;
@@ -237,6 +265,49 @@ const CredentialsDialog = ({ open, onClose }) => {
     } catch (err) {
       const message =
         err?.response?.data?.detail || "Update failed. Please try again.";
+      setStatus({ type: "error", message });
+    }
+  };
+
+  const handleScheduleField = (field, value) => {
+    setScheduleForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleCreateSchedule = async () => {
+    try {
+      await createSchedule({
+        mode: scheduleForm.mode,
+        time_of_day: scheduleForm.mode === "daily" ? scheduleForm.time_of_day : undefined,
+        every_minutes: scheduleForm.mode === "interval" ? Number(scheduleForm.every_minutes) : undefined,
+        enabled: true,
+      });
+      setStatus({ type: "success", message: "Schedule saved." });
+      await loadSchedules();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to save schedule.";
+      setStatus({ type: "error", message });
+    }
+  };
+
+  const handleScheduleToggle = async (id, enabled) => {
+    try {
+      await updateSchedule(id, { enabled });
+      await loadSchedules();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to update schedule.";
+      setStatus({ type: "error", message });
+    }
+  };
+
+  const handleDeleteSchedule = async (id) => {
+    try {
+      await deleteSchedule(id);
+      await loadSchedules();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to delete schedule.";
       setStatus({ type: "error", message });
     }
   };
@@ -609,9 +680,89 @@ const CredentialsDialog = ({ open, onClose }) => {
                 <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
                   Schedule
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Coming soon.
-                </Typography>
+                <Box display="flex" flexDirection="column" gap={2} mt={1}>
+                  <TextField
+                    select
+                    label="Mode"
+                    size="small"
+                    value={scheduleForm.mode}
+                    onChange={(e) => handleScheduleField("mode", e.target.value)}
+                  >
+                    <MenuItem value="daily">Daily</MenuItem>
+                    <MenuItem value="interval">Every N minutes</MenuItem>
+                  </TextField>
+
+                  {scheduleForm.mode === "daily" ? (
+                    <TextField
+                      label="Time"
+                      type="time"
+                      size="small"
+                      value={scheduleForm.time_of_day}
+                      onChange={(e) => handleScheduleField("time_of_day", e.target.value)}
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  ) : (
+                    <TextField
+                      label="Every (minutes)"
+                      type="number"
+                      size="small"
+                      value={scheduleForm.every_minutes}
+                      onChange={(e) => handleScheduleField("every_minutes", e.target.value)}
+                      inputProps={{ min: 1 }}
+                    />
+                  )}
+
+                  <Button variant="contained" onClick={handleCreateSchedule}>
+                    Save Schedule
+                  </Button>
+
+                  <Divider />
+
+                  {schedules.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">
+                      No schedules yet.
+                    </Typography>
+                  ) : (
+                    <Box display="flex" flexDirection="column" gap={1}>
+                      {schedules.map((s) => (
+                        <Box
+                          key={s.id}
+                          display="flex"
+                          alignItems="center"
+                          justifyContent="space-between"
+                          sx={{
+                            border: `1px solid ${border}`,
+                            borderRadius: 1,
+                            p: 1,
+                            bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)",
+                          }}
+                        >
+                          <Box display="flex" flexDirection="column">
+                            <Typography variant="body2">
+                              {s.mode === "daily"
+                                ? `Daily at ${s.time_of_day || "--:--"}`
+                                : `Every ${s.every_minutes || 0} minutes`}
+                            </Typography>
+                          </Box>
+                          <Box display="flex" alignItems="center" gap={1}>
+                            <Switch
+                              size="small"
+                              checked={!!s.enabled}
+                              onChange={(e) => handleScheduleToggle(s.id, e.target.checked)}
+                            />
+                            <Button
+                              size="small"
+                              color="error"
+                              onClick={() => handleDeleteSchedule(s.id)}
+                            >
+                              Delete
+                            </Button>
+                          </Box>
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
+                </Box>
               </Box>
             )}
           </Box>

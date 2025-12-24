@@ -5,7 +5,7 @@ import time
 import pickle
 import subprocess
 import sys
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, text
@@ -15,10 +15,11 @@ from python_backend.api.auth.models import User, RivalChannel
 from python_backend.api.auth.auth_utils import get_current_user
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
-from python_backend.api.auth.models import UserHiddenChannel
+from python_backend.api.auth.models import UserHiddenChannel, UserSchedule
 from python_backend.api.auth.visibility import get_hidden_account_tags
 from python_backend.module_trafficsource import SCOPES, sanitize_filename
 from pydantic import BaseModel
+from datetime import datetime
 
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -333,6 +334,123 @@ def delete_token(
     ).delete()
     db.commit()
     _purge_postgres_account(base_name)
+    return {"ok": True}
+
+
+class ScheduleCreate(BaseModel):
+    mode: str  # daily | interval
+    time_of_day: Optional[str] = None
+    every_minutes: Optional[int] = None
+    enabled: bool = True
+
+
+class ScheduleUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    time_of_day: Optional[str] = None
+    every_minutes: Optional[int] = None
+
+
+@router.get("/schedules")
+def list_schedules(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = (
+        db.query(UserSchedule)
+        .filter(UserSchedule.user_id == current_user.id)
+        .order_by(UserSchedule.id.desc())
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "mode": r.mode,
+                "time_of_day": r.time_of_day,
+                "every_minutes": r.every_minutes,
+                "enabled": bool(r.enabled),
+                "last_run_at": r.last_run_at.isoformat() if r.last_run_at else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.post("/schedules")
+def create_schedule(
+    payload: ScheduleCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if payload.mode not in {"daily", "interval"}:
+        raise HTTPException(status_code=400, detail="Invalid schedule mode")
+    if payload.mode == "daily" and not payload.time_of_day:
+        raise HTTPException(status_code=400, detail="time_of_day is required")
+    if payload.mode == "interval" and not payload.every_minutes:
+        raise HTTPException(status_code=400, detail="every_minutes is required")
+
+    row = UserSchedule(
+        user_id=current_user.id,
+        mode=payload.mode,
+        time_of_day=payload.time_of_day,
+        every_minutes=payload.every_minutes,
+        enabled=1 if payload.enabled else 0,
+        updated_at=datetime.utcnow(),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id}
+
+
+@router.patch("/schedules/{schedule_id}")
+def update_schedule(
+    schedule_id: int,
+    payload: ScheduleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(UserSchedule)
+        .filter(
+            UserSchedule.user_id == current_user.id,
+            UserSchedule.id == schedule_id,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+
+    if payload.enabled is not None:
+        row.enabled = 1 if payload.enabled else 0
+    if payload.time_of_day is not None:
+        row.time_of_day = payload.time_of_day
+    if payload.every_minutes is not None:
+        row.every_minutes = payload.every_minutes
+    row.updated_at = datetime.utcnow()
+    db.add(row)
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/schedules/{schedule_id}")
+def delete_schedule(
+    schedule_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    row = (
+        db.query(UserSchedule)
+        .filter(
+            UserSchedule.user_id == current_user.id,
+            UserSchedule.id == schedule_id,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    db.delete(row)
+    db.commit()
     return {"ok": True}
 
 @router.get("/me", response_model=UserMe)

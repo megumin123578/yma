@@ -49,3 +49,18 @@ class UserHiddenChannel(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     account_tag = Column(String, nullable=False, index=True)
+
+
+class UserSchedule(Base):
+    __tablename__ = "user_schedules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_name = Column(String, nullable=True)
+    mode = Column(String, nullable=False)  # daily | interval
+    time_of_day = Column(String, nullable=True)  # HH:MM
+    every_minutes = Column(Integer, nullable=True)
+    enabled = Column(Integer, nullable=False, default=1)
+    last_run_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
