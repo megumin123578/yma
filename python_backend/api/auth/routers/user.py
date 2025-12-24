@@ -94,7 +94,6 @@ def upload_credentials(
     flow.redirect_uri = OAUTH_REDIRECT_URL
     auth_url, state = flow.authorization_url(
         access_type="offline",
-        include_granted_scopes="true",
         prompt="consent",
     )
     PENDING_OAUTH[state] = {"cred_path": file_path, "created_at": time.time()}
