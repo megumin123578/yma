@@ -3,16 +3,19 @@ import json
 import re
 import time
 import pickle
+import subprocess
+import sys
 from typing import List
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, text
 from google_auth_oauthlib.flow import InstalledAppFlow
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.models import User, RivalChannel
 from python_backend.api.auth.auth_utils import get_current_user
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
-from python_backend.module_trafficsource import SCOPES
+from python_backend.module_trafficsource import SCOPES, sanitize_filename
 
 
 router = APIRouter(prefix="/users", tags=["Users"])
@@ -43,6 +46,70 @@ def _safe_filename(name: str) -> str:
 
 def _safe_token_filename(name: str) -> str:
     return os.path.basename(name or "")
+
+
+def _purge_postgres_account(account_tag: str) -> None:
+    pg_url = os.getenv("PG_URL")
+    if not pg_url:
+        return
+
+    engine = create_engine(pg_url, future=True)
+    tags = {account_tag, sanitize_filename(account_tag)}
+    with engine.begin() as conn:
+        for tag in tags:
+            try:
+                conn.execute(
+                    text("""
+                        DELETE FROM video_daily_stats
+                        WHERE video_id IN (
+                            SELECT video_id FROM videos WHERE account_tag = :acct
+                        )
+                    """),
+                    {"acct": tag},
+                )
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    text("DELETE FROM videos WHERE account_tag = :acct"),
+                    {"acct": tag},
+                )
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    text("DELETE FROM video_overview WHERE account_tag = :acct"),
+                    {"acct": tag},
+                )
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    text("DELETE FROM traffic_source_daily WHERE account_tag = :acct"),
+                    {"acct": tag},
+                )
+            except Exception:
+                pass
+
+
+def _kickoff_get_data(account_tag: str) -> None:
+    script_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "get_data.py")
+    )
+    repo_root = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
+    )
+    if not os.path.exists(script_path):
+        print(f"[WARN] get_data.py not found: {script_path}")
+        return
+    try:
+        subprocess.Popen(
+            [sys.executable, script_path, account_tag],
+            cwd=repo_root,
+            env=os.environ.copy(),
+        )
+    except Exception as e:
+        print(f"[WARN] Failed to start get_data.py: {e}")
 
 
 @router.post("/avatar")
@@ -131,6 +198,7 @@ def credentials_callback(state: str = "", code: str = "", error: str = ""):
         pickle.dump(flow.credentials, f)
 
     PENDING_OAUTH.pop(state, None)
+    _kickoff_get_data(os.path.splitext(os.path.basename(cred_path))[0])
     return {"ok": True, "token": token_filename}
 
 
@@ -162,6 +230,7 @@ def delete_token(
     cred_path = os.path.join(CREDENTIALS_DIR, f"{base_name}.json")
     if os.path.exists(cred_path):
         os.remove(cred_path)
+    _purge_postgres_account(base_name)
     return {"ok": True}
 
 @router.get("/me", response_model=UserMe)
