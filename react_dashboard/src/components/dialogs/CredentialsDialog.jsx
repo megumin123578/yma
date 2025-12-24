@@ -81,7 +81,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   }, [activeTab]);
 
   useEffect(() => {
-    if (!open || activeTab !== "schedule") return;
+    if (!open || activeTab !== "logs") return;
     let canceled = false;
 
     const loadRuns = async () => {
@@ -481,6 +481,30 @@ const CredentialsDialog = ({ open, onClose }) => {
             >
               Schedule
             </Button>
+            <Button
+              variant="text"
+              onClick={() => setActiveTab("logs")}
+              sx={{
+                justifyContent: "flex-start",
+                border: "1px solid transparent",
+                color:
+                  activeTab === "logs"
+                    ? "#ffffff"
+                    : isDark
+                    ? "#ffffff"
+                    : "rgba(15,23,42,0.9)",
+                bgcolor: activeTab === "logs" ? accent : "transparent",
+                "&:hover": {
+                  bgcolor: activeTab === "logs"
+                    ? accent
+                    : isDark
+                    ? "rgba(255,255,255,0.06)"
+                    : "rgba(15,23,42,0.06)",
+                },
+              }}
+            >
+              Run logs
+            </Button>
           </Box>
 
           <Box display="flex" flexDirection="column" gap={2} flex={1}>
@@ -716,213 +740,224 @@ const CredentialsDialog = ({ open, onClose }) => {
                 </Box>
               </>
             ) : (
-              <Box
-                sx={{
-                  bgcolor: panel,
-                  border: `1px solid ${border}`,
-                  borderRadius: 2,
-                  p: 2,
-                }}
-              >
-                <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
-                  Schedule
-                </Typography>
-                <Box display="flex" flexDirection="column" gap={2} mt={1}>
-                  {status.message && (
-                    <Typography
-                      variant="body2"
-                      color={
-                        status.type === "error"
-                          ? theme.palette.error.main
-                          : theme.palette.success.main
-                      }
-                    >
-                      {status.message}
-                    </Typography>
-                  )}
-                  <LocalizationProvider dateAdapter={AdapterDayjs}>
-                    <TimePicker
-                      label="Time"
-                      value={
-                        scheduleForm.time_of_day
-                          ? dayjs(`2000-01-01T${scheduleForm.time_of_day}`)
-                          : null
-                      }
-                      onChange={(value) => {
-                        if (!value || !value.isValid?.()) return;
-                        handleScheduleField("time_of_day", value.format("HH:mm"));
-                      }}
-                      ampm={false}
-                      minutesStep={5}
-                      localeText={{ cancelButtonLabel: "X" }}
-                      slotProps={{
-                        textField: { size: "small" },
-                        popper: {
-                          sx: {
-                            "& .MuiPaper-root": {
-                              bgcolor: isDark ? "rgba(16,22,32,0.96)" : "#ffffff",
-                              border: `1px solid ${border}`,
-                              borderRadius: 2,
-                              boxShadow: isDark
-                                ? "0 18px 40px rgba(0,0,0,0.6)"
-                                : "0 16px 32px rgba(15,23,42,0.15)",
-                            },
-                            "& .MuiPickersLayout-root": {
-                              color: isDark ? "#e5e7eb" : "#111827",
-                            },
-                            "& .MuiMultiSectionDigitalClock-root": {
-                              justifyContent: "space-between",
-                              gap: 1,
-                              p: 1,
-                            },
-                            "& .MuiMultiSectionDigitalClock-section": {
-                              flex: 1,
-                              minWidth: 120,
-                              borderRadius: 1,
-                              background: isDark ? "rgba(255,255,255,0.04)" : "rgba(15,23,42,0.03)",
-                            },
-                            "& .MuiDigitalClock-item": {
-                              color: isDark ? "#cbd5f5" : "#1f2937",
-                              borderRadius: 1,
-                            },
-                            "& .MuiDigitalClock-item.Mui-selected": {
-                              bgcolor: isDark ? "rgba(125,224,210,0.25)" : "rgba(25,118,210,0.15)",
-                              color: isDark ? "#eafff9" : "#0b1f3b",
-                            },
-                            "& .MuiPickersToolbar-root": {
-                              color: isDark ? "#e5e7eb" : "#111827",
-                            },
-                            "& .MuiDialogActions-root button": {
-                              color: isDark ? "#ffffff" : "#111827",
-                            },
-                          },
-                        },
-                      }}
-                    />
-                  </LocalizationProvider>
-
-                  <Button variant="contained" onClick={handleCreateSchedule}>
-                    Save Schedule
-                  </Button>
-
-                  <Divider />
-
-                  {schedules.length === 0 ? (
-                    <Typography variant="body2" color="text.secondary">
-                      No schedules yet.
-                    </Typography>
-                  ) : (
-                    <Box display="flex" flexDirection="column" gap={1}>
-                      {schedules.map((s) => (
-                        <Box
-                          key={s.id}
-                          display="flex"
-                          alignItems="center"
-                          justifyContent="space-between"
-                          sx={{
-                            border: `1px solid ${border}`,
-                            borderRadius: 1,
-                            p: 1,
-                            bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)",
-                          }}
-                        >
-                          <Box display="flex" flexDirection="column">
-                            <Typography variant="body2">
-                              {`Daily at ${s.time_of_day || "--:--"}`}
-                            </Typography>
-                          </Box>
-                          <Box display="flex" alignItems="center" gap={1}>
-                            <Switch
-                              size="small"
-                              checked={!!s.enabled}
-                              onChange={(e) => handleScheduleToggle(s.id, e.target.checked)}
-                            />
-                            <Button
-                              size="small"
-                              color="error"
-                              onClick={() => handleDeleteSchedule(s.id)}
-                            >
-                              Delete
-                            </Button>
-                          </Box>
-                        </Box>
-                      ))}
-                    </Box>
-                  )}
-
-                  <Divider />
-
-                  <Box display="flex" flexDirection="column" gap={1}>
+              <>
+                {activeTab === "schedule" ? (
+                  <Box
+                    sx={{
+                      bgcolor: panel,
+                      border: `1px solid ${border}`,
+                      borderRadius: 2,
+                      p: 2,
+                    }}
+                  >
                     <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
-                      Run Logs
+                      Schedule
                     </Typography>
-                    {scheduleRuns.length === 0 ? (
-                      <Typography variant="body2" color="text.secondary">
-                        {loadingRuns ? "Loading logs..." : "No runs yet."}
-                      </Typography>
-                    ) : (
-                      <Box display="flex" flexDirection="column" gap={1}>
-                        {scheduleRuns.map((run) => {
-                          const styles = statusStyles(run.status);
-                          const processed = run.processed ?? 0;
-                          const total = run.total ?? 0;
-                          return (
+                    <Box display="flex" flexDirection="column" gap={2} mt={1}>
+                      {status.message && (
+                        <Typography
+                          variant="body2"
+                          color={
+                            status.type === "error"
+                              ? theme.palette.error.main
+                              : theme.palette.success.main
+                          }
+                        >
+                          {status.message}
+                        </Typography>
+                      )}
+                      <LocalizationProvider dateAdapter={AdapterDayjs}>
+                        <TimePicker
+                          label="Time"
+                          value={
+                            scheduleForm.time_of_day
+                              ? dayjs(`2000-01-01T${scheduleForm.time_of_day}`)
+                              : null
+                          }
+                          onChange={(value) => {
+                            if (!value || !value.isValid?.()) return;
+                            handleScheduleField("time_of_day", value.format("HH:mm"));
+                          }}
+                          ampm={false}
+                          minutesStep={5}
+                          localeText={{ cancelButtonLabel: "X" }}
+                          slotProps={{
+                            textField: { size: "small" },
+                            popper: {
+                              sx: {
+                                "& .MuiPaper-root": {
+                                  bgcolor: isDark ? "rgba(16,22,32,0.96)" : "#ffffff",
+                                  border: `1px solid ${border}`,
+                                  borderRadius: 2,
+                                  boxShadow: isDark
+                                    ? "0 18px 40px rgba(0,0,0,0.6)"
+                                    : "0 16px 32px rgba(15,23,42,0.15)",
+                                },
+                                "& .MuiPickersLayout-root": {
+                                  color: isDark ? "#e5e7eb" : "#111827",
+                                },
+                                "& .MuiMultiSectionDigitalClock-root": {
+                                  justifyContent: "space-between",
+                                  gap: 1,
+                                  p: 1,
+                                },
+                                "& .MuiMultiSectionDigitalClock-section": {
+                                  flex: 1,
+                                  minWidth: 120,
+                                  borderRadius: 1,
+                                  background: isDark ? "rgba(255,255,255,0.04)" : "rgba(15,23,42,0.03)",
+                                },
+                                "& .MuiDigitalClock-item": {
+                                  color: isDark ? "#cbd5f5" : "#1f2937",
+                                  borderRadius: 1,
+                                },
+                                "& .MuiDigitalClock-item.Mui-selected": {
+                                  bgcolor: isDark ? "rgba(125,224,210,0.25)" : "rgba(25,118,210,0.15)",
+                                  color: isDark ? "#eafff9" : "#0b1f3b",
+                                },
+                                "& .MuiPickersToolbar-root": {
+                                  color: isDark ? "#e5e7eb" : "#111827",
+                                },
+                                "& .MuiDialogActions-root button": {
+                                  color: isDark ? "#ffffff" : "#111827",
+                                },
+                              },
+                            },
+                          }}
+                        />
+                      </LocalizationProvider>
+
+                      <Button variant="contained" onClick={handleCreateSchedule}>
+                        Save Schedule
+                      </Button>
+
+                      <Divider />
+
+                      {schedules.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          No schedules yet.
+                        </Typography>
+                      ) : (
+                        <Box display="flex" flexDirection="column" gap={1}>
+                          {schedules.map((s) => (
                             <Box
-                              key={run.id}
+                              key={s.id}
                               display="flex"
-                              flexDirection="column"
-                              gap={0.5}
+                              alignItems="center"
+                              justifyContent="space-between"
                               sx={{
                                 border: `1px solid ${border}`,
                                 borderRadius: 1,
                                 p: 1,
-                                bgcolor: isDark
-                                  ? "rgba(255,255,255,0.06)"
-                                  : "rgba(255,255,255,0.75)",
+                                bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)",
                               }}
                             >
-                              <Box display="flex" alignItems="center" gap={1}>
-                                <Box
-                                  sx={{
-                                    px: 1,
-                                    py: 0.25,
-                                    borderRadius: 999,
-                                    fontSize: 12,
-                                    fontWeight: 700,
-                                    letterSpacing: 0.4,
-                                    textTransform: "uppercase",
-                                    bgcolor: styles.bg,
-                                    color: styles.fg,
-                                  }}
-                                >
-                                  {run.status || "unknown"}
-                                </Box>
+                              <Box display="flex" flexDirection="column">
                                 <Typography variant="body2">
-                                  {run.message || "No details"}
+                                  {`Daily at ${s.time_of_day || "--:--"}`}
                                 </Typography>
                               </Box>
-                              <Box
-                                display="flex"
-                                alignItems="center"
-                                justifyContent="space-between"
-                              >
-                                <Typography variant="caption" color="text.secondary">
-                                  {`Accounts: ${processed}/${total}`}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  {`${formatRunTime(run.started_at)} -> ${formatRunTime(
-                                    run.finished_at
-                                  )}`}
-                                </Typography>
+                              <Box display="flex" alignItems="center" gap={1}>
+                                <Switch
+                                  size="small"
+                                  checked={!!s.enabled}
+                                  onChange={(e) => handleScheduleToggle(s.id, e.target.checked)}
+                                />
+                                <Button
+                                  size="small"
+                                  color="error"
+                                  onClick={() => handleDeleteSchedule(s.id)}
+                                >
+                                  Delete
+                                </Button>
                               </Box>
                             </Box>
-                          );
-                        })}
-                      </Box>
-                    )}
+                          ))}
+                        </Box>
+                      )}
+                    </Box>
                   </Box>
-                </Box>
-              </Box>
+                ) : (
+                  <Box
+                    sx={{
+                      bgcolor: panel,
+                      border: `1px solid ${border}`,
+                      borderRadius: 2,
+                      p: 2,
+                    }}
+                  >
+                    <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
+                      Run Logs
+                    </Typography>
+                    <Box display="flex" flexDirection="column" gap={1} mt={1}>
+                      {scheduleRuns.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          {loadingRuns ? "Loading logs..." : "No runs yet."}
+                        </Typography>
+                      ) : (
+                        <Box display="flex" flexDirection="column" gap={1}>
+                          {scheduleRuns.map((run) => {
+                            const styles = statusStyles(run.status);
+                            const processed = run.processed ?? 0;
+                            const total = run.total ?? 0;
+                            return (
+                              <Box
+                                key={run.id}
+                                display="flex"
+                                flexDirection="column"
+                                gap={0.5}
+                                sx={{
+                                  border: `1px solid ${border}`,
+                                  borderRadius: 1,
+                                  p: 1,
+                                  bgcolor: isDark
+                                    ? "rgba(255,255,255,0.06)"
+                                    : "rgba(255,255,255,0.75)",
+                                }}
+                              >
+                                <Box display="flex" alignItems="center" gap={1}>
+                                  <Box
+                                    sx={{
+                                      px: 1,
+                                      py: 0.25,
+                                      borderRadius: 999,
+                                      fontSize: 12,
+                                      fontWeight: 700,
+                                      letterSpacing: 0.4,
+                                      textTransform: "uppercase",
+                                      bgcolor: styles.bg,
+                                      color: styles.fg,
+                                    }}
+                                  >
+                                    {run.status || "unknown"}
+                                  </Box>
+                                  <Typography variant="body2">
+                                    {run.message || "No details"}
+                                  </Typography>
+                                </Box>
+                                <Box
+                                  display="flex"
+                                  alignItems="center"
+                                  justifyContent="space-between"
+                                >
+                                  <Typography variant="caption" color="text.secondary">
+                                    {`Accounts: ${processed}/${total}`}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {`${formatRunTime(run.started_at)} -> ${formatRunTime(
+                                      run.finished_at
+                                    )}`}
+                                  </Typography>
+                                </Box>
+                              </Box>
+                            );
+                          })}
+                        </Box>
+                      )}
+                    </Box>
+                  </Box>
+                )}
+              </>
             )}
           </Box>
         </Box>

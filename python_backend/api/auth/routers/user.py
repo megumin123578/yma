@@ -12,7 +12,7 @@ from sqlalchemy import create_engine, text
 from google_auth_oauthlib.flow import InstalledAppFlow
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.models import User, RivalChannel
-from python_backend.api.auth.auth_utils import get_current_user
+from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
 from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun
@@ -354,11 +354,10 @@ class ScheduleUpdate(BaseModel):
 @router.get("/schedules")
 def list_schedules(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     rows = (
         db.query(UserSchedule)
-        .filter(UserSchedule.user_id == current_user.id)
         .order_by(UserSchedule.id.desc())
         .all()
     )
@@ -379,11 +378,10 @@ def list_schedules(
 def list_schedule_runs(
     limit: int = Query(10, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     rows = (
         db.query(UserScheduleRun)
-        .filter(UserScheduleRun.user_id == current_user.id)
         .order_by(UserScheduleRun.id.desc())
         .limit(limit)
         .all()

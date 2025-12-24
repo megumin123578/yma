@@ -5,9 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from python_backend.config import load_env
 
 from python_backend.api.auth.database import engine, Base
-from sqlalchemy import text
+from sqlalchemy import text, create_engine
 from python_backend.api.auth import models
-
+import os
 from python_backend.routes.traffic_timeseries import router as ts_router
 from python_backend.routes.geography import router as geo_router
 from python_backend.routes.content import router as content_router
@@ -72,6 +72,20 @@ def ensure_smmstore_analytics_cache_table():
 
 
 ensure_smmstore_analytics_cache_table()
+
+def drop_geography_daily_table():
+    pg_url = os.getenv("PG_URL")
+    if not pg_url:
+        return
+    try:
+        pg_engine = create_engine(pg_url, future=True)
+        with pg_engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS geography_daily"))
+    except Exception:
+        pass
+
+
+drop_geography_daily_table()
 
 
 def ensure_user_schedules_nullable_token():
