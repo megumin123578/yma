@@ -42,8 +42,7 @@ def _safe_filename(name: str) -> str:
 
 
 def _safe_token_filename(name: str) -> str:
-    base = os.path.basename(name or "")
-    return re.sub(r"[^A-Za-z0-9_.-]", "_", base)
+    return os.path.basename(name or "")
 
 
 @router.post("/avatar")
@@ -151,7 +150,7 @@ def delete_token(
     current_user: User = Depends(get_current_user),
 ):
     safe_name = _safe_token_filename(token_name)
-    if safe_name != token_name or not safe_name.lower().endswith(".pickle"):
+    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
         raise HTTPException(status_code=400, detail="Invalid token filename")
 
     token_path = os.path.join(TOKEN_DIR, safe_name)
@@ -159,6 +158,10 @@ def delete_token(
         raise HTTPException(status_code=404, detail="Token not found")
 
     os.remove(token_path)
+    base_name = os.path.splitext(safe_name)[0]
+    cred_path = os.path.join(CREDENTIALS_DIR, f"{base_name}.json")
+    if os.path.exists(cred_path):
+        os.remove(cred_path)
     return {"ok": True}
 
 @router.get("/me", response_model=UserMe)

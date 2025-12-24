@@ -19,10 +19,10 @@ import { uploadCredentials, listTokens, deleteToken } from "../../services/userS
 const CredentialsDialog = ({ open, onClose }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
-  const surface = isDark ? "#14171c" : "#ffffff";
-  const panel = isDark ? "#1b2027" : "#f6f7f9";
-  const border = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)";
-  const accent = isDark ? "#6dd6c6" : theme.palette.primary.main;
+  const surface = isDark ? "rgba(17, 24, 39, 0.72)" : "rgba(255,255,255,0.82)";
+  const panel = isDark ? "rgba(20, 28, 40, 0.55)" : "rgba(255,255,255,0.7)";
+  const border = isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.08)";
+  const accent = isDark ? "#7de0d2" : theme.palette.primary.main;
   const [file, setFile] = useState(null);
   const [filename, setFilename] = useState("");
   const [status, setStatus] = useState({ type: "", message: "" });
@@ -30,6 +30,8 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [authUrl, setAuthUrl] = useState("");
   const [tokens, setTokens] = useState([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState("");
 
   useEffect(() => {
     if (open) {
@@ -118,6 +120,22 @@ const CredentialsDialog = ({ open, onClose }) => {
     }
   };
 
+  const requestDeleteToken = (tokenName) => {
+    setPendingDelete(tokenName);
+    setConfirmOpen(true);
+  };
+
+  const handleConfirmClose = () => {
+    setConfirmOpen(false);
+    setPendingDelete("");
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDelete) return;
+    await handleDeleteToken(pendingDelete);
+    handleConfirmClose();
+  };
+
   return (
     <Dialog
       open={open}
@@ -134,13 +152,15 @@ const CredentialsDialog = ({ open, onClose }) => {
           boxShadow: isDark ? "0 18px 60px rgba(0,0,0,0.55)" : undefined,
           overflow: "hidden",
           position: "relative",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
           "&:before": {
             content: '""',
             position: "absolute",
             inset: 0,
             background: isDark
-              ? "radial-gradient(600px 300px at 110% -10%, rgba(109,214,198,0.16), transparent 55%)"
-              : "radial-gradient(600px 300px at 110% -10%, rgba(25,118,210,0.08), transparent 55%)",
+              ? "radial-gradient(600px 300px at 110% -10%, rgba(125,224,210,0.24), transparent 55%)"
+              : "radial-gradient(600px 300px at 110% -10%, rgba(25,118,210,0.1), transparent 55%)",
             pointerEvents: "none",
           },
         },
@@ -169,6 +189,8 @@ const CredentialsDialog = ({ open, onClose }) => {
               gap: 1.5,
               transition: "transform 200ms ease, box-shadow 200ms ease",
               boxShadow: isDark ? "0 10px 24px rgba(0,0,0,0.35)" : "0 10px 24px rgba(0,0,0,0.08)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
               "&:hover": {
                 transform: "translateY(-2px)",
               },
@@ -202,20 +224,22 @@ const CredentialsDialog = ({ open, onClose }) => {
               />
             </Button>
 
-            <TextField
-              label="File name"
-              size="small"
-              value={filename}
-              onChange={handleFilenameChange}
-              placeholder="example.json"
-              InputLabelProps={{ style: { color: isDark ? "#aab4c2" : undefined } }}
-              sx={{
-                input: { color: isDark ? "#e9edf2" : undefined },
-                "& .MuiOutlinedInput-notchedOutline": {
-                  borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
-                },
-              }}
-            />
+            {file && (
+              <TextField
+                label="File name"
+                size="small"
+                value={filename}
+                onChange={handleFilenameChange}
+                placeholder="example.json"
+                InputLabelProps={{ style: { color: isDark ? "#aab4c2" : undefined } }}
+                sx={{
+                  input: { color: isDark ? "#e9edf2" : undefined },
+                  "& .MuiOutlinedInput-notchedOutline": {
+                    borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
+                  },
+                }}
+              />
+            )}
           </Box>
 
           {status.message && (
@@ -264,6 +288,8 @@ const CredentialsDialog = ({ open, onClose }) => {
               gap: 1.5,
               transition: "transform 200ms ease, box-shadow 200ms ease",
               boxShadow: isDark ? "0 10px 24px rgba(0,0,0,0.35)" : "0 10px 24px rgba(0,0,0,0.08)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
               "&:hover": {
                 transform: "translateY(-2px)",
               },
@@ -306,10 +332,12 @@ const CredentialsDialog = ({ open, onClose }) => {
                         border: `1px solid ${border}`,
                         borderRadius: 1,
                         p: 1,
-                        bgcolor: isDark ? "rgba(255,255,255,0.02)" : "#ffffff",
+                        bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)",
+                        backdropFilter: "blur(10px)",
+                        WebkitBackdropFilter: "blur(10px)",
                         transition: "all 180ms ease",
                         "&:hover": {
-                          bgcolor: isDark ? "rgba(255,255,255,0.06)" : "rgba(25,118,210,0.04)",
+                          bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(25,118,210,0.08)",
                           borderColor: isDark ? "rgba(255,255,255,0.2)" : "rgba(25,118,210,0.2)",
                         },
                       }}
@@ -318,7 +346,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                       <Button
                         size="small"
                         color="error"
-                        onClick={() => handleDeleteToken(name)}
+                        onClick={() => requestDeleteToken(name)}
                       >
                         Delete
                       </Button>
@@ -346,6 +374,25 @@ const CredentialsDialog = ({ open, onClose }) => {
           {uploading ? "Uploading..." : "Upload"}
         </Button>
       </DialogActions>
+      <Dialog
+        open={confirmOpen}
+        onClose={handleConfirmClose}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">
+            This will delete the token and its matching credentials file. Continue?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleConfirmClose}>Cancel</Button>
+          <Button color="error" variant="contained" onClick={handleConfirmDelete}>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 };
