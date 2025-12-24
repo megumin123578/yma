@@ -7,6 +7,16 @@ from module_trafficsource import *
 from module_content import *
 from module_overall import *
 
+if not os.path.exists(CREDENTIALS_FOLDER):
+    fallback_credentials = os.path.join(os.path.dirname(__file__), "credentials")
+    if os.path.exists(fallback_credentials):
+        CREDENTIALS_FOLDER = fallback_credentials
+
+if not os.path.exists(TOKEN_FOLDER):
+    fallback_token = os.path.join(os.path.dirname(__file__), "token")
+    if os.path.exists(fallback_token):
+        TOKEN_FOLDER = fallback_token
+
 
 def _resolve_credential_file(name: str) -> str:
     base = os.path.basename(name or "")
