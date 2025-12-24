@@ -44,6 +44,34 @@ const CredentialsDialog = ({ open, onClose }) => {
     }
   }, [open]);
 
+  useEffect(() => {
+    if (!authUrl || !filename) return;
+    let stopped = false;
+
+    const poll = async () => {
+      try {
+        const data = await listTokens();
+        const nextTokens = data?.tokens || [];
+        setTokens(nextTokens);
+        if (nextTokens.includes(`${filename}.pickle`)) {
+          stopped = true;
+        }
+      } catch (err) {
+        setTokens([]);
+      }
+    };
+
+    const intervalId = setInterval(() => {
+      if (!stopped) {
+        poll();
+      }
+    }, 2000);
+
+    poll();
+
+    return () => clearInterval(intervalId);
+  }, [authUrl, filename]);
+
   const loadTokens = async () => {
     setLoadingTokens(true);
     try {
@@ -94,6 +122,9 @@ const CredentialsDialog = ({ open, onClose }) => {
       const data = await uploadCredentials(file, safeName);
       const nextUrl = data?.auth_url || "";
       setAuthUrl(nextUrl);
+      if (!nextUrl) {
+        await loadTokens();
+      }
       setStatus({
         type: "success",
         message: nextUrl
