@@ -979,6 +979,12 @@ const CredentialsDialog = ({ open, onClose }) => {
         onClose={handleConfirmClose}
         maxWidth="xs"
         fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: isDark ? "rgba(15, 23, 42, 0.95)" : "background.paper",
+            color: isDark ? "#e9edf2" : "inherit",
+          },
+        }}
       >
         <DialogTitle>Confirm Delete</DialogTitle>
         <DialogContent>
@@ -987,7 +993,12 @@ const CredentialsDialog = ({ open, onClose }) => {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleConfirmClose}>Cancel</Button>
+          <Button
+            onClick={handleConfirmClose}
+            sx={{ color: isDark ? "#e2e8f0" : "text.secondary" }}
+          >
+            Cancel
+          </Button>
           <Button color="error" variant="contained" onClick={handleConfirmDelete}>
             Delete
           </Button>
