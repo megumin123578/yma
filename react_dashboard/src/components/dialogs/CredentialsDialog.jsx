@@ -14,6 +14,9 @@ import {
   useTheme,
 } from "@mui/material";
 import { useEffect, useState } from "react";
+import dayjs from "dayjs";
+import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import {
@@ -692,14 +695,66 @@ const CredentialsDialog = ({ open, onClose }) => {
                       {status.message}
                     </Typography>
                   )}
-                  <TextField
-                    label="Time"
-                    type="time"
-                    size="small"
-                    value={scheduleForm.time_of_day}
-                    onChange={(e) => handleScheduleField("time_of_day", e.target.value)}
-                    InputLabelProps={{ shrink: true }}
-                  />
+                  <LocalizationProvider dateAdapter={AdapterDayjs}>
+                    <TimePicker
+                      label="Time"
+                      value={
+                        scheduleForm.time_of_day
+                          ? dayjs(`2000-01-01T${scheduleForm.time_of_day}`)
+                          : null
+                      }
+                      onChange={(value) => {
+                        if (!value || !value.isValid?.()) return;
+                        handleScheduleField("time_of_day", value.format("HH:mm"));
+                      }}
+                      ampm={false}
+                      minutesStep={5}
+                      localeText={{ cancelButtonLabel: "X" }}
+                      slotProps={{
+                        textField: { size: "small" },
+                        popper: {
+                          sx: {
+                            "& .MuiPaper-root": {
+                              bgcolor: isDark ? "rgba(16,22,32,0.96)" : "#ffffff",
+                              border: `1px solid ${border}`,
+                              borderRadius: 2,
+                              boxShadow: isDark
+                                ? "0 18px 40px rgba(0,0,0,0.6)"
+                                : "0 16px 32px rgba(15,23,42,0.15)",
+                            },
+                            "& .MuiPickersLayout-root": {
+                              color: isDark ? "#e5e7eb" : "#111827",
+                            },
+                            "& .MuiMultiSectionDigitalClock-root": {
+                              justifyContent: "space-between",
+                              gap: 1,
+                              p: 1,
+                            },
+                            "& .MuiMultiSectionDigitalClock-section": {
+                              flex: 1,
+                              minWidth: 120,
+                              borderRadius: 1,
+                              background: isDark ? "rgba(255,255,255,0.04)" : "rgba(15,23,42,0.03)",
+                            },
+                            "& .MuiDigitalClock-item": {
+                              color: isDark ? "#cbd5f5" : "#1f2937",
+                              borderRadius: 1,
+                            },
+                            "& .MuiDigitalClock-item.Mui-selected": {
+                              bgcolor: isDark ? "rgba(125,224,210,0.25)" : "rgba(25,118,210,0.15)",
+                              color: isDark ? "#eafff9" : "#0b1f3b",
+                            },
+                            "& .MuiPickersToolbar-root": {
+                              color: isDark ? "#e5e7eb" : "#111827",
+                            },
+                            "& .MuiDialogActions-root button": {
+                              color: isDark ? "#ffffff" : "#111827",
+                            },
+                          },
+                        },
+                      }}
+                    />
+                  </LocalizationProvider>
 
                   <Button variant="contained" onClick={handleCreateSchedule}>
                     Save Schedule
