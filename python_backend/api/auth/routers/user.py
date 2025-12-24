@@ -42,6 +42,7 @@ OAUTH_REDIRECT_URL = os.getenv(
 )
 
 PENDING_OAUTH = {}
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 
 
 def _safe_filename(name: str) -> str:
@@ -53,6 +54,11 @@ def _safe_filename(name: str) -> str:
 
 def _safe_token_filename(name: str) -> str:
     return os.path.basename(name or "")
+
+
+def _require_admin(current_user: User) -> None:
+    if (current_user.username or "").lower() != ADMIN_USERNAME.lower():
+        raise HTTPException(status_code=403, detail="Admin access required")
 
 
 def _write_progress_file(account_tag: str, status: str, percent: int, stage: str, message: str = "") -> None:
@@ -409,6 +415,7 @@ def create_schedule(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin(current_user)
     if not payload.time_of_day:
         raise HTTPException(status_code=400, detail="time_of_day is required")
 
@@ -433,6 +440,7 @@ def update_schedule(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin(current_user)
     row = (
         db.query(UserSchedule)
         .filter(
@@ -460,6 +468,7 @@ def delete_schedule(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin(current_user)
     row = (
         db.query(UserSchedule)
         .filter(
