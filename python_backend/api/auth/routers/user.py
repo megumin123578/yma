@@ -94,10 +94,6 @@ def upload_credentials(
         raise HTTPException(status_code=400, detail="Invalid JSON file")
 
     file_path = os.path.join(CREDENTIALS_DIR, filename)
-    if os.path.exists(file_path):
-        name, ext = os.path.splitext(filename)
-        filename = f"{name}_{int(time.time())}{ext or '.json'}"
-        file_path = os.path.join(CREDENTIALS_DIR, filename)
 
     with open(file_path, "wb") as f:
         f.write(content)
