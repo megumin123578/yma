@@ -37,3 +37,13 @@ export const updateProfile = async (payload) => {
   const res = await api.put("/api/users/profile", payload);
   return mapUser(res.data);
 };
+
+export const listTokens = async () => {
+  const res = await api.get("/api/users/tokens");
+  return res.data;
+};
+
+export const deleteToken = async (tokenName) => {
+  const res = await api.delete(`/api/users/tokens/${encodeURIComponent(tokenName)}`);
+  return res.data;
+};

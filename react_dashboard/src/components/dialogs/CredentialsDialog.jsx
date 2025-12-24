@@ -7,11 +7,12 @@ import {
   Box,
   Typography,
   TextField,
+  Divider,
   useTheme,
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
-import { uploadCredentials } from "../../services/userService";
+import { uploadCredentials, listTokens, deleteToken } from "../../services/userService";
 
 const CredentialsDialog = ({ open, onClose }) => {
   const theme = useTheme();
@@ -20,6 +21,8 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [status, setStatus] = useState({ type: "", message: "" });
   const [uploading, setUploading] = useState(false);
   const [authUrl, setAuthUrl] = useState("");
+  const [tokens, setTokens] = useState([]);
+  const [loadingTokens, setLoadingTokens] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -28,8 +31,21 @@ const CredentialsDialog = ({ open, onClose }) => {
       setStatus({ type: "", message: "" });
       setUploading(false);
       setAuthUrl("");
+      loadTokens();
     }
   }, [open]);
+
+  const loadTokens = async () => {
+    setLoadingTokens(true);
+    try {
+      const data = await listTokens();
+      setTokens(data?.tokens || []);
+    } catch (err) {
+      setTokens([]);
+    } finally {
+      setLoadingTokens(false);
+    }
+  };
 
   const handleSelectFile = (event) => {
     const selected = event.target.files?.[0];
@@ -72,6 +88,17 @@ const CredentialsDialog = ({ open, onClose }) => {
       setStatus({ type: "error", message });
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDeleteToken = async (tokenName) => {
+    try {
+      await deleteToken(tokenName);
+      await loadTokens();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Delete failed. Please try again.";
+      setStatus({ type: "error", message });
     }
   };
 
@@ -129,6 +156,46 @@ const CredentialsDialog = ({ open, onClose }) => {
             >
               Open Authorization Link
             </Button>
+          )}
+
+          <Divider />
+
+          <Box display="flex" alignItems="center" justifyContent="space-between">
+            <Typography variant="subtitle2">Tokens</Typography>
+            <Button size="small" onClick={loadTokens} disabled={loadingTokens}>
+              {loadingTokens ? "Refreshing..." : "Refresh"}
+            </Button>
+          </Box>
+
+          {tokens.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              {loadingTokens ? "Loading tokens..." : "No tokens found."}
+            </Typography>
+          ) : (
+            <Box display="flex" flexDirection="column" gap={1}>
+              {tokens.map((name) => {
+                const displayName = name.toLowerCase().endsWith(".pickle")
+                  ? name.slice(0, -7)
+                  : name;
+                return (
+                <Box
+                  key={name}
+                  display="flex"
+                  alignItems="center"
+                  justifyContent="space-between"
+                  sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: 1, p: 1 }}
+                >
+                  <Typography variant="body2">{displayName}</Typography>
+                  <Button
+                    size="small"
+                    color="error"
+                    onClick={() => handleDeleteToken(name)}
+                  >
+                    Delete
+                  </Button>
+                </Box>
+              )})}
+            </Box>
           )}
         </Box>
       </DialogContent>

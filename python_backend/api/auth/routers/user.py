@@ -41,6 +41,11 @@ def _safe_filename(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", base)
 
 
+def _safe_token_filename(name: str) -> str:
+    base = os.path.basename(name or "")
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", base)
+
+
 @router.post("/avatar")
 def upload_avatar(
     avatar: UploadFile = File(...),
@@ -132,6 +137,33 @@ def credentials_callback(state: str = "", code: str = "", error: str = ""):
 
     PENDING_OAUTH.pop(state, None)
     return {"ok": True, "token": token_filename}
+
+
+@router.get("/tokens")
+def list_tokens(current_user: User = Depends(get_current_user)):
+    files = []
+    for name in os.listdir(TOKEN_DIR):
+        if name.lower().endswith(".pickle"):
+            files.append(name)
+    files.sort()
+    return {"tokens": files}
+
+
+@router.delete("/tokens/{token_name}")
+def delete_token(
+    token_name: str,
+    current_user: User = Depends(get_current_user),
+):
+    safe_name = _safe_token_filename(token_name)
+    if safe_name != token_name or not safe_name.lower().endswith(".pickle"):
+        raise HTTPException(status_code=400, detail="Invalid token filename")
+
+    token_path = os.path.join(TOKEN_DIR, safe_name)
+    if not os.path.exists(token_path):
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    os.remove(token_path)
+    return {"ok": True}
 
 @router.get("/me", response_model=UserMe)
 def get_me(current_user: User = Depends(get_current_user)):
