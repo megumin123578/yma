@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import text
+import os
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user_optional
@@ -23,8 +24,12 @@ def get_demographics(
     current_user=Depends(get_current_user_optional),
 ):
     hidden = get_hidden_account_tags(db, current_user.id) if current_user else set()
+    pg_url = os.getenv("PG_URL")
+    if not pg_url:
+        return {"availableAccounts": [], "rows": []}
     try:
-        with db.connection() as conn:
+        pg_engine = create_engine(pg_url, future=True)
+        with pg_engine.connect() as conn:
             if not accountTag:
                 rows = conn.execute(
                     text("SELECT DISTINCT account_tag FROM audience_demographics ORDER BY account_tag")
@@ -85,8 +90,12 @@ def get_retention(
     current_user=Depends(get_current_user_optional),
 ):
     hidden = get_hidden_account_tags(db, current_user.id) if current_user else set()
+    pg_url = os.getenv("PG_URL")
+    if not pg_url:
+        return {"availableAccounts": [], "videos": [], "rows": []}
     try:
-        with db.connection() as conn:
+        pg_engine = create_engine(pg_url, future=True)
+        with pg_engine.connect() as conn:
             if not accountTag:
                 rows = conn.execute(
                     text("SELECT DISTINCT account_tag FROM audience_retention ORDER BY account_tag")
