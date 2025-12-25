@@ -69,11 +69,12 @@ def _should_run(schedule: UserSchedule, now: datetime) -> bool:
     if tod is None:
         return False
     today_at = datetime.combine(now.date(), tod)
-    if last is None and now >= today_at:
-        return False
     if now < today_at:
         return False
     if last is None:
+        created_at = schedule.created_at or now
+        if created_at.date() == now.date() and now >= today_at:
+            return False
         return True
     return last.date() < now.date()
 
