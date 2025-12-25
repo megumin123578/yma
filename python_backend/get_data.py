@@ -7,6 +7,7 @@ from datetime import datetime
 from module_trafficsource import *
 from module_content import *
 from module_overall import *
+from module_audience import run_audience_analytics
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEFAULT_CREDENTIALS = os.path.join(REPO_ROOT, "python_backend", "credentials")
@@ -88,10 +89,16 @@ def _run_for_credential(cred_file: str) -> None:
     account_tag = os.path.splitext(os.path.basename(cred_file))[0]
     _write_progress(account_tag, "traffic_source", 5, "running", "Starting traffic source")
     process_one(cred_file)
-    _write_progress(account_tag, "content", 45, "running", "Starting content fetch")
+    _write_progress(account_tag, "content", 35, "running", "Starting content fetch")
     process_content(cred_file)
-    _write_progress(account_tag, "overview", 80, "running", "Starting overview")
+    _write_progress(account_tag, "overview", 60, "running", "Starting overview")
     process_overall(cred_file)
+    _write_progress(account_tag, "audience", 80, "running", "Starting audience analytics")
+    pg_url = os.getenv("PG_URL")
+    if not pg_url:
+        raise RuntimeError("Missing PG_URL env var")
+    creds = create_token_from_credentials(os.path.join(CREDENTIALS_FOLDER, cred_file))
+    run_audience_analytics(creds, account_tag, pg_url)
     _write_progress(account_tag, "done", 100, "done", "Completed")
 
 

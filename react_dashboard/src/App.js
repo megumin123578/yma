@@ -19,6 +19,7 @@ import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import { UserContext } from "./context/UserContext";
 import SmmstoreAnalyticsScene from "./scenes/smmstore_analytics";
+import AudienceAnalyticsScene from "./scenes/audience_analytics";
 
 
 function App() {
@@ -126,6 +127,14 @@ function App() {
               <SmmstoreAnalyticsScene/>
             </ProtectedRoute>
           }
+          />
+          <Route
+            path="/audience_analytics"
+            element={
+              <ProtectedRoute>
+                <AudienceAnalyticsScene />
+              </ProtectedRoute>
+            }
           />
         </Routes>
       </main>

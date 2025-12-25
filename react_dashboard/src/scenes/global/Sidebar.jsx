@@ -8,6 +8,7 @@ import { tokens } from "../../theme";
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import DatasetIcon from "@mui/icons-material/Dataset";
 import DeviceUnknownIcon from "@mui/icons-material/DeviceUnknown";
+import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 
 import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
@@ -191,6 +192,14 @@ const Sidebar = () => {
               title="Geography Chart"
               to="/geography"
               icon={<MapOutlinedIcon />}
+              selected={selected}
+              setSelected={setSelected}
+            />
+
+            <Item
+              title="Audience Analytics"
+              to="/audience_analytics"
+              icon={<GroupsOutlinedIcon />}
               selected={selected}
               setSelected={setSelected}
             />

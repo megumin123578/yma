@@ -15,6 +15,7 @@ from python_backend.routes.overview import router as overview_router
 from python_backend.routes.smmstore import router as smmstore_router
 from python_backend.routes.channel_compare import router as channel_compare_router
 from python_backend.routes.youtube import router as youtube_router
+from python_backend.routes.audience import router as audience_router
 from fastapi.staticfiles import StaticFiles
 from python_backend.api.auth.routers import auth, user
 from python_backend.api.auth.scheduler import start_scheduler
@@ -150,6 +151,7 @@ app.include_router(overview_router)
 app.include_router(smmstore_router)
 app.include_router(channel_compare_router)
 app.include_router(youtube_router)
+app.include_router(audience_router)
 app.include_router(auth.router)
 app.include_router(user.router, prefix="/api") 
 

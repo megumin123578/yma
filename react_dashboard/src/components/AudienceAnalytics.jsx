@@ -1,0 +1,324 @@
+import { useEffect, useMemo, useState } from "react";
+import {
+  Box,
+  CircularProgress,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
+  Typography,
+  useTheme,
+} from "@mui/material";
+import { ResponsiveLine } from "@nivo/line";
+import { API_BASE } from "../config";
+
+const AudienceAnalytics = () => {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+  const [accountTag, setAccountTag] = useState("");
+  const [accounts, setAccounts] = useState([]);
+  const [demoRows, setDemoRows] = useState([]);
+  const [demoRange, setDemoRange] = useState({ start: "", end: "" });
+  const [retentionRows, setRetentionRows] = useState([]);
+  const [retentionRange, setRetentionRange] = useState({ start: "", end: "" });
+  const [videos, setVideos] = useState([]);
+  const [videoId, setVideoId] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const authHeaders = useMemo(() => {
+    const token = localStorage.getItem("access_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }, []);
+
+  useEffect(() => {
+    const loadAccounts = async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/api/audience/demographics`, {
+          headers: authHeaders,
+        });
+        const data = await resp.json();
+        const nextAccounts = data?.availableAccounts || [];
+        setAccounts(nextAccounts);
+        if (!accountTag && nextAccounts.length > 0) {
+          setAccountTag(nextAccounts[0]);
+        }
+      } catch (err) {
+        setAccounts([]);
+      }
+    };
+    loadAccounts();
+  }, [accountTag, authHeaders]);
+
+  useEffect(() => {
+    if (!accountTag) return;
+    const loadDemographics = async () => {
+      setLoading(true);
+      try {
+        const resp = await fetch(
+          `${API_BASE}/api/audience/demographics?accountTag=${encodeURIComponent(accountTag)}`,
+          { headers: authHeaders }
+        );
+        const data = await resp.json();
+        setDemoRows(data?.rows || []);
+        setDemoRange({ start: data?.start_date || "", end: data?.end_date || "" });
+      } catch (err) {
+        setDemoRows([]);
+        setDemoRange({ start: "", end: "" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadDemographics();
+  }, [accountTag, authHeaders]);
+
+  useEffect(() => {
+    if (!accountTag) return;
+    const loadVideos = async () => {
+      try {
+        const resp = await fetch(
+          `${API_BASE}/api/audience/retention?accountTag=${encodeURIComponent(accountTag)}`,
+          { headers: authHeaders }
+        );
+        const data = await resp.json();
+        const list = data?.videos || [];
+        setVideos(list);
+        if (list.length > 0) {
+          setVideoId((prev) => (list.find((v) => v.video_id === prev) ? prev : list[0].video_id));
+        } else {
+          setVideoId("");
+        }
+      } catch (err) {
+        setVideos([]);
+        setVideoId("");
+      }
+    };
+    loadVideos();
+  }, [accountTag, authHeaders]);
+
+  useEffect(() => {
+    if (!accountTag || !videoId) {
+      setRetentionRows([]);
+      return;
+    }
+    const loadRetention = async () => {
+      setLoading(true);
+      try {
+        const resp = await fetch(
+          `${API_BASE}/api/audience/retention?accountTag=${encodeURIComponent(
+            accountTag
+          )}&videoId=${encodeURIComponent(videoId)}`,
+          { headers: authHeaders }
+        );
+        const data = await resp.json();
+        setRetentionRows(data?.rows || []);
+        setRetentionRange({ start: data?.start_date || "", end: data?.end_date || "" });
+      } catch (err) {
+        setRetentionRows([]);
+        setRetentionRange({ start: "", end: "" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadRetention();
+  }, [accountTag, videoId, authHeaders]);
+
+  const demoTable = useMemo(() => {
+    const map = {};
+    demoRows.forEach((row) => {
+      const age = row.age_group || "unknown";
+      const gender = row.gender || "unknown";
+      if (!map[age]) map[age] = {};
+      map[age][gender] = row.viewer_percentage;
+    });
+    return Object.keys(map)
+      .sort()
+      .map((age) => ({
+        age,
+        ...map[age],
+      }));
+  }, [demoRows]);
+
+  const retentionSeries = useMemo(() => {
+    const watch = {
+      id: "Audience Watch Ratio",
+      data: retentionRows.map((row) => ({
+        x: row.elapsed_video_time_ratio,
+        y: row.audience_watch_ratio,
+      })),
+    };
+    const relative = {
+      id: "Relative Retention",
+      data: retentionRows
+        .filter((row) => row.relative_retention_performance !== null)
+        .map((row) => ({
+          x: row.elapsed_video_time_ratio,
+          y: row.relative_retention_performance,
+        })),
+    };
+    return relative.data.length > 0 ? [watch, relative] : [watch];
+  }, [retentionRows]);
+
+  return (
+    <Box display="flex" flexDirection="column" gap={3}>
+      <Box display="flex" gap={2} flexWrap="wrap">
+        <FormControl size="small" sx={{ minWidth: 220 }}>
+          <InputLabel>Channel</InputLabel>
+          <Select
+            label="Channel"
+            value={accountTag}
+            onChange={(event) => setAccountTag(event.target.value)}
+          >
+            {accounts.map((acct) => (
+              <MenuItem key={acct} value={acct}>
+                {acct}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl size="small" sx={{ minWidth: 260 }}>
+          <InputLabel>Video</InputLabel>
+          <Select
+            label="Video"
+            value={videoId}
+            onChange={(event) => setVideoId(event.target.value)}
+            disabled={!videos.length}
+          >
+            {videos.map((v) => (
+              <MenuItem key={v.video_id} value={v.video_id}>
+                {v.title ? `${v.title} (${v.video_id})` : v.video_id}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      </Box>
+
+      {loading && (
+        <Box display="flex" alignItems="center" gap={1}>
+          <CircularProgress size={18} />
+          <Typography variant="body2" color="text.secondary">
+            Loading analytics...
+          </Typography>
+        </Box>
+      )}
+
+      <Box
+        sx={{
+          p: 2,
+          borderRadius: 2,
+          border: `1px solid ${isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"}`,
+          bgcolor: isDark ? "rgba(17, 24, 39, 0.6)" : "rgba(255,255,255,0.8)",
+        }}
+      >
+        <Typography variant="h6" gutterBottom>
+          Demographics
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {demoRange.start && demoRange.end
+            ? `Range: ${demoRange.start} → ${demoRange.end}`
+            : "No data"}
+        </Typography>
+
+        {demoTable.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" mt={2}>
+            No demographics data available.
+          </Typography>
+        ) : (
+          <Box mt={2}>
+            <Box display="grid" gridTemplateColumns="repeat(4, minmax(0, 1fr))" gap={1}>
+              <Typography variant="subtitle2">Age</Typography>
+              <Typography variant="subtitle2">Male</Typography>
+              <Typography variant="subtitle2">Female</Typography>
+              <Typography variant="subtitle2">Other</Typography>
+              {demoTable.map((row) => (
+                <Box
+                  key={row.age}
+                  display="contents"
+                >
+                  <Typography variant="body2">{row.age}</Typography>
+                  <Typography variant="body2">{(row.male ?? 0).toFixed(2)}%</Typography>
+                  <Typography variant="body2">{(row.female ?? 0).toFixed(2)}%</Typography>
+                  <Typography variant="body2">
+                    {(row.genderUnspecified ?? 0).toFixed(2)}%
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+        )}
+      </Box>
+
+      <Box
+        sx={{
+          p: 2,
+          borderRadius: 2,
+          border: `1px solid ${isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"}`,
+          bgcolor: isDark ? "rgba(17, 24, 39, 0.6)" : "rgba(255,255,255,0.8)",
+          height: 360,
+        }}
+      >
+        <Typography variant="h6" gutterBottom>
+          Retention
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          {retentionRange.start && retentionRange.end
+            ? `Range: ${retentionRange.start} → ${retentionRange.end}`
+            : "No data"}
+        </Typography>
+
+        {retentionSeries[0].data.length === 0 ? (
+          <Typography variant="body2" color="text.secondary" mt={2}>
+            No retention data available.
+          </Typography>
+        ) : (
+          <ResponsiveLine
+            data={retentionSeries}
+            margin={{ top: 20, right: 20, bottom: 50, left: 60 }}
+            xScale={{ type: "linear", min: 0, max: 1 }}
+            yScale={{ type: "linear", min: "auto", max: "auto" }}
+            axisBottom={{
+              legend: "Elapsed Video Time Ratio",
+              legendOffset: 36,
+              legendPosition: "middle",
+            }}
+            axisLeft={{
+              legend: "Ratio",
+              legendOffset: -40,
+              legendPosition: "middle",
+            }}
+            colors={{ scheme: "nivo" }}
+            enablePoints={false}
+            useMesh
+            theme={{
+              textColor: isDark ? "#e5e7eb" : "#111827",
+              axis: {
+                domain: {
+                  line: { stroke: isDark ? "#475569" : "#cbd5f5" },
+                },
+                ticks: {
+                  line: { stroke: isDark ? "#475569" : "#cbd5f5" },
+                  text: { fill: isDark ? "#e5e7eb" : "#111827" },
+                },
+                legend: { text: { fill: isDark ? "#e5e7eb" : "#111827" } },
+              },
+              grid: {
+                line: { stroke: isDark ? "#1f2937" : "#e2e8f0" },
+              },
+              legends: {
+                text: { fill: isDark ? "#e5e7eb" : "#111827" },
+              },
+              tooltip: {
+                container: {
+                  background: isDark ? "#111827" : "#ffffff",
+                  color: isDark ? "#e5e7eb" : "#111827",
+                },
+              },
+            }}
+          />
+        )}
+      </Box>
+    </Box>
+  );
+};
+
+export default AudienceAnalytics;
