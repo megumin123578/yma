@@ -72,7 +72,6 @@ const VideoList = () => {
   const [topVideos, setTopVideos] = useState([]);
   const [topKeywords, setTopKeywords] = useState([]);
   const [topSources, setTopSources] = useState([]);
-  const [topExternalSources, setTopExternalSources] = useState([]);
   const [countryViews, setCountryViews] = useState([]);
   const [subscribersSeries, setSubscribersSeries] = useState([]);
   const [error, setError] = useState("");
@@ -140,7 +139,6 @@ const VideoList = () => {
           topVideosResp,
           topKeywordsResp,
           topSourcesResp,
-          topExternalResp,
           countryResp,
           subsResp,
         ] = await Promise.all([
@@ -163,12 +161,6 @@ const VideoList = () => {
             { headers: authHeaders }
           ),
           fetch(
-            `${apiBase}/api/video_overview/top_external_sources?accountTag=${encodeURIComponent(
-              selectedChannel
-            )}&limit=10`,
-            { headers: authHeaders }
-          ),
-          fetch(
             `${apiBase}/api/video_overview/views_by_country?accountTag=${encodeURIComponent(
               selectedChannel
             )}&range=28d`,
@@ -186,14 +178,12 @@ const VideoList = () => {
           topVideosData,
           topKeywordsData,
           topSourcesData,
-          topExternalData,
           countryData,
           subsData,
         ] = await Promise.all([
           topVideosResp.ok ? topVideosResp.json() : [],
           topKeywordsResp.ok ? topKeywordsResp.json() : [],
           topSourcesResp.ok ? topSourcesResp.json() : [],
-          topExternalResp.ok ? topExternalResp.json() : [],
           countryResp.ok ? countryResp.json() : { rows: [] },
           subsResp.ok ? subsResp.json() : [],
         ]);
@@ -201,14 +191,12 @@ const VideoList = () => {
         setTopVideos(Array.isArray(topVideosData) ? topVideosData : []);
         setTopKeywords(Array.isArray(topKeywordsData) ? topKeywordsData : []);
         setTopSources(Array.isArray(topSourcesData) ? topSourcesData : []);
-        setTopExternalSources(Array.isArray(topExternalData) ? topExternalData : []);
         setCountryViews(Array.isArray(countryData?.rows) ? countryData.rows : []);
         setSubscribersSeries(Array.isArray(subsData) ? subsData : []);
       } catch (err) {
         setTopVideos([]);
         setTopKeywords([]);
         setTopSources([]);
-        setTopExternalSources([]);
         setCountryViews([]);
         setSubscribersSeries([]);
       }
@@ -638,30 +626,6 @@ const VideoList = () => {
               ) : (
                 <Stack spacing={0.8}>
                   {topSources.map((s) => (
-                    <Box key={s.source} display="flex" justifyContent="space-between">
-                      <Typography variant="body2">{s.source}</Typography>
-                      <Typography variant="body2" fontWeight={600}>
-                        {formatNumber(s.views)}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Stack>
-              )}
-            </Box>
-          </Grid>
-
-          <Grid item xs={12} md={6} lg={4}>
-            <Box sx={sectionSx}>
-              <Typography variant="subtitle1" fontWeight={700} mb={1}>
-                Top 10 external sources by views
-              </Typography>
-              {topExternalSources.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No data
-                </Typography>
-              ) : (
-                <Stack spacing={0.8}>
-                  {topExternalSources.map((s) => (
                     <Box key={s.source} display="flex" justifyContent="space-between">
                       <Typography variant="body2">{s.source}</Typography>
                       <Typography variant="body2" fontWeight={600}>
