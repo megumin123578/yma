@@ -140,6 +140,15 @@ const AudienceAnalytics = () => {
       }));
   }, [demoRows]);
 
+  const formatAgeLabel = (value) => {
+    if (!value) return "";
+    const trimmed = String(value).trim();
+    if (/^age\d/i.test(trimmed)) {
+      return trimmed.replace(/^age/i, "");
+    }
+    return trimmed;
+  };
+
   const retentionSeries = useMemo(() => {
     const ordered = [...retentionRows]
       .filter((row) => row.elapsed_video_time_ratio !== null)
@@ -306,7 +315,9 @@ const AudienceAnalytics = () => {
                   key={row.age}
                   display="contents"
                 >
-                  <Typography variant="body2">{row.age}</Typography>
+                  <Typography variant="body2">
+                    {formatAgeLabel(row.age)}
+                  </Typography>
                   <Typography variant="body2">{(row.male ?? 0).toFixed(2)}%</Typography>
                   <Typography variant="body2">{(row.female ?? 0).toFixed(2)}%</Typography>
                   <Typography variant="body2">
