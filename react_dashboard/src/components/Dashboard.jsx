@@ -23,12 +23,11 @@ import Header from "./Header";
 import { API_BASE } from "../config";
 import {
   ResponsiveContainer,
-  LineChart,
-  Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   Tooltip,
-  Legend,
   CartesianGrid,
 } from "recharts";
 
@@ -82,6 +81,47 @@ const VideoList = () => {
     });
     return sorted.slice(0, 5);
   }, [videos]);
+  const subscribersSummary = useMemo(() => {
+    const sorted = [...subscribersSeries].sort((a, b) => {
+      const aTime = a?.day ? new Date(a.day).getTime() : 0;
+      const bTime = b?.day ? new Date(b.day).getTime() : 0;
+      return aTime - bTime;
+    });
+    const last = sorted.slice(-30);
+    const prev = sorted.slice(-60, -30);
+    const sum = (rows, key) =>
+      rows.reduce((acc, row) => acc + Number(row?.[key] || 0), 0);
+    const gained = sum(last, "subscribers_gained");
+    const lost = sum(last, "subscribers_lost");
+    const change = gained - lost;
+    const avg = last.length ? change / last.length : 0;
+    const prevGained = sum(prev, "subscribers_gained");
+    const prevLost = sum(prev, "subscribers_lost");
+    const prevChange = prevGained - prevLost;
+    const prevAvg = prev.length ? prevChange / prev.length : 0;
+    const pct = (cur, prevVal) =>
+      prevVal ? ((cur - prevVal) / prevVal) * 100 : 0;
+
+    return {
+      stats: {
+        gained,
+        lost,
+        change,
+        avg,
+        gainedPct: pct(gained, prevGained),
+        lostPct: pct(lost, prevLost),
+        changePct: pct(change, prevChange),
+        avgPct: pct(avg, prevAvg),
+      },
+      chart: last.map((row) => ({
+        day: row.day,
+        gained: Number(row?.subscribers_gained || 0),
+        change:
+          Number(row?.subscribers_gained || 0) -
+          Number(row?.subscribers_lost || 0),
+      })),
+    };
+  }, [subscribersSeries]);
 
   // Fetch danh sách account_tag
   useEffect(() => {
@@ -237,6 +277,40 @@ const VideoList = () => {
         : "0 14px 26px rgba(148,163,184,0.25)",
     p: 2,
   };
+  const statCardSx = {
+    borderRadius: 2,
+    p: 2,
+    textAlign: "center",
+    border: "1px solid",
+    borderColor:
+      theme.palette.mode === "dark"
+        ? "rgba(148,163,184,0.2)"
+        : "rgba(15,23,42,0.12)",
+    background:
+      theme.palette.mode === "dark"
+        ? "rgba(15,23,42,0.7)"
+        : "rgba(248,250,252,0.9)",
+    boxShadow:
+      theme.palette.mode === "dark"
+        ? "0 12px 22px rgba(2,6,23,0.55)"
+        : "0 10px 20px rgba(148,163,184,0.25)",
+  };
+  const chartCardSx = {
+    borderRadius: 2,
+    p: 2,
+    border: "1px solid",
+    borderColor:
+      theme.palette.mode === "dark"
+        ? "rgba(148,163,184,0.2)"
+        : "rgba(15,23,42,0.12)",
+    background:
+      theme.palette.mode === "dark"
+        ? "rgba(15,23,42,0.6)"
+        : "rgba(248,250,252,0.9)",
+  };
+  const pctColor = (value) =>
+    value >= 0 ? "rgb(34,197,94)" : "rgb(239,68,68)";
+  const formatPct = (value) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 
   const renderVideoCard = (v, idx) => (
     <Grid item xs={12} sm={6} md={4} lg={3} key={v.video_id || idx}>
@@ -504,42 +578,128 @@ const VideoList = () => {
 
         <Grid container spacing={2} mt={2}>
           <Grid item xs={12}>
-            <Box sx={sectionSx}>
-              <Typography variant="subtitle1" fontWeight={700} mb={1}>
-                Subscribers (last 90 days)
+            <Box sx={{ ...sectionSx, p: 3 }}>
+              <Typography variant="h5" fontWeight={700} mb={2}>
+                Subscribers
               </Typography>
               {subscribersSeries.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
                   No data
                 </Typography>
               ) : (
-                <Box height={260}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={subscribersSeries}>
-                      <CartesianGrid stroke="rgba(148,163,184,0.3)" strokeDasharray="3 3" />
-                      <XAxis dataKey="day" tick={{ fontSize: 11 }} />
-                      <YAxis tickFormatter={formatNumber} />
-                      <Tooltip />
-                      <Legend />
-                      <Line
-                        type="monotone"
-                        dataKey="subscribers_gained"
-                        stroke="#22c55e"
-                        name="Subs gained"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="subscribers_lost"
-                        stroke="#ef4444"
-                        name="Subs lost"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </Box>
+                <>
+                  <Grid container spacing={2} mb={2}>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Box sx={statCardSx}>
+                        <Typography variant="body2" color="text.secondary">
+                          Gained
+                        </Typography>
+                        <Typography variant="h5" fontWeight={700}>
+                          {formatNumber(subscribersSummary.stats.gained)}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{ color: pctColor(subscribersSummary.stats.gainedPct) }}
+                        >
+                          {formatPct(subscribersSummary.stats.gainedPct)}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Box sx={statCardSx}>
+                        <Typography variant="body2" color="text.secondary">
+                          Lost
+                        </Typography>
+                        <Typography variant="h5" fontWeight={700}>
+                          {formatNumber(subscribersSummary.stats.lost)}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{ color: pctColor(-subscribersSummary.stats.lostPct) }}
+                        >
+                          {formatPct(subscribersSummary.stats.lostPct)}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Box sx={statCardSx}>
+                        <Typography variant="body2" color="text.secondary">
+                          Change
+                        </Typography>
+                        <Typography variant="h5" fontWeight={700}>
+                          {formatNumber(subscribersSummary.stats.change)}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{ color: pctColor(subscribersSummary.stats.changePct) }}
+                        >
+                          {formatPct(subscribersSummary.stats.changePct)}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Box sx={statCardSx}>
+                        <Typography variant="body2" color="text.secondary">
+                          Avg daily change
+                        </Typography>
+                        <Typography variant="h5" fontWeight={700}>
+                          {formatNumber(Math.round(subscribersSummary.stats.avg))}
+                        </Typography>
+                        <Typography
+                          variant="body2"
+                          sx={{ color: pctColor(subscribersSummary.stats.avgPct) }}
+                        >
+                          {formatPct(subscribersSummary.stats.avgPct)}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                  </Grid>
+
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} md={6}>
+                      <Box sx={chartCardSx}>
+                        <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                          Gained
+                        </Typography>
+                        <Box height={260}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={subscribersSummary.chart}>
+                              <CartesianGrid
+                                stroke="rgba(148,163,184,0.2)"
+                                strokeDasharray="3 3"
+                              />
+                              <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+                              <YAxis tickFormatter={formatNumber} />
+                              <Tooltip />
+                              <Bar dataKey="gained" fill="#22c55e" radius={[6, 6, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </Box>
+                      </Box>
+                    </Grid>
+                    <Grid item xs={12} md={6}>
+                      <Box sx={chartCardSx}>
+                        <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                          Change
+                        </Typography>
+                        <Box height={260}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={subscribersSummary.chart}>
+                              <CartesianGrid
+                                stroke="rgba(148,163,184,0.2)"
+                                strokeDasharray="3 3"
+                              />
+                              <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+                              <YAxis tickFormatter={formatNumber} />
+                              <Tooltip />
+                              <Bar dataKey="change" fill="#7c3aed" radius={[6, 6, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </Box>
+                      </Box>
+                    </Grid>
+                  </Grid>
+                </>
               )}
             </Box>
           </Grid>
