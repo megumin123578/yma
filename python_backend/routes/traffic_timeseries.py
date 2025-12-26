@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
-from python_backend.api.auth.visibility import get_hidden_account_tags
+from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.module_trafficsource import sanitize_filename
 
 
@@ -45,6 +45,9 @@ def list_channels(
         ORDER BY 2;
     """)
     items = [{"value": r["account_tag"], "label": r["account_tag"]} for r in rows_acc]
+    allowed = get_allowed_account_tags(db, current_user)
+    if allowed is not None:
+        items = [r for r in items if r["value"] in allowed]
     if current_user:
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}
@@ -70,6 +73,9 @@ def timeseries(
         raise HTTPException(400, "interval phải là daily/weekly/monthly/yearly")
 
     ch = resolve_channel(req.channelRoot)
+    allowed = get_allowed_account_tags(db, current_user)
+    if allowed is not None and ch["account_tag"] not in allowed:
+        return []
     if current_user:
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}
@@ -125,6 +131,9 @@ def range_aggregate(
     current_user=Depends(get_current_user_optional),
 ):
     ch = resolve_channel(req.channelRoot)
+    allowed = get_allowed_account_tags(db, current_user)
+    if allowed is not None and ch["account_tag"] not in allowed:
+        return []
     if current_user:
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}

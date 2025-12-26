@@ -78,3 +78,16 @@ class UserScheduleRun(Base):
     processed = Column(Integer, nullable=False, default=0)
     total = Column(Integer, nullable=False, default=0)
     message = Column(Text, nullable=True)
+
+
+class UserCredential(Base):
+    __tablename__ = "user_credentials"
+    __table_args__ = (
+        UniqueConstraint("user_id", "account_tag", name="uq_user_credential_tag"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    account_tag = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)

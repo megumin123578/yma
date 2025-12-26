@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
-from python_backend.api.auth.visibility import get_hidden_account_tags
+from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.module_trafficsource import sanitize_filename
 
 
@@ -24,6 +24,7 @@ def get_demographics(
     current_user=Depends(get_current_user_optional),
 ):
     hidden = get_hidden_account_tags(db, current_user.id) if current_user else set()
+    allowed = get_allowed_account_tags(db, current_user)
     pg_url = os.getenv("PG_URL")
     if not pg_url:
         return {"availableAccounts": [], "rows": []}
@@ -34,10 +35,15 @@ def get_demographics(
                 rows = conn.execute(
                     text("SELECT DISTINCT account_tag FROM audience_demographics ORDER BY account_tag")
                 ).fetchall()
-                accounts = _filter_hidden([r[0] for r in rows], hidden)
+                accounts = [r[0] for r in rows]
+                if allowed is not None:
+                    accounts = [acct for acct in accounts if acct in allowed]
+                accounts = _filter_hidden(accounts, hidden)
                 return {"availableAccounts": accounts, "rows": []}
 
             safe_tag = sanitize_filename(accountTag)
+            if allowed is not None and safe_tag not in allowed:
+                return {"availableAccounts": [], "rows": []}
             latest = conn.execute(
                 text(
                     """
@@ -90,6 +96,7 @@ def get_retention(
     current_user=Depends(get_current_user_optional),
 ):
     hidden = get_hidden_account_tags(db, current_user.id) if current_user else set()
+    allowed = get_allowed_account_tags(db, current_user)
     pg_url = os.getenv("PG_URL")
     if not pg_url:
         return {"availableAccounts": [], "videos": [], "rows": []}
@@ -100,10 +107,15 @@ def get_retention(
                 rows = conn.execute(
                     text("SELECT DISTINCT account_tag FROM audience_retention ORDER BY account_tag")
                 ).fetchall()
-                accounts = _filter_hidden([r[0] for r in rows], hidden)
+                accounts = [r[0] for r in rows]
+                if allowed is not None:
+                    accounts = [acct for acct in accounts if acct in allowed]
+                accounts = _filter_hidden(accounts, hidden)
                 return {"availableAccounts": accounts, "videos": [], "rows": []}
 
             safe_tag = sanitize_filename(accountTag)
+            if allowed is not None and safe_tag not in allowed:
+                return {"accountTag": safe_tag, "videos": [], "rows": []}
             if not videoId:
                 rows = conn.execute(
                     text(

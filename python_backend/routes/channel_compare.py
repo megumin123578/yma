@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
-from python_backend.api.auth.visibility import get_hidden_account_tags
+from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.module_trafficsource import sanitize_filename
 
 router = APIRouter(prefix="/api/channel_compare", tags=["channel_compare"])
@@ -116,6 +116,9 @@ def compare_rank(
     items.sort(key=lambda x: x.get("currentValue", 0), reverse=True)
     limit = max(1, min(int(req.limit or 20), 200))
 
+    allowed = get_allowed_account_tags(db, current_user)
+    if allowed is not None:
+        items = [r for r in items if r.get("accountTag") in allowed]
     if current_user:
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}

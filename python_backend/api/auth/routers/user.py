@@ -15,7 +15,7 @@ from python_backend.api.auth.models import User, RivalChannel
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
-from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun
+from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun, UserCredential
 from python_backend.api.auth.visibility import get_hidden_account_tags
 from python_backend.module_trafficsource import SCOPES, sanitize_filename
 from pydantic import BaseModel
@@ -194,6 +194,7 @@ def upload_credentials(
     credentials: UploadFile = File(...),
     filename: str = Form(None),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     base_name = filename if filename is not None else credentials.filename
     filename = _safe_filename(base_name)
@@ -221,6 +222,29 @@ def upload_credentials(
 
     with open(file_path, "wb") as f:
         f.write(content)
+
+    account_tag = os.path.splitext(os.path.basename(filename))[0]
+    cred_row = (
+        db.query(UserCredential)
+        .filter(
+            UserCredential.user_id == current_user.id,
+            UserCredential.account_tag == account_tag,
+        )
+        .first()
+    )
+    if cred_row:
+        cred_row.updated_at = datetime.utcnow()
+        db.add(cred_row)
+    else:
+        db.add(
+            UserCredential(
+                user_id=current_user.id,
+                account_tag=account_tag,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+        )
+    db.commit()
 
     flow = InstalledAppFlow.from_client_secrets_file(file_path, SCOPES)
     flow.redirect_uri = OAUTH_REDIRECT_URL
@@ -360,6 +384,9 @@ def delete_token(
     db.query(UserHiddenChannel).filter(
         UserHiddenChannel.user_id == current_user.id,
         UserHiddenChannel.account_tag == base_name,
+    ).delete()
+    db.query(UserCredential).filter(
+        UserCredential.account_tag == base_name,
     ).delete()
     db.commit()
     _purge_postgres_account(base_name)

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
-from python_backend.api.auth.visibility import get_hidden_account_tags
+from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.module_trafficsource import sanitize_filename  # dùng lại hàm này
 
 router = APIRouter(prefix="/api/content", tags=["content"])
@@ -38,6 +38,7 @@ def list_channels(
     items = []
     try:
         hidden_all = set()
+        allowed = get_allowed_account_tags(db, current_user)
         if current_user:
             hidden = get_hidden_account_tags(db, current_user.id)
             hidden_all = hidden | {sanitize_filename(t) for t in hidden}
@@ -47,6 +48,8 @@ def list_channels(
 
             raw = fname[:-5]               # bỏ .json
             value = sanitize_filename(raw) 
+            if allowed is not None and value not in allowed:
+                continue
             if hidden_all and (value in hidden_all or raw in hidden_all):
                 continue
             items.append({
@@ -71,6 +74,9 @@ def content_list(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
+    allowed = get_allowed_account_tags(db, current_user)
+    if allowed is not None and req.channelId not in allowed:
+        return {"items": []}
     if current_user:
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}
@@ -130,6 +136,9 @@ def content_timeseries(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
+    allowed = get_allowed_account_tags(db, current_user)
+    if allowed is not None and req.channelId not in allowed:
+        return {"items": []}
     if current_user:
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}

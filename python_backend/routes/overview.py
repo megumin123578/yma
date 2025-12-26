@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
-from python_backend.api.auth.visibility import get_hidden_account_tags
+from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.module_trafficsource import sanitize_filename
 
 router = APIRouter(prefix="/api/video_overview", tags=["video_overview"])
@@ -52,6 +52,9 @@ def list_channels(
         ORDER BY account_tag;
     """)
 
+    allowed = get_allowed_account_tags(db, current_user)
+    if allowed is not None:
+        rows = [r for r in rows if r["value"] in allowed]
     if current_user:
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}
@@ -69,6 +72,9 @@ def list_videos(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
+    allowed = get_allowed_account_tags(db, current_user)
+    if allowed is not None and accountTag not in allowed:
+        return []
     if current_user:
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}
@@ -110,6 +116,9 @@ def list_filtered(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
+    allowed = get_allowed_account_tags(db, current_user)
+    if allowed is not None and req.accountTag not in allowed:
+        return []
     if current_user:
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}
@@ -178,6 +187,9 @@ def overview_stats(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
+    allowed = get_allowed_account_tags(db, current_user)
+    if allowed is not None and req.accountTag not in allowed:
+        return {}
     if current_user:
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}
