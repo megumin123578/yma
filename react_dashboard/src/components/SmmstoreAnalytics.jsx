@@ -41,12 +41,15 @@ const formatDateTime = (value) => {
     .trim();
   const parsed = new Date(cleaned);
   if (Number.isNaN(parsed.getTime())) return cleaned;
+  const hasTime = /\d{2}:\d{2}(:\d{2})?/.test(cleaned);
   const pad = (n) => String(n).padStart(2, "0");
-  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(
-    parsed.getDate()
-  )} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}:${pad(
-    parsed.getSeconds()
-  )}`;
+  const datePart = `${pad(parsed.getDate())}-${pad(
+    parsed.getMonth() + 1
+  )}-${parsed.getFullYear()}`;
+  if (!hasTime) return datePart;
+  return `${datePart} ${pad(parsed.getHours())}:${pad(
+    parsed.getMinutes()
+  )}:${pad(parsed.getSeconds())}`;
 };
 
 const renderCell = (col, value) => {
