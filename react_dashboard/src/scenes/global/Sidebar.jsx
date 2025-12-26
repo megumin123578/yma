@@ -14,6 +14,7 @@ import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
 import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 // import FileUploadIcon from "@mui/icons-material/FileUpload";
 import WebhookIcon from '@mui/icons-material/Webhook';
 import { UserContext } from "../../context/UserContext";
@@ -192,6 +193,14 @@ const Sidebar = () => {
               title="Geography Chart"
               to="/geography"
               icon={<MapOutlinedIcon />}
+              selected={selected}
+              setSelected={setSelected}
+            />
+
+            <Item
+              title="Reach"
+              to="/reach"
+              icon={<VisibilityOutlinedIcon />}
               selected={selected}
               setSelected={setSelected}
             />
