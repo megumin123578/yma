@@ -230,14 +230,28 @@ const AudienceAnalytics = () => {
       <Box
         sx={{
           p: 2,
-          borderRadius: 2,
-          border: `1px solid ${isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"}`,
-          bgcolor: isDark ? "rgba(17, 24, 39, 0.6)" : "rgba(255,255,255,0.8)",
+          borderRadius: 3,
+          border: `1px solid ${isDark ? "rgba(148,163,184,0.2)" : "rgba(15,23,42,0.12)"}`,
+          background: isDark
+            ? "linear-gradient(140deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 55%, rgba(13,148,136,0.45) 100%)"
+            : "linear-gradient(140deg, rgba(248,250,252,0.95) 0%, rgba(226,232,240,0.92) 55%, rgba(186,230,253,0.75) 100%)",
           transition: "transform 180ms ease, box-shadow 180ms ease",
-          boxShadow: isDark ? "0 14px 30px rgba(0,0,0,0.35)" : "0 12px 26px rgba(15,23,42,0.08)",
+          boxShadow: isDark ? "0 18px 35px rgba(15,23,42,0.4)" : "0 18px 30px rgba(148,163,184,0.35)",
+          position: "relative",
+          overflow: "hidden",
           "&:hover": {
             transform: "translateY(-2px)",
-            boxShadow: isDark ? "0 18px 36px rgba(0,0,0,0.45)" : "0 16px 32px rgba(15,23,42,0.12)",
+            boxShadow: isDark ? "0 20px 40px rgba(15,23,42,0.5)" : "0 20px 34px rgba(148,163,184,0.45)",
+          },
+          "&:before": {
+            content: '""',
+            position: "absolute",
+            inset: 0,
+            background: isDark
+              ? "radial-gradient(600px 200px at 10% 0%, rgba(56,189,248,0.2), transparent 60%), radial-gradient(400px 200px at 80% 0%, rgba(16,185,129,0.18), transparent 60%)"
+              : "radial-gradient(600px 200px at 10% 0%, rgba(14,165,233,0.2), transparent 60%), radial-gradient(400px 200px at 80% 0%, rgba(251,191,36,0.22), transparent 60%)",
+            opacity: 0.75,
+            pointerEvents: "none",
           },
         }}
       >
@@ -268,7 +282,10 @@ const AudienceAnalytics = () => {
               sx={{
                 p: 1,
                 borderRadius: 1.5,
-                bgcolor: isDark ? "rgba(15,23,42,0.7)" : "rgba(248,250,252,0.8)",
+                bgcolor: isDark ? "rgba(15,23,42,0.45)" : "rgba(255,255,255,0.9)",
+                boxShadow: isDark
+                  ? "0 0 0 1px rgba(56,189,248,0.2)"
+                  : "0 0 0 1px rgba(14,165,233,0.2)",
               }}
             >
               <Typography variant="subtitle2">Age Group</Typography>
@@ -296,15 +313,29 @@ const AudienceAnalytics = () => {
       <Box
         sx={{
           p: 2,
-          borderRadius: 2,
-          border: `1px solid ${isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"}`,
-          bgcolor: isDark ? "rgba(17, 24, 39, 0.6)" : "rgba(255,255,255,0.8)",
+          borderRadius: 3,
+          border: `1px solid ${isDark ? "rgba(148,163,184,0.2)" : "rgba(15,23,42,0.12)"}`,
+          background: isDark
+            ? "linear-gradient(140deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 55%, rgba(13,148,136,0.45) 100%)"
+            : "linear-gradient(140deg, rgba(248,250,252,0.95) 0%, rgba(226,232,240,0.92) 55%, rgba(186,230,253,0.75) 100%)",
           height: 360,
           transition: "transform 180ms ease, box-shadow 180ms ease",
-          boxShadow: isDark ? "0 14px 30px rgba(0,0,0,0.35)" : "0 12px 26px rgba(15,23,42,0.08)",
+          boxShadow: isDark ? "0 18px 35px rgba(15,23,42,0.4)" : "0 18px 30px rgba(148,163,184,0.35)",
+          position: "relative",
+          overflow: "hidden",
           "&:hover": {
             transform: "translateY(-2px)",
-            boxShadow: isDark ? "0 18px 36px rgba(0,0,0,0.45)" : "0 16px 32px rgba(15,23,42,0.12)",
+            boxShadow: isDark ? "0 20px 40px rgba(15,23,42,0.5)" : "0 20px 34px rgba(148,163,184,0.45)",
+          },
+          "&:before": {
+            content: '""',
+            position: "absolute",
+            inset: 0,
+            background: isDark
+              ? "radial-gradient(600px 200px at 10% 0%, rgba(56,189,248,0.2), transparent 60%), radial-gradient(400px 200px at 80% 0%, rgba(16,185,129,0.18), transparent 60%)"
+              : "radial-gradient(600px 200px at 10% 0%, rgba(14,165,233,0.2), transparent 60%), radial-gradient(400px 200px at 80% 0%, rgba(251,191,36,0.22), transparent 60%)",
+            opacity: 0.75,
+            pointerEvents: "none",
           },
         }}
       >

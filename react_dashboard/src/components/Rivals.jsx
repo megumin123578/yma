@@ -281,6 +281,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
               : "0 18px 30px rgba(148,163,184,0.35)",
           position: "relative",
           overflow: "hidden",
+          transition: "transform 0.2s ease, box-shadow 0.2s ease",
           ...fadeUpSx,
           "&:before": {
             content: '""',
@@ -292,6 +293,13 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                 : "radial-gradient(600px 200px at 10% 0%, rgba(14,165,233,0.2), transparent 60%), radial-gradient(400px 200px at 80% 0%, rgba(251,191,36,0.22), transparent 60%)",
             opacity: 0.75,
             pointerEvents: "none",
+          },
+          "&:hover": {
+            transform: "translateY(-3px)",
+            boxShadow:
+              theme.palette.mode === "dark"
+                ? "0 22px 38px rgba(15,23,42,0.5)"
+                : "0 22px 34px rgba(148,163,184,0.45)",
           },
         })}
       >
@@ -575,7 +583,15 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                   : "0 18px 30px rgba(148,163,184,0.3)",
               position: "relative",
               overflow: "hidden",
+              transition: "transform 0.2s ease, box-shadow 0.2s ease",
               ...fadeUpSx,
+              "&:hover": {
+                transform: "translateY(-3px)",
+                boxShadow:
+                  theme.palette.mode === "dark"
+                    ? "0 22px 36px rgba(15,23,42,0.45)"
+                    : "0 22px 34px rgba(148,163,184,0.4)",
+              },
             })}
           >
             <Stack spacing={2}>
@@ -646,7 +662,15 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                       : "0 14px 26px rgba(148,163,184,0.25)",
                   overflow: "hidden",
                   p: 2,
+                  transition: "transform 0.2s ease, box-shadow 0.2s ease",
                   ...fadeUpSx,
+                  "&:hover": {
+                    transform: "translateY(-3px)",
+                    boxShadow:
+                      theme.palette.mode === "dark"
+                        ? "0 18px 30px rgba(15,23,42,0.5)"
+                        : "0 18px 30px rgba(148,163,184,0.35)",
+                  },
                 })}
               >
                 <Typography variant="subtitle2" fontWeight={700} mb={2}>
@@ -731,7 +755,15 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                       : "0 14px 26px rgba(148,163,184,0.25)",
                   overflow: "hidden",
                   p: 2,
+                  transition: "transform 0.2s ease, box-shadow 0.2s ease",
                   ...fadeUpSx,
+                  "&:hover": {
+                    transform: "translateY(-3px)",
+                    boxShadow:
+                      theme.palette.mode === "dark"
+                        ? "0 18px 30px rgba(15,23,42,0.5)"
+                        : "0 18px 30px rgba(148,163,184,0.35)",
+                  },
                 })}
               >
                 <Typography variant="subtitle2" fontWeight={700} mb={2}>
@@ -819,6 +851,14 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                       : "0 14px 26px rgba(148,163,184,0.25)",
                   overflow: "hidden",
                   ...fadeUpSx,
+                  transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                  "&:hover": {
+                    transform: "translateY(-3px)",
+                    boxShadow:
+                      theme.palette.mode === "dark"
+                        ? "0 18px 30px rgba(15,23,42,0.5)"
+                        : "0 18px 30px rgba(148,163,184,0.35)",
+                  },
                   "& a": {
                     color: theme.palette.mode === "dark" ? "#7dd3fc" : "#0ea5e9",
                     textDecoration: "none",
@@ -918,6 +958,14 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                       : "0 14px 26px rgba(148,163,184,0.25)",
                   overflow: "hidden",
                   ...fadeUpSx,
+                  transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                  "&:hover": {
+                    transform: "translateY(-3px)",
+                    boxShadow:
+                      theme.palette.mode === "dark"
+                        ? "0 18px 30px rgba(15,23,42,0.5)"
+                        : "0 18px 30px rgba(148,163,184,0.35)",
+                  },
                   "& a": {
                     color: theme.palette.mode === "dark" ? "#7dd3fc" : "#0ea5e9",
                     textDecoration: "none",
