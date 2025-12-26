@@ -172,6 +172,15 @@ const AudienceAnalytics = () => {
     return relative.data.length > 0 ? [watch, relative] : [watch];
   }, [retentionRows]);
 
+  const legendItems = useMemo(() => {
+    const seriesIds = new Set(retentionSeries.map((serie) => serie.id));
+    const items = [
+      { id: "Audience Watch Ratio", color: "#22d3ee" },
+      { id: "Relative Retention", color: "#f97316" },
+    ];
+    return items.filter((item) => seriesIds.has(item.id));
+  }, [retentionSeries]);
+
   return (
     <Box display="flex" flexDirection="column" gap={3}>
       <Box
@@ -318,7 +327,7 @@ const AudienceAnalytics = () => {
           background: isDark
             ? "linear-gradient(140deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 55%, rgba(13,148,136,0.45) 100%)"
             : "linear-gradient(140deg, rgba(248,250,252,0.95) 0%, rgba(226,232,240,0.92) 55%, rgba(186,230,253,0.75) 100%)",
-          height: 360,
+          height: 520,
           transition: "transform 180ms ease, box-shadow 180ms ease",
           boxShadow: isDark ? "0 18px 35px rgba(15,23,42,0.4)" : "0 18px 30px rgba(148,163,184,0.35)",
           position: "relative",
@@ -352,6 +361,25 @@ const AudienceAnalytics = () => {
             Higher is better
           </Typography>
         </Stack>
+        {legendItems.length > 0 && (
+          <Stack direction="row" spacing={2} mt={1} flexWrap="wrap">
+            {legendItems.map((item) => (
+              <Stack key={item.id} direction="row" spacing={1} alignItems="center">
+                <Box
+                  sx={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: "50%",
+                    bgcolor: item.color,
+                  }}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  {item.id}
+                </Typography>
+              </Stack>
+            ))}
+          </Stack>
+        )}
         <Divider sx={{ my: 1, borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.08)" }} />
 
         {retentionSeries[0].data.length === 0 ? (
@@ -359,25 +387,31 @@ const AudienceAnalytics = () => {
             No retention data available.
           </Typography>
         ) : (
-          <ResponsiveLine
+          <Box sx={{ height: 380 }}>
+            <ResponsiveLine
             data={retentionSeries}
-            margin={{ top: 20, right: 20, bottom: 50, left: 60 }}
+            margin={{ top: 40, right: 20, bottom: 70, left: 70 }}
             xScale={{ type: "linear", min: 0, max: 1 }}
             yScale={{ type: "linear", min: 0, max: "auto" }}
             curve="monotoneX"
             axisBottom={{
               legend: "Video progress (0% → 100%)",
-              legendOffset: 36,
+              legendOffset: 44,
               legendPosition: "middle",
               format: (value) => `${Math.round(value * 100)}%`,
-              tickValues: 6,
+              tickValues: [0, 0.25, 0.5, 0.75, 1],
+              tickSize: 10,
+              tickPadding: 10,
+              tickRotation: 0,
             }}
             axisLeft={{
               legend: "Audience retention (%)",
-              legendOffset: -52,
+              legendOffset: -58,
               legendPosition: "middle",
               format: (value) => `${Math.round(value * 100)}%`,
               tickValues: 6,
+              tickSize: 8,
+              tickPadding: 8,
             }}
             colors={["#22d3ee", "#f97316"]}
             enableArea
@@ -386,6 +420,8 @@ const AudienceAnalytics = () => {
             enablePoints={false}
             useMesh
             enableSlices="x"
+            enableGridX
+            gridXValues={[0, 0.25, 0.5, 0.75, 1]}
             defs={[
               {
                 id: "retentionGradient",
@@ -407,17 +443,6 @@ const AudienceAnalytics = () => {
             fill={[
               { match: { id: "Audience Watch Ratio" }, id: "retentionGradient" },
               { match: { id: "Relative Retention" }, id: "relativeGradient" },
-            ]}
-            legends={[
-              {
-                anchor: "bottom-left",
-                direction: "row",
-                translateY: 46,
-                itemWidth: 160,
-                itemHeight: 16,
-                symbolSize: 10,
-                symbolShape: "circle",
-              },
             ]}
             sliceTooltip={({ slice }) => (
               <Box
@@ -468,10 +493,10 @@ const AudienceAnalytics = () => {
               textColor: isDark ? "#e5e7eb" : "#111827",
               axis: {
                 domain: {
-                  line: { stroke: isDark ? "#475569" : "#cbd5f5" },
+                  line: { stroke: isDark ? "#e2e8f0" : "#334155", strokeWidth: 2 },
                 },
                 ticks: {
-                  line: { stroke: isDark ? "#475569" : "#cbd5f5" },
+                  line: { stroke: isDark ? "#e2e8f0" : "#334155", strokeWidth: 1 },
                   text: { fill: isDark ? "#e5e7eb" : "#111827" },
                 },
                 legend: { text: { fill: isDark ? "#e5e7eb" : "#111827" } },
@@ -489,7 +514,8 @@ const AudienceAnalytics = () => {
                 },
               },
             }}
-          />
+            />
+          </Box>
         )}
       </Box>
     </Box>
