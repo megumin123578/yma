@@ -145,6 +145,13 @@ def _purge_postgres_account(account_tag: str) -> None:
                 )
             except Exception:
                 pass
+            try:
+                conn.execute(
+                    text("DELETE FROM channel_daily_metrics WHERE account_tag = :acct"),
+                    {"acct": tag},
+                )
+            except Exception:
+                pass
 
 
 def _kickoff_get_data(account_tag: str) -> None:

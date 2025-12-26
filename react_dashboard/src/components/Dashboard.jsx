@@ -7,6 +7,7 @@ import {
   CardContent,
   Typography,
   Chip,
+  Stack,
   TextField,
   MenuItem,
   CircularProgress,
@@ -20,6 +21,16 @@ import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined
 import { tokens } from "../theme";
 import Header from "./Header";
 import { API_BASE } from "../config";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  CartesianGrid,
+} from "recharts";
 
 const MotionCard = motion.create(Card);
 
@@ -58,6 +69,12 @@ const VideoList = () => {
   const [videos, setVideos] = useState([]);
   const [loadingChannels, setLoadingChannels] = useState(true);
   const [loadingVideos, setLoadingVideos] = useState(false);
+  const [topVideos, setTopVideos] = useState([]);
+  const [topKeywords, setTopKeywords] = useState([]);
+  const [topSources, setTopSources] = useState([]);
+  const [topExternalSources, setTopExternalSources] = useState([]);
+  const [countryViews, setCountryViews] = useState([]);
+  const [subscribersSeries, setSubscribersSeries] = useState([]);
   const [error, setError] = useState("");
 
   // Fetch danh sách account_tag
@@ -115,6 +132,91 @@ const VideoList = () => {
     fetchVideos();
   }, [apiBase, selectedChannel, authHeaders]);
 
+  useEffect(() => {
+    if (!selectedChannel) return;
+    const fetchOverviewExtras = async () => {
+      try {
+        const [
+          topVideosResp,
+          topKeywordsResp,
+          topSourcesResp,
+          topExternalResp,
+          countryResp,
+          subsResp,
+        ] = await Promise.all([
+          fetch(
+            `${apiBase}/api/video_overview/top_videos?accountTag=${encodeURIComponent(
+              selectedChannel
+            )}&limit=5`,
+            { headers: authHeaders }
+          ),
+          fetch(
+            `${apiBase}/api/video_overview/top_keywords?accountTag=${encodeURIComponent(
+              selectedChannel
+            )}&limit=5`,
+            { headers: authHeaders }
+          ),
+          fetch(
+            `${apiBase}/api/video_overview/top_sources?accountTag=${encodeURIComponent(
+              selectedChannel
+            )}&limit=5`,
+            { headers: authHeaders }
+          ),
+          fetch(
+            `${apiBase}/api/video_overview/top_external_sources?accountTag=${encodeURIComponent(
+              selectedChannel
+            )}&limit=10`,
+            { headers: authHeaders }
+          ),
+          fetch(
+            `${apiBase}/api/video_overview/views_by_country?accountTag=${encodeURIComponent(
+              selectedChannel
+            )}&range=28d`,
+            { headers: authHeaders }
+          ),
+          fetch(
+            `${apiBase}/api/video_overview/subscribers_timeseries?accountTag=${encodeURIComponent(
+              selectedChannel
+            )}&days=90`,
+            { headers: authHeaders }
+          ),
+        ]);
+
+        const [
+          topVideosData,
+          topKeywordsData,
+          topSourcesData,
+          topExternalData,
+          countryData,
+          subsData,
+        ] = await Promise.all([
+          topVideosResp.ok ? topVideosResp.json() : [],
+          topKeywordsResp.ok ? topKeywordsResp.json() : [],
+          topSourcesResp.ok ? topSourcesResp.json() : [],
+          topExternalResp.ok ? topExternalResp.json() : [],
+          countryResp.ok ? countryResp.json() : { rows: [] },
+          subsResp.ok ? subsResp.json() : [],
+        ]);
+
+        setTopVideos(Array.isArray(topVideosData) ? topVideosData : []);
+        setTopKeywords(Array.isArray(topKeywordsData) ? topKeywordsData : []);
+        setTopSources(Array.isArray(topSourcesData) ? topSourcesData : []);
+        setTopExternalSources(Array.isArray(topExternalData) ? topExternalData : []);
+        setCountryViews(Array.isArray(countryData?.rows) ? countryData.rows : []);
+        setSubscribersSeries(Array.isArray(subsData) ? subsData : []);
+      } catch (err) {
+        setTopVideos([]);
+        setTopKeywords([]);
+        setTopSources([]);
+        setTopExternalSources([]);
+        setCountryViews([]);
+        setSubscribersSeries([]);
+      }
+    };
+
+    fetchOverviewExtras();
+  }, [apiBase, selectedChannel, authHeaders]);
+
   const formatNumber = (n) => {
     if (n == null) return "-";
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
@@ -133,6 +235,24 @@ const VideoList = () => {
 
     return `${day}/${month}/${year}`; // dd/mm/YY
     };
+
+  const sectionSx = {
+    borderRadius: 3,
+    border: "1px solid",
+    borderColor:
+      theme.palette.mode === "dark"
+        ? "rgba(148,163,184,0.2)"
+        : "rgba(15,23,42,0.12)",
+    background:
+      theme.palette.mode === "dark"
+        ? "rgba(10,15,24,0.8)"
+        : "rgba(255,255,255,0.94)",
+    boxShadow:
+      theme.palette.mode === "dark"
+        ? "0 14px 28px rgba(15,23,42,0.4)"
+        : "0 14px 26px rgba(148,163,184,0.25)",
+    p: 2,
+  };
 
 
   return (
@@ -207,6 +327,7 @@ const VideoList = () => {
           </Typography>
         </Box>
       ) : (
+        <>
         <Grid container spacing={2}>
           {videos.map((v, idx) => (
             <Grid item xs={12} sm={6} md={4} lg={3} key={v.video_id}>
@@ -397,6 +518,192 @@ const VideoList = () => {
             </Grid>
           ))}
         </Grid>
+
+        <Grid container spacing={2} mt={2}>
+          <Grid item xs={12} lg={6}>
+            <Box sx={sectionSx}>
+              <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                Top 5 videos by views
+              </Typography>
+              {topVideos.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No data
+                </Typography>
+              ) : (
+                <Stack spacing={1}>
+                  {topVideos.map((item) => (
+                    <Stack
+                      key={item.video_id}
+                      direction="row"
+                      spacing={1.5}
+                      alignItems="center"
+                    >
+                      <Box
+                        component="img"
+                        src={item.thumbnail}
+                        alt={item.title}
+                        sx={{ width: 60, height: 36, borderRadius: 1, objectFit: "cover" }}
+                      />
+                      <Box flex={1}>
+                        <Typography variant="body2" fontWeight={600} noWrap title={item.title}>
+                          {item.title}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {item.video_id}
+                        </Typography>
+                      </Box>
+                      <Typography variant="body2" fontWeight={600}>
+                        {formatNumber(item.views)}
+                      </Typography>
+                    </Stack>
+                  ))}
+                </Stack>
+              )}
+            </Box>
+          </Grid>
+
+          <Grid item xs={12} lg={6}>
+            <Box sx={sectionSx}>
+              <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                Subscribers (last 90 days)
+              </Typography>
+              {subscribersSeries.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No data
+                </Typography>
+              ) : (
+                <Box height={260}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={subscribersSeries}>
+                      <CartesianGrid stroke="rgba(148,163,184,0.3)" strokeDasharray="3 3" />
+                      <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+                      <YAxis tickFormatter={formatNumber} />
+                      <Tooltip />
+                      <Legend />
+                      <Line
+                        type="monotone"
+                        dataKey="subscribers_gained"
+                        stroke="#22c55e"
+                        name="Subs gained"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="subscribers_lost"
+                        stroke="#ef4444"
+                        name="Subs lost"
+                        strokeWidth={2}
+                        dot={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </Box>
+              )}
+            </Box>
+          </Grid>
+
+          <Grid item xs={12} md={6} lg={4}>
+            <Box sx={sectionSx}>
+              <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                Top 5 keywords by views
+              </Typography>
+              {topKeywords.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No data
+                </Typography>
+              ) : (
+                <Box display="flex" flexWrap="wrap" gap={1}>
+                  {topKeywords.map((k) => (
+                    <Chip
+                      key={k.keyword}
+                      label={`${k.keyword} • ${formatNumber(k.views)}`}
+                      size="small"
+                    />
+                  ))}
+                </Box>
+              )}
+            </Box>
+          </Grid>
+
+          <Grid item xs={12} md={6} lg={4}>
+            <Box sx={sectionSx}>
+              <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                Top 5 sources by views
+              </Typography>
+              {topSources.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No data
+                </Typography>
+              ) : (
+                <Stack spacing={0.8}>
+                  {topSources.map((s) => (
+                    <Box key={s.source} display="flex" justifyContent="space-between">
+                      <Typography variant="body2">{s.source}</Typography>
+                      <Typography variant="body2" fontWeight={600}>
+                        {formatNumber(s.views)}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              )}
+            </Box>
+          </Grid>
+
+          <Grid item xs={12} md={6} lg={4}>
+            <Box sx={sectionSx}>
+              <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                Top 10 external sources by views
+              </Typography>
+              {topExternalSources.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No data
+                </Typography>
+              ) : (
+                <Stack spacing={0.8}>
+                  {topExternalSources.map((s) => (
+                    <Box key={s.source} display="flex" justifyContent="space-between">
+                      <Typography variant="body2">{s.source}</Typography>
+                      <Typography variant="body2" fontWeight={600}>
+                        {formatNumber(s.views)}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              )}
+            </Box>
+          </Grid>
+
+          <Grid item xs={12}>
+            <Box sx={sectionSx}>
+              <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                Views by country (last 28 days)
+              </Typography>
+              {countryViews.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No data
+                </Typography>
+              ) : (
+                <Grid container spacing={1}>
+                  {countryViews
+                    .sort((a, b) => (b.views || 0) - (a.views || 0))
+                    .slice(0, 12)
+                    .map((row) => (
+                      <Grid item xs={6} md={3} key={row.country}>
+                        <Box display="flex" justifyContent="space-between">
+                          <Typography variant="body2">{row.country}</Typography>
+                          <Typography variant="body2" fontWeight={600}>
+                            {formatNumber(row.views)}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                    ))}
+                </Grid>
+              )}
+            </Box>
+          </Grid>
+        </Grid>
+        </>
       )}
     </Box>
   );

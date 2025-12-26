@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import date
 from typing import List, Dict
 
@@ -73,6 +74,7 @@ def get_video_metadata(credentials, video_ids: List[str]) -> List[Dict]:
                 "thumbnail": item["snippet"]["thumbnails"]["medium"]["url"],
                 "published_at": item["snippet"]["publishedAt"][:10],
                 "duration": item["contentDetails"]["duration"],
+                "tags": item["snippet"].get("tags", []),
                 "views": int(stats.get("viewCount", 0) or 0),
                 "likes": int(stats.get("likeCount", 0) or 0),
                 "comments": int(stats.get("commentCount", 0) or 0),
@@ -189,24 +191,27 @@ def save_metadata(videos, account_tag: str, pg_url: str):
                 likes INTEGER DEFAULT 0,
                 comments INTEGER DEFAULT 0,
                 impressions BIGINT DEFAULT 0,
+                tags TEXT,
                 ctr NUMERIC DEFAULT 0
             );
         """))
+        conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS tags TEXT;"))
 
         for v in videos:
             conn.execute(text("""
                 INSERT INTO videos
                     (video_id, account_tag, title, thumbnail,
-                     published_at, duration, views, likes, comments, impressions, ctr)
+                     published_at, duration, views, likes, comments, impressions, tags, ctr)
                 VALUES
                     (:id, :acct, :title, :thumb, :pub, :duration,
-                     :views, :likes, :comments, :impressions, :ctr)
+                     :views, :likes, :comments, :impressions, :tags, :ctr)
                 ON CONFLICT(video_id)
                 DO UPDATE SET
                     views = EXCLUDED.views,
                     likes = EXCLUDED.likes,
                     comments = EXCLUDED.comments,
                     impressions = EXCLUDED.impressions,
+                    tags = EXCLUDED.tags,
                     ctr = EXCLUDED.ctr;
             """), {
                 "id": v["video_id"],
@@ -219,6 +224,7 @@ def save_metadata(videos, account_tag: str, pg_url: str):
                 "likes": v["likes"],
                 "comments": v["comments"],
                 "impressions": v["impressions"],
+                "tags": json.dumps(v.get("tags") or []),
                 "ctr": v["ctr"],
             })
 

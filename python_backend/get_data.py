@@ -9,6 +9,10 @@ from module_content import *
 from module_overall import *
 from module_audience import run_audience_analytics
 from module_reach import run_reach_analytics
+try:
+    from python_backend.module_channel_daily import run_channel_daily
+except ModuleNotFoundError:
+    from module_channel_daily import run_channel_daily
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEFAULT_CREDENTIALS = os.path.join(REPO_ROOT, "python_backend", "credentials")
@@ -102,6 +106,8 @@ def _run_for_credential(cred_file: str) -> None:
     run_audience_analytics(creds, account_tag, pg_url)
     _write_progress(account_tag, "reach", 90, "running", "Starting reach analytics")
     run_reach_analytics(creds, account_tag, pg_url)
+    _write_progress(account_tag, "subscribers", 95, "running", "Starting subscriber analytics")
+    run_channel_daily(creds, account_tag, pg_url)
     _write_progress(account_tag, "done", 100, "done", "Completed")
 
 
