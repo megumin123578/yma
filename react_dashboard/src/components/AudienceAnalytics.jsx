@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Box,
   CircularProgress,
+  Divider,
   FormControl,
   InputLabel,
   MenuItem,
   Select,
+  Stack,
   Typography,
   useTheme,
 } from "@mui/material";
@@ -139,16 +141,28 @@ const AudienceAnalytics = () => {
   }, [demoRows]);
 
   const retentionSeries = useMemo(() => {
+    const ordered = [...retentionRows]
+      .filter((row) => row.elapsed_video_time_ratio !== null)
+      .sort((a, b) => a.elapsed_video_time_ratio - b.elapsed_video_time_ratio);
+    const unique = [];
+    const seen = new Set();
+    for (const row of ordered) {
+      const key = `${row.elapsed_video_time_ratio}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(row);
+    }
+
     const watch = {
       id: "Audience Watch Ratio",
-      data: retentionRows.map((row) => ({
+      data: unique.map((row) => ({
         x: row.elapsed_video_time_ratio,
         y: row.audience_watch_ratio,
       })),
     };
     const relative = {
       id: "Relative Retention",
-      data: retentionRows
+      data: unique
         .filter((row) => row.relative_retention_performance !== null)
         .map((row) => ({
           x: row.elapsed_video_time_ratio,
@@ -160,7 +174,18 @@ const AudienceAnalytics = () => {
 
   return (
     <Box display="flex" flexDirection="column" gap={3}>
-      <Box display="flex" gap={2} flexWrap="wrap">
+      <Box
+        display="flex"
+        gap={2}
+        flexWrap="wrap"
+        sx={{
+          animation: "audienceFade 420ms ease-out",
+          "@keyframes audienceFade": {
+            from: { opacity: 0, transform: "translateY(8px)" },
+            to: { opacity: 1, transform: "translateY(0)" },
+          },
+        }}
+      >
         <FormControl size="small" sx={{ minWidth: 220 }}>
           <InputLabel>Channel</InputLabel>
           <Select
@@ -208,16 +233,27 @@ const AudienceAnalytics = () => {
           borderRadius: 2,
           border: `1px solid ${isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"}`,
           bgcolor: isDark ? "rgba(17, 24, 39, 0.6)" : "rgba(255,255,255,0.8)",
+          transition: "transform 180ms ease, box-shadow 180ms ease",
+          boxShadow: isDark ? "0 14px 30px rgba(0,0,0,0.35)" : "0 12px 26px rgba(15,23,42,0.08)",
+          "&:hover": {
+            transform: "translateY(-2px)",
+            boxShadow: isDark ? "0 18px 36px rgba(0,0,0,0.45)" : "0 16px 32px rgba(15,23,42,0.12)",
+          },
         }}
       >
-        <Typography variant="h6" gutterBottom>
-          Demographics
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {demoRange.start && demoRange.end
-            ? `Range: ${demoRange.start} → ${demoRange.end}`
-            : "No data"}
-        </Typography>
+        <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+          <Box>
+            <Typography variant="h6">Demographics</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {demoRange.start && demoRange.end
+                ? `Viewer distribution · ${demoRange.start} → ${demoRange.end}`
+                : "No data"}
+            </Typography>
+          </Box>
+          <Typography variant="caption" color="text.secondary">
+            % of total viewers
+          </Typography>
+        </Stack>
 
         {demoTable.length === 0 ? (
           <Typography variant="body2" color="text.secondary" mt={2}>
@@ -225,11 +261,20 @@ const AudienceAnalytics = () => {
           </Typography>
         ) : (
           <Box mt={2}>
-            <Box display="grid" gridTemplateColumns="repeat(4, minmax(0, 1fr))" gap={1}>
-              <Typography variant="subtitle2">Age</Typography>
+            <Box
+              display="grid"
+              gridTemplateColumns="repeat(4, minmax(0, 1fr))"
+              gap={1}
+              sx={{
+                p: 1,
+                borderRadius: 1.5,
+                bgcolor: isDark ? "rgba(15,23,42,0.7)" : "rgba(248,250,252,0.8)",
+              }}
+            >
+              <Typography variant="subtitle2">Age Group</Typography>
               <Typography variant="subtitle2">Male</Typography>
               <Typography variant="subtitle2">Female</Typography>
-              <Typography variant="subtitle2">Other</Typography>
+              <Typography variant="subtitle2">Unspecified</Typography>
               {demoTable.map((row) => (
                 <Box
                   key={row.age}
@@ -255,16 +300,28 @@ const AudienceAnalytics = () => {
           border: `1px solid ${isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"}`,
           bgcolor: isDark ? "rgba(17, 24, 39, 0.6)" : "rgba(255,255,255,0.8)",
           height: 360,
+          transition: "transform 180ms ease, box-shadow 180ms ease",
+          boxShadow: isDark ? "0 14px 30px rgba(0,0,0,0.35)" : "0 12px 26px rgba(15,23,42,0.08)",
+          "&:hover": {
+            transform: "translateY(-2px)",
+            boxShadow: isDark ? "0 18px 36px rgba(0,0,0,0.45)" : "0 16px 32px rgba(15,23,42,0.12)",
+          },
         }}
       >
-        <Typography variant="h6" gutterBottom>
-          Retention
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {retentionRange.start && retentionRange.end
-            ? `Range: ${retentionRange.start} → ${retentionRange.end}`
-            : "No data"}
-        </Typography>
+        <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+          <Box>
+            <Typography variant="h6">Retention Curve</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {retentionRange.start && retentionRange.end
+                ? `Video-level retention · ${retentionRange.start} → ${retentionRange.end}`
+                : "No data"}
+            </Typography>
+          </Box>
+          <Typography variant="caption" color="text.secondary">
+            Higher is better
+          </Typography>
+        </Stack>
+        <Divider sx={{ my: 1, borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.08)" }} />
 
         {retentionSeries[0].data.length === 0 ? (
           <Typography variant="body2" color="text.secondary" mt={2}>
@@ -275,20 +332,107 @@ const AudienceAnalytics = () => {
             data={retentionSeries}
             margin={{ top: 20, right: 20, bottom: 50, left: 60 }}
             xScale={{ type: "linear", min: 0, max: 1 }}
-            yScale={{ type: "linear", min: "auto", max: "auto" }}
+            yScale={{ type: "linear", min: 0, max: "auto" }}
+            curve="monotoneX"
             axisBottom={{
-              legend: "Elapsed Video Time Ratio",
+              legend: "Video progress (0% → 100%)",
               legendOffset: 36,
               legendPosition: "middle",
+              format: (value) => `${Math.round(value * 100)}%`,
+              tickValues: 6,
             }}
             axisLeft={{
-              legend: "Ratio",
-              legendOffset: -40,
+              legend: "Audience retention (%)",
+              legendOffset: -52,
               legendPosition: "middle",
+              format: (value) => `${Math.round(value * 100)}%`,
+              tickValues: 6,
             }}
-            colors={{ scheme: "nivo" }}
+            colors={["#22d3ee", "#f97316"]}
+            enableArea
+            areaOpacity={0.18}
+            lineWidth={3}
             enablePoints={false}
             useMesh
+            enableSlices="x"
+            defs={[
+              {
+                id: "retentionGradient",
+                type: "linearGradient",
+                colors: [
+                  { offset: 0, color: "#22d3ee", opacity: 0.35 },
+                  { offset: 100, color: "#22d3ee", opacity: 0 },
+                ],
+              },
+              {
+                id: "relativeGradient",
+                type: "linearGradient",
+                colors: [
+                  { offset: 0, color: "#f97316", opacity: 0.3 },
+                  { offset: 100, color: "#f97316", opacity: 0 },
+                ],
+              },
+            ]}
+            fill={[
+              { match: { id: "Audience Watch Ratio" }, id: "retentionGradient" },
+              { match: { id: "Relative Retention" }, id: "relativeGradient" },
+            ]}
+            legends={[
+              {
+                anchor: "bottom-left",
+                direction: "row",
+                translateY: 46,
+                itemWidth: 160,
+                itemHeight: 16,
+                symbolSize: 10,
+                symbolShape: "circle",
+              },
+            ]}
+            sliceTooltip={({ slice }) => (
+              <Box
+                sx={{
+                  px: 1.4,
+                  py: 0.8,
+                  borderRadius: 1.5,
+                  minWidth: 180,
+                  bgcolor: isDark ? "rgba(15, 23, 42, 0.95)" : "rgba(255,255,255,0.98)",
+                  border: `1px solid ${isDark ? "rgba(148, 163, 184, 0.25)" : "rgba(15,23,42,0.15)"}`,
+                  color: isDark ? "#e5e7eb" : "#111827",
+                  boxShadow: isDark
+                    ? "0 12px 26px rgba(0,0,0,0.45)"
+                    : "0 12px 26px rgba(15,23,42,0.18)",
+                  backdropFilter: "blur(6px)",
+                }}
+              >
+                <Typography variant="caption" sx={{ fontWeight: 600, letterSpacing: 0.3 }}>
+                  {`${Math.round(slice.points[0].data.x * 100)}% video`}
+                </Typography>
+                {slice.points.map((point) => (
+                  <Box
+                    key={point.id}
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="space-between"
+                    gap={2}
+                  >
+                    <Box display="flex" alignItems="center" gap={1}>
+                      <Box
+                        sx={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          bgcolor: point.color,
+                        }}
+                      />
+                      <Typography variant="caption">{point.serieId}</Typography>
+                    </Box>
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: point.color }}>
+                      {`${Math.round(point.data.y * 100)}%`}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            )}
             theme={{
               textColor: isDark ? "#e5e7eb" : "#111827",
               axis: {
