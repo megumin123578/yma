@@ -69,12 +69,19 @@ const VideoList = () => {
   const [videos, setVideos] = useState([]);
   const [loadingChannels, setLoadingChannels] = useState(true);
   const [loadingVideos, setLoadingVideos] = useState(false);
-  const [topVideos, setTopVideos] = useState([]);
   const [topKeywords, setTopKeywords] = useState([]);
   const [topSources, setTopSources] = useState([]);
   const [countryViews, setCountryViews] = useState([]);
   const [subscribersSeries, setSubscribersSeries] = useState([]);
   const [error, setError] = useState("");
+  const latestVideos = useMemo(() => {
+    const sorted = [...videos].sort((a, b) => {
+      const aTime = a?.publish_date ? new Date(a.publish_date).getTime() : 0;
+      const bTime = b?.publish_date ? new Date(b.publish_date).getTime() : 0;
+      return bTime - aTime;
+    });
+    return sorted.slice(0, 5);
+  }, [videos]);
 
   // Fetch danh sách account_tag
   useEffect(() => {
@@ -136,18 +143,11 @@ const VideoList = () => {
     const fetchOverviewExtras = async () => {
       try {
         const [
-          topVideosResp,
           topKeywordsResp,
           topSourcesResp,
           countryResp,
           subsResp,
         ] = await Promise.all([
-          fetch(
-            `${apiBase}/api/video_overview/top_videos?accountTag=${encodeURIComponent(
-              selectedChannel
-            )}&limit=5`,
-            { headers: authHeaders }
-          ),
           fetch(
             `${apiBase}/api/video_overview/top_keywords?accountTag=${encodeURIComponent(
               selectedChannel
@@ -175,26 +175,22 @@ const VideoList = () => {
         ]);
 
         const [
-          topVideosData,
           topKeywordsData,
           topSourcesData,
           countryData,
           subsData,
         ] = await Promise.all([
-          topVideosResp.ok ? topVideosResp.json() : [],
           topKeywordsResp.ok ? topKeywordsResp.json() : [],
           topSourcesResp.ok ? topSourcesResp.json() : [],
           countryResp.ok ? countryResp.json() : { rows: [] },
           subsResp.ok ? subsResp.json() : [],
         ]);
 
-        setTopVideos(Array.isArray(topVideosData) ? topVideosData : []);
         setTopKeywords(Array.isArray(topKeywordsData) ? topKeywordsData : []);
         setTopSources(Array.isArray(topSourcesData) ? topSourcesData : []);
         setCountryViews(Array.isArray(countryData?.rows) ? countryData.rows : []);
         setSubscribersSeries(Array.isArray(subsData) ? subsData : []);
       } catch (err) {
-        setTopVideos([]);
         setTopKeywords([]);
         setTopSources([]);
         setCountryViews([]);
@@ -241,6 +237,187 @@ const VideoList = () => {
         : "0 14px 26px rgba(148,163,184,0.25)",
     p: 2,
   };
+
+  const renderVideoCard = (v, idx) => (
+    <Grid item xs={12} sm={6} md={4} lg={3} key={v.video_id || idx}>
+      <MotionCard
+        variants={cardVariants}
+        initial="rest"
+        whileHover="hover"
+        transition={{ duration: 0.2, delay: idx * 0.03 }}
+        onClick={() =>
+          window.open(`https://www.youtube.com/watch?v=${v.video_id}`, "_blank")
+        }
+        sx={{
+          position: "relative",
+          borderRadius: 3,
+          border: "1px solid",
+          borderColor:
+            theme.palette.mode === "dark"
+              ? "rgba(148,163,184,0.2)"
+              : "rgba(15,23,42,0.12)",
+          background:
+            theme.palette.mode === "dark"
+              ? "linear-gradient(140deg, rgba(15,23,42,0.92) 0%, rgba(30,41,59,0.88) 60%, rgba(14,165,233,0.18) 100%)"
+              : "linear-gradient(140deg, rgba(248,250,252,0.96) 0%, rgba(226,232,240,0.92) 55%, rgba(191,219,254,0.6) 100%)",
+          overflow: "hidden",
+          cursor: "pointer",
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+        }}
+      >
+        {v.thumbnail && (
+          <CardMedia
+            component="img"
+            image={v.thumbnail}
+            alt={v.title}
+            sx={{
+              height: 160,
+              objectFit: "cover",
+            }}
+          />
+        )}
+
+        <CardContent
+          sx={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+          }}
+        >
+          <Typography
+            variant="subtitle1"
+            color={theme.palette.text.primary}
+            fontWeight={600}
+            noWrap
+            title={v.title}
+          >
+            {v.title}
+          </Typography>
+
+          <Box display="flex" alignItems="center" gap={1}>
+            <CalendarMonthOutlinedIcon
+              sx={{ fontSize: 16, color: colors.grey[300] }}
+            />
+            <Typography
+              variant="caption"
+              color={colors.grey[300]}
+              sx={{ opacity: 0.8 }}
+            >
+              {formatDate(v.publish_date)}
+            </Typography>
+          </Box>
+
+          <Box
+            display="flex"
+            alignItems="center"
+            justifyContent="space-between"
+            mt={1}
+          >
+            <Box display="flex" gap={1}>
+              <Chip
+                size="small"
+                icon={
+                  <VisibilityOutlinedIcon
+                    sx={{ fontSize: 16, color: textOnDark }}
+                  />
+                }
+                label={formatNumber(v.views)}
+                sx={{
+                  bgcolor: colors.primary[500],
+                  color: textOnDark,
+                  "& .MuiChip-icon": { ml: 0.5, color: textOnDark },
+                }}
+              />
+              <Chip
+                size="small"
+                icon={
+                  <ThumbUpAltOutlinedIcon
+                    sx={{ fontSize: 16, color: textOnDark }}
+                  />
+                }
+                label={formatNumber(v.likes)}
+                sx={{
+                  bgcolor: colors.primary[500],
+                  color: textOnDark,
+                  "& .MuiChip-icon": { ml: 0.5, color: textOnDark },
+                }}
+              />
+              <Chip
+                size="small"
+                icon={
+                  <CommentOutlinedIcon
+                    sx={{ fontSize: 16, color: textOnDark }}
+                  />
+                }
+                label={formatNumber(v.comments)}
+                sx={{
+                  bgcolor: colors.primary[500],
+                  color: textOnDark,
+                  "& .MuiChip-icon": { ml: 0.5, color: textOnDark },
+                }}
+              />
+            </Box>
+          </Box>
+        </CardContent>
+
+        <Box
+          component={motion.div}
+          variants={overlayVariants}
+          sx={{
+            position: "absolute",
+            inset: 0,
+            bgcolor: "rgba(0,0,0,0.9)",
+            color: textOnDark,
+            p: 2,
+            display: "flex",
+            flexDirection: "column",
+            gap: 0.5,
+            zIndex: 2,
+            "& .MuiTypography-root": {
+              fontSize: "0.9rem",
+            },
+          }}
+        >
+          <Box mt={1} />
+
+          <Typography variant="caption">
+            <strong>Engaged views:</strong> {formatNumber(v.engaged_views)}
+          </Typography>
+
+          <Box mt={1} />
+
+          <Typography variant="caption">
+            <strong>Annotation CTR:</strong>{" "}
+            {v.annotation_click_through_rate ?? "-"}
+          </Typography>
+          <Typography variant="caption">
+            <strong>Annotation close rate:</strong>{" "}
+            {v.annotation_close_rate ?? "-"}
+          </Typography>
+          <Typography variant="caption">
+            <strong>Avg view duration (s):</strong>{" "}
+            {v.average_view_duration_seconds ?? "-"}
+          </Typography>
+          <Typography variant="caption">
+            <strong>Shares:</strong> {formatNumber(v.shares)}
+          </Typography>
+          <Typography variant="caption">
+            <strong>Subscribers gained:</strong>{" "}
+            {formatNumber(v.subscribers_gained)}
+          </Typography>
+          <Typography variant="caption">
+            <strong>Subscribers lost:</strong>{" "}
+            {formatNumber(v.subscribers_lost)}
+          </Typography>
+
+          <Box mt={1} />
+        </Box>
+      </MotionCard>
+    </Grid>
+  );
 
 
   return (
@@ -316,241 +493,17 @@ const VideoList = () => {
         </Box>
       ) : (
         <>
-        <Grid container spacing={2}>
-          {videos.map((v, idx) => (
-            <Grid item xs={12} sm={6} md={4} lg={3} key={v.video_id}>
-                <MotionCard
-                  variants={cardVariants}
-                  initial="rest"
-                  whileHover="hover"
-                  transition={{ duration: 0.2, delay: idx * 0.03 }}
-                  onClick={() =>
-                    window.open(
-                      `https://www.youtube.com/watch?v=${v.video_id}`,
-                      "_blank"
-                    )
-                  }
-                  sx={{
-                    position: "relative",
-                    borderRadius: 3,
-                    border: "1px solid",
-                    borderColor:
-                      theme.palette.mode === "dark"
-                        ? "rgba(148,163,184,0.2)"
-                        : "rgba(15,23,42,0.12)",
-                    background:
-                      theme.palette.mode === "dark"
-                        ? "linear-gradient(140deg, rgba(15,23,42,0.92) 0%, rgba(30,41,59,0.88) 60%, rgba(14,165,233,0.18) 100%)"
-                        : "linear-gradient(140deg, rgba(248,250,252,0.96) 0%, rgba(226,232,240,0.92) 55%, rgba(191,219,254,0.6) 100%)",
-                    overflow: "hidden",
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    height: "100%",
-                  }}
-                >
-                {/* Thumbnail */}
-                {v.thumbnail && (
-                  <CardMedia
-                    component="img"
-                    image={v.thumbnail}
-                    alt={v.title}
-                    sx={{
-                      height: 160,
-                      objectFit: "cover",
-                    }}
-                  />
-                )}
-
-                {/* Body cơ bản */}
-                <CardContent
-                  sx={{
-                    flex: 1,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 1,
-                  }}
-                >
-                  <Typography
-                    variant="subtitle1"
-                    color={theme.palette.text.primary}
-                    fontWeight={600}
-                    noWrap
-                    title={v.title}
-                  >
-                    {v.title}
-                  </Typography>
-
-                  <Box display="flex" alignItems="center" gap={1}>
-                    <CalendarMonthOutlinedIcon
-                      sx={{ fontSize: 16, color: colors.grey[300] }}
-                    />
-                    <Typography
-                      variant="caption"
-                      color={colors.grey[300]}
-                      sx={{ opacity: 0.8 }}
-                    >
-                      {formatDate(v.publish_date)}
-                    </Typography>
-                  </Box>
-
-                  <Box
-                    display="flex"
-                    alignItems="center"
-                    justifyContent="space-between"
-                    mt={1}
-                  >
-                    <Box display="flex" gap={1}>
-                      <Chip
-                        size="small"
-                        icon={
-                          <VisibilityOutlinedIcon
-                            sx={{ fontSize: 16, color: textOnDark }}
-                          />
-                        }
-                        label={formatNumber(v.views)}
-                        sx={{
-                          bgcolor: colors.primary[500],
-                          color: textOnDark,
-                          "& .MuiChip-icon": { ml: 0.5, color: textOnDark },
-                        }}
-                      />
-                      <Chip
-                        size="small"
-                        icon={
-                          <ThumbUpAltOutlinedIcon
-                            sx={{ fontSize: 16, color: textOnDark }}
-                          />
-                        }
-                        label={formatNumber(v.likes)}
-                        sx={{
-                          bgcolor: colors.primary[500],
-                          color: textOnDark,
-                          "& .MuiChip-icon": { ml: 0.5, color: textOnDark },
-                        }}
-                      />
-                      <Chip
-                        size="small"
-                        icon={
-                          <CommentOutlinedIcon
-                            sx={{ fontSize: 16, color: textOnDark }}
-                          />
-                        }
-                        label={formatNumber(v.comments)}
-                        sx={{
-                          bgcolor: colors.primary[500],
-                          color: textOnDark,
-                          "& .MuiChip-icon": { ml: 0.5, color: textOnDark },
-                        }}
-                      />
-                    </Box>
-                  </Box>
-                </CardContent>
-
-                {/* ================== OVERLAY CHI TIẾT KHI HOVER ================== */}
-                <Box
-                  component={motion.div}
-                  variants={overlayVariants}
-                  sx={{
-                    position: "absolute",
-                    inset: 0,
-                    bgcolor: "rgba(0,0,0,0.9)",
-                    color: textOnDark,
-                    p: 2,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 0.5,
-                    zIndex: 2,
-                    "& .MuiTypography-root": {
-                      fontSize: "0.9rem",
-                    },
-                  }}
-                >
-                  <Box mt={1} />
-
-                  <Typography variant="caption">
-                    <strong>Engaged views:</strong>{" "}
-                    {formatNumber(v.engaged_views)}
-                  </Typography>
-
-                  <Box mt={1} />
-
-                  <Typography variant="caption">
-                    <strong>Annotation CTR:</strong>{" "}
-                    {v.annotation_click_through_rate ?? "-"}
-                  </Typography>
-                  <Typography variant="caption">
-                    <strong>Annotation close rate:</strong>{" "}
-                    {v.annotation_close_rate ?? "-"}
-                  </Typography>
-                  <Typography variant="caption">
-                    <strong>Avg view duration (s):</strong>{" "}
-                    {v.average_view_duration_seconds ?? "-"}
-                  </Typography>
-                  <Typography variant="caption">
-                    <strong>Shares:</strong> {formatNumber(v.shares)}
-                  </Typography>
-                  <Typography variant="caption">
-                    <strong>Subscribers gained:</strong>{" "}
-                    {formatNumber(v.subscribers_gained)}
-                  </Typography>
-                  <Typography variant="caption">
-                    <strong>Subscribers lost:</strong>{" "}
-                    {formatNumber(v.subscribers_lost)}
-                  </Typography>
-
-                  <Box mt={1} />
-                </Box>
-                {/* ================== END OVERLAY ================== */}
-              </MotionCard>
-            </Grid>
-          ))}
-        </Grid>
+        <Box sx={sectionSx}>
+          <Typography variant="subtitle1" fontWeight={700} mb={1}>
+            Latest 5 videos
+          </Typography>
+          <Grid container spacing={2}>
+            {latestVideos.map((v, idx) => renderVideoCard(v, idx))}
+          </Grid>
+        </Box>
 
         <Grid container spacing={2} mt={2}>
-          <Grid item xs={12} lg={6}>
-            <Box sx={sectionSx}>
-              <Typography variant="subtitle1" fontWeight={700} mb={1}>
-                Top 5 videos by views
-              </Typography>
-              {topVideos.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No data
-                </Typography>
-              ) : (
-                <Stack spacing={1}>
-                  {topVideos.map((item) => (
-                    <Stack
-                      key={item.video_id}
-                      direction="row"
-                      spacing={1.5}
-                      alignItems="center"
-                    >
-                      <Box
-                        component="img"
-                        src={item.thumbnail}
-                        alt={item.title}
-                        sx={{ width: 60, height: 36, borderRadius: 1, objectFit: "cover" }}
-                      />
-                      <Box flex={1}>
-                        <Typography variant="body2" fontWeight={600} noWrap title={item.title}>
-                          {item.title}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {item.video_id}
-                        </Typography>
-                      </Box>
-                      <Typography variant="body2" fontWeight={600}>
-                        {formatNumber(item.views)}
-                      </Typography>
-                    </Stack>
-                  ))}
-                </Stack>
-              )}
-            </Box>
-          </Grid>
-
-          <Grid item xs={12} lg={6}>
+          <Grid item xs={12}>
             <Box sx={sectionSx}>
               <Typography variant="subtitle1" fontWeight={700} mb={1}>
                 Subscribers (last 90 days)
@@ -590,7 +543,9 @@ const VideoList = () => {
               )}
             </Box>
           </Grid>
+        </Grid>
 
+        <Grid container spacing={2} mt={2}>
           <Grid item xs={12} md={6} lg={4}>
             <Box sx={sectionSx}>
               <Typography variant="subtitle1" fontWeight={700} mb={1}>
