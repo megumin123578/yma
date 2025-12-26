@@ -111,9 +111,7 @@ const ReachAnalytics = () => {
           </Select>
         </FormControl>
         <Typography variant="caption" color="text.secondary">
-          {range.start && range.end
-            ? `Range: ${range.start} → ${range.end}`
-            : "No data"}
+          {range.start && range.end ? "" : "No data"}
         </Typography>
       </Stack>
 

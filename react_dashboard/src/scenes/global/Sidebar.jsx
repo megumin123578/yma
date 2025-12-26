@@ -198,14 +198,6 @@ const Sidebar = () => {
             />
 
             <Item
-              title="Reach"
-              to="/reach"
-              icon={<VisibilityOutlinedIcon />}
-              selected={selected}
-              setSelected={setSelected}
-            />
-
-            <Item
               title="Audience Analytics"
               to="/audience_analytics"
               icon={<GroupsOutlinedIcon />}
@@ -213,6 +205,13 @@ const Sidebar = () => {
               setSelected={setSelected}
             />
 
+            <Item
+              title="Reach"
+              to="/reach"
+              icon={<VisibilityOutlinedIcon />}
+              selected={selected}
+              setSelected={setSelected}
+            />
             
 
             <Typography
