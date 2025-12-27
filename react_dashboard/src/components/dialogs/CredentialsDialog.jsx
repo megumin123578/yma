@@ -14,7 +14,7 @@ import {
   Switch,
   useTheme,
 } from "@mui/material";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dayjs from "dayjs";
 import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -50,6 +50,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [tokens, setTokens] = useState([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
   const [, setTokenSyncing] = useState(false);
+  const [tokenProgress, setTokenProgress] = useState({});
   const [progress, setProgress] = useState({ status: "idle", percent: 0, stage: "" });
   const [autoReloaded, setAutoReloaded] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -82,6 +83,7 @@ const CredentialsDialog = ({ open, onClose }) => {
       transform: "translateX(260%)",
     },
   };
+  const progressTimersRef = useRef({});
 
   useEffect(() => {
     if (open) {
@@ -327,9 +329,43 @@ const CredentialsDialog = ({ open, onClose }) => {
     }
   };
 
+  const loadTokenProgress = async (tokenName) => {
+    try {
+      const data = await getTokenProgress(tokenName);
+      setTokenProgress((prev) => ({
+        ...prev,
+        [tokenName]: {
+          status: data?.status || "idle",
+          percent: data?.percent ?? 0,
+          stage: data?.stage || "",
+          message: data?.message || "",
+        },
+      }));
+      return data?.status === "done" || data?.status === "error";
+    } catch {
+      return false;
+    }
+  };
+
   const handleRunToken = async (tokenName) => {
     try {
       await runToken(tokenName);
+      setTokenProgress((prev) => ({
+        ...prev,
+        [tokenName]: { status: "queued", percent: 0, stage: "queued", message: "" },
+      }));
+      const existing = progressTimersRef.current[tokenName];
+      if (existing) {
+        clearInterval(existing);
+      }
+      const intervalId = setInterval(async () => {
+        const done = await loadTokenProgress(tokenName);
+        if (done) {
+          clearInterval(intervalId);
+          delete progressTimersRef.current[tokenName];
+        }
+      }, 2000);
+      progressTimersRef.current[tokenName] = intervalId;
       setStatus({ type: "success", message: "Refresh queued." });
     } catch (err) {
       const message =
@@ -404,6 +440,14 @@ const CredentialsDialog = ({ open, onClose }) => {
     window.location.reload();
   };
 
+  useEffect(() => {
+    if (open) return;
+    Object.values(progressTimersRef.current).forEach((timerId) => {
+      clearInterval(timerId);
+    });
+    progressTimersRef.current = {};
+    setTokenProgress({});
+  }, [open]);
 
   const formatRunTime = (value) =>
     value ? dayjs(value).format("MMM D, HH:mm") : "--";
@@ -773,8 +817,8 @@ const CredentialsDialog = ({ open, onClose }) => {
                             />
                             <Box
                               display="flex"
-                              alignItems="center"
-                              justifyContent="space-between"
+                              flexDirection="column"
+                              gap={0.75}
                               sx={{
                                 flex: 1,
                                 border: `1px solid ${border}`,
@@ -792,7 +836,8 @@ const CredentialsDialog = ({ open, onClose }) => {
                                 },
                               }}
                             >
-                              <Box display="flex" alignItems="center" gap={1.5}>
+                              <Box display="flex" alignItems="center" justifyContent="space-between" gap={0.5}>
+                                <Box display="flex" alignItems="center" gap={1.5}>
                                 <Button
                                   size="small"
                                   variant="outlined"
@@ -809,15 +854,45 @@ const CredentialsDialog = ({ open, onClose }) => {
                                   <PlayArrowIcon fontSize="small" />
                                 </Button>
                                 <Typography variant="body2">{displayName}</Typography>
+                                </Box>
+                                <Button
+                                  size="small"
+                                  color="error"
+                                  onClick={() => requestDeleteToken(tokenName)}
+                                  sx={shimmerSx}
+                                >
+                                  Delete
+                                </Button>
                               </Box>
-                              <Button
-                                size="small"
-                                color="error"
-                                onClick={() => requestDeleteToken(tokenName)}
-                                sx={shimmerSx}
-                              >
-                                Delete
-                              </Button>
+                              {tokenProgress[tokenName] && (
+                                <Box display="flex" flexDirection="column" gap={0.4}>
+                                  <Box
+                                    sx={{
+                                      height: 6,
+                                      borderRadius: 999,
+                                      overflow: "hidden",
+                                      bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)",
+                                    }}
+                                  >
+                                    <Box
+                                      sx={{
+                                        height: "100%",
+                                        width: `${Math.min(
+                                          100,
+                                          Math.max(0, tokenProgress[tokenName]?.percent ?? 0)
+                                        )}%`,
+                                        bgcolor: isDark ? "#7de0d2" : "#1aa86c",
+                                        transition: "width 200ms ease",
+                                      }}
+                                    />
+                                  </Box>
+                                  {tokenProgress[tokenName]?.stage && (
+                                    <Typography variant="caption" color="text.secondary">
+                                      {tokenProgress[tokenName].stage}
+                                    </Typography>
+                                  )}
+                                </Box>
+                              )}
                             </Box>
                           </Box>
                         );
