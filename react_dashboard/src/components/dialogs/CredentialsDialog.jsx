@@ -59,6 +59,27 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [scheduleForm, setScheduleForm] = useState({
     time_of_day: "08:00",
   });
+  const shimmerSx = {
+    position: "relative",
+    overflow: "hidden",
+    "&:before": {
+      content: '""',
+      position: "absolute",
+      top: "-50%",
+      left: "-120%",
+      width: "80%",
+      height: "200%",
+      background:
+        "linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.45) 45%, transparent 90%)",
+      transform: "translateX(0)",
+      transition: "transform 0.7s ease",
+      opacity: 0.8,
+      pointerEvents: "none",
+    },
+    "&:hover:before": {
+      transform: "translateX(260%)",
+    },
+  };
 
   useEffect(() => {
     if (open) {
@@ -439,6 +460,7 @@ const CredentialsDialog = ({ open, onClose }) => {
               variant="text"
               onClick={() => setActiveTab("add")}
               sx={{
+                ...shimmerSx,
                 justifyContent: "flex-start",
                 border: "1px solid transparent",
                 color:
@@ -463,6 +485,7 @@ const CredentialsDialog = ({ open, onClose }) => {
               variant="text"
               onClick={() => setActiveTab("schedule")}
               sx={{
+                ...shimmerSx,
                 justifyContent: "flex-start",
                 border: "1px solid transparent",
                 color:
@@ -487,6 +510,7 @@ const CredentialsDialog = ({ open, onClose }) => {
               variant="text"
               onClick={() => setActiveTab("logs")}
               sx={{
+                ...shimmerSx,
                 justifyContent: "flex-start",
                 border: "1px solid transparent",
                 color:
@@ -539,6 +563,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                     component="label"
                     startIcon={<UploadFileIcon />}
                     sx={{
+                      ...shimmerSx,
                       borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
                       color: isDark ? "#e9edf2" : undefined,
                       transition: "all 180ms ease",
@@ -606,43 +631,26 @@ const CredentialsDialog = ({ open, onClose }) => {
                       }}
                     />
                     <Stack direction="row" spacing={1} flexWrap="wrap">
-                    <Button
-                      variant="contained"
-                      color="success"
-                      href={authUrl}
-                      target="_blank"
-                      rel="noopener"
-                      size="large"
-                      fullWidth
-                      sx={{
-                        bgcolor: isDark ? "#2b8a7b" : undefined,
-                        position: "relative",
-                        overflow: "hidden",
-                        transition: "transform 180ms ease",
-                        "&:before": {
-                          content: '""',
-                          position: "absolute",
-                          top: "-50%",
-                          left: "-120%",
-                          width: "80%",
-                          height: "200%",
-                          background:
-                            "linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.55) 45%, transparent 90%)",
-                          transform: "translateX(0)",
-                          transition: "transform 0.7s ease",
-                          opacity: 0.8,
-                        },
-                        "&:hover": {
-                          bgcolor: isDark ? "#247468" : undefined,
-                          transform: "translateY(-1px)",
-                          "&:before": {
-                            transform: "translateX(260%)",
+                      <Button
+                        variant="contained"
+                        color="success"
+                        href={authUrl}
+                        target="_blank"
+                        rel="noopener"
+                        size="large"
+                        fullWidth
+                        sx={{
+                          ...shimmerSx,
+                          bgcolor: isDark ? "#2b8a7b" : undefined,
+                          transition: "transform 180ms ease",
+                          "&:hover": {
+                            bgcolor: isDark ? "#247468" : undefined,
+                            transform: "translateY(-1px)",
                           },
-                        },
-                      }}
-                    >
-                      Open Authorization Link
-                    </Button>
+                        }}
+                      >
+                        Open Authorization Link
+                      </Button>
                     </Stack>
                   </Stack>
                 )}
@@ -711,6 +719,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                       onClick={loadTokens}
                       disabled={loadingTokens}
                       sx={{
+                        ...shimmerSx,
                         minWidth: 0,
                         color: isDark ? "#9fe3d6" : undefined,
                       }}
@@ -769,6 +778,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                               size="small"
                               color="error"
                               onClick={() => requestDeleteToken(tokenName)}
+                              sx={shimmerSx}
                             >
                               Delete
                             </Button>
@@ -867,7 +877,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                         />
                       </LocalizationProvider>
 
-                      <Button variant="contained" onClick={handleCreateSchedule}>
+                      <Button variant="contained" onClick={handleCreateSchedule} sx={shimmerSx}>
                         Save Schedule
                       </Button>
 
@@ -907,6 +917,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                                   size="small"
                                   color="error"
                                   onClick={() => handleDeleteSchedule(s.id)}
+                                  sx={shimmerSx}
                                 >
                                   Delete
                                 </Button>
@@ -1006,11 +1017,11 @@ const CredentialsDialog = ({ open, onClose }) => {
         <Button
           onClick={onClose}
           disabled={uploading}
-          sx={{ color: isDark ? "#aab4c2" : "text.secondary" }}
+          sx={{ ...shimmerSx, color: isDark ? "#aab4c2" : "text.secondary" }}
         >
           Cancel
         </Button>
-        <Button variant="contained" onClick={handleDone} disabled={uploading}>
+        <Button variant="contained" onClick={handleDone} disabled={uploading} sx={shimmerSx}>
           Done
         </Button>
       </DialogActions>
@@ -1035,11 +1046,11 @@ const CredentialsDialog = ({ open, onClose }) => {
         <DialogActions>
           <Button
             onClick={handleConfirmClose}
-            sx={{ color: isDark ? "#e2e8f0" : "text.secondary" }}
+            sx={{ ...shimmerSx, color: isDark ? "#e2e8f0" : "text.secondary" }}
           >
             Cancel
           </Button>
-          <Button color="error" variant="contained" onClick={handleConfirmDelete}>
+          <Button color="error" variant="contained" onClick={handleConfirmDelete} sx={shimmerSx}>
             Delete
           </Button>
         </DialogActions>
