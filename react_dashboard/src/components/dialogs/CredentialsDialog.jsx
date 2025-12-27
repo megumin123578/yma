@@ -5,6 +5,7 @@ import {
   DialogActions,
   Button,
   Box,
+  Stack,
   Typography,
   TextField,
   Divider,
@@ -369,6 +370,7 @@ const CredentialsDialog = ({ open, onClose }) => {
     window.location.reload();
   };
 
+
   const formatRunTime = (value) =>
     value ? dayjs(value).format("MMM D, HH:mm") : "--";
 
@@ -558,7 +560,7 @@ const CredentialsDialog = ({ open, onClose }) => {
 
                   {file && (
                     <TextField
-                      label="File name"
+                      label="Rename file to: "
                       size="small"
                       value={filename}
                       onChange={handleFilenameChange}
@@ -588,23 +590,61 @@ const CredentialsDialog = ({ open, onClose }) => {
                 )}
 
                 {authUrl && (
-                  <Button
-                    variant="contained"
-                    color="success"
-                    href={authUrl}
-                    target="_blank"
-                    rel="noopener"
-                    sx={{
-                      bgcolor: isDark ? "#2b8a7b" : undefined,
-                      transition: "transform 180ms ease",
-                      "&:hover": {
-                        bgcolor: isDark ? "#247468" : undefined,
-                        transform: "translateY(-1px)",
-                      },
-                    }}
-                  >
-                    Open Authorization Link
-                  </Button>
+                  <Stack direction="column" spacing={1}>
+                    <TextField
+                      label="Authorization link"
+                      size="small"
+                      value={authUrl}
+                      InputProps={{ readOnly: true }}
+                      onFocus={(event) => event.target.select()}
+                      sx={{
+                        "& .MuiOutlinedInput-root": {
+                          backgroundColor: isDark
+                            ? "rgba(15,23,42,0.45)"
+                            : "rgba(255,255,255,0.9)",
+                        },
+                      }}
+                    />
+                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                    <Button
+                      variant="contained"
+                      color="success"
+                      href={authUrl}
+                      target="_blank"
+                      rel="noopener"
+                      size="large"
+                      fullWidth
+                      sx={{
+                        bgcolor: isDark ? "#2b8a7b" : undefined,
+                        position: "relative",
+                        overflow: "hidden",
+                        transition: "transform 180ms ease",
+                        "&:before": {
+                          content: '""',
+                          position: "absolute",
+                          top: "-50%",
+                          left: "-120%",
+                          width: "80%",
+                          height: "200%",
+                          background:
+                            "linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.55) 45%, transparent 90%)",
+                          transform: "translateX(0)",
+                          transition: "transform 0.7s ease",
+                          opacity: 0.8,
+                        },
+                        "&:hover": {
+                          bgcolor: isDark ? "#247468" : undefined,
+                          transform: "translateY(-1px)",
+                          "&:before": {
+                            transform: "translateX(260%)",
+                          },
+                        },
+                      }}
+                    >
+                      Open Authorization Link
+                    </Button>
+                    </Stack>
+                  </Stack>
                 )}
 
                 {progress.status !== "idle" && (

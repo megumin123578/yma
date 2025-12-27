@@ -371,6 +371,7 @@ def set_token_visibility(
 @router.get("/tokens/{token_name}/progress")
 def get_token_progress(
     token_name: str,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     safe_name = _safe_token_filename(token_name)
