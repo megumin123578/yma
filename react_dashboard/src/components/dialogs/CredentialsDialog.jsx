@@ -59,6 +59,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [schedules, setSchedules] = useState([]);
   const [scheduleRuns, setScheduleRuns] = useState([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
+  const [runsError, setRunsError] = useState("");
   const [scheduleForm, setScheduleForm] = useState({
     time_of_day: "08:00",
   });
@@ -112,6 +113,7 @@ const CredentialsDialog = ({ open, onClose }) => {
 
     const loadRuns = async () => {
       setLoadingRuns(true);
+      setRunsError("");
       try {
         const data = await listScheduleRuns(10);
         if (!canceled) {
@@ -120,6 +122,8 @@ const CredentialsDialog = ({ open, onClose }) => {
       } catch (err) {
         if (!canceled) {
           setScheduleRuns([]);
+          const msg = err?.response?.data?.detail || "Permission Denied";
+          setRunsError(msg);
         }
       } finally {
         if (!canceled) {
@@ -1053,7 +1057,11 @@ const CredentialsDialog = ({ open, onClose }) => {
                       Run Logs
                     </Typography>
                     <Box display="flex" flexDirection="column" gap={1} mt={1}>
-                      {scheduleRuns.length === 0 ? (
+                      {runsError ? (
+                        <Typography variant="body2" color="text.secondary">
+                          {runsError}
+                        </Typography>
+                      ) : scheduleRuns.length === 0 ? (
                         <Typography variant="body2" color="text.secondary">
                           {loadingRuns ? "Loading logs..." : "No runs yet."}
                         </Typography>

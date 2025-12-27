@@ -559,6 +559,8 @@ def list_schedule_runs(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     is_admin = bool(current_user and (current_user.username or "").lower() in _get_admin_users())
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Permission Denied")
     rows = (
         db.query(UserScheduleRun)
         .order_by(UserScheduleRun.id.desc())
@@ -573,7 +575,7 @@ def list_schedule_runs(
                 "status": r.status,
                 "processed": r.processed,
                 "total": r.total,
-                "message": r.message if is_admin else None,
+                "message": r.message,
                 "started_at": r.started_at.isoformat() if r.started_at else None,
                 "finished_at": r.finished_at.isoformat() if r.finished_at else None,
             }

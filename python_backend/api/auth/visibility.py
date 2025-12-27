@@ -33,7 +33,10 @@ def get_allowed_account_tags(db: Session, user: Optional[User]) -> Optional[Set[
         return set()
     rows = (
         db.query(UserCredential.account_tag)
-        .filter(UserCredential.user_id == user.id)
+        .filter(
+            UserCredential.user_id == user.id,
+            UserCredential.token_name.isnot(None),
+        )
         .all()
     )
     tags = {r[0] for r in rows}
