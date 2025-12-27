@@ -399,6 +399,37 @@ def get_token_progress(
         raise HTTPException(status_code=500, detail="Failed to read progress")
 
 
+@router.post("/tokens/{token_name}/run")
+def run_token(
+    token_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    safe_name = _safe_token_filename(token_name)
+    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
+        raise HTTPException(status_code=400, detail="Invalid token filename")
+
+    account_tag = os.path.splitext(safe_name)[0]
+    owned = (
+        db.query(UserCredential)
+        .filter(
+            UserCredential.user_id == current_user.id,
+            UserCredential.account_tag == account_tag,
+        )
+        .first()
+    )
+    if not owned:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    token_path = os.path.join(TOKEN_DIR, safe_name)
+    if not os.path.exists(token_path):
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    _write_progress_file(account_tag, "queued", 0, "queued", "Manual refresh")
+    _kickoff_get_data(account_tag)
+    return {"ok": True}
+
+
 @router.delete("/tokens/{token_name}")
 def delete_token(
     token_name: str,

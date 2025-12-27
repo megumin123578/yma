@@ -53,6 +53,11 @@ export const getTokenProgress = async (tokenName) => {
   return res.data;
 };
 
+export const runToken = async (tokenName) => {
+  const res = await api.post(`/api/users/tokens/${encodeURIComponent(tokenName)}/run`);
+  return res.data;
+};
+
 export const setTokenVisibility = async (tokenName, hidden) => {
   const res = await api.post("/api/users/tokens/visibility", {
     token: tokenName,

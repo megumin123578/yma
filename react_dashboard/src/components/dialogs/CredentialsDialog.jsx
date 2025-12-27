@@ -20,12 +20,14 @@ import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import {
   uploadCredentials,
   listTokens,
   deleteToken,
   getTokenProgress,
   setTokenVisibility,
+  runToken,
   listSchedules,
   createSchedule,
   updateSchedule,
@@ -321,6 +323,17 @@ const CredentialsDialog = ({ open, onClose }) => {
     } catch (err) {
       const message =
         err?.response?.data?.detail || "Update failed. Please try again.";
+      setStatus({ type: "error", message });
+    }
+  };
+
+  const handleRunToken = async (tokenName) => {
+    try {
+      await runToken(tokenName);
+      setStatus({ type: "success", message: "Refresh queued." });
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to start refresh.";
       setStatus({ type: "error", message });
     }
   };
@@ -745,43 +758,67 @@ const CredentialsDialog = ({ open, onClose }) => {
                             key={tokenName}
                             display="flex"
                             alignItems="center"
-                            justifyContent="space-between"
-                            sx={{
-                              border: `1px solid ${border}`,
-                              borderRadius: 1,
-                              p: 1,
-                              bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)",
-                              backdropFilter: "blur(10px)",
-                              WebkitBackdropFilter: "blur(10px)",
-                              transition: "all 180ms ease",
-                              "&:hover": {
-                                bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(25,118,210,0.08)",
-                                borderColor: isDark ? "rgba(255,255,255,0.2)" : "rgba(25,118,210,0.2)",
-                              },
-                            }}
+                            gap={1}
                           >
-                      <Box display="flex" alignItems="center" gap={1}>
-                        <Checkbox
-                          size="small"
-                          checked={!isHidden}
-                          onChange={(event) =>
-                            handleToggleToken(tokenName, event.target.checked)
-                          }
-                          sx={{
-                            color: isDark ? "#7ed6ff" : undefined,
-                            "&.Mui-checked": { color: isDark ? "#43c2ff" : undefined },
-                          }}
-                        />
-                              <Typography variant="body2">{displayName}</Typography>
-                            </Box>
-                            <Button
+                            <Checkbox
                               size="small"
-                              color="error"
-                              onClick={() => requestDeleteToken(tokenName)}
-                              sx={shimmerSx}
+                              checked={!isHidden}
+                              onChange={(event) =>
+                                handleToggleToken(tokenName, event.target.checked)
+                              }
+                              sx={{
+                                color: isDark ? "#7ed6ff" : undefined,
+                                "&.Mui-checked": { color: isDark ? "#43c2ff" : undefined },
+                              }}
+                            />
+                            <Box
+                              display="flex"
+                              alignItems="center"
+                              justifyContent="space-between"
+                              sx={{
+                                flex: 1,
+                                border: `1px solid ${border}`,
+                                borderRadius: 1,
+                                p: 1,
+                                bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)",
+                                backdropFilter: "blur(10px)",
+                                WebkitBackdropFilter: "blur(10px)",
+                                opacity: isHidden ? 0.5 : 1,
+                                transition: "opacity 220ms ease, border-color 180ms ease, background-color 180ms ease",
+                                "&:hover": {
+                                  bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(25,118,210,0.08)",
+                                  borderColor: isDark ? "rgba(255,255,255,0.2)" : "rgba(25,118,210,0.2)",
+                                  opacity: isHidden ? 0.6 : 1,
+                                },
+                              }}
                             >
-                              Delete
-                            </Button>
+                              <Box display="flex" alignItems="center" gap={1.5}>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() => handleRunToken(tokenName)}
+                                  sx={{
+                                    ...shimmerSx,
+                                    borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
+                                    color: isDark ? "#e9edf2" : undefined,
+                                    minWidth: 32,
+                                    px: 0.75,
+                                  }}
+                                  aria-label={`Run ${displayName}`}
+                                >
+                                  <PlayArrowIcon fontSize="small" />
+                                </Button>
+                                <Typography variant="body2">{displayName}</Typography>
+                              </Box>
+                              <Button
+                                size="small"
+                                color="error"
+                                onClick={() => requestDeleteToken(tokenName)}
+                                sx={shimmerSx}
+                              >
+                                Delete
+                              </Button>
+                            </Box>
                           </Box>
                         );
                       })}
