@@ -305,11 +305,19 @@ def list_tokens(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    allowed_tags = {
+        row.account_tag
+        for row in db.query(UserCredential)
+        .filter(UserCredential.user_id == current_user.id)
+        .all()
+    }
     hidden = get_hidden_account_tags(db, current_user.id)
     files = []
     for name in os.listdir(TOKEN_DIR):
         if name.lower().endswith(".pickle"):
             base = os.path.splitext(name)[0]
+            if base not in allowed_tags:
+                continue
             files.append({"name": name, "hidden": base in hidden})
     files.sort(key=lambda x: x["name"])
     return {"tokens": files}
@@ -331,6 +339,16 @@ def set_token_visibility(
         raise HTTPException(status_code=400, detail="Invalid token filename")
 
     base_name = os.path.splitext(token_name)[0]
+    owned = (
+        db.query(UserCredential)
+        .filter(
+            UserCredential.user_id == current_user.id,
+            UserCredential.account_tag == base_name,
+        )
+        .first()
+    )
+    if not owned:
+        raise HTTPException(status_code=404, detail="Token not found")
     row = (
         db.query(UserHiddenChannel)
         .filter(
@@ -360,6 +378,16 @@ def get_token_progress(
         raise HTTPException(status_code=400, detail="Invalid token filename")
 
     account_tag = os.path.splitext(safe_name)[0]
+    owned = (
+        db.query(UserCredential)
+        .filter(
+            UserCredential.user_id == current_user.id,
+            UserCredential.account_tag == account_tag,
+        )
+        .first()
+    )
+    if not owned:
+        raise HTTPException(status_code=404, detail="Token not found")
     progress_path = os.path.join(PROGRESS_DIR, f"{account_tag}.json")
     if not os.path.exists(progress_path):
         return {"status": "idle", "percent": 0}
@@ -386,6 +414,16 @@ def delete_token(
 
     os.remove(token_path)
     base_name = os.path.splitext(safe_name)[0]
+    owned = (
+        db.query(UserCredential)
+        .filter(
+            UserCredential.user_id == current_user.id,
+            UserCredential.account_tag == base_name,
+        )
+        .first()
+    )
+    if not owned:
+        raise HTTPException(status_code=404, detail="Token not found")
     cred_path = os.path.join(CREDENTIALS_DIR, f"{base_name}.json")
     if os.path.exists(cred_path):
         os.remove(cred_path)
@@ -400,6 +438,7 @@ def delete_token(
         UserHiddenChannel.account_tag == base_name,
     ).delete()
     db.query(UserCredential).filter(
+        UserCredential.user_id == current_user.id,
         UserCredential.account_tag == base_name,
     ).delete()
     db.commit()
