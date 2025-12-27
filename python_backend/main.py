@@ -137,6 +137,16 @@ def ensure_user_schedules_nullable_token():
 
 ensure_user_schedules_nullable_token()
 
+def ensure_user_credentials_token_name():
+    with engine.begin() as conn:
+        cols = conn.exec_driver_sql("PRAGMA table_info(user_credentials)").fetchall()
+        has_column = any(row[1] == "token_name" for row in cols)
+        if not has_column:
+            conn.exec_driver_sql("ALTER TABLE user_credentials ADD COLUMN token_name VARCHAR")
+
+
+ensure_user_credentials_token_name()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

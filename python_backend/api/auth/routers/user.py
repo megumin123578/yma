@@ -248,6 +248,7 @@ def upload_credentials(
     )
     if cred_row:
         cred_row.updated_at = datetime.utcnow()
+        cred_row.token_name = None
         db.add(cred_row)
     else:
         db.add(
@@ -266,13 +267,23 @@ def upload_credentials(
         access_type="offline",
         prompt="consent",
     )
-    PENDING_OAUTH[state] = {"cred_path": file_path, "created_at": time.time()}
+    PENDING_OAUTH[state] = {
+        "cred_path": file_path,
+        "created_at": time.time(),
+        "user_id": current_user.id,
+        "account_tag": account_tag,
+    }
 
     return {"filename": filename, "auth_url": auth_url, "state": state}
 
 
 @router.get("/credentials/callback")
-def credentials_callback(state: str = "", code: str = "", error: str = ""):
+def credentials_callback(
+    state: str = "",
+    code: str = "",
+    error: str = "",
+    db: Session = Depends(get_db),
+):
     if error:
         raise HTTPException(status_code=400, detail=f"Authorization failed: {error}")
 
@@ -288,13 +299,38 @@ def credentials_callback(state: str = "", code: str = "", error: str = ""):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to fetch token: {e}")
 
+    account_tag = pending.get("account_tag") or os.path.splitext(os.path.basename(cred_path))[0]
     token_filename = os.path.splitext(os.path.basename(cred_path))[0] + ".pickle"
     token_path = os.path.join(TOKEN_DIR, token_filename)
     with open(token_path, "wb") as f:
         pickle.dump(flow.credentials, f)
 
     PENDING_OAUTH.pop(state, None)
-    account_tag = os.path.splitext(os.path.basename(cred_path))[0]
+    user_id = pending.get("user_id")
+    if user_id is not None:
+        cred_row = (
+            db.query(UserCredential)
+            .filter(
+                UserCredential.user_id == user_id,
+                UserCredential.account_tag == account_tag,
+            )
+            .first()
+        )
+        if cred_row:
+            cred_row.token_name = token_filename
+            cred_row.updated_at = datetime.utcnow()
+            db.add(cred_row)
+        else:
+            db.add(
+                UserCredential(
+                    user_id=user_id,
+                    account_tag=account_tag,
+                    token_name=token_filename,
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+            )
+        db.commit()
     _write_progress_file(account_tag, "queued", 0, "queued", "Waiting to start")
     _kickoff_get_data(account_tag)
     return {"ok": True, "token": token_filename}
@@ -305,20 +341,25 @@ def list_tokens(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    allowed_tags = {
-        row.account_tag
-        for row in db.query(UserCredential)
-        .filter(UserCredential.user_id == current_user.id)
-        .all()
-    }
     hidden = get_hidden_account_tags(db, current_user.id)
+    rows = (
+        db.query(UserCredential)
+        .filter(
+            UserCredential.user_id == current_user.id,
+            UserCredential.token_name.isnot(None),
+        )
+        .all()
+    )
     files = []
-    for name in os.listdir(TOKEN_DIR):
-        if name.lower().endswith(".pickle"):
-            base = os.path.splitext(name)[0]
-            if base not in allowed_tags:
-                continue
-            files.append({"name": name, "hidden": base in hidden})
+    for row in rows:
+        name = row.token_name or ""
+        if not name or not name.lower().endswith(".pickle"):
+            continue
+        token_path = os.path.join(TOKEN_DIR, name)
+        if not os.path.exists(token_path):
+            continue
+        base = os.path.splitext(name)[0]
+        files.append({"name": name, "hidden": base in hidden})
     files.sort(key=lambda x: x["name"])
     return {"tokens": files}
 
@@ -343,7 +384,7 @@ def set_token_visibility(
         db.query(UserCredential)
         .filter(
             UserCredential.user_id == current_user.id,
-            UserCredential.account_tag == base_name,
+            UserCredential.token_name == token_name,
         )
         .first()
     )
@@ -383,7 +424,7 @@ def get_token_progress(
         db.query(UserCredential)
         .filter(
             UserCredential.user_id == current_user.id,
-            UserCredential.account_tag == account_tag,
+            UserCredential.token_name == token_name,
         )
         .first()
     )
@@ -414,7 +455,7 @@ def run_token(
         db.query(UserCredential)
         .filter(
             UserCredential.user_id == current_user.id,
-            UserCredential.account_tag == account_tag,
+            UserCredential.token_name == token_name,
         )
         .first()
     )
@@ -450,7 +491,7 @@ def delete_token(
         db.query(UserCredential)
         .filter(
             UserCredential.user_id == current_user.id,
-            UserCredential.account_tag == base_name,
+            UserCredential.token_name == token_name,
         )
         .first()
     )
@@ -471,7 +512,7 @@ def delete_token(
     ).delete()
     db.query(UserCredential).filter(
         UserCredential.user_id == current_user.id,
-        UserCredential.account_tag == base_name,
+        UserCredential.token_name == token_name,
     ).delete()
     db.commit()
     _purge_postgres_account(base_name)
