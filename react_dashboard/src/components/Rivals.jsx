@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Avatar,
   Box,
@@ -86,6 +86,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
   const [error, setError] = useState("");
   const [savedChannels, setSavedChannels] = useState([]);
   const [savedLoaded, setSavedLoaded] = useState(false);
+  const [savedGroups, setSavedGroups] = useState([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [createGroupOpen, setCreateGroupOpen] = useState(
@@ -102,7 +103,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
   const [groupMenuAnchor, setGroupMenuAnchor] = useState(null);
   const [groupMenuChannelId, setGroupMenuChannelId] = useState(null);
 
-  const fetchChannel = async (q) => {
+  const fetchChannel = useCallback(async (q) => {
     try {
       setLoading(true);
       setError("");
@@ -123,7 +124,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -156,6 +157,24 @@ const RivalsChannel = ({ viewMode = "list" }) => {
     }
   };
 
+  const loadSavedGroups = async () => {
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      setSavedGroups([]);
+      return;
+    }
+    try {
+      const resp = await fetch(`${API_BASE}/api/users/rivals/groups`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
+      const data = await resp.json();
+      setSavedGroups(Array.isArray(data?.groups) ? data.groups : []);
+    } catch {
+      setSavedGroups([]);
+    }
+  };
+
   const handleSave = async () => {
     if (!channel?.id) return;
     const token = localStorage.getItem("access_token");
@@ -185,6 +204,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
       });
       if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
       await loadSavedChannels();
+      await loadSavedGroups();
     } catch (e) {
       setSaveError(e?.message || "Failed to save channel");
     } finally {
@@ -218,16 +238,46 @@ const RivalsChannel = ({ viewMode = "list" }) => {
     }
   };
 
-  const handleSavedSelect = (value) => {
+  const handleCreateGroup = async () => {
+    const name = newGroupName.trim();
+    if (!name) return;
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      setAssignError("Please login to create groups.");
+      return;
+    }
+    try {
+      setAssignError("");
+      const resp = await fetch(`${API_BASE}/api/users/rivals/groups`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ group_name: name }),
+      });
+      if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
+      setSavedGroups((prev) =>
+        prev.includes(name) ? prev : [...prev, name]
+      );
+      setCreateGroupOpen(false);
+      setNewGroupName("");
+    } catch (e) {
+      setAssignError(e?.message || "Failed to create group");
+    }
+  };
+
+  const handleSavedSelect = useCallback((value) => {
     setSelectedSavedId(value);
     if (!value) return;
     setNewGroupName("");
     setQuery(value);
     fetchChannel(value);
-  };
+  }, [fetchChannel]);
 
   useEffect(() => {
     loadSavedChannels();
+    loadSavedGroups();
   }, []);
 
   useEffect(() => {
@@ -257,7 +307,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
       setNewGroupName("");
       fetchChannel(selectedSavedId);
     }
-  }, [savedLoaded, selectedSavedId, channel, savedChannels]);
+  }, [savedLoaded, selectedSavedId, channel, savedChannels, fetchChannel]);
 
   const getChannelGroups = (row) => {
     if (!row) return [];
@@ -268,6 +318,10 @@ const RivalsChannel = ({ viewMode = "list" }) => {
 
   const groupOptions = useMemo(() => {
     const unique = new Set();
+    savedGroups.forEach((name) => {
+      const value = (name || "").trim();
+      if (value) unique.add(value);
+    });
     savedChannels.forEach((row) => {
       const names = Array.isArray(row.group_names)
         ? row.group_names
@@ -279,12 +333,10 @@ const RivalsChannel = ({ viewMode = "list" }) => {
         if (value) unique.add(value);
       });
     });
-    if (createGroupOpen) {
-      const fresh = (newGroupName || "").trim();
-      if (fresh) unique.add(fresh);
-    }
+    const fresh = (newGroupName || "").trim();
+    if (fresh) unique.add(fresh);
     return Array.from(unique).sort((a, b) => a.localeCompare(b));
-  }, [savedChannels, createGroupOpen, newGroupName]);
+  }, [savedChannels, savedGroups, newGroupName]);
 
   const filteredSavedChannels = useMemo(() => {
     const needle = (filterGroup || "").trim();
@@ -311,6 +363,15 @@ const RivalsChannel = ({ viewMode = "list" }) => {
       setSelectedSavedId("");
     }
   }, [filterGroup, filteredSavedChannels, selectedSavedId]);
+
+  useEffect(() => {
+    if (!filterGroup) return;
+    if (!filteredSavedChannels.length) return;
+    const first = filteredSavedChannels[0];
+    if (!first?.channel_id) return;
+    if (selectedSavedId === first.channel_id) return;
+    handleSavedSelect(first.channel_id);
+  }, [filterGroup, filteredSavedChannels, selectedSavedId, handleSavedSelect]);
 
   const closeGroupMenu = () => {
     setGroupMenuAnchor(null);
@@ -347,6 +408,11 @@ const RivalsChannel = ({ viewMode = "list" }) => {
           : row
       )
     );
+    setSavedGroups((prev) => {
+      const next = new Set(prev);
+      cleaned.forEach((name) => next.add(name));
+      return Array.from(next);
+    });
     try {
       setAssignError("");
       const resp = await fetch(`${API_BASE}/api/users/rivals`, {
@@ -413,6 +479,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
               : row
         )
       );
+      setSavedGroups((prev) => prev.filter((g) => g !== name));
       if (filterGroup === name) {
         setFilterGroup("");
       }
@@ -529,6 +596,13 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                   placeholder="Group name"
                   value={newGroupName}
                   onChange={(e) => setNewGroupName(e.target.value)}
+                  onBlur={handleCreateGroup}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newGroupName.trim()) {
+                      e.preventDefault();
+                      handleCreateGroup();
+                    }
+                  }}
                   sx={(theme) => ({
                     minWidth: 180,
                     "& .MuiOutlinedInput-root": {
@@ -709,6 +783,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                         edge="end"
                         color="error"
                         aria-label={`Delete group ${group}`}
+                        onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation();
                           deleteGroup(group);

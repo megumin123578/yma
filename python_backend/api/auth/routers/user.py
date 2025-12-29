@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, text
 from google_auth_oauthlib.flow import InstalledAppFlow
 from python_backend.api.auth.database import get_db
-from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup
+from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup, RivalGroup
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
@@ -764,6 +764,9 @@ def add_rival(
             )
             for name in sorted(set(group_names)):
                 db.add(
+                    RivalGroup(user_id=current_user.id, group_name=name)
+                )
+                db.add(
                     RivalChannelGroup(
                         user_id=current_user.id,
                         channel_id=channel_id,
@@ -795,6 +798,9 @@ def add_rival(
     db.refresh(row)
     if group_names is not None:
         for name in sorted(set(group_names)):
+            db.add(
+                RivalGroup(user_id=current_user.id, group_name=name)
+            )
             db.add(
                 RivalChannelGroup(
                     user_id=current_user.id,
@@ -857,5 +863,47 @@ def delete_rival_group(
         )
         .delete()
     )
+    db.query(RivalGroup).filter(
+        RivalGroup.user_id == current_user.id,
+        RivalGroup.group_name == name,
+    ).delete()
     db.commit()
     return {"ok": True, "updated": updated}
+
+
+@router.get("/rivals/groups")
+def list_rival_groups(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = (
+        db.query(RivalGroup)
+        .filter(RivalGroup.user_id == current_user.id)
+        .order_by(RivalGroup.group_name.asc())
+        .all()
+    )
+    return {"groups": [r.group_name for r in rows]}
+
+
+@router.post("/rivals/groups")
+def create_rival_group(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    name = (payload.get("group_name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="group_name is required")
+    existing = (
+        db.query(RivalGroup)
+        .filter(
+            RivalGroup.user_id == current_user.id,
+            RivalGroup.group_name == name,
+        )
+        .first()
+    )
+    if existing:
+        return {"ok": True, "group_name": name}
+    db.add(RivalGroup(user_id=current_user.id, group_name=name))
+    db.commit()
+    return {"ok": True, "group_name": name}

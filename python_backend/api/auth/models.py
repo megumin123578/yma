@@ -40,6 +40,17 @@ class RivalChannelGroup(Base):
     group_name = Column(String, nullable=False, index=True)
 
 
+class RivalGroup(Base):
+    __tablename__ = "rival_groups"
+    __table_args__ = (
+        UniqueConstraint("user_id", "group_name", name="uq_rival_group_name"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    group_name = Column(String, nullable=False, index=True)
+
+
 class SmmstoreAnalyticsCache(Base):
     __tablename__ = "smmstore_analytics_cache"
     __table_args__ = (
