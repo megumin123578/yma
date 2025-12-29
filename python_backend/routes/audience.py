@@ -120,7 +120,7 @@ def get_retention(
                 rows = conn.execute(
                     text(
                         """
-                        SELECT DISTINCT r.video_id, v.title
+                        SELECT DISTINCT r.video_id, v.title, v.thumbnail
                         FROM audience_retention r
                         LEFT JOIN videos v
                           ON v.video_id = r.video_id AND v.account_tag = r.account_tag
@@ -130,7 +130,10 @@ def get_retention(
                     ),
                     {"acct": safe_tag},
                 ).fetchall()
-                videos = [{"video_id": r[0], "title": r[1]} for r in rows]
+                videos = [
+                    {"video_id": r[0], "title": r[1], "thumbnail": r[2]}
+                    for r in rows
+                ]
                 return {"accountTag": safe_tag, "videos": videos, "rows": []}
 
             latest = conn.execute(

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Avatar,
   Box,
   CircularProgress,
   Divider,
@@ -226,10 +227,39 @@ const AudienceAnalytics = () => {
             value={videoId}
             onChange={(event) => setVideoId(event.target.value)}
             disabled={!videos.length}
+            renderValue={(value) => {
+              const selected = videos.find((v) => v.video_id === value);
+              if (!selected) return "";
+              return (
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Avatar
+                    src={selected.thumbnail || ""}
+                    alt={selected.title || selected.video_id}
+                    variant="rounded"
+                    sx={{ width: 28, height: 20 }}
+                  />
+                  <Typography variant="body2" noWrap>
+                    {selected.title
+                      ? `${selected.title} (${selected.video_id})`
+                      : selected.video_id}
+                  </Typography>
+                </Stack>
+              );
+            }}
           >
             {videos.map((v) => (
               <MenuItem key={v.video_id} value={v.video_id}>
-                {v.title ? `${v.title} (${v.video_id})` : v.video_id}
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Avatar
+                    src={v.thumbnail || ""}
+                    alt={v.title || v.video_id}
+                    variant="rounded"
+                    sx={{ width: 40, height: 24 }}
+                  />
+                  <Typography variant="body2" noWrap>
+                    {v.title ? `${v.title} (${v.video_id})` : v.video_id}
+                  </Typography>
+                </Stack>
               </MenuItem>
             ))}
           </Select>
