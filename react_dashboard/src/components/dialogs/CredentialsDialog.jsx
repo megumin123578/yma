@@ -500,10 +500,10 @@ const CredentialsDialog = ({ open, onClose }) => {
       <DialogTitle sx={{ pb: 1, position: "relative", zIndex: 1 }}>
         <Box display="flex" flexDirection="column" gap={0.5}>
           <Typography variant="h6" sx={{ fontWeight: 700 }}>
-            Add Channel
+            Setting
           </Typography>
           <Typography variant="body2" sx={{ color: isDark ? "#aab4c2" : "text.secondary" }}>
-            Upload credentials, then authorize in your preferred browser profile.
+            Setting credentials and schedules for automatic data fetching.
           </Typography>
         </Box>
       </DialogTitle>

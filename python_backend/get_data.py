@@ -76,7 +76,7 @@ def _update_schedule_run(status: str, processed: int, total: int, message: str =
         cur = conn.cursor()
         finished_at = None
         if status in {"done", "error", "empty"}:
-            finished_at = datetime.utcnow().isoformat(sep=" ")
+            finished_at = datetime.now().isoformat(sep=" ")
         cur.execute(
             """
             UPDATE user_schedule_runs
