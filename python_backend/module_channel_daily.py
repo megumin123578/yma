@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timedelta
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -40,11 +40,12 @@ def _ensure_channel_daily_table(conn) -> None:
     )
 
 
-def fetch_channel_daily(credentials) -> Tuple[List[dict], str, str]:
+def fetch_channel_daily(credentials, channel_id: Optional[str] = None) -> Tuple[List[dict], str, str]:
     start_date, end_date = _date_range_from_env()
     yta = build("youtubeAnalytics", "v2", credentials=credentials)
+    ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
     query = {
-        "ids": "channel==MINE",
+        "ids": ids,
         "startDate": start_date,
         "endDate": end_date,
         "dimensions": "day",
@@ -106,6 +107,11 @@ def save_channel_daily(pg_url: str, account_tag: str, rows: List[dict]) -> None:
             )
 
 
-def run_channel_daily(credentials, account_tag: str, pg_url: str) -> None:
-    rows, _start, _end = fetch_channel_daily(credentials)
+def run_channel_daily(
+    credentials,
+    account_tag: str,
+    pg_url: str,
+    channel_id: Optional[str] = None,
+) -> None:
+    rows, _start, _end = fetch_channel_daily(credentials, channel_id=channel_id)
     save_channel_daily(pg_url, account_tag, rows)

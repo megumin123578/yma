@@ -7,20 +7,22 @@ import subprocess
 import sys
 from typing import List, Optional
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form, Query
+from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, text
 from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from google.auth.transport.requests import Request
 from python_backend.api.auth.database import get_db
-from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup, RivalGroup
+from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup, RivalGroup, UserCredential
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
-from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun, UserCredential
+from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun
 from python_backend.api.auth.visibility import get_hidden_account_tags
 from python_backend.module_trafficsource import SCOPES, sanitize_filename
 from pydantic import BaseModel
 from datetime import datetime
-
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -54,6 +56,30 @@ def _safe_filename(name: str) -> str:
 
 def _safe_token_filename(name: str) -> str:
     return os.path.basename(name or "")
+
+
+def _load_token_credentials(token_name: str):
+    token_path = os.path.join(TOKEN_DIR, token_name)
+    if not os.path.exists(token_path):
+        raise HTTPException(status_code=404, detail="Token not found")
+    try:
+        with open(token_path, "rb") as f:
+            creds = pickle.load(f)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Failed to read token")
+    if not creds:
+        raise HTTPException(status_code=400, detail="Invalid token")
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                with open(token_path, "wb") as f:
+                    pickle.dump(creds, f)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Failed to refresh token")
+        else:
+            raise HTTPException(status_code=400, detail="Token is not valid")
+    return creds
 
 
 def _require_admin(current_user: User) -> None:
@@ -277,7 +303,7 @@ def upload_credentials(
     return {"filename": filename, "auth_url": auth_url, "state": state}
 
 
-@router.get("/credentials/callback")
+@router.get("/credentials/callback", response_class=HTMLResponse)
 def credentials_callback(
     state: str = "",
     code: str = "",
@@ -305,7 +331,6 @@ def credentials_callback(
     with open(token_path, "wb") as f:
         pickle.dump(flow.credentials, f)
 
-    PENDING_OAUTH.pop(state, None)
     user_id = pending.get("user_id")
     if user_id is not None:
         cred_row = (
@@ -331,9 +356,129 @@ def credentials_callback(
                 )
             )
         db.commit()
-    _write_progress_file(account_tag, "queued", 0, "queued", "Waiting to start")
+    pending["token_name"] = token_filename
+    pending["account_tag"] = account_tag
+    _write_progress_file(
+        account_tag,
+        "waiting_channel",
+        0,
+        "idle",
+        "Select a channel to start.",
+    )
+    yt = build("youtube", "v3", credentials=flow.credentials)
+    req = yt.channels().list(part="snippet", mine=True, maxResults=50)
+    channels = []
+    while req is not None:
+        resp = req.execute() or {}
+        for item in resp.get("items", []):
+            snippet = item.get("snippet", {})
+            channels.append(
+                {
+                    "id": item.get("id", ""),
+                    "title": snippet.get("title", "") or item.get("id", ""),
+                }
+            )
+        req = yt.channels().list_next(req, resp)
+
+    options = "\n".join(
+        f'<option value="{c["id"]}">{c["title"]}</option>' for c in channels if c["id"]
+    )
+    return f"""
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Select channel</title>
+    <style>
+      body {{ font-family: Arial, sans-serif; padding: 24px; background: #0f172a; color: #e2e8f0; }}
+      .card {{ max-width: 520px; margin: 40px auto; background: #111827; padding: 24px; border-radius: 12px; border: 1px solid #334155; }}
+      h1 {{ font-size: 18px; margin: 0 0 12px; }}
+      select, button {{ width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #e2e8f0; }}
+      button {{ margin-top: 12px; background: #22c55e; color: #052e16; font-weight: 700; cursor: pointer; }}
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Select a channel for this credential</h1>
+      <form method="post" action="/api/users/credentials/select-channel">
+        <input type="hidden" name="state" value="{state}" />
+        <select name="channel_id" required>
+          {options}
+        </select>
+        <button type="submit">Confirm</button>
+      </form>
+    </div>
+  </body>
+</html>
+"""
+
+
+@router.post("/credentials/select-channel", response_class=HTMLResponse)
+def select_channel_after_auth(
+    state: str = Form(""),
+    channel_id: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    pending = PENDING_OAUTH.get(state)
+    if not pending:
+        raise HTTPException(status_code=400, detail="Invalid or expired state")
+    token_name = pending.get("token_name")
+    user_id = pending.get("user_id")
+    account_tag = pending.get("account_tag")
+    if not token_name or not user_id or not account_tag:
+        raise HTTPException(status_code=400, detail="Invalid auth state")
+    channel_id = (channel_id or "").strip()
+    if not channel_id:
+        raise HTTPException(status_code=400, detail="channel_id is required")
+
+    creds = _load_token_credentials(token_name)
+    yt = build("youtube", "v3", credentials=creds)
+    resp = yt.channels().list(part="snippet", id=channel_id, maxResults=1).execute() or {}
+    items = resp.get("items", [])
+    if not items:
+        raise HTTPException(status_code=400, detail="Channel not found for this token")
+    title = items[0].get("snippet", {}).get("title", "")
+
+    cred_row = (
+        db.query(UserCredential)
+        .filter(
+            UserCredential.user_id == user_id,
+            UserCredential.account_tag == account_tag,
+        )
+        .first()
+    )
+    if not cred_row:
+        raise HTTPException(status_code=404, detail="Credential not found")
+    cred_row.selected_channel_id = channel_id
+    cred_row.selected_channel_title = title
+    cred_row.updated_at = datetime.utcnow()
+    db.add(cred_row)
+    db.commit()
+
+    PENDING_OAUTH.pop(state, None)
+    _write_progress_file(account_tag, "queued", 0, "queued", "Queued after channel selection")
     _kickoff_get_data(account_tag)
-    return {"ok": True, "token": token_filename}
+
+    return """
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Authorized</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 24px; background: #0f172a; color: #e2e8f0; }
+      .card { max-width: 520px; margin: 40px auto; background: #111827; padding: 24px; border-radius: 12px; border: 1px solid #334155; }
+      h1 { font-size: 18px; margin: 0 0 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Channel selected. You can close this tab.</h1>
+      <p>Data sync is now running on the server.</p>
+    </div>
+  </body>
+</html>
+"""
 
 
 @router.get("/tokens")
@@ -407,6 +552,99 @@ def set_token_visibility(
             db.delete(row)
             db.commit()
     return {"ok": True, "hidden": payload.hidden}
+
+
+@router.get("/tokens/{token_name}/channels")
+def list_token_channels(
+    token_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    safe_name = _safe_token_filename(token_name)
+    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
+        raise HTTPException(status_code=400, detail="Invalid token filename")
+
+    owned = (
+        db.query(UserCredential)
+        .filter(
+            UserCredential.user_id == current_user.id,
+            UserCredential.token_name == token_name,
+        )
+        .first()
+    )
+    if not owned:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    creds = _load_token_credentials(safe_name)
+    yt = build("youtube", "v3", credentials=creds)
+    req = yt.channels().list(part="snippet,contentDetails", mine=True, maxResults=50)
+    channels = []
+    while req is not None:
+        resp = req.execute() or {}
+        for item in resp.get("items", []):
+            snippet = item.get("snippet", {})
+            content = item.get("contentDetails", {})
+            channels.append(
+                {
+                    "id": item.get("id", ""),
+                    "title": snippet.get("title", ""),
+                    "customUrl": snippet.get("customUrl", ""),
+                    "thumbnail": snippet.get("thumbnails", {}).get("medium", {}).get("url", ""),
+                    "uploadsPlaylistId": content.get("relatedPlaylists", {}).get("uploads", ""),
+                }
+            )
+        req = yt.channels().list_next(req, resp)
+
+    return {
+        "channels": channels,
+        "selected_channel_id": owned.selected_channel_id,
+        "selected_channel_title": owned.selected_channel_title,
+    }
+
+
+@router.post("/tokens/{token_name}/channel")
+def set_token_channel(
+    token_name: str,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    safe_name = _safe_token_filename(token_name)
+    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
+        raise HTTPException(status_code=400, detail="Invalid token filename")
+
+    owned = (
+        db.query(UserCredential)
+        .filter(
+            UserCredential.user_id == current_user.id,
+            UserCredential.token_name == token_name,
+        )
+        .first()
+    )
+    if not owned:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    channel_id = (payload.get("channel_id") or "").strip()
+    if not channel_id:
+        raise HTTPException(status_code=400, detail="channel_id is required")
+
+    creds = _load_token_credentials(safe_name)
+    yt = build("youtube", "v3", credentials=creds)
+    resp = yt.channels().list(part="snippet", id=channel_id, maxResults=1).execute() or {}
+    items = resp.get("items", [])
+    if not items:
+        raise HTTPException(status_code=400, detail="Channel not found for this token")
+
+    title = items[0].get("snippet", {}).get("title", "")
+    owned.selected_channel_id = channel_id
+    owned.selected_channel_title = title
+    owned.updated_at = datetime.utcnow()
+    db.add(owned)
+    db.commit()
+    account_tag = os.path.splitext(safe_name)[0]
+    _write_progress_file(account_tag, "queued", 0, "queued", "Queued after channel selection")
+    _kickoff_get_data(account_tag)
+    return {"ok": True, "selected_channel_id": channel_id, "selected_channel_title": title}
 
 
 @router.get("/tokens/{token_name}/progress")

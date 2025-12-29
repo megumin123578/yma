@@ -66,6 +66,39 @@ def _run_db_path() -> str:
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     return os.getenv("AUTH_DB_PATH", os.path.join(repo_root, "auth.db"))
 
+def _get_selected_channel_id(account_tag: str) -> str:
+    try:
+        conn = sqlite3.connect(_run_db_path())
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT selected_channel_id
+            FROM user_credentials
+            WHERE account_tag = ? AND selected_channel_id IS NOT NULL AND selected_channel_id != ''
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (account_tag,),
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.execute(
+                """
+                SELECT selected_channel_id
+                FROM user_credentials
+                WHERE account_tag = ?
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (account_tag,),
+            )
+            row = cur.fetchone()
+        conn.close()
+        if row and row[0]:
+            return str(row[0])
+    except Exception:
+        pass
+    return ""
 
 def _update_schedule_run(status: str, processed: int, total: int, message: str = "") -> None:
     run_id = os.getenv("SCHEDULE_RUN_ID")
@@ -92,22 +125,32 @@ def _update_schedule_run(status: str, processed: int, total: int, message: str =
 
 def _run_for_credential(cred_file: str) -> None:
     account_tag = os.path.splitext(os.path.basename(cred_file))[0]
+    channel_id = _get_selected_channel_id(account_tag)
+    if not channel_id:
+        _write_progress(
+            account_tag,
+            "waiting_channel",
+            0,
+            "idle",
+            "Select a channel before running.",
+        )
+        return
     _write_progress(account_tag, "traffic_source", 5, "running", "Starting traffic source")
-    process_one(cred_file)
+    process_one(cred_file, channel_id=channel_id)
     _write_progress(account_tag, "content", 35, "running", "Starting content fetch")
-    process_content(cred_file)
+    process_content(cred_file, channel_id=channel_id)
     _write_progress(account_tag, "overview", 60, "running", "Starting overview")
-    process_overall(cred_file)
+    process_overall(cred_file, channel_id=channel_id)
     _write_progress(account_tag, "audience", 80, "running", "Starting audience analytics")
     pg_url = os.getenv("PG_URL")
     if not pg_url:
         raise RuntimeError("Missing PG_URL env var")
     creds = create_token_from_credentials(os.path.join(CREDENTIALS_FOLDER, cred_file))
-    run_audience_analytics(creds, account_tag, pg_url)
+    run_audience_analytics(creds, account_tag, pg_url, channel_id=channel_id)
     _write_progress(account_tag, "reach", 90, "running", "Starting reach analytics")
-    run_reach_analytics(creds, account_tag, pg_url)
+    run_reach_analytics(creds, account_tag, pg_url, channel_id=channel_id)
     _write_progress(account_tag, "subscribers", 95, "running", "Starting subscriber analytics")
-    run_channel_daily(creds, account_tag, pg_url)
+    run_channel_daily(creds, account_tag, pg_url, channel_id=channel_id)
     _write_progress(account_tag, "done", 100, "done", "Completed")
 
 

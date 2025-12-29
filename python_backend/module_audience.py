@@ -64,11 +64,12 @@ def _ensure_retention_table(conn) -> None:
     )
 
 
-def fetch_demographics(credentials) -> Tuple[List[Dict], str, str]:
+def fetch_demographics(credentials, channel_id: Optional[str] = None) -> Tuple[List[Dict], str, str]:
     start_date, end_date = _date_range_from_env()
     yta = build("youtubeAnalytics", "v2", credentials=credentials)
+    ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
     query = {
-        "ids": "channel==MINE",
+        "ids": ids,
         "startDate": start_date,
         "endDate": end_date,
         "dimensions": "gender,ageGroup",
@@ -138,11 +139,12 @@ def _list_video_ids(pg_url: str, account_tag: str) -> List[str]:
     return [r[0] for r in rows]
 
 
-def fetch_retention(credentials, video_id: str) -> Tuple[List[Dict], str, str]:
+def fetch_retention(credentials, video_id: str, channel_id: Optional[str] = None) -> Tuple[List[Dict], str, str]:
     start_date, end_date = _date_range_from_env()
     yta = build("youtubeAnalytics", "v2", credentials=credentials)
+    ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
     query = {
-        "ids": "channel==MINE",
+        "ids": ids,
         "startDate": start_date,
         "endDate": end_date,
         "dimensions": "elapsedVideoTimeRatio",
@@ -221,10 +223,15 @@ def save_retention(
             )
 
 
-def run_audience_analytics(credentials, account_tag: str, pg_url: str) -> None:
+def run_audience_analytics(
+    credentials,
+    account_tag: str,
+    pg_url: str,
+    channel_id: Optional[str] = None,
+) -> None:
     safe_tag = sanitize_filename(account_tag)
 
-    demo_rows, demo_start, demo_end = fetch_demographics(credentials)
+    demo_rows, demo_start, demo_end = fetch_demographics(credentials, channel_id=channel_id)
     save_demographics(pg_url, safe_tag, demo_rows, demo_start, demo_end)
 
     video_ids = _list_video_ids(pg_url, safe_tag)
@@ -232,5 +239,5 @@ def run_audience_analytics(credentials, account_tag: str, pg_url: str) -> None:
         return
 
     for vid in video_ids:
-        rows, start_date, end_date = fetch_retention(credentials, vid)
+        rows, start_date, end_date = fetch_retention(credentials, vid, channel_id=channel_id)
         save_retention(pg_url, safe_tag, vid, rows, start_date, end_date)

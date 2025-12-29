@@ -254,6 +254,9 @@ def run_traffic_source_lifetime_daily_to_postgres(
     Trả về số dòng (day,source) đã ghi (sau khi fill).
     """
     ids, extra, owner_filters = _ids_extra_filters_for_owner(owner_channel_id)
+    if not IS_OWNER_MODE and owner_channel_id:
+        ids = f"channel=={owner_channel_id}"
+        owner_filters = None
 
     # lifetime window, clamped by channel creation date
     start_date, end_date = get_date_range("lifetime")
@@ -271,7 +274,7 @@ def run_traffic_source_lifetime_daily_to_postgres(
     if IS_OWNER_MODE:
         channel_id_for_db = owner_channel_id or ""  # gộp nhiều kênh => rỗng
     else:
-        channel_id_for_db = get_mine_channel_id(credentials) or ""
+        channel_id_for_db = owner_channel_id or get_mine_channel_id(credentials) or ""
 
     # Query YouTube Analytics by chunks
     yta = build("youtubeAnalytics", "v2", credentials=credentials)
@@ -367,7 +370,7 @@ def run_traffic_source_lifetime_daily_to_postgres(
     return len(out_rows)
 
 # ===== One-account runner =====
-def process_one(cred_file: str):
+def process_one(cred_file: str, channel_id: Optional[str] = None):
     cred_path = os.path.join(CREDENTIALS_FOLDER, cred_file)
     account_tag = sanitize_filename(os.path.splitext(os.path.basename(cred_file))[0])
 
@@ -382,6 +385,6 @@ def process_one(cred_file: str):
     run_traffic_source_lifetime_daily_to_postgres(
         credentials=creds,
         account_tag=account_tag,
-        owner_channel_id=None,  # set UCxxx nếu muốn lọc 1 kênh trong OWNER mode
+        owner_channel_id=channel_id,  # set UCxxx nếu muốn lọc 1 kênh
         pg_url=os.getenv("PG_URL"),  # hoặc truyền thẳng chuỗi URL
     )

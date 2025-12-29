@@ -66,6 +66,18 @@ export const setTokenVisibility = async (tokenName, hidden) => {
   return res.data;
 };
 
+export const listTokenChannels = async (tokenName) => {
+  const res = await api.get(`/api/users/tokens/${encodeURIComponent(tokenName)}/channels`);
+  return res.data;
+};
+
+export const setTokenChannel = async (tokenName, channelId) => {
+  const res = await api.post(`/api/users/tokens/${encodeURIComponent(tokenName)}/channel`, {
+    channel_id: channelId,
+  });
+  return res.data;
+};
+
 export const listSchedules = async () => {
   const res = await api.get("/api/users/schedules");
   return res.data;

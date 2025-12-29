@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -31,11 +31,12 @@ ANALYTICS_METRICS = [
 # ======================================================================
 # YOUTUBE ANALYTICS AGGREGATE QUERY
 # ======================================================================
-def get_yt_analytics(credentials, video_id: str) -> Dict:
+def get_yt_analytics(credentials, video_id: str, channel_id: Optional[str] = None) -> Dict:
     yta = build("youtubeAnalytics", "v2", credentials=credentials)
+    ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
 
     query = {
-        "ids": "channel==MINE",
+        "ids": ids,
         "startDate": "2000-01-01",
         "endDate": "2099-01-01",
         "metrics": ",".join(ANALYTICS_METRICS),
@@ -195,7 +196,7 @@ def save_video_overview(pg_url: str, video_data: dict):
 # ======================================================================
 # MAIN PIPELINE
 # ======================================================================
-def process_overall(cred_file: str):
+def process_overall(cred_file: str, channel_id: Optional[str] = None):
     pg_url = os.getenv("PG_URL")
     if not pg_url:
         raise RuntimeError("Missing PG_URL environment variable")
@@ -210,7 +211,7 @@ def process_overall(cred_file: str):
     credentials = create_token_from_credentials(os.path.join(CREDENTIALS_FOLDER, cred_file))
 
     # Lấy toàn bộ video trên kênh
-    playlist_id = get_upload_playlist_id(credentials)
+    playlist_id = get_upload_playlist_id(credentials, channel_id=channel_id)
     video_ids = get_video_list(credentials, playlist_id)
 
     print(f"[INFO] [{account_tag}] Found {len(video_ids)} videos.")
@@ -223,7 +224,7 @@ def process_overall(cred_file: str):
         print(f"[INFO] [{account_tag}] Processing video {vid} ...")
 
         base = snippet_map.get(vid, {})
-        ana = get_yt_analytics(credentials, vid)
+        ana = get_yt_analytics(credentials, vid, channel_id=channel_id)
 
         video_data = {
             "account_tag": account_tag,

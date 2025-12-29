@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import date
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -14,12 +14,19 @@ from module_trafficsource import (
 )
 
 
-def get_upload_playlist_id(credentials):
+def get_upload_playlist_id(credentials, channel_id: Optional[str] = None):
     yt = build("youtube", "v3", credentials=credentials)
-    resp = yt.channels().list(
-        part="contentDetails",
-        mine=True
-    ).execute()
+    if channel_id:
+        resp = yt.channels().list(
+            part="contentDetails",
+            id=channel_id,
+            maxResults=1,
+        ).execute()
+    else:
+        resp = yt.channels().list(
+            part="contentDetails",
+            mine=True
+        ).execute()
 
     items = resp.get("items", [])
     if not items:
@@ -89,7 +96,13 @@ def get_video_metadata(credentials, video_ids: List[str]) -> List[Dict]:
     return results
 
 
-def get_video_impressions(credentials, video_id: str, start_date: str, end_date: str) -> int:
+def get_video_impressions(
+    credentials,
+    video_id: str,
+    start_date: str,
+    end_date: str,
+    channel_id: Optional[str] = None,
+) -> int:
     """
     Lấy impressions từ YouTube Analytics API.
     Ở đây dùng metric: cardImpressions (số lần Cards hiển thị).
@@ -97,8 +110,9 @@ def get_video_impressions(credentials, video_id: str, start_date: str, end_date:
     yta = build("youtubeAnalytics", "v2", credentials=credentials)
 
     try:
+        ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
         resp = yta.reports().query(
-            ids="channel==MINE",
+            ids=ids,
             startDate=start_date,
             endDate=end_date,
             filters=f"video=={video_id}",
@@ -123,13 +137,19 @@ def get_video_impressions(credentials, video_id: str, start_date: str, end_date:
 # DAILY METRICS (ANALYTICS API)
 # ============================
 
-def get_video_daily_analytics(credentials, video_id: str,
-                              start_date: str, end_date: str) -> List[Dict]:
+def get_video_daily_analytics(
+    credentials,
+    video_id: str,
+    start_date: str,
+    end_date: str,
+    channel_id: Optional[str] = None,
+) -> List[Dict]:
 
     yta = build("youtubeAnalytics", "v2", credentials=credentials)
 
+    ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
     q = {
-        "ids": "channel==MINE",
+        "ids": ids,
         "startDate": start_date,
         "endDate": end_date,
         "dimensions": "day",
@@ -271,8 +291,8 @@ def save_daily_stats(daily_rows, pg_url: str):
 # RUNNER
 # ============================
 
-def run_content_v3_hybrid(credentials, account_tag, pg_url):
-    playlist_id = get_upload_playlist_id(credentials)
+def run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id: Optional[str] = None):
+    playlist_id = get_upload_playlist_id(credentials, channel_id=channel_id)
     if not playlist_id:
         print("Không tìm thấy uploads playlist.")
         return
@@ -290,7 +310,9 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url):
     for v in videos:
         video_id = v["video_id"]
         start_date = v["published_at"]  # YYYY-MM-DD
-        v["impressions"] = get_video_impressions(credentials, video_id, start_date, end_date)
+        v["impressions"] = get_video_impressions(
+            credentials, video_id, start_date, end_date, channel_id=channel_id
+        )
 
     print("→ Saving metadata to PostgreSQL...")
     save_metadata(videos, account_tag, pg_url)
@@ -301,7 +323,9 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url):
     for v in videos:
         video_id = v["video_id"]
         start_date = v["published_at"]
-        d = get_video_daily_analytics(credentials, video_id, start_date, end_date)
+        d = get_video_daily_analytics(
+            credentials, video_id, start_date, end_date, channel_id=channel_id
+        )
         daily_rows.extend(d)
 
     print("→ Saving daily stats...")
@@ -310,7 +334,7 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url):
     print("✔ DONE: Metadata + DAILY stats saved successfully")
 
 
-def process_content(cred_file: str):
+def process_content(cred_file: str, channel_id: Optional[str] = None):
     cred_path = os.path.join(CREDENTIALS_FOLDER, cred_file)
     pg_url = os.getenv("PG_URL")
     if not pg_url:
@@ -319,4 +343,4 @@ def process_content(cred_file: str):
     credentials = create_token_from_credentials(cred_path)
     account_tag = sanitize_filename(os.path.splitext(cred_file)[0])
 
-    run_content_v3_hybrid(credentials, account_tag, pg_url)
+    run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id=channel_id)

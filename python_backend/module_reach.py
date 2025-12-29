@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -89,11 +89,17 @@ def _list_video_ids(pg_url: str, account_tag: str) -> List[str]:
     return [r[0] for r in rows]
 
 
-def fetch_reach(credentials, pg_url: str, account_tag: str) -> Tuple[List[Dict], str, str]:
+def fetch_reach(
+    credentials,
+    pg_url: str,
+    account_tag: str,
+    channel_id: Optional[str] = None,
+) -> Tuple[List[Dict], str, str]:
     start_date, end_date = _date_range_from_env()
     yta = build("youtubeAnalytics", "v2", credentials=credentials)
+    ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
     base_query = {
-        "ids": "channel==MINE",
+        "ids": ids,
         "startDate": start_date,
         "endDate": end_date,
         "dimensions": "video",
@@ -128,7 +134,7 @@ def fetch_reach(credentials, pg_url: str, account_tag: str) -> Tuple[List[Dict],
         try:
             resp = yta.reports().query(**{**base_query, "metrics": ",".join(fallback_metrics)}).execute() or {}
         except HttpError:
-            return _fetch_reach_per_video(yta, pg_url, account_tag, start_date, end_date)
+            return _fetch_reach_per_video(yta, pg_url, account_tag, start_date, end_date, channel_id=channel_id)
 
     rows = resp.get("rows") or []
     headers = [h["name"] for h in resp.get("columnHeaders", [])]
@@ -185,6 +191,7 @@ def _fetch_reach_per_video(
     account_tag: str,
     start_date: str,
     end_date: str,
+    channel_id: Optional[str] = None,
 ) -> Tuple[List[Dict], str, str]:
     warned = False
     video_ids = _list_video_ids(pg_url, account_tag)
@@ -201,8 +208,9 @@ def _fetch_reach_per_video(
     ]
     out = []
     for vid in video_ids:
+        ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
         query = {
-            "ids": "channel==MINE",
+            "ids": ids,
             "startDate": start_date,
             "endDate": end_date,
             "dimensions": "day",
@@ -340,6 +348,11 @@ def save_reach(pg_url: str, account_tag: str, rows: List[Dict], start_date: str,
             )
 
 
-def run_reach_analytics(credentials, account_tag: str, pg_url: str) -> None:
-    rows, start_date, end_date = fetch_reach(credentials, pg_url, account_tag)
+def run_reach_analytics(
+    credentials,
+    account_tag: str,
+    pg_url: str,
+    channel_id: Optional[str] = None,
+) -> None:
+    rows, start_date, end_date = fetch_reach(credentials, pg_url, account_tag, channel_id=channel_id)
     save_reach(pg_url, account_tag, rows, start_date, end_date)

@@ -11,6 +11,10 @@ import {
   Divider,
   Fade,
   Checkbox,
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select,
   Switch,
   useTheme,
 } from "@mui/material";
@@ -21,6 +25,7 @@ import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import Avatar from "@mui/material/Avatar";
 import {
   uploadCredentials,
   listTokens,
@@ -28,6 +33,8 @@ import {
   getTokenProgress,
   setTokenVisibility,
   runToken,
+  listTokenChannels,
+  setTokenChannel,
   listSchedules,
   createSchedule,
   updateSchedule,
@@ -50,6 +57,10 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [tokens, setTokens] = useState([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
   const [, setTokenSyncing] = useState(false);
+  const [tokenChannels, setTokenChannels] = useState([]);
+  const [selectedChannelId, setSelectedChannelId] = useState("");
+  const [loadingChannels, setLoadingChannels] = useState(false);
+  const [channelError, setChannelError] = useState("");
   const [tokenProgress, setTokenProgress] = useState({});
   const [progress, setProgress] = useState({ status: "idle", percent: 0, stage: "" });
   const [autoReloaded, setAutoReloaded] = useState(false);
@@ -93,6 +104,10 @@ const CredentialsDialog = ({ open, onClose }) => {
       setStatus({ type: "", message: "" });
       setUploading(false);
       setAuthUrl("");
+      setTokenChannels([]);
+      setSelectedChannelId("");
+      setLoadingChannels(false);
+      setChannelError("");
       setProgress({ status: "idle", percent: 0, stage: "" });
       setAutoReloaded(false);
       setActiveTab("add");
@@ -174,6 +189,13 @@ const CredentialsDialog = ({ open, onClose }) => {
 
   useEffect(() => {
     if (!filename) return;
+    const tokenName = `${filename}.pickle`;
+    if (!tokens.some((t) => t.name === tokenName)) return;
+    loadTokenChannels(tokenName);
+  }, [filename, tokens]);
+
+  useEffect(() => {
+    if (!filename) return;
     let canceled = false;
     const tokenName = `${filename}.pickle`;
 
@@ -235,6 +257,27 @@ const CredentialsDialog = ({ open, onClose }) => {
       setTokens([]);
     } finally {
       setLoadingTokens(false);
+    }
+  };
+
+  const loadTokenChannels = async (tokenName) => {
+    if (!tokenName) return;
+    setLoadingChannels(true);
+    setChannelError("");
+    try {
+      const data = await listTokenChannels(tokenName);
+      const channels = data?.channels || [];
+      setTokenChannels(channels);
+      const selected = data?.selected_channel_id || "";
+      setSelectedChannelId(
+        channels.some((item) => item.id === selected) ? selected : ""
+      );
+    } catch (err) {
+      setTokenChannels([]);
+      setSelectedChannelId("");
+      setChannelError(err?.response?.data?.detail || "Failed to load channels.");
+    } finally {
+      setLoadingChannels(false);
     }
   };
 
@@ -333,6 +376,23 @@ const CredentialsDialog = ({ open, onClose }) => {
     }
   };
 
+  const handleChannelSelect = async (event) => {
+    const next = event.target.value;
+    setSelectedChannelId(next);
+    const tokenName = filename ? `${filename}.pickle` : "";
+    if (!tokenName) return;
+    try {
+      await setTokenChannel(tokenName, next);
+      setStatus({ type: "success", message: "Channel selected." });
+      setProgress({ status: "queued", percent: 0, stage: "queued", message: "" });
+      startProgressPolling(tokenName);
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to save channel.";
+      setChannelError(message);
+    }
+  };
+
   const loadTokenProgress = async (tokenName) => {
     try {
       const data = await getTokenProgress(tokenName);
@@ -358,24 +418,28 @@ const CredentialsDialog = ({ open, onClose }) => {
         ...prev,
         [tokenName]: { status: "queued", percent: 0, stage: "queued", message: "" },
       }));
-      const existing = progressTimersRef.current[tokenName];
-      if (existing) {
-        clearInterval(existing);
-      }
-      const intervalId = setInterval(async () => {
-        const done = await loadTokenProgress(tokenName);
-        if (done) {
-          clearInterval(intervalId);
-          delete progressTimersRef.current[tokenName];
-        }
-      }, 2000);
-      progressTimersRef.current[tokenName] = intervalId;
+      startProgressPolling(tokenName);
       setStatus({ type: "success", message: "Refresh queued." });
     } catch (err) {
       const message =
         err?.response?.data?.detail || "Failed to start refresh.";
       setStatus({ type: "error", message });
     }
+  };
+
+  const startProgressPolling = (tokenName) => {
+    const existing = progressTimersRef.current[tokenName];
+    if (existing) {
+      clearInterval(existing);
+    }
+    const intervalId = setInterval(async () => {
+      const done = await loadTokenProgress(tokenName);
+      if (done) {
+        clearInterval(intervalId);
+        delete progressTimersRef.current[tokenName];
+      }
+    }, 2000);
+    progressTimersRef.current[tokenName] = intervalId;
   };
 
   const handleScheduleField = (field, value) => {
@@ -463,6 +527,9 @@ const CredentialsDialog = ({ open, onClose }) => {
     if (lower === "error") return { bg: "rgba(239,68,68,0.18)", fg: "#ef4444" };
     return { bg: "rgba(148,163,184,0.2)", fg: "#94a3b8" };
   };
+
+  const tokenName = filename ? `${filename}.pickle` : "";
+  const tokenReady = !!tokenName && tokens.some((t) => t.name === tokenName);
 
   return (
     <Dialog
@@ -713,6 +780,48 @@ const CredentialsDialog = ({ open, onClose }) => {
                         Open Authorization Link
                       </Button>
                     </Stack>
+                  </Stack>
+                )}
+
+                {tokenReady && (
+                  <Stack direction="column" spacing={1}>
+                    <Typography variant="body2" color="text.secondary">
+                      Select channel for this credential
+                    </Typography>
+                    <FormControl size="small" sx={{ minWidth: 260 }}>
+                      <InputLabel>Channel</InputLabel>
+                      <Select
+                        label="Channel"
+                        value={selectedChannelId}
+                        onChange={handleChannelSelect}
+                        disabled={loadingChannels || tokenChannels.length === 0}
+                      >
+                        {tokenChannels.map((channel) => (
+                          <MenuItem key={channel.id} value={channel.id}>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <Avatar
+                                src={channel.thumbnail || ""}
+                                alt={channel.title || channel.id}
+                                sx={{ width: 28, height: 28 }}
+                              />
+                              <Typography variant="body2" noWrap>
+                                {channel.title || channel.id}
+                              </Typography>
+                            </Stack>
+                          </MenuItem>
+                        ))}
+                        {!tokenChannels.length && (
+                          <MenuItem value="">
+                            <em>{loadingChannels ? "Loading..." : "No channels found"}</em>
+                          </MenuItem>
+                        )}
+                      </Select>
+                    </FormControl>
+                    {channelError && (
+                      <Typography variant="caption" color="error">
+                        {channelError}
+                      </Typography>
+                    )}
                   </Stack>
                 )}
 

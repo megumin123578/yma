@@ -209,6 +209,23 @@ def ensure_user_credentials_token_name():
 
 ensure_user_credentials_token_name()
 
+def ensure_user_credentials_selected_channel():
+    with engine.begin() as conn:
+        cols = conn.exec_driver_sql("PRAGMA table_info(user_credentials)").fetchall()
+        has_channel_id = any(row[1] == "selected_channel_id" for row in cols)
+        if not has_channel_id:
+            conn.exec_driver_sql(
+                "ALTER TABLE user_credentials ADD COLUMN selected_channel_id VARCHAR"
+            )
+        has_channel_title = any(row[1] == "selected_channel_title" for row in cols)
+        if not has_channel_title:
+            conn.exec_driver_sql(
+                "ALTER TABLE user_credentials ADD COLUMN selected_channel_title VARCHAR"
+            )
+
+
+ensure_user_credentials_selected_channel()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
