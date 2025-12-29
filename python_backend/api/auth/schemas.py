@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from pydantic import ConfigDict
-from typing import Optional
+from typing import Optional, List
 
 class UserCreate(BaseModel):
     username: str
@@ -61,6 +61,7 @@ class RivalChannelCreate(BaseModel):
     channel_url: Optional[str] = None
     channel_avatar_url: Optional[str] = None
     group_name: Optional[str] = None
+    group_names: Optional[List[str]] = None
 
 
 class RivalChannelOut(BaseModel):
@@ -70,6 +71,7 @@ class RivalChannelOut(BaseModel):
     channel_url: Optional[str] = None
     channel_avatar_url: Optional[str] = None
     group_name: Optional[str] = None
+    group_names: Optional[List[str]] = None
 
     class Config:
         from_attributes = True

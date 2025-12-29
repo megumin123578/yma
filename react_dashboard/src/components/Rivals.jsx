@@ -3,6 +3,7 @@ import {
   Avatar,
   Box,
   Button,
+  Checkbox,
   CircularProgress,
   FormControl,
   Grid,
@@ -27,7 +28,6 @@ import {
 import { API_BASE } from "../config";
 import { formatNumber } from "./Module";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
-import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
 import GroupWorkOutlinedIcon from "@mui/icons-material/GroupWorkOutlined";
 import {
   CartesianGrid,
@@ -88,7 +88,9 @@ const RivalsChannel = ({ viewMode = "list" }) => {
   const [savedLoaded, setSavedLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [assignGroup, setAssignGroup] = useState(initialState.assignGroup || "");
+  const [createGroupOpen, setCreateGroupOpen] = useState(
+    initialState.createGroupOpen || false
+  );
   const [newGroupName, setNewGroupName] = useState(
     initialState.newGroupName || ""
   );
@@ -98,7 +100,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
     initialState.selectedSavedId || ""
   );
   const [groupMenuAnchor, setGroupMenuAnchor] = useState(null);
-  const [groupMenuChannel, setGroupMenuChannel] = useState(null);
+  const [groupMenuChannelId, setGroupMenuChannelId] = useState(null);
 
   const fetchChannel = async (q) => {
     try {
@@ -219,8 +221,6 @@ const RivalsChannel = ({ viewMode = "list" }) => {
   const handleSavedSelect = (value) => {
     setSelectedSavedId(value);
     if (!value) return;
-    const row = savedChannels.find((item) => item.channel_id === value);
-    setAssignGroup(row?.group_name || "");
     setNewGroupName("");
     setQuery(value);
     fetchChannel(value);
@@ -237,7 +237,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
         JSON.stringify({
           query,
           selectedSavedId,
-          assignGroup,
+          createGroupOpen,
           newGroupName,
           filterGroup,
         })
@@ -245,7 +245,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
     } catch {
       // ignore storage errors
     }
-  }, [query, selectedSavedId, assignGroup, newGroupName, filterGroup]);
+  }, [query, selectedSavedId, createGroupOpen, newGroupName, filterGroup]);
 
   const missingSelected =
     !!selectedSavedId &&
@@ -254,31 +254,50 @@ const RivalsChannel = ({ viewMode = "list" }) => {
   useEffect(() => {
     if (savedLoaded && selectedSavedId && !channel) {
       setQuery(selectedSavedId);
-      const row = savedChannels.find((item) => item.channel_id === selectedSavedId);
-      setAssignGroup(row?.group_name || "");
       setNewGroupName("");
       fetchChannel(selectedSavedId);
     }
   }, [savedLoaded, selectedSavedId, channel, savedChannels]);
 
+  const getChannelGroups = (row) => {
+    if (!row) return [];
+    if (Array.isArray(row.group_names)) return row.group_names;
+    if (row.group_name) return [row.group_name];
+    return [];
+  };
+
   const groupOptions = useMemo(() => {
     const unique = new Set();
     savedChannels.forEach((row) => {
-      const value = (row.group_name || "").trim();
-      if (value) unique.add(value);
+      const names = Array.isArray(row.group_names)
+        ? row.group_names
+        : row.group_name
+          ? [row.group_name]
+          : [];
+      names.forEach((name) => {
+        const value = (name || "").trim();
+        if (value) unique.add(value);
+      });
     });
-    if (assignGroup === "__new__") {
+    if (createGroupOpen) {
       const fresh = (newGroupName || "").trim();
       if (fresh) unique.add(fresh);
     }
     return Array.from(unique).sort((a, b) => a.localeCompare(b));
-  }, [savedChannels, assignGroup, newGroupName]);
+  }, [savedChannels, createGroupOpen, newGroupName]);
 
   const filteredSavedChannels = useMemo(() => {
     const needle = (filterGroup || "").trim();
     if (!needle) return savedChannels;
     return savedChannels.filter(
-      (row) => (row.group_name || "").trim() === needle
+      (row) => {
+        const names = Array.isArray(row.group_names)
+          ? row.group_names
+          : row.group_name
+            ? [row.group_name]
+            : [];
+        return names.some((name) => (name || "").trim() === needle);
+      }
     );
   }, [savedChannels, filterGroup]);
 
@@ -295,21 +314,39 @@ const RivalsChannel = ({ viewMode = "list" }) => {
 
   const closeGroupMenu = () => {
     setGroupMenuAnchor(null);
-    setGroupMenuChannel(null);
+    setGroupMenuChannelId(null);
   };
 
   const openGroupMenu = (event, row) => {
     setGroupMenuAnchor(event.currentTarget);
-    setGroupMenuChannel(row);
+    setGroupMenuChannelId(row?.channel_id || null);
   };
 
-  const updateChannelGroup = async (channelId, groupName) => {
+  const updateChannelGroups = async (channelId, groupNames) => {
     if (!channelId) return;
     const token = localStorage.getItem("access_token");
     if (!token) {
       setAssignError("Please login to update groups.");
       return;
     }
+    const cleaned = Array.from(
+      new Set(
+        (groupNames || [])
+          .map((name) => (name || "").trim())
+          .filter(Boolean)
+      )
+    );
+    setSavedChannels((prev) =>
+      prev.map((row) =>
+        row.channel_id === channelId
+          ? {
+              ...row,
+              group_names: cleaned,
+              group_name: cleaned[0] || null,
+            }
+          : row
+      )
+    );
     try {
       setAssignError("");
       const resp = await fetch(`${API_BASE}/api/users/rivals`, {
@@ -320,7 +357,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
         },
         body: JSON.stringify({
           channel_id: channelId,
-          group_name: groupName || null,
+          group_names: cleaned,
         }),
       });
       if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
@@ -336,11 +373,9 @@ const RivalsChannel = ({ viewMode = "list" }) => {
       } else {
         await loadSavedChannels();
       }
-      if (selectedSavedId === channelId) {
-        setAssignGroup(groupName || "");
-      }
     } catch (e) {
       setAssignError(e?.message || "Failed to update group");
+      await loadSavedChannels();
     }
   };
 
@@ -366,7 +401,16 @@ const RivalsChannel = ({ viewMode = "list" }) => {
       if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
       setSavedChannels((prev) =>
         prev.map((row) =>
-          row.group_name === name ? { ...row, group_name: null } : row
+          Array.isArray(row.group_names)
+            ? {
+                ...row,
+                group_names: row.group_names.filter((g) => g !== name),
+                group_name:
+                  row.group_name === name ? null : row.group_name,
+              }
+            : row.group_name === name
+              ? { ...row, group_name: null, group_names: [] }
+              : row
         )
       );
       if (filterGroup === name) {
@@ -376,8 +420,13 @@ const RivalsChannel = ({ viewMode = "list" }) => {
         const selectedRow = savedChannels.find(
           (row) => row.channel_id === selectedSavedId
         );
-        if (selectedRow?.group_name === name) {
-          setAssignGroup("");
+        if (
+          selectedRow &&
+          (selectedRow.group_name === name ||
+            (Array.isArray(selectedRow.group_names) &&
+              selectedRow.group_names.includes(name)))
+        ) {
+          setNewGroupName("");
         }
       }
     } catch (e) {
@@ -466,14 +515,14 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                 variant="outlined"
                 size="small"
                 onClick={() => {
-                  setAssignGroup("__new__");
+                  setCreateGroupOpen(true);
                   setNewGroupName("");
                 }}
                 sx={{ textTransform: "none", borderRadius: 2 }}
               >
                 Create group
               </Button>
-              {assignGroup === "__new__" && (
+              {createGroupOpen && (
                 <TextField
                   size="small"
                   label="New group"
@@ -748,11 +797,18 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                         <ListItemText
                           primary={row.channel_name || row.channel_id}
                           secondary={
-                            row.group_name
-                              ? `${row.group_name}${row.channel_name ? " - " : ""}${row.channel_name ? row.channel_id : ""}`
-                              : row.channel_name
-                                ? row.channel_id
-                                : undefined
+                            (() => {
+                              const names = Array.isArray(row.group_names)
+                                ? row.group_names
+                                : row.group_name
+                                  ? [row.group_name]
+                                  : [];
+                              if (names.length) {
+                                const label = names.join(", ");
+                                return `${label}${row.channel_name ? " - " : ""}${row.channel_name ? row.channel_id : ""}`;
+                              }
+                              return row.channel_name ? row.channel_id : undefined;
+                            })()
                           }
                         />
                         <IconButton
@@ -793,35 +849,42 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                   transformOrigin={{ vertical: "top", horizontal: "left" }}
                   MenuListProps={{ dense: true }}
                 >
-                  <MenuItem disabled>Add to group</MenuItem>
+                  {(() => {
+                    const menuChannel = savedChannels.find(
+                      (item) => item.channel_id === groupMenuChannelId
+                    );
+                    return (
+                      <>
+                  <MenuItem disabled>Add to groups</MenuItem>
                   <MenuItem
-                    selected={!groupMenuChannel?.group_name}
                     onClick={() => {
-                      updateChannelGroup(groupMenuChannel?.channel_id, "");
+                      updateChannelGroups(groupMenuChannelId, []);
                       closeGroupMenu();
                     }}
                   >
-                    <ListItemText primary="No group" />
+                    <ListItemText primary="Clear groups" />
                   </MenuItem>
-                  {groupOptions.map((group) => (
-                    <MenuItem
-                      key={group}
-                      selected={groupMenuChannel?.group_name === group}
-                      onClick={() => {
-                        updateChannelGroup(groupMenuChannel?.channel_id, group);
-                        closeGroupMenu();
-                      }}
-                    >
-                      <CheckRoundedIcon
-                        fontSize="small"
-                        sx={{
-                          opacity: groupMenuChannel?.group_name === group ? 1 : 0,
-                          mr: 1,
+                  {groupOptions.map((group) => {
+                    const current = getChannelGroups(menuChannel);
+                    const checked = current.includes(group);
+                    const next = checked
+                      ? current.filter((name) => name !== group)
+                      : [...current, group];
+                    return (
+                      <MenuItem
+                        key={group}
+                        onClick={() => {
+                          updateChannelGroups(groupMenuChannelId, next);
                         }}
-                      />
-                      <ListItemText primary={group} />
-                    </MenuItem>
-                  ))}
+                      >
+                        <Checkbox size="small" checked={checked} />
+                        <ListItemText primary={group} />
+                      </MenuItem>
+                    );
+                  })}
+                      </>
+                    );
+                  })()}
                 </Menu>
               </Stack>
               {assignError && (

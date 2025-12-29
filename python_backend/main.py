@@ -69,6 +69,31 @@ def ensure_rival_channel_group_column():
 ensure_rival_channel_group_column()
 
 
+def ensure_rival_channel_groups_table():
+    with engine.begin() as conn:
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS rival_channel_groups (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                channel_id VARCHAR NOT NULL,
+                group_name VARCHAR NOT NULL
+            );
+        """)
+        conn.exec_driver_sql("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_rival_group
+            ON rival_channel_groups (user_id, channel_id, group_name);
+        """)
+        conn.exec_driver_sql("""
+            INSERT OR IGNORE INTO rival_channel_groups (user_id, channel_id, group_name)
+            SELECT user_id, channel_id, group_name
+            FROM rival_channels
+            WHERE group_name IS NOT NULL AND TRIM(group_name) != '';
+        """)
+
+
+ensure_rival_channel_groups_table()
+
+
 def ensure_smmstore_analytics_cache_table():
     with engine.begin() as conn:
         conn.exec_driver_sql("""
