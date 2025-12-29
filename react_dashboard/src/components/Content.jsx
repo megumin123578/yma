@@ -298,6 +298,34 @@ const ContentAnalytics = () => {
     };
   }, [rows, chartType, metric]);
 
+  const seriesColors = useMemo(() => {
+    const palette = [
+      "#e41a1c",
+      "#377eb8",
+      "#4daf4a",
+      "#984ea3",
+      "#ff7f00",
+      "#ffff33",
+      "#a65628",
+      "#f781bf",
+      "#999999",
+    ];
+    const map = {};
+    lineData.forEach((serie, index) => {
+      map[serie.id] = palette[index % palette.length];
+    });
+    return map;
+  }, [lineData]);
+
+  const latestVideoIds = useMemo(() => {
+    return rows
+      .filter((r) => r.published)
+      .slice()
+      .sort((a, b) => new Date(b.published) - new Date(a.published))
+      .map((r) => r.id)
+      .slice(0, 5);
+  }, [rows]);
+
   const hasBarData =
     barPrep.data && barPrep.data.length > 0 && barPrep.keys && barPrep.keys.length > 0;
 
@@ -460,7 +488,7 @@ const ContentAnalytics = () => {
             areaOpacity={0.12}
             enablePoints={true}
             pointSize={6}
-            colors={{ scheme: "set1" }}
+            colors={(serie) => seriesColors[serie.id] || "#60a5fa"}
             useMesh
             enableSlices="x"
             axisBottom={{
@@ -556,9 +584,15 @@ const ContentAnalytics = () => {
                 >
                   <Box sx={{ mb: 0.75, color: "text.secondary" }}>{dateLabel}</Box>
 
-                  {slice.points.map((p) => {
+                  {slice.points
+                    .slice()
+                    .sort((a, b) => (b.data.y ?? 0) - (a.data.y ?? 0))
+                    .slice(0, 5)
+                    .map((p) => {
                     const value = formatMetricValue(metric, p.data.y);
                     const name = p.data.title || p.serieId;
+                    const label =
+                      name && name.length > 28 ? `${name.slice(0, 28)}...` : name;
 
                     return (
                       <Box
@@ -576,12 +610,12 @@ const ContentAnalytics = () => {
                               width: 10,
                               height: 10,
                               borderRadius: 2,
-                              background: p.color,
+                              background: seriesColors[p.serieId] || p.color,
                               display: "inline-block",
                             }}
                           />
                           <span style={{ fontSize: 12, fontWeight: 600 }}>
-                            {name}
+                            {label}
                           </span>
                         </Box>
                         <span>{value}</span>
@@ -730,7 +764,14 @@ const ContentAnalytics = () => {
                   },
                 }}
               >
-                <TableCell>
+                <TableCell
+                  sx={{
+                    borderLeft: latestVideoIds.includes(r.id)
+                      ? `4px solid ${seriesColors[r.id] || "transparent"}`
+                      : "4px solid transparent",
+                    pl: 1.5,
+                  }}
+                >
                   <Stack direction="row" spacing={1} alignItems="center">
                     <img
                       src={r.thumbnail}
