@@ -9,6 +9,7 @@ import {
   IconButton,
   InputLabel,
   ListItemText,
+  Menu,
   MenuItem,
   Paper,
   Select,
@@ -26,6 +27,8 @@ import {
 import { API_BASE } from "../config";
 import { formatNumber } from "./Module";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
+import CheckRoundedIcon from "@mui/icons-material/CheckRounded";
+import GroupWorkOutlinedIcon from "@mui/icons-material/GroupWorkOutlined";
 import {
   CartesianGrid,
   Legend,
@@ -85,9 +88,17 @@ const RivalsChannel = ({ viewMode = "list" }) => {
   const [savedLoaded, setSavedLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [assignGroup, setAssignGroup] = useState(initialState.assignGroup || "");
+  const [newGroupName, setNewGroupName] = useState(
+    initialState.newGroupName || ""
+  );
+  const [filterGroup, setFilterGroup] = useState(initialState.filterGroup || "");
+  const [assignError, setAssignError] = useState("");
   const [selectedSavedId, setSelectedSavedId] = useState(
     initialState.selectedSavedId || ""
   );
+  const [groupMenuAnchor, setGroupMenuAnchor] = useState(null);
+  const [groupMenuChannel, setGroupMenuChannel] = useState(null);
 
   const fetchChannel = async (q) => {
     try {
@@ -154,7 +165,6 @@ const RivalsChannel = ({ viewMode = "list" }) => {
     const channelUrl = channel.customUrl
       ? `https://www.youtube.com/${channel.customUrl}`
       : `https://www.youtube.com/channel/${channel.id}`;
-
     try {
       setSaving(true);
       setSaveError("");
@@ -209,6 +219,9 @@ const RivalsChannel = ({ viewMode = "list" }) => {
   const handleSavedSelect = (value) => {
     setSelectedSavedId(value);
     if (!value) return;
+    const row = savedChannels.find((item) => item.channel_id === value);
+    setAssignGroup(row?.group_name || "");
+    setNewGroupName("");
     setQuery(value);
     fetchChannel(value);
   };
@@ -221,12 +234,18 @@ const RivalsChannel = ({ viewMode = "list" }) => {
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ query, selectedSavedId })
+        JSON.stringify({
+          query,
+          selectedSavedId,
+          assignGroup,
+          newGroupName,
+          filterGroup,
+        })
       );
     } catch {
       // ignore storage errors
     }
-  }, [query, selectedSavedId]);
+  }, [query, selectedSavedId, assignGroup, newGroupName, filterGroup]);
 
   const missingSelected =
     !!selectedSavedId &&
@@ -235,9 +254,136 @@ const RivalsChannel = ({ viewMode = "list" }) => {
   useEffect(() => {
     if (savedLoaded && selectedSavedId && !channel) {
       setQuery(selectedSavedId);
+      const row = savedChannels.find((item) => item.channel_id === selectedSavedId);
+      setAssignGroup(row?.group_name || "");
+      setNewGroupName("");
       fetchChannel(selectedSavedId);
     }
-  }, [savedLoaded, selectedSavedId, channel]);
+  }, [savedLoaded, selectedSavedId, channel, savedChannels]);
+
+  const groupOptions = useMemo(() => {
+    const unique = new Set();
+    savedChannels.forEach((row) => {
+      const value = (row.group_name || "").trim();
+      if (value) unique.add(value);
+    });
+    if (assignGroup === "__new__") {
+      const fresh = (newGroupName || "").trim();
+      if (fresh) unique.add(fresh);
+    }
+    return Array.from(unique).sort((a, b) => a.localeCompare(b));
+  }, [savedChannels, assignGroup, newGroupName]);
+
+  const filteredSavedChannels = useMemo(() => {
+    const needle = (filterGroup || "").trim();
+    if (!needle) return savedChannels;
+    return savedChannels.filter(
+      (row) => (row.group_name || "").trim() === needle
+    );
+  }, [savedChannels, filterGroup]);
+
+  useEffect(() => {
+    if (!filterGroup) return;
+    if (!selectedSavedId) return;
+    const stillVisible = filteredSavedChannels.some(
+      (row) => row.channel_id === selectedSavedId
+    );
+    if (!stillVisible) {
+      setSelectedSavedId("");
+    }
+  }, [filterGroup, filteredSavedChannels, selectedSavedId]);
+
+  const closeGroupMenu = () => {
+    setGroupMenuAnchor(null);
+    setGroupMenuChannel(null);
+  };
+
+  const openGroupMenu = (event, row) => {
+    setGroupMenuAnchor(event.currentTarget);
+    setGroupMenuChannel(row);
+  };
+
+  const updateChannelGroup = async (channelId, groupName) => {
+    if (!channelId) return;
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      setAssignError("Please login to update groups.");
+      return;
+    }
+    try {
+      setAssignError("");
+      const resp = await fetch(`${API_BASE}/api/users/rivals`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          channel_id: channelId,
+          group_name: groupName || null,
+        }),
+      });
+      if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
+      const updatedRow = await resp.json();
+      if (updatedRow?.channel_id) {
+        setSavedChannels((prev) =>
+          prev.map((row) =>
+            row.channel_id === updatedRow.channel_id
+              ? { ...row, ...updatedRow }
+              : row
+          )
+        );
+      } else {
+        await loadSavedChannels();
+      }
+      if (selectedSavedId === channelId) {
+        setAssignGroup(groupName || "");
+      }
+    } catch (e) {
+      setAssignError(e?.message || "Failed to update group");
+    }
+  };
+
+  const deleteGroup = async (groupName) => {
+    const name = (groupName || "").trim();
+    if (!name) return;
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      setAssignError("Please login to update groups.");
+      return;
+    }
+    const ok = window.confirm(`Delete group "${name}" from all channels?`);
+    if (!ok) return;
+    try {
+      setAssignError("");
+      const resp = await fetch(
+        `${API_BASE}/api/users/rivals/groups/${encodeURIComponent(name)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
+      setSavedChannels((prev) =>
+        prev.map((row) =>
+          row.group_name === name ? { ...row, group_name: null } : row
+        )
+      );
+      if (filterGroup === name) {
+        setFilterGroup("");
+      }
+      if (selectedSavedId) {
+        const selectedRow = savedChannels.find(
+          (row) => row.channel_id === selectedSavedId
+        );
+        if (selectedRow?.group_name === name) {
+          setAssignGroup("");
+        }
+      }
+    } catch (e) {
+      setAssignError(e?.message || "Failed to delete group");
+    }
+  };
 
   const stats = channel?.statistics || {};
   const subsHidden =
@@ -304,9 +450,50 @@ const RivalsChannel = ({ viewMode = "list" }) => {
         })}
       >
         <Stack spacing={1.5} component="form" onSubmit={handleSubmit}>
-          <Typography variant="h6" fontWeight={700}>
-            Channel lookup
-          </Typography>
+          <Stack
+            direction="row"
+            spacing={1.5}
+            alignItems="center"
+            flexWrap="wrap"
+            justifyContent="space-between"
+          >
+            <Typography variant="h6" fontWeight={700}>
+              Channel lookup
+            </Typography>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+              <Button
+                type="button"
+                variant="outlined"
+                size="small"
+                onClick={() => {
+                  setAssignGroup("__new__");
+                  setNewGroupName("");
+                }}
+                sx={{ textTransform: "none", borderRadius: 2 }}
+              >
+                Create group
+              </Button>
+              {assignGroup === "__new__" && (
+                <TextField
+                  size="small"
+                  label="New group"
+                  placeholder="Group name"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  sx={(theme) => ({
+                    minWidth: 180,
+                    "& .MuiOutlinedInput-root": {
+                      backgroundColor:
+                        theme.palette.mode === "dark"
+                          ? "rgba(15,23,42,0.45)"
+                          : "rgba(255,255,255,0.9)",
+                      borderRadius: 2,
+                    },
+                  })}
+                />
+              )}
+            </Stack>
+          </Stack>
           <Typography variant="body2" color="text.secondary">
             Enter a YouTube channel ID or URL.
           </Typography>
@@ -343,7 +530,6 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                 },
               })}
             />
-
             <Button
               type="submit"
               variant="contained"
@@ -445,6 +631,48 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                 <FormControl
                   size="small"
                   sx={(theme) => ({
+                    minWidth: 180,
+                    "& .MuiOutlinedInput-root": {
+                      backgroundColor:
+                        theme.palette.mode === "dark"
+                          ? "rgba(15,23,42,0.45)"
+                          : "rgba(255,255,255,0.9)",
+                      borderRadius: 2,
+                    },
+                  })}
+                >
+                  <InputLabel id="filter-group-label">Group</InputLabel>
+                  <Select
+                    labelId="filter-group-label"
+                    value={filterGroup}
+                    label="Group"
+                    onChange={(e) => setFilterGroup(e.target.value)}
+                    renderValue={(value) => value || "All groups"}
+                  >
+                    <MenuItem value="">
+                      <em>All groups</em>
+                    </MenuItem>
+                  {groupOptions.map((group) => (
+                    <MenuItem key={group} value={group}>
+                      <ListItemText primary={group} />
+                      <IconButton
+                        size="small"
+                        edge="end"
+                        aria-label={`Delete group ${group}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteGroup(group);
+                        }}
+                      >
+                        <CloseRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </MenuItem>
+                  ))}
+                  </Select>
+                </FormControl>
+                <FormControl
+                  size="small"
+                  sx={(theme) => ({
                     minWidth: 240,
                     flexGrow: 1,
                     "& .MuiOutlinedInput-root": {
@@ -493,7 +721,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                         />
                       </MenuItem>
                     )}
-                    {savedChannels.map((row) => (
+                    {filteredSavedChannels.map((row) => (
                       <MenuItem
                         key={row.id}
                         value={row.channel_id}
@@ -518,8 +746,27 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                         </Avatar>
                         <ListItemText
                           primary={row.channel_name || row.channel_id}
-                          secondary={row.channel_name ? row.channel_id : undefined}
+                          secondary={
+                            row.group_name
+                              ? `${row.group_name}${row.channel_name ? " - " : ""}${row.channel_name ? row.channel_id : ""}`
+                              : row.channel_name
+                                ? row.channel_id
+                                : undefined
+                          }
                         />
+                        <IconButton
+                          size="small"
+                          edge="end"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openGroupMenu(e, row);
+                          }}
+                          aria-label={`Add ${row.channel_name || row.channel_id} to group`}
+                          sx={{ mr: 0.5 }}
+                        >
+                          <GroupWorkOutlinedIcon fontSize="small" />
+                        </IconButton>
                         <IconButton
                           size="small"
                           edge="end"
@@ -537,7 +784,50 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                     ))}
                   </Select>
                 </FormControl>
+                <Menu
+                  anchorEl={groupMenuAnchor}
+                  open={Boolean(groupMenuAnchor)}
+                  onClose={closeGroupMenu}
+                  anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                  transformOrigin={{ vertical: "top", horizontal: "left" }}
+                  MenuListProps={{ dense: true }}
+                >
+                  <MenuItem disabled>Add to group</MenuItem>
+                  <MenuItem
+                    selected={!groupMenuChannel?.group_name}
+                    onClick={() => {
+                      updateChannelGroup(groupMenuChannel?.channel_id, "");
+                      closeGroupMenu();
+                    }}
+                  >
+                    <ListItemText primary="No group" />
+                  </MenuItem>
+                  {groupOptions.map((group) => (
+                    <MenuItem
+                      key={group}
+                      selected={groupMenuChannel?.group_name === group}
+                      onClick={() => {
+                        updateChannelGroup(groupMenuChannel?.channel_id, group);
+                        closeGroupMenu();
+                      }}
+                    >
+                      <CheckRoundedIcon
+                        fontSize="small"
+                        sx={{
+                          opacity: groupMenuChannel?.group_name === group ? 1 : 0,
+                          mr: 1,
+                        }}
+                      />
+                      <ListItemText primary={group} />
+                    </MenuItem>
+                  ))}
+                </Menu>
               </Stack>
+              {assignError && (
+                <Typography color="error" variant="body2">
+                  {assignError}
+                </Typography>
+              )}
             </Stack>
           )}
         </Stack>

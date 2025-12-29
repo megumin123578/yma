@@ -60,6 +60,7 @@ class RivalChannelCreate(BaseModel):
     channel_name: Optional[str] = None
     channel_url: Optional[str] = None
     channel_avatar_url: Optional[str] = None
+    group_name: Optional[str] = None
 
 
 class RivalChannelOut(BaseModel):
@@ -68,6 +69,7 @@ class RivalChannelOut(BaseModel):
     channel_name: Optional[str] = None
     channel_url: Optional[str] = None
     channel_avatar_url: Optional[str] = None
+    group_name: Optional[str] = None
 
     class Config:
         from_attributes = True

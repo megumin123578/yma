@@ -56,6 +56,19 @@ def ensure_rival_channel_avatar_column():
 ensure_rival_channel_avatar_column()
 
 
+def ensure_rival_channel_group_column():
+    with engine.begin() as conn:
+        columns = conn.exec_driver_sql("PRAGMA table_info(rival_channels)").fetchall()
+        has_column = any(row[1] == "group_name" for row in columns)
+        if not has_column:
+            conn.exec_driver_sql(
+                "ALTER TABLE rival_channels ADD COLUMN group_name VARCHAR"
+            )
+
+
+ensure_rival_channel_group_column()
+
+
 def ensure_smmstore_analytics_cache_table():
     with engine.begin() as conn:
         conn.exec_driver_sql("""

@@ -25,6 +25,7 @@ class RivalChannel(Base):
     channel_name = Column(String, nullable=True)
     channel_url = Column(String, nullable=True)
     channel_avatar_url = Column(String, nullable=True)
+    group_name = Column(String, nullable=True)
 
 
 class SmmstoreAnalyticsCache(Base):

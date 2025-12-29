@@ -720,6 +720,8 @@ def add_rival(
             row.channel_url = data.channel_url
         if data.channel_avatar_url:
             row.channel_avatar_url = data.channel_avatar_url
+        if data.group_name is not None:
+            row.group_name = data.group_name
         db.add(row)
         db.commit()
         db.refresh(row)
@@ -731,6 +733,7 @@ def add_rival(
         channel_name=data.channel_name,
         channel_url=data.channel_url,
         channel_avatar_url=data.channel_avatar_url,
+        group_name=data.group_name,
     )
     db.add(row)
     db.commit()
@@ -757,3 +760,24 @@ def delete_rival(
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+@router.delete("/rivals/groups/{group_name}")
+def delete_rival_group(
+    group_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    name = (group_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="group_name is required")
+    updated = (
+        db.query(RivalChannel)
+        .filter(
+            RivalChannel.user_id == current_user.id,
+            RivalChannel.group_name == name,
+        )
+        .update({RivalChannel.group_name: None})
+    )
+    db.commit()
+    return {"ok": True, "updated": updated}
