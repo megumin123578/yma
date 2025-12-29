@@ -392,11 +392,7 @@ const AudienceAnalytics = () => {
         <Stack direction="row" justifyContent="space-between" alignItems="baseline">
           <Box>
             <Typography variant="h6">Retention Curve</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {retentionRange.start && retentionRange.end
-                ? `Video-level retention · ${retentionRange.start} → ${retentionRange.end}`
-                : "No data"}
-            </Typography>
+
           </Box>
           <Typography variant="caption" color="text.secondary">
             Higher is better
