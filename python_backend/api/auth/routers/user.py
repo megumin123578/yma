@@ -38,7 +38,7 @@ os.makedirs(PROGRESS_DIR, exist_ok=True)
 
 OAUTH_REDIRECT_URL = os.getenv(
     "OAUTH_REDIRECT_URL",
-    "http://localhost:8000/api/users/credentials/callback",
+    "https://77d8302dfd4c.ngrok-free.app/api/users/credentials/callback",
 )
 
 PENDING_OAUTH = {}
