@@ -658,6 +658,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                       <IconButton
                         size="small"
                         edge="end"
+                        color="error"
                         aria-label={`Delete group ${group}`}
                         onClick={(e) => {
                           e.stopPropagation();
