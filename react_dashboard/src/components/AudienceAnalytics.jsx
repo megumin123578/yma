@@ -23,7 +23,7 @@ const AudienceAnalytics = () => {
   const [demoRows, setDemoRows] = useState([]);
   const [demoRange, setDemoRange] = useState({ start: "", end: "" });
   const [retentionRows, setRetentionRows] = useState([]);
-  const [retentionRange, setRetentionRange] = useState({ start: "", end: "" });
+  const [, setRetentionRange] = useState({ start: "", end: "" });
   const [videos, setVideos] = useState([]);
   const [videoId, setVideoId] = useState("");
   const [loading, setLoading] = useState(false);
