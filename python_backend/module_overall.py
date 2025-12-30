@@ -1,5 +1,6 @@
 import os
-from typing import List, Dict, Optional
+import sqlite3
+from typing import List, Dict, Optional, Iterable
 
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -67,6 +68,90 @@ def get_yt_analytics(credentials, video_id: str, channel_id: Optional[str] = Non
                 out[m] = float(row[i])
             except Exception:
                 out[m] = None
+
+    return out
+
+
+def _auth_db_path() -> str:
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    return os.getenv("AUTH_DB_PATH", os.path.join(repo_root, "auth.db"))
+
+
+def _stop_requested() -> bool:
+    run_id = os.getenv("SCHEDULE_RUN_ID")
+    if not run_id:
+        return False
+    try:
+        conn = sqlite3.connect(_auth_db_path())
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT status FROM user_schedule_runs WHERE id = ?",
+            (int(run_id),),
+        )
+        row = cur.fetchone()
+        conn.close()
+        return bool(row and row[0] in {"stopping", "stopped", "canceled"})
+    except Exception:
+        return False
+
+
+def _chunked(seq: List[str], size: int) -> Iterable[List[str]]:
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+
+def get_yt_analytics_bulk(
+    credentials,
+    video_ids: List[str],
+    channel_id: Optional[str] = None,
+    chunk_size: int = 50,
+) -> Dict[str, Dict]:
+    if not video_ids:
+        return {}
+
+    yta = build("youtubeAnalytics", "v2", credentials=credentials)
+    ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
+    metrics = ",".join(ANALYTICS_METRICS)
+
+    out: Dict[str, Dict] = {}
+    for chunk in _chunked(video_ids, chunk_size):
+        query = {
+            "ids": ids,
+            "startDate": "2000-01-01",
+            "endDate": "2099-01-01",
+            "metrics": metrics,
+            "dimensions": "video",
+            "filters": f"video=={','.join(chunk)}",
+        }
+        try:
+            resp = yta.reports().query(**query).execute()
+        except HttpError as e:
+            print(f"[ERROR] Bulk analytics failed for chunk: {e}")
+            for vid in chunk:
+                out[vid] = get_yt_analytics(credentials, vid, channel_id=channel_id)
+            continue
+
+        rows = resp.get("rows", [])
+        headers = resp.get("columnHeaders", [])
+        if not rows or not headers:
+            continue
+
+        idx = {h["name"]: i for i, h in enumerate(headers)}
+        i_video = idx.get("video")
+        for row in rows:
+            if i_video is None:
+                continue
+            vid = row[i_video]
+            vals: Dict[str, float | None] = {}
+            for m in ANALYTICS_METRICS:
+                i = idx.get(m)
+                if i is None:
+                    continue
+                try:
+                    vals[m] = float(row[i])
+                except Exception:
+                    vals[m] = None
+            out[vid] = vals
 
     return out
 
@@ -218,13 +303,16 @@ def process_overall(cred_file: str, channel_id: Optional[str] = None):
 
     # Snippet info
     snippet_map = get_video_snippet_map(credentials, video_ids)
+    analytics_map = get_yt_analytics_bulk(credentials, video_ids, channel_id=channel_id)
 
     # ETL từng video
     for vid in video_ids:
+        if _stop_requested():
+            raise RuntimeError("Stop requested")
         print(f"[INFO] [{account_tag}] Processing video {vid} ...")
 
         base = snippet_map.get(vid, {})
-        ana = get_yt_analytics(credentials, vid, channel_id=channel_id)
+        ana = analytics_map.get(vid, {})
 
         video_data = {
             "account_tag": account_tag,

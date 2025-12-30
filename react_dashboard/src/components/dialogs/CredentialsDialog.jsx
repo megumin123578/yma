@@ -33,6 +33,7 @@ import {
   updateSchedule,
   deleteSchedule,
   listScheduleRuns,
+  stopScheduleRun,
 } from "../../services/userService";
 
 const CredentialsDialog = ({ open, onClose }) => {
@@ -60,6 +61,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [scheduleRuns, setScheduleRuns] = useState([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [runsError, setRunsError] = useState("");
+  const [stoppingRunId, setStoppingRunId] = useState(null);
   const [scheduleForm, setScheduleForm] = useState({
     time_of_day: "08:00",
   });
@@ -429,6 +431,21 @@ const CredentialsDialog = ({ open, onClose }) => {
     }
   };
 
+  const handleStopRun = async (runId) => {
+    setStoppingRunId(runId);
+    setRunsError("");
+    try {
+      await stopScheduleRun(runId);
+      const data = await listScheduleRuns(10);
+      setScheduleRuns(data?.items || []);
+    } catch (err) {
+      const msg = err?.response?.data?.detail || "Failed to stop run.";
+      setRunsError(msg);
+    } finally {
+      setStoppingRunId(null);
+    }
+  };
+
   const requestDeleteToken = (tokenName) => {
     setPendingDelete(tokenName);
     setConfirmOpen(true);
@@ -466,6 +483,8 @@ const CredentialsDialog = ({ open, onClose }) => {
     const lower = (status || "").toLowerCase();
     if (lower === "done") return { bg: "rgba(34,197,94,0.18)", fg: "#22c55e" };
     if (lower === "running") return { bg: "rgba(59,130,246,0.18)", fg: "#3b82f6" };
+    if (lower === "stopping") return { bg: "rgba(234,179,8,0.18)", fg: "#eab308" };
+    if (lower === "stopped") return { bg: "rgba(148,163,184,0.28)", fg: "#94a3b8" };
     if (lower === "error") return { bg: "rgba(239,68,68,0.18)", fg: "#ef4444" };
     return { bg: "rgba(148,163,184,0.2)", fg: "#94a3b8" };
   };
@@ -1093,25 +1112,38 @@ const CredentialsDialog = ({ open, onClose }) => {
                                     : "rgba(255,255,255,0.75)",
                                 }}
                               >
-                                <Box display="flex" alignItems="center" gap={1}>
-                                  <Box
-                                    sx={{
-                                      px: 1,
-                                      py: 0.25,
-                                      borderRadius: 999,
-                                      fontSize: 12,
-                                      fontWeight: 700,
-                                      letterSpacing: 0.4,
-                                      textTransform: "uppercase",
-                                      bgcolor: styles.bg,
-                                      color: styles.fg,
-                                    }}
-                                  >
-                                    {run.status || "unknown"}
+                                <Box display="flex" alignItems="center" justifyContent="space-between" gap={1}>
+                                  <Box display="flex" alignItems="center" gap={1}>
+                                    <Box
+                                      sx={{
+                                        px: 1,
+                                        py: 0.25,
+                                        borderRadius: 999,
+                                        fontSize: 12,
+                                        fontWeight: 700,
+                                        letterSpacing: 0.4,
+                                        textTransform: "uppercase",
+                                        bgcolor: styles.bg,
+                                        color: styles.fg,
+                                      }}
+                                    >
+                                      {run.status || "unknown"}
+                                    </Box>
+                                    <Typography variant="body2">
+                                      {run.message || "No details"}
+                                    </Typography>
                                   </Box>
-                                  <Typography variant="body2">
-                                    {run.message || "No details"}
-                                  </Typography>
+                                  {run.status === "running" && (
+                                    <Button
+                                      size="small"
+                                      color="error"
+                                      onClick={() => handleStopRun(run.id)}
+                                      disabled={stoppingRunId === run.id}
+                                      sx={shimmerSx}
+                                    >
+                                      Stop
+                                    </Button>
+                                  )}
                                 </Box>
                                 <Box
                                   display="flex"
@@ -1127,6 +1159,28 @@ const CredentialsDialog = ({ open, onClose }) => {
                                     )}`}
                                   </Typography>
                                 </Box>
+                                {run.status === "running" && total > 0 && (
+                                  <Box
+                                    sx={{
+                                      height: 6,
+                                      borderRadius: 999,
+                                      overflow: "hidden",
+                                      bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)",
+                                    }}
+                                  >
+                                    <Box
+                                      sx={{
+                                        height: "100%",
+                                        width: `${Math.min(
+                                          100,
+                                          Math.max(0, Math.round((processed / total) * 100))
+                                        )}%`,
+                                        bgcolor: isDark ? "#7de0d2" : "#1aa86c",
+                                        transition: "width 200ms ease",
+                                      }}
+                                    />
+                                  </Box>
+                                )}
                               </Box>
                             );
                           })}

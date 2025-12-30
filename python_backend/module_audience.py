@@ -1,4 +1,5 @@
 import os
+import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -62,6 +63,29 @@ def _ensure_retention_table(conn) -> None:
             """
         )
     )
+
+
+def _auth_db_path() -> str:
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    return os.getenv("AUTH_DB_PATH", os.path.join(repo_root, "auth.db"))
+
+
+def _stop_requested() -> bool:
+    run_id = os.getenv("SCHEDULE_RUN_ID")
+    if not run_id:
+        return False
+    try:
+        conn = sqlite3.connect(_auth_db_path())
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT status FROM user_schedule_runs WHERE id = ?",
+            (int(run_id),),
+        )
+        row = cur.fetchone()
+        conn.close()
+        return bool(row and row[0] in {"stopping", "stopped", "canceled"})
+    except Exception:
+        return False
 
 
 def fetch_demographics(credentials, channel_id: Optional[str] = None) -> Tuple[List[Dict], str, str]:
@@ -239,5 +263,7 @@ def run_audience_analytics(
         return
 
     for vid in video_ids:
+        if _stop_requested():
+            raise RuntimeError("Stop requested")
         rows, start_date, end_date = fetch_retention(credentials, vid, channel_id=channel_id)
         save_retention(pg_url, safe_tag, vid, rows, start_date, end_date)

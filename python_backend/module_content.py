@@ -1,5 +1,6 @@
 import os
 import json
+import sqlite3
 from datetime import date
 from typing import List, Dict, Optional
 
@@ -131,6 +132,89 @@ def get_video_impressions(
         return int(rows[0][0] or 0)
     except Exception:
         return 0
+
+
+def _auth_db_path() -> str:
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    return os.getenv("AUTH_DB_PATH", os.path.join(repo_root, "auth.db"))
+
+
+def _stop_requested() -> bool:
+    run_id = os.getenv("SCHEDULE_RUN_ID")
+    if not run_id:
+        return False
+    try:
+        conn = sqlite3.connect(_auth_db_path())
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT status FROM user_schedule_runs WHERE id = ?",
+            (int(run_id),),
+        )
+        row = cur.fetchone()
+        conn.close()
+        return bool(row and row[0] in {"stopping", "stopped", "canceled"})
+    except Exception:
+        return False
+
+
+def _chunked_ids(video_ids: List[str], size: int) -> List[List[str]]:
+    return [video_ids[i:i + size] for i in range(0, len(video_ids), size)]
+
+
+def get_video_impressions_bulk(
+    credentials,
+    video_ids: List[str],
+    start_date: str,
+    end_date: str,
+    channel_id: Optional[str] = None,
+    chunk_size: int = 50,
+) -> Optional[Dict[str, int]]:
+    if not video_ids:
+        return {}
+
+    yta = build("youtubeAnalytics", "v2", credentials=credentials)
+    ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
+    out: Dict[str, int] = {}
+    any_success = False
+
+    for chunk in _chunked_ids(video_ids, chunk_size):
+        query = {
+            "ids": ids,
+            "startDate": start_date,
+            "endDate": end_date,
+            "dimensions": "video",
+            "filters": f"video=={','.join(chunk)}",
+            "metrics": "cardImpressions",
+        }
+        try:
+            resp = yta.reports().query(**query).execute() or {}
+        except HttpError as e:
+            print(f"[WARN] Bulk impressions failed for chunk: {e}")
+            continue
+
+        rows = resp.get("rows") or []
+        headers = resp.get("columnHeaders", []) or []
+        if not rows or not headers:
+            continue
+
+        idx = {h["name"]: i for i, h in enumerate(headers)}
+        i_video = idx.get("video")
+        i_card = idx.get("cardImpressions")
+        if i_video is None or i_card is None:
+            continue
+
+        for row in rows:
+            vid = row[i_video]
+            try:
+                out[vid] = int(row[i_card] or 0)
+            except Exception:
+                out[vid] = 0
+        any_success = True
+
+    if not any_success:
+        return None
+
+    return out
 
 
 # ============================
@@ -305,14 +389,23 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id: Optional
 
     print("→ Fetching video metadata...")
     videos = get_video_metadata(credentials, video_ids)
+    start_date_min = min((v["published_at"] for v in videos if v.get("published_at")), default=end_date)
+    impressions_map = get_video_impressions_bulk(
+        credentials, video_ids, start_date_min, end_date, channel_id=channel_id
+    )
 
     print("→ Fetching impressions (cardImpressions) via YouTube Analytics API...")
     for v in videos:
+        if _stop_requested():
+            raise RuntimeError("Stop requested")
         video_id = v["video_id"]
-        start_date = v["published_at"]  # YYYY-MM-DD
-        v["impressions"] = get_video_impressions(
-            credentials, video_id, start_date, end_date, channel_id=channel_id
-        )
+        if impressions_map is None:
+            start_date = v["published_at"]  # YYYY-MM-DD
+            v["impressions"] = get_video_impressions(
+                credentials, video_id, start_date, end_date, channel_id=channel_id
+            )
+        else:
+            v["impressions"] = int(impressions_map.get(video_id, 0))
 
     print("→ Saving metadata to PostgreSQL...")
     save_metadata(videos, account_tag, pg_url)
@@ -321,6 +414,8 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id: Optional
     daily_rows = []
 
     for v in videos:
+        if _stop_requested():
+            raise RuntimeError("Stop requested")
         video_id = v["video_id"]
         start_date = v["published_at"]
         d = get_video_daily_analytics(

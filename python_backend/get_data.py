@@ -108,7 +108,7 @@ def _update_schedule_run(status: str, processed: int, total: int, message: str =
         conn = sqlite3.connect(_run_db_path())
         cur = conn.cursor()
         finished_at = None
-        if status in {"done", "error", "empty"}:
+        if status in {"done", "error", "empty", "stopped"}:
             finished_at = datetime.now().isoformat(sep=" ")
         cur.execute(
             """
@@ -123,6 +123,34 @@ def _update_schedule_run(status: str, processed: int, total: int, message: str =
     except Exception:
         pass
 
+
+def _stop_requested() -> bool:
+    run_id = os.getenv("SCHEDULE_RUN_ID")
+    if not run_id:
+        return False
+    try:
+        conn = sqlite3.connect(_run_db_path())
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT status FROM user_schedule_runs WHERE id = ?",
+            (int(run_id),),
+        )
+        row = cur.fetchone()
+        conn.close()
+        if row and row[0] in {"stopping", "stopped", "canceled"}:
+            return True
+    except Exception:
+        return False
+    return False
+
+
+def _raise_if_stop_requested(account_tag: str, stage: str) -> None:
+    if not _stop_requested():
+        return
+    _write_progress(account_tag, stage, 0, "stopped", "Stopped by admin")
+    _update_schedule_run("stopped", 0, 0, "Stopped by admin")
+    raise RuntimeError("Stop requested")
+
 def _run_for_credential(cred_file: str) -> None:
     account_tag = os.path.splitext(os.path.basename(cred_file))[0]
     channel_id = _get_selected_channel_id(account_tag)
@@ -135,20 +163,26 @@ def _run_for_credential(cred_file: str) -> None:
             "Select a channel before running.",
         )
         return
+    _raise_if_stop_requested(account_tag, "stopped")
     _write_progress(account_tag, "traffic_source", 5, "running", "Starting traffic source")
     process_one(cred_file, channel_id=channel_id)
+    _raise_if_stop_requested(account_tag, "stopped")
     _write_progress(account_tag, "content", 35, "running", "Starting content fetch")
     process_content(cred_file, channel_id=channel_id)
+    _raise_if_stop_requested(account_tag, "stopped")
     _write_progress(account_tag, "overview", 60, "running", "Starting overview")
     process_overall(cred_file, channel_id=channel_id)
+    _raise_if_stop_requested(account_tag, "stopped")
     _write_progress(account_tag, "audience", 80, "running", "Starting audience analytics")
     pg_url = os.getenv("PG_URL")
     if not pg_url:
         raise RuntimeError("Missing PG_URL env var")
     creds = create_token_from_credentials(os.path.join(CREDENTIALS_FOLDER, cred_file))
     run_audience_analytics(creds, account_tag, pg_url, channel_id=channel_id)
+    _raise_if_stop_requested(account_tag, "stopped")
     _write_progress(account_tag, "reach", 90, "running", "Starting reach analytics")
     run_reach_analytics(creds, account_tag, pg_url, channel_id=channel_id)
+    _raise_if_stop_requested(account_tag, "stopped")
     _write_progress(account_tag, "subscribers", 95, "running", "Starting subscriber analytics")
     run_channel_daily(creds, account_tag, pg_url, channel_id=channel_id)
     _write_progress(account_tag, "done", 100, "done", "Completed")
@@ -183,6 +217,10 @@ def main():
             _run_for_credential(cred_file)
             _update_schedule_run("done", 1, 1, "Completed")
         except Exception as e:
+            if str(e) == "Stop requested":
+                _write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")
+                _update_schedule_run("stopped", 0, 1, "Stopped by admin")
+                return
             _write_progress(account_tag, "error", 0, "error", str(e))
             _update_schedule_run("error", 0, 1, str(e))
             raise
@@ -212,6 +250,10 @@ def main():
             ok += 1
             _update_schedule_run("running", ok, total, f"Processed {ok}/{total}")
         except Exception as e:
+            if str(e) == "Stop requested":
+                _write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")
+                _update_schedule_run("stopped", ok, total, "Stopped by admin")
+                break
             _write_progress(account_tag, "error", 0, "error", str(e))
             _update_schedule_run("error", ok, total, str(e))
             break

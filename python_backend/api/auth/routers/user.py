@@ -486,19 +486,30 @@ def list_tokens(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    hidden = get_hidden_account_tags(db, current_user.id)
-    rows = (
-        db.query(UserCredential)
-        .filter(
-            UserCredential.user_id == current_user.id,
-            UserCredential.token_name.isnot(None),
-        )
-        .all()
-    )
+    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    hidden = set()
+    allowed = None
+    if not is_admin:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        allowed = {
+            row.token_name
+            for row in db.query(UserCredential.token_name)
+            .filter(
+                UserCredential.user_id == current_user.id,
+                UserCredential.token_name.isnot(None),
+            )
+            .all()
+            if row.token_name
+        }
+
+    if not os.path.exists(TOKEN_DIR):
+        return {"tokens": []}
+
     files = []
-    for row in rows:
-        name = row.token_name or ""
-        if not name or not name.lower().endswith(".pickle"):
+    for name in os.listdir(TOKEN_DIR):
+        if not name.lower().endswith(".pickle"):
+            continue
+        if allowed is not None and name not in allowed:
             continue
         token_path = os.path.join(TOKEN_DIR, name)
         if not os.path.exists(token_path):
@@ -658,14 +669,11 @@ def get_token_progress(
         raise HTTPException(status_code=400, detail="Invalid token filename")
 
     account_tag = os.path.splitext(safe_name)[0]
-    owned = (
-        db.query(UserCredential)
-        .filter(
-            UserCredential.user_id == current_user.id,
-            UserCredential.token_name == token_name,
-        )
-        .first()
-    )
+    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    q = db.query(UserCredential).filter(UserCredential.token_name == token_name)
+    if not is_admin:
+        q = q.filter(UserCredential.user_id == current_user.id)
+    owned = q.first()
     if not owned:
         raise HTTPException(status_code=404, detail="Token not found")
     progress_path = os.path.join(PROGRESS_DIR, f"{account_tag}.json")
@@ -689,14 +697,11 @@ def run_token(
         raise HTTPException(status_code=400, detail="Invalid token filename")
 
     account_tag = os.path.splitext(safe_name)[0]
-    owned = (
-        db.query(UserCredential)
-        .filter(
-            UserCredential.user_id == current_user.id,
-            UserCredential.token_name == token_name,
-        )
-        .first()
-    )
+    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    q = db.query(UserCredential).filter(UserCredential.token_name == token_name)
+    if not is_admin:
+        q = q.filter(UserCredential.user_id == current_user.id)
+    owned = q.first()
     if not owned:
         raise HTTPException(status_code=404, detail="Token not found")
 
@@ -820,6 +825,29 @@ def list_schedule_runs(
             for r in rows
         ]
     }
+
+
+@router.post("/schedules/runs/{run_id}/stop")
+def stop_schedule_run(
+    run_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    row = (
+        db.query(UserScheduleRun)
+        .filter(UserScheduleRun.id == run_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if row.status != "running":
+        return {"ok": True, "status": row.status}
+    row.status = "stopping"
+    row.message = "Stop requested by admin"
+    db.add(row)
+    db.commit()
+    return {"ok": True, "status": row.status}
 
 
 @router.post("/schedules")

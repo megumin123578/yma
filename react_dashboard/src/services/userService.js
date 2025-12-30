@@ -93,3 +93,8 @@ export const listScheduleRuns = async (limit = 10) => {
   });
   return res.data;
 };
+
+export const stopScheduleRun = async (runId) => {
+  const res = await api.post(`/api/users/schedules/runs/${runId}/stop`);
+  return res.data;
+};

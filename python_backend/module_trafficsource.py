@@ -2,6 +2,7 @@
 import os
 import pickle
 import re
+import sqlite3
 from typing import Dict, Tuple, Iterator, Optional, Set, List
 from datetime import datetime, timedelta
 
@@ -33,6 +34,28 @@ SCOPES = [
 ]
 
 # ===== Utils =====
+def _auth_db_path() -> str:
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    return os.getenv("AUTH_DB_PATH", os.path.join(repo_root, "auth.db"))
+
+
+def _stop_requested() -> bool:
+    run_id = os.getenv("SCHEDULE_RUN_ID")
+    if not run_id:
+        return False
+    try:
+        conn = sqlite3.connect(_auth_db_path())
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT status FROM user_schedule_runs WHERE id = ?",
+            (int(run_id),),
+        )
+        row = cur.fetchone()
+        conn.close()
+        return bool(row and row[0] in {"stopping", "stopped", "canceled"})
+    except Exception:
+        return False
+
 def sanitize_filename(s: str) -> str:
     s = s.strip().replace(" ", "_")
     return re.sub(r"[^A-Za-z0-9_\-\.]", "_", s)
@@ -290,6 +313,8 @@ def run_traffic_source_lifetime_daily_to_postgres(
     source_set: Set[str] = set()
 
     for sd, ed in _iter_day_chunks(start_date, end_date, chunk_days=chunk_days):
+        if _stop_requested():
+            raise RuntimeError("Stop requested")
         q = {
             "ids": ids,
             "startDate": sd,
