@@ -255,15 +255,21 @@ def run_audience_analytics(
 ) -> None:
     safe_tag = sanitize_filename(account_tag)
 
+    print(f"[INFO] [audience] Fetching demographics for {safe_tag}...")
     demo_rows, demo_start, demo_end = fetch_demographics(credentials, channel_id=channel_id)
+    print(f"[INFO] [audience] Demographics rows: {len(demo_rows)} ({demo_start} -> {demo_end})")
     save_demographics(pg_url, safe_tag, demo_rows, demo_start, demo_end)
 
     video_ids = _list_video_ids(pg_url, safe_tag)
     if not video_ids:
+        print(f"[INFO] [audience] No videos found for {safe_tag}.")
         return
 
+    print(f"[INFO] [audience] Fetching retention for {len(video_ids)} videos...")
     for vid in video_ids:
         if _stop_requested():
             raise RuntimeError("Stop requested")
+        print(f"[INFO] [audience] Retention video: {vid}")
         rows, start_date, end_date = fetch_retention(credentials, vid, channel_id=channel_id)
         save_retention(pg_url, safe_tag, vid, rows, start_date, end_date)
+    print(f"[INFO] [audience] Retention saved for {len(video_ids)} videos.")

@@ -180,7 +180,7 @@ def _purge_postgres_account(account_tag: str) -> None:
                 pass
 
 
-def _kickoff_get_data(account_tag: str) -> None:
+def _kickoff_get_data(account_tag: str, env_extra: Optional[dict] = None) -> None:
     script_path = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "get_data.py")
     )
@@ -195,10 +195,13 @@ def _kickoff_get_data(account_tag: str) -> None:
         print(f"[WARN] get_data.py not found: {script_path}")
         return
     try:
+        env = os.environ.copy()
+        if env_extra:
+            env.update(env_extra)
         subprocess.Popen(
             [sys.executable, script_path, account_tag],
             cwd=repo_root,
-            env=os.environ.copy(),
+            env=env,
         )
     except Exception as e:
         print(f"[WARN] Failed to start get_data.py: {e}")
@@ -710,8 +713,20 @@ def run_token(
         raise HTTPException(status_code=404, detail="Token not found")
 
     _write_progress_file(account_tag, "queued", 0, "queued", "Manual refresh")
-    _kickoff_get_data(account_tag)
-    return {"ok": True}
+    run = UserScheduleRun(
+        user_id=owned.user_id,
+        schedule_id=None,
+        status="running",
+        started_at=datetime.utcnow(),
+        processed=0,
+        total=6,
+        message="Manual refresh",
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    _kickoff_get_data(account_tag, env_extra={"SCHEDULE_RUN_ID": str(run.id)})
+    return {"ok": True, "run_id": run.id}
 
 
 @router.delete("/tokens/{token_name}")
