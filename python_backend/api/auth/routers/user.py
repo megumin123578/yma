@@ -729,6 +729,58 @@ def run_token(
     return {"ok": True, "run_id": run.id}
 
 
+class RunStagePayload(BaseModel):
+    stage: str
+
+
+@router.post("/tokens/{token_name}/run-stage")
+def run_token_stage(
+    token_name: str,
+    payload: RunStagePayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    safe_name = _safe_token_filename(token_name)
+    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
+        raise HTTPException(status_code=400, detail="Invalid token filename")
+
+    stage = (payload.stage or "").strip().lower()
+    if stage not in {"content", "overview", "audience", "reach"}:
+        raise HTTPException(status_code=400, detail="Invalid stage")
+
+    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    q = db.query(UserCredential).filter(UserCredential.token_name == token_name)
+    if not is_admin:
+        q = q.filter(UserCredential.user_id == current_user.id)
+    owned = q.first()
+    if not owned:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    token_path = os.path.join(TOKEN_DIR, safe_name)
+    if not os.path.exists(token_path):
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    account_tag = os.path.splitext(safe_name)[0]
+    _write_progress_file(account_tag, "queued", 0, "queued", f"Manual {stage}")
+    run = UserScheduleRun(
+        user_id=owned.user_id,
+        schedule_id=None,
+        status="running",
+        started_at=datetime.utcnow(),
+        processed=0,
+        total=1,
+        message=f"Manual {stage}",
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    _kickoff_get_data(
+        account_tag,
+        env_extra={"SCHEDULE_RUN_ID": str(run.id), "RUN_STAGE": stage},
+    )
+    return {"ok": True, "run_id": run.id}
+
+
 @router.delete("/tokens/{token_name}")
 def delete_token(
     token_name: str,

@@ -58,6 +58,14 @@ export const runToken = async (tokenName) => {
   return res.data;
 };
 
+export const runTokenStage = async (tokenName, stage) => {
+  const res = await api.post(
+    `/api/users/tokens/${encodeURIComponent(tokenName)}/run-stage`,
+    { stage }
+  );
+  return res.data;
+};
+
 export const setTokenVisibility = async (tokenName, hidden) => {
   const res = await api.post("/api/users/tokens/visibility", {
     token: tokenName,

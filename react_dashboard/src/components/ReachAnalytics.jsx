@@ -30,7 +30,13 @@ const ReachAnalytics = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const [accounts, setAccounts] = useState([]);
-  const [accountTag, setAccountTag] = useState("");
+  const [accountTag, setAccountTag] = useState(() => {
+    try {
+      return localStorage.getItem("reach.selectedChannelId") || "";
+    } catch {
+      return "";
+    }
+  });
   const [rows, setRows] = useState([]);
   const [range, setRange] = useState({ start: "", end: "" });
   const [loading, setLoading] = useState(false);
@@ -58,6 +64,15 @@ const ReachAnalytics = () => {
     };
     loadChannels();
   }, [accountTag, authHeaders]);
+
+  useEffect(() => {
+    if (!accountTag) return;
+    try {
+      localStorage.setItem("reach.selectedChannelId", accountTag);
+    } catch {
+      // ignore storage errors
+    }
+  }, [accountTag]);
 
   useEffect(() => {
     if (!accountTag) return;
@@ -92,6 +107,8 @@ const ReachAnalytics = () => {
       whiteSpace: "nowrap",
     },
   };
+
+  const displayRows = useMemo(() => rows.slice(0, 20), [rows]);
 
   return (
     <Stack spacing={2}>
@@ -163,7 +180,7 @@ const ReachAnalytics = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {rows.map((row) => (
+            {displayRows.map((row) => (
               <TableRow
                 key={row.video_id}
                 sx={{
@@ -223,7 +240,7 @@ const ReachAnalytics = () => {
                 <TableCell align="right">{formatPct(row.total_ctr)}</TableCell>
               </TableRow>
             ))}
-            {!rows.length && !loading && (
+            {!displayRows.length && !loading && (
               <TableRow>
                 <TableCell colSpan={12}>
                   <Typography variant="body2" color="text.secondary">

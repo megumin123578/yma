@@ -163,6 +163,33 @@ def _run_for_credential(cred_file: str) -> None:
             "Select a channel before running.",
         )
         return
+    stage = (os.getenv("RUN_STAGE") or "").strip().lower()
+    if stage:
+        _raise_if_stop_requested(account_tag, "stopped")
+        _update_schedule_run("running", 0, 1, f"Starting {stage}")
+        _write_progress(account_tag, stage, 10, "running", f"Starting {stage}")
+        if stage == "content":
+            process_content(cred_file, channel_id=channel_id)
+        elif stage == "overview":
+            process_overall(cred_file, channel_id=channel_id)
+        elif stage == "audience":
+            pg_url = os.getenv("PG_URL")
+            if not pg_url:
+                raise RuntimeError("Missing PG_URL env var")
+            creds = create_token_from_credentials(os.path.join(CREDENTIALS_FOLDER, cred_file))
+            run_audience_analytics(creds, account_tag, pg_url, channel_id=channel_id)
+        elif stage == "reach":
+            pg_url = os.getenv("PG_URL")
+            if not pg_url:
+                raise RuntimeError("Missing PG_URL env var")
+            creds = create_token_from_credentials(os.path.join(CREDENTIALS_FOLDER, cred_file))
+            run_reach_analytics(creds, account_tag, pg_url, channel_id=channel_id)
+        else:
+            raise RuntimeError(f"Unsupported stage: {stage}")
+        _raise_if_stop_requested(account_tag, "stopped")
+        _update_schedule_run("running", 1, 1, f"Completed {stage}")
+        _write_progress(account_tag, "done", 100, "done", f"Completed {stage}")
+        return
     _raise_if_stop_requested(account_tag, "stopped")
     _write_progress(account_tag, "traffic_source", 5, "running", "Starting traffic source")
     process_one(cred_file, channel_id=channel_id)

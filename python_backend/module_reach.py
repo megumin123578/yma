@@ -71,7 +71,7 @@ def _load_video_meta(pg_url: str, account_tag: str) -> Dict[str, Dict]:
     return {r[0]: {"title": r[1], "thumbnail": r[2]} for r in rows}
 
 def _list_video_ids(pg_url: str, account_tag: str) -> List[str]:
-    max_videos = int(os.getenv("REACH_MAX_VIDEOS", "50"))
+    max_videos = int(os.getenv("REACH_MAX_VIDEOS", "20"))
     engine = create_engine(pg_url, future=True)
     with engine.begin() as conn:
         rows = conn.execute(
@@ -137,6 +137,9 @@ def fetch_reach(
             return _fetch_reach_per_video(yta, pg_url, account_tag, start_date, end_date, channel_id=channel_id)
 
     rows = resp.get("rows") or []
+    max_videos = int(os.getenv("REACH_MAX_VIDEOS", "20"))
+    if max_videos > 0:
+        rows = rows[:max_videos]
     headers = [h["name"] for h in resp.get("columnHeaders", [])]
     idx = {h: i for i, h in enumerate(headers)}
 

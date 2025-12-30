@@ -4,6 +4,9 @@ import {
   DialogContent,
   DialogActions,
   Button,
+  IconButton,
+  Menu,
+  MenuItem,
   Box,
   Stack,
   Typography,
@@ -21,6 +24,7 @@ import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
 import {
   uploadCredentials,
   listTokens,
@@ -28,6 +32,7 @@ import {
   getTokenProgress,
   setTokenVisibility,
   runToken,
+  runTokenStage,
   listSchedules,
   createSchedule,
   updateSchedule,
@@ -57,6 +62,8 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState("");
   const [activeTab, setActiveTab] = useState("add");
+  const [menuAnchorEl, setMenuAnchorEl] = useState(null);
+  const [menuTokenName, setMenuTokenName] = useState("");
   const [schedules, setSchedules] = useState([]);
   const [scheduleRuns, setScheduleRuns] = useState([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
@@ -368,6 +375,35 @@ const CredentialsDialog = ({ open, onClose }) => {
       const message =
         err?.response?.data?.detail || "Failed to start refresh.";
       setStatus({ type: "error", message });
+    }
+  };
+
+  const openTokenMenu = (event, tokenName) => {
+    setMenuAnchorEl(event.currentTarget);
+    setMenuTokenName(tokenName);
+  };
+
+  const closeTokenMenu = () => {
+    setMenuAnchorEl(null);
+    setMenuTokenName("");
+  };
+
+  const handleRunTokenStage = async (stage) => {
+    if (!menuTokenName) return;
+    try {
+      await runTokenStage(menuTokenName, stage);
+      setTokenProgress((prev) => ({
+        ...prev,
+        [menuTokenName]: { status: "queued", percent: 0, stage: "queued", message: "" },
+      }));
+      startProgressPolling(menuTokenName);
+      setStatus({ type: "success", message: `Refresh queued (${stage}).` });
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to start refresh.";
+      setStatus({ type: "error", message });
+    } finally {
+      closeTokenMenu();
     }
   };
 
@@ -883,6 +919,18 @@ const CredentialsDialog = ({ open, onClose }) => {
                                 >
                                   <PlayArrowIcon fontSize="small" />
                                 </Button>
+                                <IconButton
+                                  size="small"
+                                  onClick={(event) => openTokenMenu(event, tokenName)}
+                                  sx={{
+                                    ...shimmerSx,
+                                    border: `1px solid ${border}`,
+                                    color: isDark ? "#e9edf2" : undefined,
+                                  }}
+                                  aria-label={`Run options for ${displayName}`}
+                                >
+                                  <MoreVertIcon fontSize="small" />
+                                </IconButton>
                                 <Typography variant="body2">{displayName}</Typography>
                                 </Box>
                                 <Button
@@ -1236,6 +1284,23 @@ const CredentialsDialog = ({ open, onClose }) => {
           </Button>
         </DialogActions>
       </Dialog>
+      <Menu
+        anchorEl={menuAnchorEl}
+        open={Boolean(menuAnchorEl)}
+        onClose={closeTokenMenu}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        <MenuItem onClick={() => handleRunTokenStage("content")}>
+          Run content
+        </MenuItem>
+        <MenuItem onClick={() => handleRunTokenStage("audience")}>
+          Run audience
+        </MenuItem>
+        <MenuItem onClick={() => handleRunTokenStage("reach")}>
+          Run reach
+        </MenuItem>
+      </Menu>
     </Dialog>
   );
 };

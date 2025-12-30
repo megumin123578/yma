@@ -102,8 +102,9 @@ def content_list(
 
         COALESCE(SUM(s.likes), 0) AS likes,
         0::numeric AS "estimatedRevenue",
-        v.impressions AS impressions,
-        v.ctr AS ctr
+        COALESCE(v.card_impressions, 0) AS "cardImpressions",
+        COALESCE(v.ad_impressions, 0) AS "adImpressions",
+        COALESCE(v.annotation_impressions, 0) AS "annotationImpressions"
     FROM videos v
     JOIN video_daily_stats s
       ON s.video_id = v.video_id
@@ -114,7 +115,10 @@ def content_list(
         v.title,
         v.thumbnail,
         v.published_at,
-        v.duration
+        v.duration,
+        v.card_impressions,
+        v.ad_impressions,
+        v.annotation_impressions
     HAVING SUM(s.views) > 0 
     ORDER BY v.published_at DESC;
 """

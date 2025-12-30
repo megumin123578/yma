@@ -87,11 +87,10 @@ def get_video_metadata(credentials, video_ids: List[str]) -> List[Dict]:
                 "likes": int(stats.get("likeCount", 0) or 0),
                 "comments": int(stats.get("commentCount", 0) or 0),
 
-                # impressions not available at video level; keep 0
-                "impressions": 0,
-
-                # ctr lấy từ Analytics (impressionsClickThroughRate)
-                "ctr": 0.0,
+                # reach impressions (filled later)
+                "card_impressions": 0,
+                "ad_impressions": 0,
+                "annotation_impressions": 0,
             })
 
     return results
@@ -136,6 +135,82 @@ def get_video_impressions(
 def _auth_db_path() -> str:
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     return os.getenv("AUTH_DB_PATH", os.path.join(repo_root, "auth.db"))
+
+
+def get_video_reach_impressions_bulk(
+    credentials,
+    video_ids: List[str],
+    start_date: str,
+    end_date: str,
+    channel_id: Optional[str] = None,
+    chunk_size: int = 50,
+) -> Optional[Dict[str, Dict[str, int]]]:
+    if not video_ids:
+        return {}
+
+    yta = build("youtubeAnalytics", "v2", credentials=credentials)
+    ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
+    out: Dict[str, Dict[str, int]] = {}
+    any_success = False
+
+    for chunk in _chunked_ids(video_ids, chunk_size):
+        query = {
+            "ids": ids,
+            "startDate": start_date,
+            "endDate": end_date,
+            "dimensions": "video",
+            "filters": f"video=={','.join(chunk)}",
+            "metrics": "cardImpressions,cardTeaserImpressions,annotationImpressions",
+        }
+        try:
+            resp = yta.reports().query(**query).execute() or {}
+        except HttpError as e:
+            print(f"[WARN] Bulk reach impressions failed for chunk: {e}")
+            query["metrics"] = "cardImpressions,cardTeaserImpressions"
+            try:
+                resp = yta.reports().query(**query).execute() or {}
+            except HttpError as e2:
+                print(f"[WARN] Bulk reach fallback failed for chunk: {e2}")
+                continue
+
+        rows = resp.get("rows") or []
+        headers = resp.get("columnHeaders", []) or []
+        if not rows or not headers:
+            continue
+
+        idx = {h["name"]: i for i, h in enumerate(headers)}
+        i_video = idx.get("video")
+        i_card = idx.get("cardImpressions")
+        i_teaser = idx.get("cardTeaserImpressions")
+        i_anno = idx.get("annotationImpressions")
+        if i_video is None or i_card is None or i_teaser is None:
+            continue
+
+        for row in rows:
+            vid = row[i_video]
+            try:
+                card = int(row[i_card] or 0)
+            except Exception:
+                card = 0
+            try:
+                teaser = int(row[i_teaser] or 0)
+            except Exception:
+                teaser = 0
+            try:
+                anno = int(row[i_anno] or 0) if i_anno is not None else 0
+            except Exception:
+                anno = 0
+            out[vid] = {
+                "card_impressions": card,
+                "ad_impressions": teaser,
+                "annotation_impressions": anno,
+            }
+        any_success = True
+
+    if not any_success:
+        return None
+
+    return out
 
 
 def _stop_requested() -> bool:
@@ -294,27 +369,36 @@ def save_metadata(videos, account_tag: str, pg_url: str):
                 views INTEGER DEFAULT 0,
                 likes INTEGER DEFAULT 0,
                 comments INTEGER DEFAULT 0,
-                impressions BIGINT DEFAULT 0,
+                card_impressions BIGINT DEFAULT 0,
+                ad_impressions BIGINT DEFAULT 0,
+                annotation_impressions BIGINT DEFAULT 0,
                 tags TEXT,
                 ctr NUMERIC DEFAULT 0
             );
         """))
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS tags TEXT;"))
+        conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS card_impressions BIGINT DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS ad_impressions BIGINT DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS annotation_impressions BIGINT DEFAULT 0;"))
 
         for v in videos:
             conn.execute(text("""
                 INSERT INTO videos
                     (video_id, account_tag, title, thumbnail,
-                     published_at, duration, views, likes, comments, impressions, tags, ctr)
+                     published_at, duration, views, likes, comments,
+                     card_impressions, ad_impressions, annotation_impressions, tags, ctr)
                 VALUES
                     (:id, :acct, :title, :thumb, :pub, :duration,
-                     :views, :likes, :comments, :impressions, :tags, :ctr)
+                     :views, :likes, :comments,
+                     :card, :ad, :anno, :tags, :ctr)
                 ON CONFLICT(video_id)
                 DO UPDATE SET
                     views = EXCLUDED.views,
                     likes = EXCLUDED.likes,
                     comments = EXCLUDED.comments,
-                    impressions = EXCLUDED.impressions,
+                    card_impressions = EXCLUDED.card_impressions,
+                    ad_impressions = EXCLUDED.ad_impressions,
+                    annotation_impressions = EXCLUDED.annotation_impressions,
                     tags = EXCLUDED.tags,
                     ctr = EXCLUDED.ctr;
             """), {
@@ -327,9 +411,11 @@ def save_metadata(videos, account_tag: str, pg_url: str):
                 "views": v["views"],
                 "likes": v["likes"],
                 "comments": v["comments"],
-                "impressions": v["impressions"],
+                "card": v.get("card_impressions", 0),
+                "ad": v.get("ad_impressions", 0),
+                "anno": v.get("annotation_impressions", 0),
                 "tags": json.dumps(v.get("tags") or []),
-                "ctr": v["ctr"],
+                "ctr": v.get("ctr", 0.0),
             })
 
 
@@ -389,7 +475,20 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id: Optional
 
     print("→ Fetching video metadata...")
     videos = get_video_metadata(credentials, video_ids)
-    # Per-video impressions/CTR not supported for some channels; keep defaults (0/None).
+    start_date_min = min((v["published_at"] for v in videos if v.get("published_at")), default=end_date)
+    reach_map = get_video_reach_impressions_bulk(
+        credentials, video_ids, start_date_min, end_date, channel_id=channel_id
+    )
+
+    print("→ Fetching reach impressions via YouTube Analytics API...")
+    for v in videos:
+        if _stop_requested():
+            raise RuntimeError("Stop requested")
+        video_id = v["video_id"]
+        metrics = reach_map.get(video_id, {}) if reach_map is not None else {}
+        v["card_impressions"] = int(metrics.get("card_impressions", 0) or 0)
+        v["ad_impressions"] = int(metrics.get("ad_impressions", 0) or 0)
+        v["annotation_impressions"] = int(metrics.get("annotation_impressions", 0) or 0)
 
     print("→ Saving metadata to PostgreSQL...")
     save_metadata(videos, account_tag, pg_url)

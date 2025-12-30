@@ -90,28 +90,32 @@ def get_reach(
             text(
                 """
                 SELECT
-                    video_id,
-                    title,
-                    thumbnail,
-                    views,
-                    estimated_minutes_watched,
-                    annotation_impressions,
-                    card_impressions,
-                    teaser_impressions,
-                    total_impressions,
-                    annotation_clicks,
-                    card_clicks,
-                    teaser_clicks,
-                    total_clicks,
-                    annotation_ctr,
-                    card_ctr,
-                    teaser_ctr,
-                    total_ctr
-                FROM reach_video_metrics
-                WHERE account_tag = :acct
-                  AND start_date = :start
-                  AND end_date = :end
-                ORDER BY views DESC
+                    r.video_id,
+                    r.title,
+                    r.thumbnail,
+                    r.views,
+                    r.estimated_minutes_watched,
+                    r.annotation_impressions,
+                    r.card_impressions,
+                    r.teaser_impressions,
+                    r.total_impressions,
+                    r.annotation_clicks,
+                    r.card_clicks,
+                    r.teaser_clicks,
+                    r.total_clicks,
+                    r.annotation_ctr,
+                    r.card_ctr,
+                    r.teaser_ctr,
+                    r.total_ctr
+                FROM reach_video_metrics r
+                LEFT JOIN videos v
+                  ON v.video_id = r.video_id
+                 AND v.account_tag = r.account_tag
+                WHERE r.account_tag = :acct
+                  AND r.start_date = :start
+                  AND r.end_date = :end
+                ORDER BY v.published_at DESC NULLS LAST, r.views DESC
+                LIMIT 20
                 """
             ),
             {"acct": safe_tag, "start": start_date, "end": end_date},
