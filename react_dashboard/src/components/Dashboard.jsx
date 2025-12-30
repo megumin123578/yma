@@ -64,7 +64,13 @@ const VideoList = () => {
   }, []);
 
   const [channels, setChannels] = useState([]);
-  const [selectedChannel, setSelectedChannel] = useState("");
+  const [selectedChannel, setSelectedChannel] = useState(() => {
+    try {
+      return localStorage.getItem("overview.selectedChannelId") || "";
+    } catch {
+      return "";
+    }
+  });
   const [videos, setVideos] = useState([]);
   const [loadingChannels, setLoadingChannels] = useState(true);
   const [loadingVideos, setLoadingVideos] = useState(false);
@@ -133,9 +139,29 @@ const VideoList = () => {
         });
         if (!res.ok) throw new Error("Failed to load channels");
         const data = await res.json();
-        setChannels(data.items || []);
-        if (data.items && data.items.length > 0) {
-          setSelectedChannel(data.items[0].value);
+        const items = data.items || [];
+        const order = (() => {
+          try {
+            return JSON.parse(localStorage.getItem("tokens.order") || "[]");
+          } catch {
+            return [];
+          }
+        })()
+          .map((name) => String(name || "").replace(/\.pickle$/i, ""))
+          .filter(Boolean);
+        const orderKey = (value) => String(value || "").toLowerCase();
+        const byId = new Map(items.map((c) => [orderKey(c.value), c]));
+        const ordered = order
+          .map((name) => byId.get(orderKey(name)))
+          .filter(Boolean);
+        const remaining = items.filter(
+          (c) => !order.map(orderKey).includes(orderKey(c.value))
+        );
+        const finalChannels = [...ordered, ...remaining];
+        setChannels(finalChannels);
+        if (finalChannels.length > 0) {
+          const exists = selectedChannel && finalChannels.some((c) => c.value === selectedChannel);
+          if (!exists) setSelectedChannel(finalChannels[0].value);
         }
       } catch (err) {
         console.error(err);
@@ -149,6 +175,15 @@ const VideoList = () => {
 
     fetchChannels();
   }, [apiBase, authHeaders]);
+
+  useEffect(() => {
+    if (!selectedChannel) return;
+    try {
+      localStorage.setItem("overview.selectedChannelId", selectedChannel);
+    } catch {
+      // ignore storage errors
+    }
+  }, [selectedChannel]);
 
   // Fetch video theo accountTag
   useEffect(() => {
@@ -311,9 +346,19 @@ const VideoList = () => {
   const pctColor = (value) =>
     value >= 0 ? "rgb(34,197,94)" : "rgb(239,68,68)";
   const formatPct = (value) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+  const latestRowSx = {
+    display: "flex",
+    flexWrap: "nowrap",
+    gap: 3,
+    overflowX: "auto",
+    pb: 1,
+  };
 
   const renderVideoCard = (v, idx) => (
-    <Grid item xs={12} sm={6} md={4} lg={3} key={v.video_id || idx}>
+    <Box
+      key={v.video_id || idx}
+      sx={{ flex: "0 0 220px", minWidth: 285 }}
+    >
       <MotionCard
         variants={cardVariants}
         initial="rest"
@@ -347,7 +392,8 @@ const VideoList = () => {
             image={v.thumbnail}
             alt={v.title}
             sx={{
-              height: 160,
+              width: "100%",
+              aspectRatio: "6 / 6",
               objectFit: "cover",
             }}
           />
@@ -490,7 +536,7 @@ const VideoList = () => {
           <Box mt={1} />
         </Box>
       </MotionCard>
-    </Grid>
+    </Box>
   );
 
 
@@ -537,7 +583,7 @@ const VideoList = () => {
 
         {videos && videos.length > 0 && (
           <Typography variant="body2" color={colors.grey[300]}>
-            Tổng:{" "}
+            Total:{" "}
             <span style={{ fontWeight: 600 }}>{videos.length} video</span>
           </Typography>
         )}
@@ -571,9 +617,9 @@ const VideoList = () => {
           <Typography variant="subtitle1" fontWeight={700} mb={1}>
             Latest 5 videos
           </Typography>
-          <Grid container spacing={2}>
+          <Box sx={latestRowSx}>
             {latestVideos.map((v, idx) => renderVideoCard(v, idx))}
-          </Grid>
+          </Box>
         </Box>
 
         <Grid container spacing={2} mt={2}>
