@@ -41,9 +41,28 @@ const AudienceAnalytics = () => {
         });
         const data = await resp.json();
         const nextAccounts = data?.availableAccounts || [];
-        setAccounts(nextAccounts);
+        const order = (() => {
+          try {
+            return JSON.parse(localStorage.getItem("tokens.order") || "[]");
+          } catch {
+            return [];
+          }
+        })()
+          .map((name) => (name || "").replace(/\.pickle$/i, ""))
+          .filter(Boolean);
+        const orderKey = (value) => String(value || "").toLowerCase();
+        const byName = new Map(nextAccounts.map((acct) => [orderKey(acct), acct]));
+        const ordered = order
+          .map((name) => byName.get(orderKey(name)))
+          .filter(Boolean);
+        const remaining = nextAccounts.filter(
+          (acct) => !order.map(orderKey).includes(orderKey(acct))
+        );
+        const finalAccounts = [...ordered, ...remaining];
+        setAccounts(finalAccounts);
         if (!accountTag && nextAccounts.length > 0) {
-          setAccountTag(nextAccounts[0]);
+          const next = ordered.length ? ordered[0] : nextAccounts[0];
+          setAccountTag(next);
         }
       } catch (err) {
         setAccounts([]);

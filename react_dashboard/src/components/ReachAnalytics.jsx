@@ -54,9 +54,27 @@ const ReachAnalytics = () => {
         });
         const data = await resp.json();
         const items = data?.items || [];
-        setAccounts(items);
+        const order = (() => {
+          try {
+            return JSON.parse(localStorage.getItem("tokens.order") || "[]");
+          } catch {
+            return [];
+          }
+        })()
+          .map((name) => (name || "").replace(/\.pickle$/i, ""))
+          .filter(Boolean);
+        const orderKey = (value) => String(value || "").toLowerCase();
+        const byName = new Map(items.map((acct) => [orderKey(acct), acct]));
+        const ordered = order
+          .map((name) => byName.get(orderKey(name)))
+          .filter(Boolean);
+        const remaining = items.filter(
+          (acct) => !order.map(orderKey).includes(orderKey(acct))
+        );
+        setAccounts([...ordered, ...remaining]);
         if (!accountTag && items.length > 0) {
-          setAccountTag(items[0]);
+          const next = ordered.length ? ordered[0] : items[0];
+          setAccountTag(next);
         }
       } catch (err) {
         setAccounts([]);

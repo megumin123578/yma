@@ -123,11 +123,29 @@ const TrafficSourceChart = () => {
           if (x?.root) return { value: x.root, label: x.root };
           return { value: String(x?.value ?? x?.id ?? x), label: String(x?.label ?? x?.name ?? x?.value ?? x) };
         });
+        const order = (() => {
+          try {
+            return JSON.parse(localStorage.getItem("tokens.order") || "[]");
+          } catch {
+            return [];
+          }
+        })()
+          .map((name) => (name || "").replace(/\.pickle$/i, ""))
+          .filter(Boolean);
+        const orderKey = (value) => String(value || "").toLowerCase();
+        const byId = new Map(norm.map((c) => [orderKey(c.value), c]));
+        const ordered = order
+          .map((name) => byId.get(orderKey(name)))
+          .filter(Boolean);
+        const remaining = norm.filter(
+          (c) => !order.map(orderKey).includes(orderKey(c.value))
+        );
+        const finalChannels = [...ordered, ...remaining];
         if (!stop) {
-          setChannels(norm);
-          if (norm.length) {
-            const hasStored = channel && norm.some((opt) => opt.value === channel);
-            if (!hasStored) setChannel(norm[0].value);
+          setChannels(finalChannels);
+          if (finalChannels.length) {
+            const hasStored = channel && finalChannels.some((opt) => opt.value === channel);
+            if (!hasStored) setChannel(finalChannels[0].value);
           }
         }
       } catch (e) {

@@ -106,10 +106,28 @@ const ContentAnalytics = () => {
             title: c.label,
           })) ?? [];
 
-        setChannelList(items);
+        const order = (() => {
+          try {
+            return JSON.parse(localStorage.getItem("tokens.order") || "[]");
+          } catch {
+            return [];
+          }
+        })()
+          .map((name) => (name || "").replace(/\.pickle$/i, ""))
+          .filter(Boolean);
+        const orderKey = (value) => String(value || "").toLowerCase();
+        const byId = new Map(items.map((c) => [orderKey(c.id), c]));
+        const ordered = order
+          .map((name) => byId.get(orderKey(name)))
+          .filter(Boolean);
+        const remaining = items.filter(
+          (c) => !order.map(orderKey).includes(orderKey(c.id))
+        );
+        setChannelList([...ordered, ...remaining]);
 
         if (!channelId && items.length > 0) {
-          setChannelId(items[0].id);
+          const next = ordered.length ? ordered[0].id : items[0].id;
+          setChannelId(next);
         }
       } catch (err) {
         console.error("Load channels failed:", err);

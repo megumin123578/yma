@@ -121,9 +121,32 @@ const GeographyChart = ({ isDashboard = false }) => {
         setRawData(json.rows || []);
 
         if (json.availableChannels) {
-          setChannels(json.availableChannels);
-          if (!channel && json.availableChannels.length > 0) {
-            setChannel(json.availableChannels[0]);
+          const orderKey = (value) =>
+            String(value || "")
+              .trim()
+              .replace(/\s+/g, "_")
+              .replace(/[^A-Za-z0-9_.-]/g, "_")
+              .toLowerCase();
+          const orderList = (() => {
+            try {
+              return JSON.parse(localStorage.getItem("tokens.order") || "[]");
+            } catch {
+              return [];
+            }
+          })()
+            .map((name) => String(name || "").replace(/.pickle$/i, ""))
+            .map(orderKey)
+            .filter(Boolean);
+          const orderIndex = new Map(orderList.map((key, idx) => [key, idx]));
+          const finalChannels = [...json.availableChannels].sort((a, b) => {
+            const ai = orderIndex.has(orderKey(a)) ? orderIndex.get(orderKey(a)) : Number.MAX_SAFE_INTEGER;
+            const bi = orderIndex.has(orderKey(b)) ? orderIndex.get(orderKey(b)) : Number.MAX_SAFE_INTEGER;
+            if (ai !== bi) return ai - bi;
+            return String(a).localeCompare(String(b));
+          });
+          setChannels(finalChannels);
+          if (!channel && finalChannels.length > 0) {
+            setChannel(finalChannels[0]);
           }
         }
       })

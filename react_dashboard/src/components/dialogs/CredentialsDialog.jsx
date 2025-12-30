@@ -17,7 +17,7 @@ import {
   Switch,
   useTheme,
 } from "@mui/material";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dayjs from "dayjs";
 import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -25,6 +25,7 @@ import UploadFileIcon from "@mui/icons-material/UploadFile";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import {
   uploadCredentials,
   listTokens,
@@ -62,6 +63,8 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState("");
   const [activeTab, setActiveTab] = useState("add");
+  const [dragTokenName, setDragTokenName] = useState("");
+  const [dragOverTokenName, setDragOverTokenName] = useState("");
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
   const [menuTokenName, setMenuTokenName] = useState("");
   const [schedules, setSchedules] = useState([]);
@@ -95,6 +98,52 @@ const CredentialsDialog = ({ open, onClose }) => {
   };
   const progressTimersRef = useRef({});
 
+  const applyTokenOrder = (items) => {
+    let order = [];
+    try {
+      order = JSON.parse(localStorage.getItem("tokens.order") || "[]");
+    } catch {
+      order = [];
+    }
+    if (!order.length) return items;
+    const byName = new Map(items.map((t) => [t.name || t, t]));
+    const ordered = order.map((name) => byName.get(name)).filter(Boolean);
+    const remaining = items.filter((t) => !order.includes(t.name || t));
+    return [...ordered, ...remaining];
+  };
+
+  const saveTokenOrder = (items) => {
+    try {
+      const order = items.map((t) => t.name || t);
+      localStorage.setItem("tokens.order", JSON.stringify(order));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const loadTokens = useCallback(async () => {
+    setLoadingTokens(true);
+    try {
+      const data = await listTokens();
+      const nextTokens = data?.tokens || [];
+      const ordered = applyTokenOrder(nextTokens);
+      setTokens(ordered);
+    } catch (err) {
+      setTokens([]);
+    } finally {
+      setLoadingTokens(false);
+    }
+  }, []);
+
+  const loadSchedules = useCallback(async () => {
+    try {
+      const data = await listSchedules();
+      setSchedules(data?.items || []);
+    } catch (err) {
+      setSchedules([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (open) {
       setFile(null);
@@ -108,13 +157,13 @@ const CredentialsDialog = ({ open, onClose }) => {
       loadTokens();
       loadSchedules();
     }
-  }, [open]);
+  }, [open, loadSchedules, loadTokens]);
 
   useEffect(() => {
     if (activeTab === "schedule") {
       loadSchedules();
     }
-  }, [activeTab]);
+  }, [activeTab, loadSchedules]);
 
   useEffect(() => {
     if (!open || activeTab !== "logs") return;
@@ -234,28 +283,6 @@ const CredentialsDialog = ({ open, onClose }) => {
     }, 800);
     return () => clearTimeout(timer);
   }, [progress.status, progress.percent, autoReloaded]);
-
-  const loadTokens = async () => {
-    setLoadingTokens(true);
-    try {
-      const data = await listTokens();
-      setTokens(data?.tokens || []);
-    } catch (err) {
-      setTokens([]);
-    } finally {
-      setLoadingTokens(false);
-    }
-  };
-
-
-  const loadSchedules = async () => {
-    try {
-      const data = await listSchedules();
-      setSchedules(data?.items || []);
-    } catch (err) {
-      setSchedules([]);
-    }
-  };
 
   const handleSelectFile = (event) => {
     const selected = event.target.files?.[0];
@@ -869,7 +896,52 @@ const CredentialsDialog = ({ open, onClose }) => {
                             display="flex"
                             alignItems="center"
                             gap={1}
-                          >
+                            draggable
+                            onDragStart={() => setDragTokenName(tokenName)}
+                            onDragEnd={() => {
+                              setDragTokenName("");
+                              setDragOverTokenName("");
+                            }}
+                            onDragOver={(event) => event.preventDefault()}
+                            onDragEnter={() => {
+                              if (dragTokenName && dragTokenName !== tokenName) {
+                                setDragOverTokenName(tokenName);
+                              }
+                            }}
+                            onDrop={() => {
+                              if (!dragTokenName || dragTokenName === tokenName) return;
+                              setTokens((prev) => {
+                                const next = [...prev];
+                                const from = next.findIndex((t) => (t.name || t) === dragTokenName);
+                                const to = next.findIndex((t) => (t.name || t) === tokenName);
+                                if (from < 0 || to < 0) return prev;
+                                const [moved] = next.splice(from, 1);
+                                next.splice(to, 0, moved);
+                                saveTokenOrder(next);
+                                return next;
+                              });
+                              setDragOverTokenName("");
+                            }}
+                            sx={{
+                              transition: "transform 180ms ease, background-color 180ms ease",
+                              ...(dragTokenName === tokenName
+                                ? { transform: "scale(1.01)" }
+                                : {}),
+                              ...(dragOverTokenName === tokenName
+                                ? { transform: "translateY(6px)" }
+                                : {}),
+                            }}
+                            >
+                            <IconButton
+                              size="small"
+                              sx={{
+                                color: isDark ? "#9fe3d6" : "rgba(15,23,42,0.6)",
+                                cursor: "grab",
+                              }}
+                              aria-label={`Drag ${displayName}`}
+                            >
+                              <DragIndicatorIcon fontSize="small" />
+                            </IconButton>
                             <Checkbox
                               size="small"
                               checked={!isHidden}
@@ -900,6 +972,10 @@ const CredentialsDialog = ({ open, onClose }) => {
                                   borderColor: isDark ? "rgba(255,255,255,0.2)" : "rgba(25,118,210,0.2)",
                                   opacity: isHidden ? 0.6 : 1,
                                 },
+                                cursor: "grab",
+                                ...(dragTokenName === tokenName
+                                  ? { borderColor: isDark ? "#7de0d2" : "#1aa86c" }
+                                  : {}),
                               }}
                             >
                               <Box display="flex" alignItems="center" justifyContent="space-between" gap={0.5}>
