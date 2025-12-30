@@ -4,6 +4,7 @@ import { useTheme } from "@mui/material/styles";
 import {
   Box,
   Stack,
+  Typography,
   Table,
   TableBody,
   TableCell,
@@ -70,6 +71,11 @@ const ContentAnalytics = () => {
   const [videos, setVideos] = useState([]);
   const [timeseries, setTimeseries] = useState([]);
   const [channelList, setChannelList] = useState([]);
+  const [channelMetrics, setChannelMetrics] = useState({
+    impressions: 0,
+    ctr: null,
+    supported: false,
+  });
 
   const [chartType, setChartType] = useState("line");
   const [metric, setMetric] = useState("views");
@@ -154,6 +160,25 @@ const ContentAnalytics = () => {
     [channelId, authHeaders]
   );
 
+  const fetchChannelMetrics = useCallback(
+    async (start, end) => {
+      if (!channelId) return;
+      try {
+        const resp = await fetch(`${API_BASE}/api/content/channel-metrics`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders },
+          body: JSON.stringify({ start, end, channelId }),
+        });
+        const raw = await resp.json();
+        setChannelMetrics(raw || { impressions: 0, ctr: null, supported: false });
+      } catch (err) {
+        console.error("Fetch channel metrics failed:", err);
+        setChannelMetrics({ impressions: 0, ctr: null, supported: false });
+      }
+    },
+    [channelId, authHeaders]
+  );
+
   /* ================================
      PERIOD HANDLING
   ================================= */
@@ -205,7 +230,8 @@ const ContentAnalytics = () => {
 
     fetchVideos(start, end);
     fetchTimeseries(start, end);
-  }, [resolvePeriod, fetchVideos, fetchTimeseries, channelId]);
+    fetchChannelMetrics(start, end);
+  }, [resolvePeriod, fetchVideos, fetchTimeseries, fetchChannelMetrics, channelId]);
 
   /* ================================
      TABLE ROWS
@@ -224,7 +250,7 @@ const ContentAnalytics = () => {
         likes: n(v.likes),
         revenue: n(v.estimatedRevenue),
         impressions: n(v.impressions),
-        ctr: n(v.ctr),
+        ctr: v.ctr ?? null,
       })),
     [videos]
   );
@@ -461,6 +487,42 @@ const ContentAnalytics = () => {
           </LocalizationProvider>
         )}
       </Stack>
+
+      <Box
+        display="flex"
+        flexWrap="wrap"
+        gap={2}
+        sx={{
+          borderRadius: 2,
+          p: 1.5,
+          border: `1px solid ${
+            theme.palette.mode === "dark"
+              ? "rgba(255,255,255,0.12)"
+              : "rgba(15,23,42,0.1)"
+          }`,
+          background:
+            theme.palette.mode === "dark"
+              ? "rgba(15,23,42,0.5)"
+              : "rgba(226,232,240,0.45)",
+        }}
+      >
+        <Box>
+          <Typography variant="caption" color="text.secondary">
+            Channel Impressions
+          </Typography>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+            {channelMetrics.supported ? formatNumber(channelMetrics.impressions || 0) : "--"}
+          </Typography>
+        </Box>
+        <Box>
+          <Typography variant="caption" color="text.secondary">
+            Channel CTR
+          </Typography>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
+            {channelMetrics.ctr == null ? "--" : `${channelMetrics.ctr.toFixed(2)}%`}
+          </Typography>
+        </Box>
+      </Box>
 
       {/* CHART */}
       <Box
@@ -809,7 +871,7 @@ const ContentAnalytics = () => {
                   {formatNumber(r.impressions)}
                 </TableCell>
                 <TableCell align="right">
-                  {r.ctr.toFixed(2)}%
+                  {r.ctr == null ? "--" : `${r.ctr.toFixed(2)}%`}
                 </TableCell>
               </TableRow>
             ))}

@@ -87,10 +87,10 @@ def get_video_metadata(credentials, video_ids: List[str]) -> List[Dict]:
                 "likes": int(stats.get("likeCount", 0) or 0),
                 "comments": int(stats.get("commentCount", 0) or 0),
 
-                # impressions sẽ lấy từ Analytics (cardImpressions)
+                # impressions not available at video level; keep 0
                 "impressions": 0,
 
-                # giữ cột ctr trong DB nhưng không dùng (vì API v3 không có)
+                # ctr lấy từ Analytics (impressionsClickThroughRate)
                 "ctr": 0.0,
             })
 
@@ -103,10 +103,9 @@ def get_video_impressions(
     start_date: str,
     end_date: str,
     channel_id: Optional[str] = None,
-) -> int:
+) -> Dict[str, Optional[float]]:
     """
-    Lấy impressions từ YouTube Analytics API.
-    Ở đây dùng metric: cardImpressions (số lần Cards hiển thị).
+    Get CTR from YouTube Analytics API (video-level).
     """
     yta = build("youtubeAnalytics", "v2", credentials=credentials)
 
@@ -117,21 +116,21 @@ def get_video_impressions(
             startDate=start_date,
             endDate=end_date,
             filters=f"video=={video_id}",
-            metrics="cardImpressions",
+            metrics="impressionsClickThroughRate",
         ).execute() or {}
     except HttpError as e:
-        print(f"[WARN] Failed impressions (cardImpressions) for {video_id}: {e}")
-        return 0
+        print(f"[WARN] Failed impressionsClickThroughRate for {video_id}: {e}")
+        return {"impressions": 0, "ctr": None}
 
     rows = resp.get("rows") or []
     if not rows:
-        return 0
+        return {"impressions": 0, "ctr": None}
 
-    # Không có dimensions => rows[0][0] là cardImpressions
     try:
-        return int(rows[0][0] or 0)
+        ctr = float(rows[0][0] or 0.0) * 100.0
     except Exception:
-        return 0
+        ctr = None
+    return {"impressions": 0, "ctr": ctr}
 
 
 def _auth_db_path() -> str:
@@ -168,13 +167,13 @@ def get_video_impressions_bulk(
     end_date: str,
     channel_id: Optional[str] = None,
     chunk_size: int = 50,
-) -> Optional[Dict[str, int]]:
+) -> Optional[Dict[str, Dict[str, Optional[float]]]]:
     if not video_ids:
         return {}
 
     yta = build("youtubeAnalytics", "v2", credentials=credentials)
     ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
-    out: Dict[str, int] = {}
+    out: Dict[str, Dict[str, Optional[float]]] = {}
     any_success = False
 
     for chunk in _chunked_ids(video_ids, chunk_size):
@@ -184,12 +183,12 @@ def get_video_impressions_bulk(
             "endDate": end_date,
             "dimensions": "video",
             "filters": f"video=={','.join(chunk)}",
-            "metrics": "cardImpressions",
+            "metrics": "impressionsClickThroughRate",
         }
         try:
             resp = yta.reports().query(**query).execute() or {}
         except HttpError as e:
-            print(f"[WARN] Bulk impressions failed for chunk: {e}")
+            print(f"[WARN] Bulk impressionsClickThroughRate failed for chunk: {e}")
             continue
 
         rows = resp.get("rows") or []
@@ -199,16 +198,17 @@ def get_video_impressions_bulk(
 
         idx = {h["name"]: i for i, h in enumerate(headers)}
         i_video = idx.get("video")
-        i_card = idx.get("cardImpressions")
-        if i_video is None or i_card is None:
+        i_ctr = idx.get("impressionsClickThroughRate")
+        if i_video is None or i_ctr is None:
             continue
 
         for row in rows:
             vid = row[i_video]
             try:
-                out[vid] = int(row[i_card] or 0)
+                ctr = float(row[i_ctr] or 0.0) * 100.0
             except Exception:
-                out[vid] = 0
+                ctr = None
+            out[vid] = {"impressions": 0, "ctr": ctr}
         any_success = True
 
     if not any_success:
@@ -389,23 +389,7 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id: Optional
 
     print("→ Fetching video metadata...")
     videos = get_video_metadata(credentials, video_ids)
-    start_date_min = min((v["published_at"] for v in videos if v.get("published_at")), default=end_date)
-    impressions_map = get_video_impressions_bulk(
-        credentials, video_ids, start_date_min, end_date, channel_id=channel_id
-    )
-
-    print("→ Fetching impressions (cardImpressions) via YouTube Analytics API...")
-    for v in videos:
-        if _stop_requested():
-            raise RuntimeError("Stop requested")
-        video_id = v["video_id"]
-        if impressions_map is None:
-            start_date = v["published_at"]  # YYYY-MM-DD
-            v["impressions"] = get_video_impressions(
-                credentials, video_id, start_date, end_date, channel_id=channel_id
-            )
-        else:
-            v["impressions"] = int(impressions_map.get(video_id, 0))
+    # Per-video impressions/CTR not supported for some channels; keep defaults (0/None).
 
     print("→ Saving metadata to PostgreSQL...")
     save_metadata(videos, account_tag, pg_url)
@@ -417,6 +401,7 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id: Optional
         if _stop_requested():
             raise RuntimeError("Stop requested")
         video_id = v["video_id"]
+        print(f"[INFO] [content] Daily video: {video_id}")
         start_date = v["published_at"]
         d = get_video_daily_analytics(
             credentials, video_id, start_date, end_date, channel_id=channel_id

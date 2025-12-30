@@ -1,8 +1,10 @@
 # routes/content.py
 import os
+import pickle
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from datetime import date
+from typing import Optional
 from sqlalchemy import text
 from python_backend.db import engine
 from sqlalchemy.orm import Session
@@ -10,11 +12,16 @@ from sqlalchemy.orm import Session
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
+from python_backend.api.auth.models import UserCredential
 from python_backend.module_trafficsource import sanitize_filename  # dùng lại hàm này
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from google.auth.transport.requests import Request
 
 router = APIRouter(prefix="/api/content", tags=["content"])
 
 CREDENTIALS_DIR = "./python_backend/credentials"
+TOKEN_DIR = "./python_backend/token"
 
 
 # ==============================
@@ -130,6 +137,12 @@ class TimeSeriesRequest(BaseModel):
     channelId: str  # = account_tag
 
 
+class ChannelMetricsRequest(BaseModel):
+    start: date
+    end: date
+    channelId: str
+
+
 @router.post("/timeseries")
 def content_timeseries(
     req: TimeSeriesRequest,
@@ -176,3 +189,100 @@ def content_timeseries(
     rows = query_all_safe(sql, params)
     # print("[content.timeseries] rows (sample) =", rows[:5])  # debug
     return {"items": rows}
+
+
+def _load_token_credentials(token_name: str):
+    token_path = os.path.join(TOKEN_DIR, token_name)
+    if not os.path.exists(token_path):
+        return None
+    try:
+        with open(token_path, "rb") as f:
+            creds = pickle.load(f)
+    except Exception:
+        return None
+    if not creds:
+        return None
+    if not creds.valid:
+        if creds.expired and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                with open(token_path, "wb") as f:
+                    pickle.dump(creds, f)
+            except Exception:
+                return None
+        else:
+            return None
+    return creds
+
+
+def _find_credential_row(db: Session, account_tag: str) -> Optional[UserCredential]:
+    row = (
+        db.query(UserCredential)
+        .filter(UserCredential.account_tag == account_tag)
+        .order_by(UserCredential.updated_at.desc())
+        .first()
+    )
+    if row:
+        return row
+    rows = (
+        db.query(UserCredential)
+        .filter(UserCredential.token_name.isnot(None))
+        .all()
+    )
+    for r in rows:
+        if sanitize_filename(r.account_tag) == account_tag:
+            return r
+    return None
+
+
+@router.post("/channel-metrics")
+def channel_metrics(
+    req: ChannelMetricsRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    allowed = get_allowed_account_tags(db, current_user)
+    if allowed is not None and req.channelId not in allowed:
+        return {"impressions": 0, "ctr": None, "supported": False}
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        if req.channelId in hidden_all:
+            return {"impressions": 0, "ctr": None, "supported": False}
+    cred_row = _find_credential_row(db, req.channelId)
+    if not cred_row or not cred_row.token_name:
+        return {"impressions": 0, "ctr": None, "supported": False}
+    creds = _load_token_credentials(cred_row.token_name)
+    if not creds:
+        return {"impressions": 0, "ctr": None, "supported": False}
+
+    yta = build("youtubeAnalytics", "v2", credentials=creds)
+    ids = (
+        f"channel=={cred_row.selected_channel_id}"
+        if cred_row.selected_channel_id
+        else "channel==MINE"
+    )
+    query = {
+        "ids": ids,
+        "startDate": req.start.isoformat(),
+        "endDate": req.end.isoformat(),
+        "metrics": "impressions,impressionsClickThroughRate",
+    }
+    try:
+        resp = yta.reports().query(**query).execute() or {}
+    except HttpError as e:
+        print(f"[content.channel-metrics] WARN: {e}")
+        return {"impressions": 0, "ctr": None, "supported": False}
+
+    rows = resp.get("rows") or []
+    if not rows:
+        return {"impressions": 0, "ctr": None, "supported": True}
+    try:
+        impressions = int(rows[0][0] or 0)
+    except Exception:
+        impressions = 0
+    try:
+        ctr = float(rows[0][1] or 0.0) * 100.0
+    except Exception:
+        ctr = None
+    return {"impressions": impressions, "ctr": ctr, "supported": True}
