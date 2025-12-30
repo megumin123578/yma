@@ -1,4 +1,5 @@
 import os
+import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 
@@ -20,6 +21,34 @@ def _date_range_from_env() -> Tuple[str, str]:
         start_date = end_date - timedelta(days=max(days - 1, 0))
         return start_date.isoformat(), end_date.isoformat()
     return "2005-02-14", datetime.utcnow().date().isoformat()
+
+
+def _progress_path(account_tag: str) -> str:
+    progress_dir = os.path.join("python_backend", "progress")
+    os.makedirs(progress_dir, exist_ok=True)
+    return os.path.join(progress_dir, f"{account_tag}.json")
+
+
+def _write_progress(
+    account_tag: str,
+    stage: str,
+    percent: int,
+    status: str,
+    message: str = "",
+) -> None:
+    payload = {
+        "account_tag": account_tag,
+        "stage": stage,
+        "percent": percent,
+        "status": status,
+        "message": message,
+        "updated_at": datetime.utcnow().isoformat() + "Z",
+    }
+    try:
+        with open(_progress_path(account_tag), "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+    except Exception:
+        pass
 
 
 def _ensure_reach_table(conn) -> None:
@@ -80,7 +109,7 @@ def _list_video_ids(pg_url: str, account_tag: str) -> List[str]:
                 SELECT video_id
                 FROM videos
                 WHERE account_tag = :acct
-                ORDER BY views DESC NULLS LAST
+                ORDER BY published_at DESC NULLS LAST
                 LIMIT :limit
                 """
             ),
@@ -137,14 +166,16 @@ def fetch_reach(
             return _fetch_reach_per_video(yta, pg_url, account_tag, start_date, end_date, channel_id=channel_id)
 
     rows = resp.get("rows") or []
-    max_videos = int(os.getenv("REACH_MAX_VIDEOS", "20"))
-    if max_videos > 0:
-        rows = rows[:max_videos]
+    latest_ids = _list_video_ids(pg_url, account_tag)
+    if latest_ids:
+        by_id = {row[idx["video"]]: row for row in rows}
+        rows = [by_id[vid] for vid in latest_ids if vid in by_id]
     headers = [h["name"] for h in resp.get("columnHeaders", [])]
     idx = {h: i for i, h in enumerate(headers)}
 
     out = []
-    for row in rows:
+    total = len(rows)
+    for idx_row, row in enumerate(rows, start=1):
         def val(name, default=0):
             i = idx.get(name)
             if i is None:
@@ -165,6 +196,15 @@ def fetch_reach(
         total_clicks = annotation_clicks + card_clicks + teaser_clicks
         total_ctr = (total_clicks / total_impressions) if total_impressions > 0 else None
 
+        if total > 0:
+            percent = 90 + int((idx_row / total) * 4)
+            _write_progress(
+                account_tag,
+                "reach",
+                percent,
+                "running",
+                f"Reach {idx_row}/{total}",
+            )
         print(f"[INFO] [reach] Processing video {video_id}...")
         out.append(
             {

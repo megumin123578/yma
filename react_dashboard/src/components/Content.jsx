@@ -790,13 +790,27 @@ const ContentAnalytics = () => {
                   }}
                 >
                   <Stack direction="row" spacing={1} alignItems="center">
-                    <img
-                      src={r.thumbnail}
-                      width={90}
-                      style={{ borderRadius: 6 }}
-                      alt=""
-                    />
-                    <span>{r.title}</span>
+                    <a
+                      href={`https://www.youtube.com/watch?v=${r.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ display: "inline-flex" }}
+                    >
+                      <img
+                        src={r.thumbnail}
+                        width={90}
+                        style={{ borderRadius: 6 }}
+                        alt=""
+                      />
+                    </a>
+                    <a
+                      href={`https://www.youtube.com/watch?v=${r.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "inherit", textDecoration: "none" }}
+                    >
+                      {r.title}
+                    </a>
                   </Stack>
                 </TableCell>
 

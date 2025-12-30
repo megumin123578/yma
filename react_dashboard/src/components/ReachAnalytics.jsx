@@ -194,18 +194,25 @@ const ReachAnalytics = () => {
                 <TableCell sx={{ minWidth: 260 }}>
                   <Stack direction="row" spacing={1.2} alignItems="flex-start">
                     {row.thumbnail ? (
-                      <Box
-                        component="img"
-                        src={row.thumbnail}
-                        alt={row.title || row.video_id}
-                        sx={{
-                          width: 72,
-                          height: 42,
-                          borderRadius: 1,
-                          objectFit: "cover",
-                          flexShrink: 0,
-                        }}
-                      />
+                      <a
+                        href={`https://www.youtube.com/watch?v=${row.video_id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ display: "inline-flex" }}
+                      >
+                        <Box
+                          component="img"
+                          src={row.thumbnail}
+                          alt={row.title || row.video_id}
+                          sx={{
+                            width: 72,
+                            height: 42,
+                            borderRadius: 1,
+                            objectFit: "cover",
+                            flexShrink: 0,
+                          }}
+                        />
+                      </a>
                     ) : (
                       <Box
                         sx={{
@@ -219,7 +226,14 @@ const ReachAnalytics = () => {
                     )}
                     <Box>
                       <Typography variant="body2" fontWeight={600}>
-                        {row.title || row.video_id}
+                        <a
+                          href={`https://www.youtube.com/watch?v=${row.video_id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ color: "inherit", textDecoration: "none" }}
+                        >
+                          {row.title || row.video_id}
+                        </a>
                       </Typography>
                       <Typography variant="caption" color="text.secondary">
                         {row.video_id}
