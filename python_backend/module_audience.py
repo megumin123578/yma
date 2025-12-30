@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -63,6 +64,34 @@ def _ensure_retention_table(conn) -> None:
             """
         )
     )
+
+
+def _progress_path(account_tag: str) -> str:
+    progress_dir = os.path.join("python_backend", "progress")
+    os.makedirs(progress_dir, exist_ok=True)
+    return os.path.join(progress_dir, f"{account_tag}.json")
+
+
+def _write_progress(
+    account_tag: str,
+    stage: str,
+    percent: int,
+    status: str,
+    message: str = "",
+) -> None:
+    payload = {
+        "account_tag": account_tag,
+        "stage": stage,
+        "percent": percent,
+        "status": status,
+        "message": message,
+        "updated_at": datetime.utcnow().isoformat() + "Z",
+    }
+    try:
+        with open(_progress_path(account_tag), "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+    except Exception:
+        pass
 
 
 def _auth_db_path() -> str:
@@ -154,11 +183,20 @@ def save_demographics(pg_url: str, account_tag: str, rows: List[Dict], start_dat
 
 
 def _list_video_ids(pg_url: str, account_tag: str) -> List[str]:
+    max_videos = int(os.getenv("AUDIENCE_MAX_VIDEOS", "10"))
     engine = create_engine(pg_url, future=True)
     with engine.begin() as conn:
         rows = conn.execute(
-            text("SELECT video_id FROM videos WHERE account_tag = :acct"),
-            {"acct": account_tag},
+            text(
+                """
+                SELECT video_id
+                FROM videos
+                WHERE account_tag = :acct
+                ORDER BY published_at DESC NULLS LAST
+                LIMIT :limit
+                """
+            ),
+            {"acct": account_tag, "limit": max_videos},
         ).fetchall()
     return [r[0] for r in rows]
 
@@ -265,10 +303,20 @@ def run_audience_analytics(
         print(f"[INFO] [audience] No videos found for {safe_tag}.")
         return
 
-    print(f"[INFO] [audience] Fetching retention for {len(video_ids)} videos...")
-    for vid in video_ids:
+    total_videos = len(video_ids)
+    print(f"[INFO] [audience] Fetching retention for {total_videos} videos...")
+    for idx, vid in enumerate(video_ids, start=1):
         if _stop_requested():
             raise RuntimeError("Stop requested")
+        if total_videos > 0:
+            percent = 80 + int((idx / total_videos) * 9)
+            _write_progress(
+                account_tag,
+                "audience",
+                percent,
+                "running",
+                f"Audience {idx}/{total_videos}",
+            )
         print(f"[INFO] [audience] Retention video: {vid}")
         rows, start_date, end_date = fetch_retention(credentials, vid, channel_id=channel_id)
         save_retention(pg_url, safe_tag, vid, rows, start_date, end_date)

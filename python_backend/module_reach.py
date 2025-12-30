@@ -162,6 +162,7 @@ def fetch_reach(
         total_clicks = annotation_clicks + card_clicks + teaser_clicks
         total_ctr = (total_clicks / total_impressions) if total_impressions > 0 else None
 
+        print(f"[INFO] [reach] Processing video {video_id}...")
         out.append(
             {
                 "video_id": video_id,
@@ -208,6 +209,7 @@ def _fetch_reach_per_video(
     ]
     out = []
     for vid in video_ids:
+        print(f"[INFO] [reach] Processing video {vid}...")
         ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
         query = {
             "ids": ids,
