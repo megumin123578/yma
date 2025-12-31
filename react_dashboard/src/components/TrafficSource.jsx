@@ -143,7 +143,9 @@ const TrafficSourceChart = () => {
         const finalChannels = [...ordered, ...remaining];
         if (!stop) {
           setChannels(finalChannels);
-          if (finalChannels.length) {
+          if (!finalChannels.length) {
+            setChannel("");
+          } else {
             const hasStored = channel && finalChannels.some((opt) => opt.value === channel);
             if (!hasStored) setChannel(finalChannels[0].value);
           }
@@ -662,7 +664,12 @@ const TrafficSourceChart = () => {
 
         <FormControl size="small" sx={{ minWidth: 260, ml: "auto" }}>
           <InputLabel id="channel-select-label">Channel</InputLabel>
-          <Select labelId="channel-select-label" value={channel} label="Channel" onChange={(e) => setChannel(e.target.value)}>
+          <Select
+            labelId="channel-select-label"
+            value={channels.some((opt) => opt.value === channel) ? channel : ""}
+            label="Channel"
+            onChange={(e) => setChannel(e.target.value)}
+          >
             {channels.length === 0 ? (
               <MenuItem value="" disabled>(Không tìm thấy channel nào)</MenuItem>
             ) : (

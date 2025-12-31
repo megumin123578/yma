@@ -71,10 +71,12 @@ const ReachAnalytics = () => {
         const remaining = items.filter(
           (acct) => !order.map(orderKey).includes(orderKey(acct))
         );
-        setAccounts([...ordered, ...remaining]);
-        if (!accountTag && items.length > 0) {
-          const next = ordered.length ? ordered[0] : items[0];
-          setAccountTag(next);
+        const finalAccounts = [...ordered, ...remaining];
+        setAccounts(finalAccounts);
+        if (!finalAccounts.length) {
+          setAccountTag("");
+        } else if (!accountTag || !finalAccounts.includes(accountTag)) {
+          setAccountTag(finalAccounts[0]);
         }
       } catch (err) {
         setAccounts([]);
@@ -135,7 +137,7 @@ const ReachAnalytics = () => {
           <InputLabel>Channel</InputLabel>
           <Select
             label="Channel"
-            value={accountTag}
+            value={accounts.includes(accountTag) ? accountTag : ""}
             onChange={(event) => setAccountTag(event.target.value)}
           >
             {accounts.map((acct) => (
