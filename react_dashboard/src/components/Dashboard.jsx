@@ -1000,8 +1000,8 @@ const VideoList = () => {
                   </Typography>
                 ) : (
                   <>
-                    <Stack spacing={1.5}>
-                      <Box display="flex" justifyContent="space-between">
+                    <Stack spacing={1.5} alignItems="flex-end">
+                      <Box display="flex" alignItems="baseline" gap={1.5} sx={{ textAlign: "left", minWidth:100 }}>
                         <Typography variant="body2" color="text.secondary">
                           Estimated
                         </Typography>
@@ -1009,7 +1009,7 @@ const VideoList = () => {
                           {formatCurrency(revenueSummary.estimated)}
                         </Typography>
                       </Box>
-                      <Box display="flex" justifyContent="space-between">
+                      <Box display="flex" alignItems="baseline" gap={1.5} sx={{ textAlign: "left", minWidth: 100 }}>
                         <Typography variant="body2" color="text.secondary">
                           Ad revenue
                         </Typography>
@@ -1017,7 +1017,7 @@ const VideoList = () => {
                           {formatCurrency(revenueSummary.ad)}
                         </Typography>
                       </Box>
-                      <Box display="flex" justifyContent="space-between">
+                      <Box display="flex" alignItems="baseline" gap={1.5} sx={{ textAlign: "left", minWidth: 100 }}>
                         <Typography variant="body2" color="text.secondary">
                           Gross revenue
                         </Typography>
@@ -1025,7 +1025,7 @@ const VideoList = () => {
                           {formatCurrency(revenueSummary.gross)}
                         </Typography>
                       </Box>
-                      <Box display="flex" justifyContent="space-between">
+                      <Box display="flex" alignItems="baseline" gap={1.5} sx={{ textAlign: "left", minWidth: 100 }}>
                         <Typography variant="body2" color="text.secondary">
                           Avg RPM
                         </Typography>
