@@ -18,9 +18,12 @@ import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import ThumbUpAltOutlinedIcon from "@mui/icons-material/ThumbUpAltOutlined";
 import CommentOutlinedIcon from "@mui/icons-material/CommentOutlined";
 import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
+import { ResponsiveChoropleth } from "@nivo/geo";
 import { tokens } from "../theme";
 import Header from "./Header";
 import { API_BASE } from "../config";
+import { COUNTRY_FALLBACK } from "../data/countryMapping";
+import { geoFeatures } from "../data/mockGeoFeatures";
 import {
   ResponsiveContainer,
   BarChart,
@@ -128,6 +131,41 @@ const VideoList = () => {
       })),
     };
   }, [subscribersSeries]);
+  const countryResolvers = useMemo(() => {
+    const iso2ToFeatureId = new Map();
+    const idToName = new Map();
+
+    for (const f of geoFeatures.features) {
+      const id = String(f.id || f.properties?.iso_a3 || "");
+      const iso2 = f.properties?.iso_a2?.toUpperCase() || "";
+      const name = f.properties?.name || id;
+
+      if (iso2) iso2ToFeatureId.set(iso2, id);
+      idToName.set(id, name);
+    }
+
+    return {
+      resolveId: (code) => {
+        const c = String(code).toUpperCase();
+        return iso2ToFeatureId.get(c) || COUNTRY_FALLBACK[c] || c;
+      },
+      nameOf: (id) => idToName.get(id) || id,
+    };
+  }, []);
+  const countryMapData = useMemo(() => {
+    return (countryViews || []).map((row) => {
+      const id = countryResolvers.resolveId(row.country);
+      return {
+        id,
+        value: Number(row.views) || 0,
+        label: countryResolvers.nameOf(id),
+      };
+    });
+  }, [countryViews, countryResolvers]);
+  const countryDomainMax = useMemo(() => {
+    const vals = countryMapData.map((d) => Number(d.value) || 0);
+    return Math.max(1, ...vals);
+  }, [countryMapData]);
 
   // Fetch danh sách account_tag
   useEffect(() => {
@@ -347,18 +385,14 @@ const VideoList = () => {
     value >= 0 ? "rgb(34,197,94)" : "rgb(239,68,68)";
   const formatPct = (value) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
   const latestRowSx = {
-    display: "flex",
-    flexWrap: "nowrap",
-    gap: 3,
-    overflowX: "auto",
-    pb: 1,
+    display: "grid",
+    gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+    gap: 2,
+    width: "100%",
   };
 
   const renderVideoCard = (v, idx) => (
-    <Box
-      key={v.video_id || idx}
-      sx={{ flex: "0 0 220px", minWidth: 285 }}
-    >
+    <Box key={v.video_id || idx} sx={{ width: "100%" }}>
       <MotionCard
         variants={cardVariants}
         initial="rest"
@@ -393,7 +427,7 @@ const VideoList = () => {
             alt={v.title}
             sx={{
               width: "100%",
-              aspectRatio: "6 / 6",
+              aspectRatio: "2",
               objectFit: "cover",
             }}
           />
@@ -495,9 +529,12 @@ const VideoList = () => {
             display: "flex",
             flexDirection: "column",
             gap: 0.5,
+            overflowY: "auto",
+            pr: 1.5,
+            pb: 2,
             zIndex: 2,
             "& .MuiTypography-root": {
-              fontSize: "0.9rem",
+              fontSize: "0.8rem",
             },
           }}
         >
@@ -622,9 +659,9 @@ const VideoList = () => {
           </Box>
         </Box>
 
-        <Grid container spacing={2} mt={2}>
-          <Grid item xs={12}>
-            <Box sx={{ ...sectionSx, p: 3 }}>
+        <Grid container spacing={2} mt={2} sx={{ width: "100%" }}>
+          <Grid item xs={12} md={6} lg={6} xl={6}>
+            <Box sx={{ ...sectionSx, p: 4, minHeight: 560 }}>
               <Typography variant="h5" fontWeight={700} mb={2}>
                 Subscribers
               </Typography>
@@ -701,14 +738,14 @@ const VideoList = () => {
                     </Grid>
                   </Grid>
 
-                  <Grid container spacing={2}>
-                    <Grid item xs={12} md={6}>
-                      <Box sx={chartCardSx}>
+                  <Grid container spacing={2} sx={{ minWidth: 0 }}>
+                    <Grid item xs={12} md={6} sx={{ minWidth: 0 }}>
+                      <Box sx={{ ...chartCardSx, minWidth: 0, width: "100%" }}>
                         <Typography variant="subtitle1" fontWeight={700} mb={1}>
                           Gained
                         </Typography>
-                        <Box height={260}>
-                          <ResponsiveContainer width="100%" height="100%">
+                        <Box sx={{ width: "100%", minWidth: 0, minHeight: 0 }}>
+                          <ResponsiveContainer width="100%" height={260} minWidth={0} minHeight={0}>
                             <BarChart data={subscribersSummary.chart}>
                               <CartesianGrid
                                 stroke="rgba(148,163,184,0.2)"
@@ -723,13 +760,13 @@ const VideoList = () => {
                         </Box>
                       </Box>
                     </Grid>
-                    <Grid item xs={12} md={6}>
-                      <Box sx={chartCardSx}>
+                    <Grid item xs={12} md={6} sx={{ minWidth: 0 }}>
+                      <Box sx={{ ...chartCardSx, minWidth: 0, width: "100%" }}>
                         <Typography variant="subtitle1" fontWeight={700} mb={1}>
                           Change
                         </Typography>
-                        <Box height={260}>
-                          <ResponsiveContainer width="100%" height="100%">
+                        <Box sx={{ width: "100%", minWidth: 0, minHeight: 0 }}>
+                          <ResponsiveContainer width="100%" height={260} minWidth={0} minHeight={0}>
                             <BarChart data={subscribersSummary.chart}>
                               <CartesianGrid
                                 stroke="rgba(148,163,184,0.2)"
@@ -746,6 +783,57 @@ const VideoList = () => {
                     </Grid>
                   </Grid>
                 </>
+              )}
+            </Box>
+          </Grid>
+          <Grid item xs={12} md={6} lg={6} xl={6}>
+            <Box sx={{ ...sectionSx, p: 4, minHeight: 560 }}>
+              <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                Views by country (last 28 days)
+              </Typography>
+              {countryViews.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No data
+                </Typography>
+              ) : (
+                <Box height={420}>
+                  <ResponsiveChoropleth
+                    debounceResize={150}
+                    data={countryMapData}
+                    features={geoFeatures.features}
+                    valueFormat={formatNumber}
+                    domain={[0, countryDomainMax]}
+                    tooltip={({ feature }) => {
+                      const label = countryResolvers.nameOf(feature.id);
+                      const value = feature.value || 0;
+
+                      return (
+                        <Box
+                          sx={{
+                            px: 1.2,
+                            py: 0.75,
+                            borderRadius: 1,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            bgcolor:
+                              theme.palette.mode === "dark"
+                                ? "rgba(0,0,0,0.75)"
+                                : "rgba(255,255,255,0.95)",
+                            boxShadow: 3,
+                          }}
+                        >
+                          <div>{label}</div>
+                          <div>Views: {formatNumber(value)}</div>
+                        </Box>
+                      );
+                    }}
+                    unknownColor="#999"
+                    projectionScale={80}
+                    projectionTranslation={[0.5, 0.65]}
+                    borderWidth={1}
+                    borderColor="#fff"
+                  />
+                </Box>
               )}
             </Box>
           </Grid>
@@ -799,34 +887,6 @@ const VideoList = () => {
             </Box>
           </Grid>
 
-          <Grid item xs={12}>
-            <Box sx={sectionSx}>
-              <Typography variant="subtitle1" fontWeight={700} mb={1}>
-                Views by country (last 28 days)
-              </Typography>
-              {countryViews.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No data
-                </Typography>
-              ) : (
-                <Grid container spacing={1}>
-                  {countryViews
-                    .sort((a, b) => (b.views || 0) - (a.views || 0))
-                    .slice(0, 12)
-                    .map((row) => (
-                      <Grid item xs={6} md={3} key={row.country}>
-                        <Box display="flex" justifyContent="space-between">
-                          <Typography variant="body2">{row.country}</Typography>
-                          <Typography variant="body2" fontWeight={600}>
-                            {formatNumber(row.views)}
-                          </Typography>
-                        </Box>
-                      </Grid>
-                    ))}
-                </Grid>
-              )}
-            </Box>
-          </Grid>
         </Grid>
         </>
       )}
