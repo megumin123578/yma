@@ -202,11 +202,12 @@ def reach_traffic_breakdown(
         views_val = int(views or 0)
         if _is_external_source(src_val):
             external.append({"source": src_val, "views": views_val})
-        if "PLAYLIST" in src_val.upper():
+        src_upper = src_val.upper()
+        if "PLAYLIST" in src_upper:
             playlist += views_val
-        if src_val.upper() == "SUGGESTED_VIDEO":
+        if src_upper in {"SUGGESTED_VIDEO", "RELATED_VIDEO"}:
             suggested += views_val
-        if src_val.upper() == "BROWSE":
+        if src_upper in {"BROWSE", "YT_OTHER_PAGE", "YT_HOME"}:
             browse += views_val
 
     external_sorted = sorted(external, key=lambda x: x["views"], reverse=True)

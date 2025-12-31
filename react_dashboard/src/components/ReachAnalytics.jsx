@@ -233,11 +233,6 @@ const ReachAnalytics = () => {
               <Typography variant="subtitle1" fontWeight={700}>
                 External traffic
               </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {breakdown.range?.start && breakdown.range?.end
-                  ? `${breakdown.range.start} → ${breakdown.range.end}`
-                  : "No data"}
-              </Typography>
             </Box>
             <Typography variant="caption" color="text.secondary">
               views
@@ -311,11 +306,6 @@ const ReachAnalytics = () => {
               <Typography variant="subtitle1" fontWeight={700}>
                 Playlist traffic
               </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {breakdown.range?.start && breakdown.range?.end
-                  ? `${breakdown.range.start} → ${breakdown.range.end}`
-                  : "No data"}
-              </Typography>
             </Box>
             <Typography variant="caption" color="text.secondary">
               views
@@ -349,11 +339,6 @@ const ReachAnalytics = () => {
             <Box>
               <Typography variant="subtitle1" fontWeight={700}>
                 Suggested vs Browse
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {breakdown.range?.start && breakdown.range?.end
-                  ? `${breakdown.range.start} → ${breakdown.range.end}`
-                  : "No data"}
               </Typography>
             </Box>
             <Typography variant="caption" color="text.secondary">
