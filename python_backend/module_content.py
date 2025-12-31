@@ -376,6 +376,7 @@ def save_metadata(videos, account_tag: str, pg_url: str):
                 ctr NUMERIC DEFAULT 0
             );
         """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_videos_account_tag ON videos(account_tag);"))
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS tags TEXT;"))
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS card_impressions BIGINT DEFAULT 0;"))
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS ad_impressions BIGINT DEFAULT 0;"))
@@ -434,6 +435,8 @@ def save_daily_stats(daily_rows, pg_url: str):
                 PRIMARY KEY (video_id, day)
             );
         """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vds_day ON video_daily_stats(day);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vds_day_video ON video_daily_stats(day, video_id);"))
 
         for r in daily_rows:
             conn.execute(text("""
@@ -455,6 +458,26 @@ def save_daily_stats(daily_rows, pg_url: str):
                 "avd": r["average_view_duration"],
                 "likes": r["likes"],
             })
+
+
+# ===== Cache invalidation =====
+def invalidate_content_timeseries_cache(pg_url: str, account_tag: str) -> None:
+    engine = create_engine(pg_url, future=True)
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS content_timeseries_cache (
+                account_tag TEXT NOT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                payload JSONB NOT NULL,
+                updated_at TIMESTAMP DEFAULT NOW(),
+                PRIMARY KEY (account_tag, start_date, end_date)
+            );
+        """))
+        conn.execute(text("""
+            DELETE FROM content_timeseries_cache
+            WHERE account_tag = :tag;
+        """), {"tag": account_tag})
 
 
 # ============================
@@ -509,8 +532,9 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id: Optional
 
     print("→ Saving daily stats...")
     save_daily_stats(daily_rows, pg_url)
+    invalidate_content_timeseries_cache(pg_url, account_tag)
 
-    print("✔ DONE: Metadata + DAILY stats saved successfully")
+    print("[DONE] Metadata + DAILY stats saved successfully")
 
 
 def process_content(cred_file: str, channel_id: Optional[str] = None):

@@ -123,11 +123,12 @@ const ContentAnalytics = () => {
         const remaining = items.filter(
           (c) => !order.map(orderKey).includes(orderKey(c.id))
         );
-        setChannelList([...ordered, ...remaining]);
-
-        if (!channelId && items.length > 0) {
-          const next = ordered.length ? ordered[0].id : items[0].id;
-          setChannelId(next);
+        const finalChannels = [...ordered, ...remaining];
+        setChannelList(finalChannels);
+        if (!finalChannels.length) {
+          setChannelId("");
+        } else if (!channelId || !finalChannels.some((c) => c.id === channelId)) {
+          setChannelId(finalChannels[0].id);
         }
       } catch (err) {
         console.error("Load channels failed:", err);
@@ -462,7 +463,7 @@ const ContentAnalytics = () => {
         <FormControl size="small" sx={{ minWidth: 200 }}>
           <InputLabel>Channel</InputLabel>
           <Select
-            value={channelId}
+            value={channelList.some((c) => c.id === channelId) ? channelId : ""}
             label="Channel"
             onChange={(e) => setChannelId(e.target.value)}
           >

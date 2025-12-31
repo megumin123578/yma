@@ -1,4 +1,5 @@
 # routes/content.py
+import json
 import os
 import pickle
 from fastapi import APIRouter, Depends
@@ -35,6 +36,85 @@ def query_all_safe(sql: str, params=None):
     except Exception as e:
         print("[content.query_all_safe] failed:", e)
         return []
+
+
+def _ensure_timeseries_cache_table() -> None:
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS content_timeseries_cache (
+                    account_tag TEXT NOT NULL,
+                    start_date DATE NOT NULL,
+                    end_date DATE NOT NULL,
+                    payload JSONB NOT NULL,
+                    updated_at TIMESTAMP DEFAULT NOW(),
+                    PRIMARY KEY (account_tag, start_date, end_date)
+                );
+            """))
+    except Exception as e:
+        print("[content.cache] create table failed:", e)
+
+
+def _load_timeseries_cache(account_tag: str, start_date, end_date):
+    _ensure_timeseries_cache_table()
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT payload
+                    FROM content_timeseries_cache
+                    WHERE account_tag = :tag
+                      AND start_date = :start_date
+                      AND end_date = :end_date
+                    LIMIT 1;
+                """),
+                {"tag": account_tag, "start_date": start_date, "end_date": end_date},
+            ).mappings().first()
+        if not row:
+            return None
+        payload = row.get("payload")
+        if isinstance(payload, str):
+            return json.loads(payload)
+        return payload
+    except Exception as e:
+        print("[content.cache] load failed:", e)
+        return None
+
+
+def _save_timeseries_cache(account_tag: str, start_date, end_date, rows):
+    _ensure_timeseries_cache_table()
+    try:
+        payload = json.dumps(rows)
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO content_timeseries_cache (
+                        account_tag,
+                        start_date,
+                        end_date,
+                        payload,
+                        updated_at
+                    )
+                    VALUES (
+                        :tag,
+                        :start_date,
+                        :end_date,
+                        :payload,
+                        NOW()
+                    )
+                    ON CONFLICT (account_tag, start_date, end_date) DO UPDATE SET
+                        payload = EXCLUDED.payload,
+                        updated_at = NOW();
+                """),
+                {
+                    "tag": account_tag,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "payload": payload,
+                },
+            )
+    except Exception as e:
+        print("[content.cache] save failed:", e)
 
 
 @router.get("/channels")
@@ -162,6 +242,10 @@ def content_timeseries(
         if req.channelId in hidden_all:
             return {"items": []}
 
+    cached = _load_timeseries_cache(req.channelId, req.start, req.end)
+    if cached is not None:
+        return {"items": cached}
+
     sql = """
         SELECT
             s.day                  AS bucket,
@@ -191,6 +275,7 @@ def content_timeseries(
     }
 
     rows = query_all_safe(sql, params)
+    _save_timeseries_cache(req.channelId, req.start, req.end, rows)
     # print("[content.timeseries] rows (sample) =", rows[:5])  # debug
     return {"items": rows}
 
