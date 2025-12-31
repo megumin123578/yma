@@ -166,6 +166,11 @@ const VideoList = () => {
     const vals = countryMapData.map((d) => Number(d.value) || 0);
     return Math.max(1, ...vals);
   }, [countryMapData]);
+  const topCountries = useMemo(() => {
+    return [...(countryMapData || [])]
+      .sort((a, b) => (b.value || 0) - (a.value || 0))
+      .slice(0, 5);
+  }, [countryMapData]);
 
   // Fetch danh sách account_tag
   useEffect(() => {
@@ -804,44 +809,91 @@ const VideoList = () => {
                   No data
                 </Typography>
               ) : (
-                <Box height={420}>
-                  <ResponsiveChoropleth
-                    debounceResize={150}
-                    data={countryMapData}
-                    features={geoFeatures.features}
-                    valueFormat={formatNumber}
-                    domain={[0, countryDomainMax]}
-                    tooltip={({ feature }) => {
-                      const label = countryResolvers.nameOf(feature.id);
-                      const value = feature.value || 0;
+                <>
+                  <Box height={290}>
+                    <ResponsiveChoropleth
+                      debounceResize={150}
+                      data={countryMapData}
+                      features={geoFeatures.features}
+                      valueFormat={formatNumber}
+                      domain={[0, countryDomainMax]}
+                      tooltip={({ feature }) => {
+                        const label = countryResolvers.nameOf(feature.id);
+                        const value = feature.value || 0;
 
-                      return (
-                        <Box
-                          sx={{
-                            px: 1.2,
-                            py: 0.75,
-                            borderRadius: 1,
-                            fontSize: 13,
-                            fontWeight: 600,
-                            bgcolor:
-                              theme.palette.mode === "dark"
-                                ? "rgba(0,0,0,0.75)"
-                                : "rgba(255,255,255,0.95)",
-                            boxShadow: 3,
-                          }}
-                        >
-                          <div>{label}</div>
-                          <div>Views: {formatNumber(value)}</div>
-                        </Box>
-                      );
-                    }}
-                    unknownColor="#999"
-                    projectionScale={80}
-                    projectionTranslation={[0.5, 0.65]}
-                    borderWidth={1}
-                    borderColor="#fff"
-                  />
-                </Box>
+                        return (
+                          <Box
+                            sx={{
+                              px: 1.2,
+                              py: 0.75,
+                              borderRadius: 1,
+                              fontSize: 13,
+                              fontWeight: 600,
+                              bgcolor:
+                                theme.palette.mode === "dark"
+                                  ? "rgba(0,0,0,0.75)"
+                                  : "rgba(255,255,255,0.95)",
+                              boxShadow: 3,
+                            }}
+                          >
+                            <div>{label}</div>
+                            <div>Views: {formatNumber(value)}</div>
+                          </Box>
+                        );
+                      }}
+                      unknownColor="#999"
+                      projectionScale={80}
+                      projectionTranslation={[0.5, 0.65]}
+                      borderWidth={1}
+                      borderColor="#fff"
+                    />
+                  </Box>
+                  <Box mt={2}>
+                    <Stack>
+                      {topCountries.map((row) => {
+                        const pct =
+                          countryDomainMax > 0
+                            ? Math.max(6, Math.round((row.value / countryDomainMax) * 100))
+                            : 0;
+                        return (
+                          <Box key={row.id}>
+                            <Box display="flex" justifyContent="space-between" mb={0.5}>
+                              <Typography variant="body2">
+                                {countryResolvers.nameOf(row.id)}
+                              </Typography>
+                              <Typography variant="body2" fontWeight={600}>
+                                {formatNumber(row.value)}
+                              </Typography>
+                            </Box>
+                            <Box
+                              sx={{
+                                height: 8,
+                                borderRadius: 999,
+                                bgcolor:
+                                  theme.palette.mode === "dark"
+                                    ? "rgba(148,163,184,0.2)"
+                                    : "rgba(15,23,42,0.12)",
+                                overflow: "hidden",
+                              }}
+                            >
+                              <Box
+                                sx={{
+                                  width: `${pct}%`,
+                                  height: "100%",
+                                  borderRadius: 999,
+                                  background:
+                                    theme.palette.mode === "dark"
+                                      ? "linear-gradient(90deg, #38bdf8, #a855f7)"
+                                      : "linear-gradient(90deg, #0ea5e9, #6366f1)",
+                                }}
+                              />
+                            </Box>
+                          </Box>
+                        );
+                      })}
+                    </Stack>
+                  </Box>
+                </>
               )}
             </Box>
           </Box>
