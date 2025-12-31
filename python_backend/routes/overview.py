@@ -20,9 +20,7 @@ router = APIRouter(prefix="/api/video_overview", tags=["video_overview"])
 CREDENTIALS_DIR = "./python_backend/credentials"
 
 
-# ---------------------------------------------------------------------
-# Utility query
-# ---------------------------------------------------------------------
+
 def query(sql: str, params=None):
     try:
         with engine.begin() as conn:
@@ -68,18 +66,28 @@ def _external_source(source: str) -> bool:
     return "EXTERNAL" in upper
 
 
-# ---------------------------------------------------------------------
-# MODELS
-# ---------------------------------------------------------------------
+def _range_to_dates(range_key: str):
+    from datetime import date, timedelta
+    today = date.today()
+    if range_key == "7d":
+        return today - timedelta(days=6), today
+    if range_key == "28d":
+        return today - timedelta(days=27), today
+    if range_key == "90d":
+        return today - timedelta(days=89), today
+    if range_key == "365d":
+        return today - timedelta(days=364), today
+    if range_key == "lifetime":
+        return None, None
+    return today - timedelta(days=27), today
+
+
 class VideoFilter(BaseModel):
     accountTag: str
     startDate: Optional[date] = None
     endDate: Optional[date] = None
 
 
-# ---------------------------------------------------------------------
-# 1) LẤY DANH SÁCH ACCOUNT
-# ---------------------------------------------------------------------
 @router.get("/channels")
 def list_channels(
     db: Session = Depends(get_db),
@@ -102,10 +110,6 @@ def list_channels(
 
     return {"items": rows}
 
-
-# ---------------------------------------------------------------------
-# 2) LẤY DANH SÁCH VIDEO THEO ACCOUNT_TAG
-# ---------------------------------------------------------------------
 @router.get("/videos")
 def list_videos(
     accountTag: str,
@@ -144,9 +148,6 @@ def list_videos(
     return rows
 
 
-# ---------------------------------------------------------------------
-# 3) LỌC VIDEO THEO NGÀY ĐĂNG
-# ---------------------------------------------------------------------
 @router.post("/list")
 def list_filtered(
     req: VideoFilter,
@@ -188,9 +189,7 @@ def list_filtered(
     return rows
 
 
-# ---------------------------------------------------------------------
-# 4) XEM CHI TIẾT 1 VIDEO
-# ---------------------------------------------------------------------
+
 @router.get("/detail/{video_id}")
 def video_detail(video_id: str):
     rows = query("""
@@ -206,9 +205,7 @@ def video_detail(video_id: str):
     return rows[0]
 
 
-# ---------------------------------------------------------------------
-# 5) AGGREGATE (views, likes, comments, subs…)
-# ---------------------------------------------------------------------
+
 class AggRequest(BaseModel):
     accountTag: str
     start: date
@@ -273,20 +270,24 @@ def top_videos(
 @router.get("/top_keywords")
 def top_keywords(
     accountTag: str,
+    range: str = Query("28d"),
     limit: int = Query(5, ge=1, le=50),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
     if _allowed_or_hidden_blocked(current_user, db, accountTag):
         return []
+    start_date, end_date = _range_to_dates(range)
     rows = query(
         """
         SELECT tags, views
         FROM videos
         WHERE account_tag = :tag
           AND tags IS NOT NULL
+          AND (:start_date IS NULL OR published_at >= :start_date)
+          AND (:end_date IS NULL OR published_at <= :end_date)
         """,
-        {"tag": accountTag},
+        {"tag": accountTag, "start_date": start_date, "end_date": end_date},
     )
     totals = {}
     for row in rows:
@@ -307,22 +308,26 @@ def top_keywords(
 @router.get("/top_sources")
 def top_sources(
     accountTag: str,
+    range: str = Query("28d"),
     limit: int = Query(5, ge=1, le=50),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
     if _allowed_or_hidden_blocked(current_user, db, accountTag):
         return []
+    start_date, end_date = _range_to_dates(range)
     rows = query(
         """
         SELECT source, SUM(views)::bigint AS views
         FROM traffic_source_daily
         WHERE account_tag = :tag
+          AND (:start_date IS NULL OR day >= :start_date)
+          AND (:end_date IS NULL OR day <= :end_date)
         GROUP BY source
         ORDER BY views DESC
         LIMIT :limit
         """,
-        {"tag": accountTag, "limit": limit},
+        {"tag": accountTag, "limit": limit, "start_date": start_date, "end_date": end_date},
     )
     return rows
 

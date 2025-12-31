@@ -56,6 +56,12 @@ const overlayVariants = {
   hover: { opacity: 1, y: 0, pointerEvents: "auto" },
 };
 
+const OVERVIEW_RANGES = [
+  { value: "7d", label: "Last 7 days", days: 7 },
+  { value: "28d", label: "Last 28 days", days: 28 },
+  { value: "90d", label: "Last 90 days", days: 90 },
+];
+
 const VideoList = () => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
@@ -74,6 +80,15 @@ const VideoList = () => {
       return "";
     }
   });
+  const [overviewRange, setOverviewRange] = useState(() => {
+    try {
+      const stored = localStorage.getItem("overview.range") || "28d";
+      const exists = OVERVIEW_RANGES.some((range) => range.value === stored);
+      return exists ? stored : "28d";
+    } catch {
+      return "28d";
+    }
+  });
   const [videos, setVideos] = useState([]);
   const [loadingChannels, setLoadingChannels] = useState(true);
   const [loadingVideos, setLoadingVideos] = useState(false);
@@ -82,6 +97,11 @@ const VideoList = () => {
   const [countryViews, setCountryViews] = useState([]);
   const [subscribersSeries, setSubscribersSeries] = useState([]);
   const [error, setError] = useState("");
+  const activeRange =
+    OVERVIEW_RANGES.find((range) => range.value === overviewRange) ||
+    OVERVIEW_RANGES[1];
+  const rangeDays = activeRange.days;
+  const rangeLabel = activeRange.label;
   const latestVideos = useMemo(() => {
     const sorted = [...videos].sort((a, b) => {
       const aTime = a?.publish_date ? new Date(a.publish_date).getTime() : 0;
@@ -96,8 +116,8 @@ const VideoList = () => {
       const bTime = b?.day ? new Date(b.day).getTime() : 0;
       return aTime - bTime;
     });
-    const last = sorted.slice(-30);
-    const prev = sorted.slice(-60, -30);
+    const last = sorted.slice(-rangeDays);
+    const prev = sorted.slice(-(rangeDays * 2), -rangeDays);
     const sum = (rows, key) =>
       rows.reduce((acc, row) => acc + Number(row?.[key] || 0), 0);
     const gained = sum(last, "subscribers_gained");
@@ -130,7 +150,7 @@ const VideoList = () => {
           Number(row?.subscribers_lost || 0),
       })),
     };
-  }, [subscribersSeries]);
+  }, [subscribersSeries, rangeDays]);
   const countryResolvers = useMemo(() => {
     const iso2ToFeatureId = new Map();
     const idToName = new Map();
@@ -257,6 +277,14 @@ const VideoList = () => {
     }
   }, [selectedChannel]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem("overview.range", overviewRange);
+    } catch {
+      // ignore storage errors
+    }
+  }, [overviewRange]);
+
   // Fetch video theo accountTag
   useEffect(() => {
     if (!selectedChannel) return;
@@ -298,25 +326,25 @@ const VideoList = () => {
           fetch(
             `${apiBase}/api/video_overview/top_keywords?accountTag=${encodeURIComponent(
               selectedChannel
-            )}&limit=10`,
+            )}&limit=10&range=${overviewRange}`,
             { headers: authHeaders }
           ),
           fetch(
             `${apiBase}/api/video_overview/top_sources?accountTag=${encodeURIComponent(
               selectedChannel
-            )}&limit=10`,
+            )}&limit=10&range=${overviewRange}`,
             { headers: authHeaders }
           ),
           fetch(
             `${apiBase}/api/video_overview/views_by_country?accountTag=${encodeURIComponent(
               selectedChannel
-            )}&range=28d`,
+            )}&range=${overviewRange}`,
             { headers: authHeaders }
           ),
           fetch(
             `${apiBase}/api/video_overview/subscribers_timeseries?accountTag=${encodeURIComponent(
               selectedChannel
-            )}&days=90`,
+            )}&days=${rangeDays}`,
             { headers: authHeaders }
           ),
         ]);
@@ -346,7 +374,7 @@ const VideoList = () => {
     };
 
     fetchOverviewExtras();
-  }, [apiBase, selectedChannel, authHeaders]);
+  }, [apiBase, selectedChannel, authHeaders, overviewRange, rangeDays]);
 
   const formatNumber = (n) => {
     if (n == null) return "-";
@@ -650,6 +678,27 @@ const VideoList = () => {
               ))}
             </TextField>
           )}
+
+          <Typography
+            variant="subtitle1"
+            color={colors.grey[100]}
+            fontWeight={600}
+          >
+            Date Range:
+          </Typography>
+          <TextField
+            select
+            size="small"
+            value={overviewRange}
+            onChange={(e) => setOverviewRange(e.target.value)}
+            sx={{ minWidth: 160 }}
+          >
+            {OVERVIEW_RANGES.map((range) => (
+              <MenuItem key={range.value} value={range.value}>
+                {range.label}
+              </MenuItem>
+            ))}
+          </TextField>
         </Box>
 
         {videos && videos.length > 0 && (
@@ -705,7 +754,7 @@ const VideoList = () => {
           <Box sx={{ display: "flex" }}>
             <Box sx={{ ...sectionSx, p: 4, minHeight: 560, width: "100%" }}>
               <Typography variant="h5" fontWeight={700} mb={2}>
-                Subscribers
+                Subscribers ({rangeLabel})
               </Typography>
               {subscribersSeries.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
@@ -845,7 +894,7 @@ const VideoList = () => {
           <Box sx={{ display: "flex" }}>
             <Box sx={{ ...sectionSx, p: 4, minHeight: 560, width: "100%" }}>
               <Typography variant="subtitle1" fontWeight={700} mb={1}>
-                Views by country (last 28 days)
+                Views by country ({rangeLabel})
               </Typography>
               {countryViews.length === 0 ? (
                 <Typography variant="body2" color="text.secondary">
@@ -953,7 +1002,7 @@ const VideoList = () => {
         >
           <Box sx={{ ...sectionSx, p: 3 }}>
             <Typography variant="subtitle1" fontWeight={700} mb={1}>
-              Top 10 keywords by views
+              Top 10 keywords by views ({rangeLabel})
             </Typography>
             {topKeywords.length === 0 ? (
               <Typography variant="body2" color="text.secondary">
@@ -1004,7 +1053,7 @@ const VideoList = () => {
 
           <Box sx={{ ...sectionSx, p: 3 }}>
             <Typography variant="subtitle1" fontWeight={700} mb={1}>
-              Top 10 sources by views
+              Top 10 sources by views ({rangeLabel})
             </Typography>
             {topSources.length === 0 ? (
               <Typography variant="body2" color="text.secondary">
