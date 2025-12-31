@@ -171,6 +171,12 @@ const VideoList = () => {
       .sort((a, b) => (b.value || 0) - (a.value || 0))
       .slice(0, 5);
   }, [countryMapData]);
+  const topKeywordMax = useMemo(() => {
+    return Math.max(1, ...topKeywords.map((k) => Number(k.views) || 0));
+  }, [topKeywords]);
+  const topSourceMax = useMemo(() => {
+    return Math.max(1, ...topSources.map((s) => Number(s.views) || 0));
+  }, [topSources]);
 
   // Fetch danh sách account_tag
   useEffect(() => {
@@ -269,13 +275,13 @@ const VideoList = () => {
           fetch(
             `${apiBase}/api/video_overview/top_keywords?accountTag=${encodeURIComponent(
               selectedChannel
-            )}&limit=5`,
+            )}&limit=10`,
             { headers: authHeaders }
           ),
           fetch(
             `${apiBase}/api/video_overview/top_sources?accountTag=${encodeURIComponent(
               selectedChannel
-            )}&limit=5`,
+            )}&limit=10`,
             { headers: authHeaders }
           ),
           fetch(
@@ -375,7 +381,7 @@ const VideoList = () => {
   };
   const chartCardSx = {
     borderRadius: 2,
-    p: 2,
+    p: 1.5,
     border: "1px solid",
     borderColor:
       theme.palette.mode === "dark"
@@ -754,7 +760,7 @@ const VideoList = () => {
                   <Grid container spacing={2} sx={{ minWidth: 0 }}>
                     <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
                       <Box sx={{ ...chartCardSx, minWidth: 0, width: "100%" }}>
-                        <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                        <Typography variant="subtitle1" fontWeight={700} mb={0.5}>
                           Gained
                         </Typography>
                         <Box sx={{ width: "100%", minWidth: 0, minHeight: 0 }}>
@@ -775,7 +781,7 @@ const VideoList = () => {
                     </Grid>
                     <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
                       <Box sx={{ ...chartCardSx, minWidth: 0, width: "100%" }}>
-                        <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                        <Typography variant="subtitle1" fontWeight={700} mb={0.5}>
                           Change
                         </Typography>
                         <Box sx={{ width: "100%", minWidth: 0, minHeight: 0 }}>
@@ -899,55 +905,119 @@ const VideoList = () => {
           </Box>
         </Box>
 
-        <Grid container spacing={2} mt={2}>
-          <Grid size={{ xs: 12, md: 6, lg: 4 }}>
-            <Box sx={sectionSx}>
-              <Typography variant="subtitle1" fontWeight={700} mb={1}>
-                Top 5 keywords by views
+        <Box
+          mt={2}
+          sx={{
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+            gap: 2,
+            width: "100%",
+          }}
+        >
+          <Box sx={{ ...sectionSx, p: 3 }}>
+            <Typography variant="subtitle1" fontWeight={700} mb={1}>
+              Top 10 keywords by views
+            </Typography>
+            {topKeywords.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No data
               </Typography>
-              {topKeywords.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No data
-                </Typography>
-              ) : (
-                <Box display="flex" flexWrap="wrap" gap={1}>
-                  {topKeywords.map((k) => (
-                    <Chip
-                      key={k.keyword}
-                      label={`${k.keyword} • ${formatNumber(k.views)}`}
-                      size="small"
-                    />
-                  ))}
-                </Box>
-              )}
-            </Box>
-          </Grid>
-
-          <Grid size={{ xs: 12, md: 6, lg: 4 }}>
-            <Box sx={sectionSx}>
-              <Typography variant="subtitle1" fontWeight={700} mb={1}>
-                Top 5 sources by views
-              </Typography>
-              {topSources.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No data
-                </Typography>
-              ) : (
-                <Stack spacing={0.8}>
-                  {topSources.map((s) => (
-                    <Box key={s.source} display="flex" justifyContent="space-between">
-                      <Typography variant="body2">{s.source}</Typography>
-                      <Typography variant="body2" fontWeight={600}>
-                        {formatNumber(s.views)}
-                      </Typography>
+            ) : (
+              <Stack spacing={1}>
+                {topKeywords.map((k) => {
+                  const value = Number(k.views) || 0;
+                  const pct = Math.max(6, Math.round((value / topKeywordMax) * 100));
+                  return (
+                    <Box key={k.keyword}>
+                      <Box display="flex" justifyContent="space-between" mb={0.5}>
+                        <Typography variant="body2">{k.keyword}</Typography>
+                        <Typography variant="body2" fontWeight={600}>
+                          {formatNumber(value)}
+                        </Typography>
+                      </Box>
+                      <Box
+                        sx={{
+                          height: 8,
+                          borderRadius: 999,
+                          bgcolor:
+                            theme.palette.mode === "dark"
+                              ? "rgba(148,163,184,0.2)"
+                              : "rgba(15,23,42,0.12)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: `${pct}%`,
+                            height: "100%",
+                            borderRadius: 999,
+                            background:
+                              theme.palette.mode === "dark"
+                                ? "linear-gradient(90deg, #38bdf8, #a855f7)"
+                                : "linear-gradient(90deg, #0ea5e9, #6366f1)",
+                          }}
+                        />
+                      </Box>
                     </Box>
-                  ))}
-                </Stack>
-              )}
-            </Box>
-          </Grid>
+                  );
+                })}
+              </Stack>
+            )}
+          </Box>
 
-        </Grid>
+          <Box sx={{ ...sectionSx, p: 3 }}>
+            <Typography variant="subtitle1" fontWeight={700} mb={1}>
+              Top 10 sources by views
+            </Typography>
+            {topSources.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No data
+              </Typography>
+            ) : (
+              <Stack spacing={1}>
+                {topSources.map((s) => {
+                  const value = Number(s.views) || 0;
+                  const pct = Math.max(6, Math.round((value / topSourceMax) * 100));
+                  return (
+                    <Box key={s.source}>
+                      <Box display="flex" justifyContent="space-between" mb={0.5}>
+                        <Typography variant="body2">{s.source}</Typography>
+                        <Typography variant="body2" fontWeight={600}>
+                          {formatNumber(value)}
+                        </Typography>
+                      </Box>
+                      <Box
+                        sx={{
+                          height: 8,
+                          borderRadius: 999,
+                          bgcolor:
+                            theme.palette.mode === "dark"
+                              ? "rgba(148,163,184,0.2)"
+                              : "rgba(15,23,42,0.12)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: `${pct}%`,
+                            height: "100%",
+                            borderRadius: 999,
+                            background:
+                              theme.palette.mode === "dark"
+                                ? "linear-gradient(90deg, #22c55e, #06b6d4)"
+                                : "linear-gradient(90deg, #22c55e, #0ea5e9)",
+                          }}
+                        />
+                      </Box>
+                    </Box>
+                  );
+                })}
+              </Stack>
+            )}
+          </Box>
+        </Box>
+
+          
         </>
       )}
     </Box>
