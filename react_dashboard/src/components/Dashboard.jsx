@@ -212,7 +212,7 @@ const VideoList = () => {
     };
 
     fetchChannels();
-  }, [apiBase, authHeaders]);
+  }, [apiBase, authHeaders, selectedChannel]);
 
   useEffect(() => {
     if (!selectedChannel) return;
@@ -659,9 +659,17 @@ const VideoList = () => {
           </Box>
         </Box>
 
-        <Grid container spacing={2} mt={2} sx={{ width: "100%" }}>
-          <Grid item xs={12} md={6} lg={6} xl={6}>
-            <Box sx={{ ...sectionSx, p: 4, minHeight: 560 }}>
+        <Box
+          mt={2}
+          sx={{
+            display: "grid",
+            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+            gap: 2,
+            width: "100%",
+          }}
+        >
+          <Box sx={{ display: "flex" }}>
+            <Box sx={{ ...sectionSx, p: 4, minHeight: 560, width: "100%" }}>
               <Typography variant="h5" fontWeight={700} mb={2}>
                 Subscribers
               </Typography>
@@ -672,7 +680,7 @@ const VideoList = () => {
               ) : (
                 <>
                   <Grid container spacing={2} mb={2}>
-                    <Grid item xs={12} sm={6} md={3}>
+                    <Grid size={{ xs: 12, md: 3 }}>
                       <Box sx={statCardSx}>
                         <Typography variant="body2" color="text.secondary">
                           Gained
@@ -688,7 +696,7 @@ const VideoList = () => {
                         </Typography>
                       </Box>
                     </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
+                    <Grid size={{ xs: 12, md: 3 }}>
                       <Box sx={statCardSx}>
                         <Typography variant="body2" color="text.secondary">
                           Lost
@@ -704,7 +712,7 @@ const VideoList = () => {
                         </Typography>
                       </Box>
                     </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
+                    <Grid size={{ xs: 12, md: 3 }}>
                       <Box sx={statCardSx}>
                         <Typography variant="body2" color="text.secondary">
                           Change
@@ -720,7 +728,7 @@ const VideoList = () => {
                         </Typography>
                       </Box>
                     </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
+                    <Grid size={{ xs: 12, md: 3 }}>
                       <Box sx={statCardSx}>
                         <Typography variant="body2" color="text.secondary">
                           Avg daily change
@@ -739,7 +747,7 @@ const VideoList = () => {
                   </Grid>
 
                   <Grid container spacing={2} sx={{ minWidth: 0 }}>
-                    <Grid item xs={12} md={6} sx={{ minWidth: 0 }}>
+                    <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
                       <Box sx={{ ...chartCardSx, minWidth: 0, width: "100%" }}>
                         <Typography variant="subtitle1" fontWeight={700} mb={1}>
                           Gained
@@ -760,7 +768,7 @@ const VideoList = () => {
                         </Box>
                       </Box>
                     </Grid>
-                    <Grid item xs={12} md={6} sx={{ minWidth: 0 }}>
+                    <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
                       <Box sx={{ ...chartCardSx, minWidth: 0, width: "100%" }}>
                         <Typography variant="subtitle1" fontWeight={700} mb={1}>
                           Change
@@ -785,9 +793,9 @@ const VideoList = () => {
                 </>
               )}
             </Box>
-          </Grid>
-          <Grid item xs={12} md={6} lg={6} xl={6}>
-            <Box sx={{ ...sectionSx, p: 4, minHeight: 560 }}>
+          </Box>
+          <Box sx={{ display: "flex" }}>
+            <Box sx={{ ...sectionSx, p: 4, minHeight: 560, width: "100%" }}>
               <Typography variant="subtitle1" fontWeight={700} mb={1}>
                 Views by country (last 28 days)
               </Typography>
@@ -836,11 +844,11 @@ const VideoList = () => {
                 </Box>
               )}
             </Box>
-          </Grid>
-        </Grid>
+          </Box>
+        </Box>
 
         <Grid container spacing={2} mt={2}>
-          <Grid item xs={12} md={6} lg={4}>
+          <Grid size={{ xs: 12, md: 6, lg: 4 }}>
             <Box sx={sectionSx}>
               <Typography variant="subtitle1" fontWeight={700} mb={1}>
                 Top 5 keywords by views
@@ -863,7 +871,7 @@ const VideoList = () => {
             </Box>
           </Grid>
 
-          <Grid item xs={12} md={6} lg={4}>
+          <Grid size={{ xs: 12, md: 6, lg: 4 }}>
             <Box sx={sectionSx}>
               <Typography variant="subtitle1" fontWeight={700} mb={1}>
                 Top 5 sources by views
