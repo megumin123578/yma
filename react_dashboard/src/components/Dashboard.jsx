@@ -184,6 +184,22 @@ const VideoList = () => {
     if (!days.length) return [];
     return [days[0], days[days.length - 1]];
   }, [subscribersSummary.chart]);
+  const chartTooltipStyles = useMemo(() => {
+    const isDark = theme.palette.mode === "dark";
+    return {
+      contentStyle: {
+        backgroundColor: isDark ? "rgba(15,23,42,0.92)" : "#ffffff",
+        border: isDark
+          ? "1px solid rgba(148,163,184,0.35)"
+          : "1px solid rgba(15,23,42,0.12)",
+        borderRadius: 8,
+        boxShadow: isDark
+          ? "0 10px 18px rgba(2,6,23,0.45)"
+          : "0 10px 18px rgba(15,23,42,0.12)",
+      },
+      labelStyle: { color: isDark ? "#e2e8f0" : "#0f172a" },
+    };
+  }, [theme.palette.mode]);
 
   // Fetch danh sách account_tag
   useEffect(() => {
@@ -786,7 +802,7 @@ const VideoList = () => {
                                 ticks={subscribersXAxisTicks}
                               />
                               <YAxis tickFormatter={formatNumber} />
-                              <Tooltip />
+                              <Tooltip {...chartTooltipStyles} />
                               <Bar dataKey="gained" fill="#22c55e" radius={[6, 6, 0, 0]} />
                             </BarChart>
                           </ResponsiveContainer>
@@ -814,7 +830,7 @@ const VideoList = () => {
                                 ticks={subscribersXAxisTicks}
                               />
                               <YAxis tickFormatter={formatNumber} />
-                              <Tooltip />
+                              <Tooltip {...chartTooltipStyles} />
                               <Bar dataKey="change" fill="#7c3aed" radius={[6, 6, 0, 0]} />
                             </BarChart>
                           </ResponsiveContainer>
