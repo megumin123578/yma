@@ -15,6 +15,15 @@ import {
 import { ResponsiveLine } from "@nivo/line";
 import { API_BASE } from "../config";
 
+const formatNumber = (value) => {
+  if (value == null) return "-";
+  const num = Number(value);
+  if (Number.isNaN(num)) return "-";
+  if (Math.abs(num) >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(num) >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
+  return num.toString();
+};
+
 const AudienceAnalytics = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
@@ -22,6 +31,10 @@ const AudienceAnalytics = () => {
   const [accounts, setAccounts] = useState([]);
   const [demoRows, setDemoRows] = useState([]);
   const [demoRange, setDemoRange] = useState({ start: "", end: "" });
+  const [deviceRows, setDeviceRows] = useState([]);
+  const [deviceRange, setDeviceRange] = useState({ start: "", end: "" });
+  const [viewerTypeRows, setViewerTypeRows] = useState([]);
+  const [viewerTypeRange, setViewerTypeRange] = useState({ start: "", end: "" });
   const [retentionRows, setRetentionRows] = useState([]);
   const [, setRetentionRange] = useState({ start: "", end: "" });
   const [videos, setVideos] = useState([]);
@@ -91,6 +104,50 @@ const AudienceAnalytics = () => {
       }
     };
     loadDemographics();
+  }, [accountTag, authHeaders]);
+
+  useEffect(() => {
+    if (!accountTag) return;
+    const loadDevices = async () => {
+      setLoading(true);
+      try {
+        const resp = await fetch(
+          `${API_BASE}/api/audience/devices?accountTag=${encodeURIComponent(accountTag)}`,
+          { headers: authHeaders }
+        );
+        const data = await resp.json();
+        setDeviceRows(data?.rows || []);
+        setDeviceRange({ start: data?.start_date || "", end: data?.end_date || "" });
+      } catch (err) {
+        setDeviceRows([]);
+        setDeviceRange({ start: "", end: "" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadDevices();
+  }, [accountTag, authHeaders]);
+
+  useEffect(() => {
+    if (!accountTag) return;
+    const loadViewerTypes = async () => {
+      setLoading(true);
+      try {
+        const resp = await fetch(
+          `${API_BASE}/api/audience/viewer_types?accountTag=${encodeURIComponent(accountTag)}`,
+          { headers: authHeaders }
+        );
+        const data = await resp.json();
+        setViewerTypeRows(data?.rows || []);
+        setViewerTypeRange({ start: data?.start_date || "", end: data?.end_date || "" });
+      } catch (err) {
+        setViewerTypeRows([]);
+        setViewerTypeRange({ start: "", end: "" });
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadViewerTypes();
   }, [accountTag, authHeaders]);
 
   useEffect(() => {
@@ -168,6 +225,35 @@ const AudienceAnalytics = () => {
     }
     return trimmed;
   };
+
+  const formatViewerType = (value) => {
+    const raw = String(value || "").toUpperCase();
+    if (raw === "SUBSCRIBED") return "Subscribed";
+    if (raw === "UNSUBSCRIBED") return "Not subscribed";
+    return value || "";
+  };
+
+  const deviceList = useMemo(() => {
+    return [...deviceRows].sort(
+      (a, b) => (b.viewer_percentage || 0) - (a.viewer_percentage || 0)
+    );
+  }, [deviceRows]);
+
+  const viewerTypeList = useMemo(() => {
+    return [...viewerTypeRows].sort(
+      (a, b) => (b.viewer_percentage || 0) - (a.viewer_percentage || 0)
+    );
+  }, [viewerTypeRows]);
+
+  const deviceMax = useMemo(
+    () => Math.max(1, ...deviceList.map((row) => Number(row.viewer_percentage || 0))),
+    [deviceList]
+  );
+  const viewerTypeMax = useMemo(
+    () => Math.max(1, ...viewerTypeList.map((row) => Number(row.viewer_percentage || 0))),
+    [viewerTypeList]
+  );
+
 
   const retentionSeries = useMemo(() => {
     const ordered = [...retentionRows]
@@ -377,6 +463,165 @@ const AudienceAnalytics = () => {
             </Box>
           </Box>
         )}
+      </Box>
+
+      <Box
+        display="grid"
+        gridTemplateColumns={{ xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }}
+        gap={2}
+      >
+        <Box
+          sx={{
+            p: 2,
+            borderRadius: 3,
+            border: `1px solid ${isDark ? "rgba(148,163,184,0.2)" : "rgba(15,23,42,0.12)"}`,
+            background: isDark
+              ? "rgba(15,23,42,0.85)"
+              : "rgba(248,250,252,0.95)",
+            boxShadow: isDark
+              ? "0 14px 26px rgba(15,23,42,0.35)"
+              : "0 12px 22px rgba(148,163,184,0.25)",
+          }}
+        >
+          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+            <Box>
+              <Typography variant="subtitle1" fontWeight={600}>
+                Devices
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {deviceRange.start && deviceRange.end
+                  ? `${deviceRange.start} → ${deviceRange.end}`
+                  : "No data"}
+              </Typography>
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              % viewers
+            </Typography>
+          </Stack>
+          {deviceList.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" mt={2}>
+              No device data available.
+            </Typography>
+          ) : (
+            <Stack spacing={1} mt={2}>
+              {deviceList.slice(0, 5).map((row) => {
+                const pct = Math.max(
+                  6,
+                  Math.round((row.viewer_percentage / deviceMax) * 100)
+                );
+                return (
+                  <Box key={row.device_type}>
+                    <Box display="flex" justifyContent="space-between" mb={0.5}>
+                      <Typography variant="body2">{row.device_type}</Typography>
+                      <Typography variant="body2" fontWeight={600}>
+                        {(row.viewer_percentage || 0).toFixed(2)}%
+                      </Typography>
+                    </Box>
+                    <Box
+                      sx={{
+                        height: 8,
+                        borderRadius: 999,
+                        bgcolor: isDark
+                          ? "rgba(148,163,184,0.2)"
+                          : "rgba(15,23,42,0.12)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: `${pct}%`,
+                          height: "100%",
+                          borderRadius: 999,
+                          background: isDark
+                            ? "linear-gradient(90deg, #38bdf8, #22d3ee)"
+                            : "linear-gradient(90deg, #0ea5e9, #22d3ee)",
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Stack>
+          )}
+        </Box>
+
+        <Box
+          sx={{
+            p: 2,
+            borderRadius: 3,
+            border: `1px solid ${isDark ? "rgba(148,163,184,0.2)" : "rgba(15,23,42,0.12)"}`,
+            background: isDark
+              ? "rgba(15,23,42,0.85)"
+              : "rgba(248,250,252,0.95)",
+            boxShadow: isDark
+              ? "0 14px 26px rgba(15,23,42,0.35)"
+              : "0 12px 22px rgba(148,163,184,0.25)",
+          }}
+        >
+          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+            <Box>
+              <Typography variant="subtitle1" fontWeight={600}>
+                Subscribed vs Not subscribed
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {viewerTypeRange.start && viewerTypeRange.end
+                  ? `${viewerTypeRange.start} → ${viewerTypeRange.end}`
+                  : "No data"}
+              </Typography>
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              % viewers
+            </Typography>
+          </Stack>
+          {viewerTypeList.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" mt={2}>
+              No viewer type data available.
+            </Typography>
+          ) : (
+            <Stack spacing={1} mt={2}>
+              {viewerTypeList.map((row) => {
+                const pct = Math.max(
+                  6,
+                  Math.round((row.viewer_percentage / viewerTypeMax) * 100)
+                );
+                return (
+                  <Box key={row.viewer_type}>
+                    <Box display="flex" justifyContent="space-between" mb={0.5}>
+                      <Typography variant="body2">
+                        {formatViewerType(row.viewer_type)}
+                      </Typography>
+                      <Typography variant="body2" fontWeight={600}>
+                        {(row.viewer_percentage || 0).toFixed(2)}%
+                      </Typography>
+                    </Box>
+                    <Box
+                      sx={{
+                        height: 8,
+                        borderRadius: 999,
+                        bgcolor: isDark
+                          ? "rgba(148,163,184,0.2)"
+                          : "rgba(15,23,42,0.12)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: `${pct}%`,
+                          height: "100%",
+                          borderRadius: 999,
+                          background: isDark
+                            ? "linear-gradient(90deg, #a855f7, #f472b6)"
+                            : "linear-gradient(90deg, #8b5cf6, #f472b6)",
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Stack>
+          )}
+        </Box>
+
       </Box>
 
       <Box

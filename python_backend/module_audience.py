@@ -40,6 +40,42 @@ def _ensure_demographics_table(conn) -> None:
     )
 
 
+def _ensure_device_table(conn) -> None:
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS audience_devices (
+                account_tag TEXT NOT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                device_type TEXT NOT NULL,
+                viewer_percentage DOUBLE PRECISION NOT NULL,
+                updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (account_tag, start_date, end_date, device_type)
+            );
+            """
+        )
+    )
+
+
+def _ensure_viewer_type_table(conn) -> None:
+    conn.execute(
+        text(
+            """
+            CREATE TABLE IF NOT EXISTS audience_viewer_types (
+                account_tag TEXT NOT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                viewer_type TEXT NOT NULL,
+                viewer_percentage DOUBLE PRECISION NOT NULL,
+                updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                PRIMARY KEY (account_tag, start_date, end_date, viewer_type)
+            );
+            """
+        )
+    )
+
+
 def _ensure_retention_table(conn) -> None:
     conn.execute(
         text(
@@ -182,6 +218,156 @@ def save_demographics(pg_url: str, account_tag: str, rows: List[Dict], start_dat
             )
 
 
+def fetch_device_types(credentials, channel_id: Optional[str] = None) -> Tuple[List[Dict], str, str]:
+    start_date, end_date = _date_range_from_env()
+    yta = build("youtubeAnalytics", "v2", credentials=credentials)
+    ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
+    query = {
+        "ids": ids,
+        "startDate": start_date,
+        "endDate": end_date,
+        "dimensions": "deviceType",
+        "metrics": "views",
+        "sort": "-views",
+    }
+    try:
+        resp = yta.reports().query(**query).execute() or {}
+    except HttpError as e:
+        print(f"[WARN] device type query failed: {e}")
+        return [], start_date, end_date
+
+    rows = resp.get("rows") or []
+    headers = [h["name"] for h in resp.get("columnHeaders", [])]
+    idx = {h: i for i, h in enumerate(headers)}
+
+    total_views = 0
+    for row in rows:
+        try:
+            total_views += int(row[idx["views"]] or 0)
+        except Exception:
+            continue
+
+    out = []
+    for row in rows:
+        try:
+            views = int(row[idx["views"]] or 0)
+        except Exception:
+            views = 0
+        viewer_percentage = (views / total_views * 100) if total_views else 0
+        out.append(
+            {
+                "device_type": row[idx["deviceType"]],
+                "viewer_percentage": float(viewer_percentage),
+            }
+        )
+    return out, start_date, end_date
+
+
+def save_device_types(pg_url: str, account_tag: str, rows: List[Dict], start_date: str, end_date: str) -> None:
+    if not rows:
+        return
+    engine = create_engine(pg_url, future=True)
+    with engine.begin() as conn:
+        _ensure_device_table(conn)
+        for row in rows:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO audience_devices
+                        (account_tag, start_date, end_date, device_type, viewer_percentage, updated_at)
+                    VALUES
+                        (:account_tag, :start_date, :end_date, :device_type, :viewer_percentage, NOW())
+                    ON CONFLICT (account_tag, start_date, end_date, device_type)
+                    DO UPDATE SET
+                        viewer_percentage = EXCLUDED.viewer_percentage,
+                        updated_at = NOW();
+                    """
+                ),
+                {
+                    "account_tag": account_tag,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "device_type": row["device_type"],
+                    "viewer_percentage": row["viewer_percentage"],
+                },
+            )
+
+
+def fetch_viewer_types(credentials, channel_id: Optional[str] = None) -> Tuple[List[Dict], str, str]:
+    start_date, end_date = _date_range_from_env()
+    yta = build("youtubeAnalytics", "v2", credentials=credentials)
+    ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
+    query = {
+        "ids": ids,
+        "startDate": start_date,
+        "endDate": end_date,
+        "dimensions": "subscribedStatus",
+        "metrics": "views",
+        "sort": "-views",
+    }
+    try:
+        resp = yta.reports().query(**query).execute() or {}
+    except HttpError as e:
+        print(f"[WARN] viewer type query failed: {e}")
+        return [], start_date, end_date
+
+    rows = resp.get("rows") or []
+    headers = [h["name"] for h in resp.get("columnHeaders", [])]
+    idx = {h: i for i, h in enumerate(headers)}
+
+    total_views = 0
+    for row in rows:
+        try:
+            total_views += int(row[idx["views"]] or 0)
+        except Exception:
+            continue
+
+    out = []
+    for row in rows:
+        try:
+            views = int(row[idx["views"]] or 0)
+        except Exception:
+            views = 0
+        viewer_percentage = (views / total_views * 100) if total_views else 0
+        out.append(
+            {
+                "viewer_type": row[idx["subscribedStatus"]],
+                "viewer_percentage": float(viewer_percentage),
+            }
+        )
+    return out, start_date, end_date
+
+
+def save_viewer_types(pg_url: str, account_tag: str, rows: List[Dict], start_date: str, end_date: str) -> None:
+    if not rows:
+        return
+    engine = create_engine(pg_url, future=True)
+    with engine.begin() as conn:
+        _ensure_viewer_type_table(conn)
+        for row in rows:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO audience_viewer_types
+                        (account_tag, start_date, end_date, viewer_type, viewer_percentage, updated_at)
+                    VALUES
+                        (:account_tag, :start_date, :end_date, :viewer_type, :viewer_percentage, NOW())
+                    ON CONFLICT (account_tag, start_date, end_date, viewer_type)
+                    DO UPDATE SET
+                        viewer_percentage = EXCLUDED.viewer_percentage,
+                        updated_at = NOW();
+                    """
+                ),
+                {
+                    "account_tag": account_tag,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "viewer_type": row["viewer_type"],
+                    "viewer_percentage": row["viewer_percentage"],
+                },
+            )
+
+
 def _list_video_ids(pg_url: str, account_tag: str) -> List[str]:
     max_videos = int(os.getenv("AUDIENCE_MAX_VIDEOS", "10"))
     engine = create_engine(pg_url, future=True)
@@ -297,6 +483,15 @@ def run_audience_analytics(
     demo_rows, demo_start, demo_end = fetch_demographics(credentials, channel_id=channel_id)
     print(f"[INFO] [audience] Demographics rows: {len(demo_rows)} ({demo_start} -> {demo_end})")
     save_demographics(pg_url, safe_tag, demo_rows, demo_start, demo_end)
+
+    device_rows, device_start, device_end = fetch_device_types(credentials, channel_id=channel_id)
+    print(f"[INFO] [audience] Device rows: {len(device_rows)} ({device_start} -> {device_end})")
+    save_device_types(pg_url, safe_tag, device_rows, device_start, device_end)
+
+    viewer_rows, viewer_start, viewer_end = fetch_viewer_types(credentials, channel_id=channel_id)
+    print(f"[INFO] [audience] Viewer type rows: {len(viewer_rows)} ({viewer_start} -> {viewer_end})")
+    save_viewer_types(pg_url, safe_tag, viewer_rows, viewer_start, viewer_end)
+
 
     video_ids = _list_video_ids(pg_url, safe_tag)
     if not video_ids:

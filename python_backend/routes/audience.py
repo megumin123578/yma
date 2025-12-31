@@ -182,3 +182,138 @@ def get_retention(
             }
     except Exception:
         return {"availableAccounts": [], "videos": [], "rows": []}
+
+
+@router.get("/devices")
+def get_devices(
+    accountTag: str = Query(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    hidden = get_hidden_account_tags(db, current_user.id) if current_user else set()
+    allowed = get_allowed_account_tags(db, current_user)
+    pg_url = os.getenv("PG_URL")
+    if not pg_url:
+        return {"availableAccounts": [], "rows": []}
+    try:
+        pg_engine = create_engine(pg_url, future=True)
+        with pg_engine.connect() as conn:
+            if not accountTag:
+                rows = conn.execute(
+                    text("SELECT DISTINCT account_tag FROM audience_devices ORDER BY account_tag")
+                ).fetchall()
+                accounts = [r[0] for r in rows]
+                if allowed is not None:
+                    accounts = [acct for acct in accounts if acct in allowed]
+                accounts = _filter_hidden(accounts, hidden)
+                return {"availableAccounts": accounts, "rows": []}
+
+            safe_tag = sanitize_filename(accountTag)
+            if allowed is not None and safe_tag not in allowed:
+                return {"availableAccounts": [], "rows": []}
+            latest = conn.execute(
+                text(
+                    """
+                    SELECT start_date, end_date
+                    FROM audience_devices
+                    WHERE account_tag = :acct
+                    ORDER BY end_date DESC, start_date DESC
+                    LIMIT 1
+                    """
+                ),
+                {"acct": safe_tag},
+            ).fetchone()
+            if not latest:
+                return {"availableAccounts": [], "rows": []}
+            start_date, end_date = latest
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT device_type, viewer_percentage
+                    FROM audience_devices
+                    WHERE account_tag = :acct AND start_date = :start AND end_date = :end
+                    ORDER BY viewer_percentage DESC
+                    """
+                ),
+                {"acct": safe_tag, "start": start_date, "end": end_date},
+            ).fetchall()
+            payload = [
+                {"device_type": r[0], "viewer_percentage": float(r[1] or 0)}
+                for r in rows
+            ]
+            return {
+                "accountTag": safe_tag,
+                "start_date": str(start_date),
+                "end_date": str(end_date),
+                "rows": payload,
+            }
+    except Exception:
+        return {"availableAccounts": [], "rows": []}
+
+
+@router.get("/viewer_types")
+def get_viewer_types(
+    accountTag: str = Query(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    hidden = get_hidden_account_tags(db, current_user.id) if current_user else set()
+    allowed = get_allowed_account_tags(db, current_user)
+    pg_url = os.getenv("PG_URL")
+    if not pg_url:
+        return {"availableAccounts": [], "rows": []}
+    try:
+        pg_engine = create_engine(pg_url, future=True)
+        with pg_engine.connect() as conn:
+            if not accountTag:
+                rows = conn.execute(
+                    text("SELECT DISTINCT account_tag FROM audience_viewer_types ORDER BY account_tag")
+                ).fetchall()
+                accounts = [r[0] for r in rows]
+                if allowed is not None:
+                    accounts = [acct for acct in accounts if acct in allowed]
+                accounts = _filter_hidden(accounts, hidden)
+                return {"availableAccounts": accounts, "rows": []}
+
+            safe_tag = sanitize_filename(accountTag)
+            if allowed is not None and safe_tag not in allowed:
+                return {"availableAccounts": [], "rows": []}
+            latest = conn.execute(
+                text(
+                    """
+                    SELECT start_date, end_date
+                    FROM audience_viewer_types
+                    WHERE account_tag = :acct
+                    ORDER BY end_date DESC, start_date DESC
+                    LIMIT 1
+                    """
+                ),
+                {"acct": safe_tag},
+            ).fetchone()
+            if not latest:
+                return {"availableAccounts": [], "rows": []}
+            start_date, end_date = latest
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT viewer_type, viewer_percentage
+                    FROM audience_viewer_types
+                    WHERE account_tag = :acct AND start_date = :start AND end_date = :end
+                    ORDER BY viewer_percentage DESC
+                    """
+                ),
+                {"acct": safe_tag, "start": start_date, "end": end_date},
+            ).fetchall()
+            payload = [
+                {"viewer_type": r[0], "viewer_percentage": float(r[1] or 0)}
+                for r in rows
+            ]
+            return {
+                "accountTag": safe_tag,
+                "start_date": str(start_date),
+                "end_date": str(end_date),
+                "rows": payload,
+            }
+    except Exception:
+        return {"availableAccounts": [], "rows": []}
+

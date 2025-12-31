@@ -166,6 +166,20 @@ def _purge_postgres_account(account_tag: str) -> None:
                 pass
             try:
                 conn.execute(
+                    text("DELETE FROM audience_devices WHERE account_tag = :acct"),
+                    {"acct": tag},
+                )
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    text("DELETE FROM audience_viewer_types WHERE account_tag = :acct"),
+                    {"acct": tag},
+                )
+            except Exception:
+                pass
+            try:
+                conn.execute(
                     text("DELETE FROM reach_video_metrics WHERE account_tag = :acct"),
                     {"acct": tag},
                 )
