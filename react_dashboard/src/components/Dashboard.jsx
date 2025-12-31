@@ -990,8 +990,8 @@ const VideoList = () => {
                             borderRadius: 999,
                             background:
                               theme.palette.mode === "dark"
-                                ? "linear-gradient(90deg, #38bdf8, #a855f7)"
-                                : "linear-gradient(90deg, #0ea5e9, #6366f1)",
+                                ? "linear-gradient(90deg, #f59e0b, #f97316)"
+                                : "linear-gradient(90deg, #f59e0b, #fb923c)",
                           }}
                         />
                       </Box>
