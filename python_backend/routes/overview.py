@@ -280,12 +280,15 @@ def top_keywords(
     start_date, end_date = _range_to_dates(range)
     rows = query(
         """
-        SELECT tags, views
-        FROM videos
-        WHERE account_tag = :tag
-          AND tags IS NOT NULL
-          AND (:start_date IS NULL OR published_at >= :start_date)
-          AND (:end_date IS NULL OR published_at <= :end_date)
+        SELECT v.tags, COALESCE(SUM(s.views), 0) AS views
+        FROM videos v
+        JOIN video_daily_stats s
+          ON s.video_id = v.video_id
+        WHERE v.account_tag = :tag
+          AND v.tags IS NOT NULL
+          AND (:start_date IS NULL OR s.day >= :start_date)
+          AND (:end_date IS NULL OR s.day <= :end_date)
+        GROUP BY v.video_id, v.tags
         """,
         {"tag": accountTag, "start_date": start_date, "end_date": end_date},
     )
