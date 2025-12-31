@@ -928,37 +928,38 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                     const menuChannel = savedChannels.find(
                       (item) => item.channel_id === groupMenuChannelId
                     );
-                    return (
-                      <>
-                  <MenuItem disabled>Add to groups</MenuItem>
-                  <MenuItem
-                    onClick={() => {
-                      updateChannelGroups(groupMenuChannelId, []);
-                      closeGroupMenu();
-                    }}
-                  >
-                    <ListItemText primary="Clear groups" />
-                  </MenuItem>
-                  {groupOptions.map((group) => {
-                    const current = getChannelGroups(menuChannel);
-                    const checked = current.includes(group);
-                    const next = checked
-                      ? current.filter((name) => name !== group)
-                      : [...current, group];
-                    return (
+                    return [
+                      <MenuItem key="groups-title" disabled>
+                        Add to groups
+                      </MenuItem>,
                       <MenuItem
-                        key={group}
+                        key="groups-clear"
                         onClick={() => {
-                          updateChannelGroups(groupMenuChannelId, next);
+                          updateChannelGroups(groupMenuChannelId, []);
+                          closeGroupMenu();
                         }}
                       >
-                        <Checkbox size="small" checked={checked} />
-                        <ListItemText primary={group} />
-                      </MenuItem>
-                    );
-                  })}
-                      </>
-                    );
+                        <ListItemText primary="Clear groups" />
+                      </MenuItem>,
+                      ...groupOptions.map((group) => {
+                        const current = getChannelGroups(menuChannel);
+                        const checked = current.includes(group);
+                        const next = checked
+                          ? current.filter((name) => name !== group)
+                          : [...current, group];
+                        return (
+                          <MenuItem
+                            key={group}
+                            onClick={() => {
+                              updateChannelGroups(groupMenuChannelId, next);
+                            }}
+                          >
+                            <Checkbox size="small" checked={checked} />
+                            <ListItemText primary={group} />
+                          </MenuItem>
+                        );
+                      }),
+                    ];
                   })()}
                 </Menu>
               </Stack>
@@ -1052,13 +1053,13 @@ const RivalsChannel = ({ viewMode = "list" }) => {
               </Stack>
 
               <Grid container spacing={2}>
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                   <StatCard label="Subscribers" value={subsHidden ? "Hidden" : formatStat(stats.subscriberCount)} />
                 </Grid>
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                   <StatCard label="Total views" value={formatStat(stats.viewCount)} />
                 </Grid>
-                <Grid item xs={12} sm={6} md={3}>
+                <Grid size={{ xs: 12, sm: 6, md: 3 }}>
                   <StatCard label="Total videos" value={formatStat(stats.videoCount)} />
                 </Grid>
               </Grid>
