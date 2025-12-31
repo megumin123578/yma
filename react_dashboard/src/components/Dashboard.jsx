@@ -8,6 +8,7 @@ import {
   Typography,
   Chip,
   Stack,
+  Button,
   TextField,
   MenuItem,
   CircularProgress,
@@ -61,6 +62,9 @@ const OVERVIEW_RANGES = [
   { value: "28d", label: "Last 28 days", days: 28 },
   { value: "90d", label: "Last 90 days", days: 90 },
 ];
+const OVERVIEW_LIMIT_STEP = 10;
+const OVERVIEW_LIMIT_MAX = 50;
+const OVERVIEW_LIMIT_DEFAULT = 10;
 
 const VideoList = () => {
   const theme = useTheme();
@@ -94,6 +98,8 @@ const VideoList = () => {
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [topKeywords, setTopKeywords] = useState([]);
   const [topSources, setTopSources] = useState([]);
+  const [keywordLimit, setKeywordLimit] = useState(OVERVIEW_LIMIT_DEFAULT);
+  const [sourceLimit, setSourceLimit] = useState(OVERVIEW_LIMIT_DEFAULT);
   const [countryViews, setCountryViews] = useState([]);
   const [subscribersSeries, setSubscribersSeries] = useState([]);
   const [error, setError] = useState("");
@@ -102,6 +108,10 @@ const VideoList = () => {
     OVERVIEW_RANGES[1];
   const rangeDays = activeRange.days;
   const rangeLabel = activeRange.label;
+  const canLoadMoreKeywords =
+    topKeywords.length >= keywordLimit && keywordLimit < OVERVIEW_LIMIT_MAX;
+  const canLoadMoreSources =
+    topSources.length >= sourceLimit && sourceLimit < OVERVIEW_LIMIT_MAX;
   const latestVideos = useMemo(() => {
     const sorted = [...videos].sort((a, b) => {
       const aTime = a?.publish_date ? new Date(a.publish_date).getTime() : 0;
@@ -285,6 +295,11 @@ const VideoList = () => {
     }
   }, [overviewRange]);
 
+  useEffect(() => {
+    setKeywordLimit(OVERVIEW_LIMIT_DEFAULT);
+    setSourceLimit(OVERVIEW_LIMIT_DEFAULT);
+  }, [selectedChannel, overviewRange]);
+
   // Fetch video theo accountTag
   useEffect(() => {
     if (!selectedChannel) return;
@@ -326,13 +341,13 @@ const VideoList = () => {
           fetch(
             `${apiBase}/api/video_overview/top_keywords?accountTag=${encodeURIComponent(
               selectedChannel
-            )}&limit=10&range=${overviewRange}`,
+            )}&limit=${keywordLimit}&range=${overviewRange}`,
             { headers: authHeaders }
           ),
           fetch(
             `${apiBase}/api/video_overview/top_sources?accountTag=${encodeURIComponent(
               selectedChannel
-            )}&limit=10&range=${overviewRange}`,
+            )}&limit=${sourceLimit}&range=${overviewRange}`,
             { headers: authHeaders }
           ),
           fetch(
@@ -374,7 +389,15 @@ const VideoList = () => {
     };
 
     fetchOverviewExtras();
-  }, [apiBase, selectedChannel, authHeaders, overviewRange, rangeDays]);
+  }, [
+    apiBase,
+    selectedChannel,
+    authHeaders,
+    overviewRange,
+    rangeDays,
+    keywordLimit,
+    sourceLimit,
+  ]);
 
   const formatNumber = (n) => {
     if (n == null) return "-";
@@ -1009,45 +1032,89 @@ const VideoList = () => {
                 No data
               </Typography>
             ) : (
-              <Stack spacing={1}>
-                {topKeywords.map((k) => {
-                  const value = Number(k.views) || 0;
-                  const pct = Math.max(6, Math.round((value / topKeywordMax) * 100));
-                  return (
-                    <Box key={k.keyword}>
-                      <Box display="flex" justifyContent="space-between" mb={0.5}>
-                        <Typography variant="body2">{k.keyword}</Typography>
-                        <Typography variant="body2" fontWeight={600}>
-                          {formatNumber(value)}
-                        </Typography>
-                      </Box>
-                      <Box
-                        sx={{
-                          height: 8,
-                          borderRadius: 999,
-                          bgcolor:
-                            theme.palette.mode === "dark"
-                              ? "rgba(148,163,184,0.2)"
-                              : "rgba(15,23,42,0.12)",
-                          overflow: "hidden",
-                        }}
-                      >
+              <>
+                <Stack spacing={1}>
+                  {topKeywords.map((k) => {
+                    const value = Number(k.views) || 0;
+                    const pct = Math.max(
+                      6,
+                      Math.round((value / topKeywordMax) * 100)
+                    );
+                    return (
+                      <Box key={k.keyword}>
+                        <Box display="flex" justifyContent="space-between" mb={0.5}>
+                          <Typography variant="body2">{k.keyword}</Typography>
+                          <Typography variant="body2" fontWeight={600}>
+                            {formatNumber(value)}
+                          </Typography>
+                        </Box>
                         <Box
                           sx={{
-                            width: `${pct}%`,
-                            height: "100%",
+                            height: 8,
                             borderRadius: 999,
-                            background:
+                            bgcolor:
                               theme.palette.mode === "dark"
-                                ? "linear-gradient(90deg, #f59e0b, #f97316)"
-                                : "linear-gradient(90deg, #f59e0b, #fb923c)",
+                                ? "rgba(148,163,184,0.2)"
+                                : "rgba(15,23,42,0.12)",
+                            overflow: "hidden",
                           }}
-                        />
+                        >
+                          <Box
+                            sx={{
+                              width: `${pct}%`,
+                              height: "100%",
+                              borderRadius: 999,
+                              background:
+                                theme.palette.mode === "dark"
+                                  ? "linear-gradient(90deg, #f59e0b, #f97316)"
+                                  : "linear-gradient(90deg, #f59e0b, #fb923c)",
+                            }}
+                          />
+                        </Box>
                       </Box>
-                    </Box>
-                  );
-                })}
-              </Stack>
+                    );
+                  })}
+                </Stack>
+                {canLoadMoreKeywords && (
+                  <Box mt={2} display="flex" justifyContent="center">
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      sx={{
+                        transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                        color:
+                          theme.palette.mode === "dark" ? "#e2e8f0" : "#0f172a",
+                        borderColor:
+                          theme.palette.mode === "dark"
+                            ? "rgba(148,163,184,0.5)"
+                            : "rgba(15,23,42,0.25)",
+                        "&:hover": {
+                          transform: "translateY(-1px)",
+                          boxShadow:
+                            theme.palette.mode === "dark"
+                              ? "0 8px 18px rgba(2,6,23,0.5)"
+                              : "0 8px 18px rgba(15,23,42,0.12)",
+                          borderColor:
+                            theme.palette.mode === "dark"
+                              ? "rgba(148,163,184,0.9)"
+                              : "rgba(15,23,42,0.5)",
+                          backgroundColor:
+                            theme.palette.mode === "dark"
+                              ? "rgba(148,163,184,0.12)"
+                              : "rgba(15,23,42,0.04)",
+                        },
+                      }}
+                      onClick={() =>
+                        setKeywordLimit((prev) =>
+                          Math.min(prev + OVERVIEW_LIMIT_STEP, OVERVIEW_LIMIT_MAX)
+                        )
+                      }
+                    >
+                      Load more
+                    </Button>
+                  </Box>
+                )}
+              </>
             )}
           </Box>
 
@@ -1060,45 +1127,89 @@ const VideoList = () => {
                 No data
               </Typography>
             ) : (
-              <Stack spacing={1}>
-                {topSources.map((s) => {
-                  const value = Number(s.views) || 0;
-                  const pct = Math.max(6, Math.round((value / topSourceMax) * 100));
-                  return (
-                    <Box key={s.source}>
-                      <Box display="flex" justifyContent="space-between" mb={0.5}>
-                        <Typography variant="body2">{s.source}</Typography>
-                        <Typography variant="body2" fontWeight={600}>
-                          {formatNumber(value)}
-                        </Typography>
-                      </Box>
-                      <Box
-                        sx={{
-                          height: 8,
-                          borderRadius: 999,
-                          bgcolor:
-                            theme.palette.mode === "dark"
-                              ? "rgba(148,163,184,0.2)"
-                              : "rgba(15,23,42,0.12)",
-                          overflow: "hidden",
-                        }}
-                      >
+              <>
+                <Stack spacing={1}>
+                  {topSources.map((s) => {
+                    const value = Number(s.views) || 0;
+                    const pct = Math.max(
+                      6,
+                      Math.round((value / topSourceMax) * 100)
+                    );
+                    return (
+                      <Box key={s.source}>
+                        <Box display="flex" justifyContent="space-between" mb={0.5}>
+                          <Typography variant="body2">{s.source}</Typography>
+                          <Typography variant="body2" fontWeight={600}>
+                            {formatNumber(value)}
+                          </Typography>
+                        </Box>
                         <Box
                           sx={{
-                            width: `${pct}%`,
-                            height: "100%",
+                            height: 8,
                             borderRadius: 999,
-                            background:
+                            bgcolor:
                               theme.palette.mode === "dark"
-                                ? "linear-gradient(90deg, #22c55e, #06b6d4)"
-                                : "linear-gradient(90deg, #22c55e, #0ea5e9)",
+                                ? "rgba(148,163,184,0.2)"
+                                : "rgba(15,23,42,0.12)",
+                            overflow: "hidden",
                           }}
-                        />
+                        >
+                          <Box
+                            sx={{
+                              width: `${pct}%`,
+                              height: "100%",
+                              borderRadius: 999,
+                              background:
+                                theme.palette.mode === "dark"
+                                  ? "linear-gradient(90deg, #22c55e, #06b6d4)"
+                                  : "linear-gradient(90deg, #22c55e, #0ea5e9)",
+                            }}
+                          />
+                        </Box>
                       </Box>
-                    </Box>
-                  );
-                })}
-              </Stack>
+                    );
+                  })}
+                </Stack>
+                {canLoadMoreSources && (
+                  <Box mt={2} display="flex" justifyContent="center">
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      sx={{
+                        transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                        color:
+                          theme.palette.mode === "dark" ? "#e2e8f0" : "#0f172a",
+                        borderColor:
+                          theme.palette.mode === "dark"
+                            ? "rgba(148,163,184,0.5)"
+                            : "rgba(15,23,42,0.25)",
+                        "&:hover": {
+                          transform: "translateY(-1px)",
+                          boxShadow:
+                            theme.palette.mode === "dark"
+                              ? "0 8px 18px rgba(2,6,23,0.5)"
+                              : "0 8px 18px rgba(15,23,42,0.12)",
+                          borderColor:
+                            theme.palette.mode === "dark"
+                              ? "rgba(148,163,184,0.9)"
+                              : "rgba(15,23,42,0.5)",
+                          backgroundColor:
+                            theme.palette.mode === "dark"
+                              ? "rgba(148,163,184,0.12)"
+                              : "rgba(15,23,42,0.04)",
+                        },
+                      }}
+                      onClick={() =>
+                        setSourceLimit((prev) =>
+                          Math.min(prev + OVERVIEW_LIMIT_STEP, OVERVIEW_LIMIT_MAX)
+                        )
+                      }
+                    >
+                      Load more
+                    </Button>
+                  </Box>
+                )}
+              </>
             )}
           </Box>
         </Box>
