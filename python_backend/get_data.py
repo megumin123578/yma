@@ -9,6 +9,7 @@ from module_content import *
 from module_overall import *
 from module_audience import run_audience_analytics
 from module_reach import run_reach_analytics
+from module_revenue import run_revenue_analytics
 try:
     from python_backend.module_channel_daily import run_channel_daily
 except ModuleNotFoundError:
@@ -186,6 +187,12 @@ def _run_for_credential(cred_file: str) -> None:
             run_reach_analytics(creds, account_tag, pg_url, channel_id=channel_id)
         elif stage == "traffic_source":
             process_one(cred_file, channel_id=channel_id)
+        elif stage == "revenue":
+            pg_url = os.getenv("PG_URL")
+            if not pg_url:
+                raise RuntimeError("Missing PG_URL env var")
+            creds = create_token_from_credentials(os.path.join(CREDENTIALS_FOLDER, cred_file))
+            run_revenue_analytics(creds, account_tag, pg_url, channel_id=channel_id)
         else:
             raise RuntimeError(f"Unsupported stage: {stage}")
         _raise_if_stop_requested(account_tag, "stopped")

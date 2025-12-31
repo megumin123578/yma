@@ -1379,6 +1379,9 @@ const CredentialsDialog = ({ open, onClose }) => {
         <MenuItem onClick={() => handleRunTokenStage("reach")}>
           Run reach
         </MenuItem>
+        <MenuItem onClick={() => handleRunTokenStage("revenue")}>
+          Run revenue
+        </MenuItem>
       </Menu>
     </Dialog>
   );

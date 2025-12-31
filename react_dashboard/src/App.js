@@ -21,6 +21,7 @@ import { UserContext } from "./context/UserContext";
 import SmmstoreAnalyticsScene from "./scenes/smmstore_analytics";
 import AudienceAnalyticsScene from "./scenes/audience_analytics";
 import ReachAnalyticsScene from "./scenes/reach_analytics";
+import RevenueAnalyticsScene from "./scenes/revenue";
 
 
 function App() {
@@ -142,6 +143,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <ReachAnalyticsScene />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/revenue"
+            element={
+              <ProtectedRoute>
+                <RevenueAnalyticsScene />
               </ProtectedRoute>
             }
           />

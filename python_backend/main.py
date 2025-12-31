@@ -17,6 +17,7 @@ from python_backend.routes.channel_compare import router as channel_compare_rout
 from python_backend.routes.youtube import router as youtube_router
 from python_backend.routes.audience import router as audience_router
 from python_backend.routes.reach import router as reach_router
+from python_backend.routes.revenue import router as revenue_router
 from fastapi.staticfiles import StaticFiles
 from python_backend.api.auth.routers import auth, user
 from python_backend.api.auth.scheduler import start_scheduler
@@ -243,6 +244,7 @@ app.include_router(channel_compare_router)
 app.include_router(youtube_router)
 app.include_router(audience_router)
 app.include_router(reach_router)
+app.include_router(revenue_router)
 app.include_router(auth.router)
 app.include_router(user.router, prefix="/api") 
 
