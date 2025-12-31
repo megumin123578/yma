@@ -177,6 +177,13 @@ const VideoList = () => {
   const topSourceMax = useMemo(() => {
     return Math.max(1, ...topSources.map((s) => Number(s.views) || 0));
   }, [topSources]);
+  const subscribersXAxisTicks = useMemo(() => {
+    const days = subscribersSummary.chart
+      .map((row) => row.day)
+      .filter(Boolean);
+    if (!days.length) return [];
+    return [days[0], days[days.length - 1]];
+  }, [subscribersSummary.chart]);
 
   // Fetch danh sách account_tag
   useEffect(() => {
@@ -381,7 +388,7 @@ const VideoList = () => {
   };
   const chartCardSx = {
     borderRadius: 2,
-    p: 1.5,
+    p: 0.5,
     border: "1px solid",
     borderColor:
       theme.palette.mode === "dark"
@@ -764,13 +771,20 @@ const VideoList = () => {
                           Gained
                         </Typography>
                         <Box sx={{ width: "100%", minWidth: 0, minHeight: 0 }}>
-                          <ResponsiveContainer width="100%" height={260} minWidth={0} minHeight={0}>
-                            <BarChart data={subscribersSummary.chart}>
+                          <ResponsiveContainer width="100%" height={320} minWidth={0} minHeight={0}>
+                            <BarChart
+                              data={subscribersSummary.chart}
+                              margin={{ top: 4, right: 6, left: -30, bottom: -6 }}
+                            >
                               <CartesianGrid
                                 stroke="rgba(148,163,184,0.2)"
                                 strokeDasharray="3 3"
                               />
-                              <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+                              <XAxis
+                                dataKey="day"
+                                tick={{ fontSize: 11 }}
+                                ticks={subscribersXAxisTicks}
+                              />
                               <YAxis tickFormatter={formatNumber} />
                               <Tooltip />
                               <Bar dataKey="gained" fill="#22c55e" radius={[6, 6, 0, 0]} />
@@ -785,13 +799,20 @@ const VideoList = () => {
                           Change
                         </Typography>
                         <Box sx={{ width: "100%", minWidth: 0, minHeight: 0 }}>
-                          <ResponsiveContainer width="100%" height={260} minWidth={0} minHeight={0}>
-                            <BarChart data={subscribersSummary.chart}>
+                          <ResponsiveContainer width="100%" height={320} minWidth={0} minHeight={0}>
+                            <BarChart
+                              data={subscribersSummary.chart}
+                              margin={{ top: 4, right: 6, left: -30, bottom: -6 }}
+                            >
                               <CartesianGrid
                                 stroke="rgba(148,163,184,0.2)"
                                 strokeDasharray="3 3"
                               />
-                              <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+                              <XAxis
+                                dataKey="day"
+                                tick={{ fontSize: 11 }}
+                                ticks={subscribersXAxisTicks}
+                              />
                               <YAxis tickFormatter={formatNumber} />
                               <Tooltip />
                               <Bar dataKey="change" fill="#7c3aed" radius={[6, 6, 0, 0]} />
