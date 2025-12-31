@@ -337,6 +337,27 @@ const RivalsChannel = ({ viewMode = "list" }) => {
     if (fresh) unique.add(fresh);
     return Array.from(unique).sort((a, b) => a.localeCompare(b));
   }, [savedChannels, savedGroups, newGroupName]);
+  const shimmerHoverSx = (theme) => ({
+    position: "relative",
+    overflow: "hidden",
+    "&:before": {
+      content: '""',
+      position: "absolute",
+      top: "-50%",
+      left: "-20%",
+      width: "140%",
+      height: "200%",
+      background:
+        "linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.35) 45%, transparent 90%)",
+      transform: "translateX(-120%)",
+      transition: "transform 0.6s ease",
+      opacity: 0.75,
+      pointerEvents: "none",
+    },
+    "&:hover:before": {
+      transform: "translateX(0%)",
+    },
+  });
 
   const filteredSavedChannels = useMemo(() => {
     const needle = (filterGroup || "").trim();
@@ -585,7 +606,39 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                   setCreateGroupOpen(true);
                   setNewGroupName("");
                 }}
-                sx={{ textTransform: "none", borderRadius: 2 }}
+                sx={(theme) => ({
+                  textTransform: "none",
+                  borderRadius: 2,
+                  transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                  borderColor:
+                    theme.palette.mode === "dark"
+                      ? "rgba(125,211,252,0.55)"
+                      : "rgba(2,132,199,0.5)",
+                  color:
+                    theme.palette.mode === "dark"
+                      ? "rgba(224,242,254,0.95)"
+                      : "rgba(2,132,199,0.9)",
+                  backgroundColor:
+                    theme.palette.mode === "dark"
+                      ? "rgba(2,132,199,0.22)"
+                      : "rgba(224,242,254,0.8)",
+                  ...shimmerHoverSx(theme),
+                  "&:hover": {
+                    transform: "translateY(-1px)",
+                    boxShadow:
+                      theme.palette.mode === "dark"
+                        ? "0 12px 20px rgba(15,23,42,0.35)"
+                        : "0 12px 20px rgba(15,23,42,0.18)",
+                    borderColor:
+                      theme.palette.mode === "dark"
+                        ? "rgba(56,189,248,0.85)"
+                        : "rgba(2,132,199,0.8)",
+                    backgroundColor:
+                      theme.palette.mode === "dark"
+                        ? "rgba(2,132,199,0.35)"
+                        : "rgba(186,230,253,0.9)",
+                  },
+                })}
               >
                 Create group
               </Button>
@@ -716,9 +769,8 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                 color: theme.palette.mode === "dark" ? "#052e16" : "#052e16",
                 backgroundColor:
                   theme.palette.mode === "dark" ? "#22c55e" : "#16a34a",
-                position: "relative",
-                overflow: "hidden",
                 transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                ...shimmerHoverSx(theme),
                 "&:after": {
                   content: '""',
                   position: "absolute",
