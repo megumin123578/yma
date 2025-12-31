@@ -29,6 +29,8 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   Tooltip,
@@ -102,6 +104,7 @@ const VideoList = () => {
   const [sourceLimit, setSourceLimit] = useState(OVERVIEW_LIMIT_DEFAULT);
   const [countryViews, setCountryViews] = useState([]);
   const [subscribersSeries, setSubscribersSeries] = useState([]);
+  const [revenueRows, setRevenueRows] = useState([]);
   const [error, setError] = useState("");
   const activeRange =
     OVERVIEW_RANGES.find((range) => range.value === overviewRange) ||
@@ -207,6 +210,36 @@ const VideoList = () => {
   const topSourceMax = useMemo(() => {
     return Math.max(1, ...topSources.map((s) => Number(s.views) || 0));
   }, [topSources]);
+  const revenueSummary = useMemo(() => {
+    const sum = (rows, key) =>
+      rows.reduce((acc, row) => acc + Number(row?.[key] || 0), 0);
+    const avg = (rows, key) => {
+      let total = 0;
+      let count = 0;
+      rows.forEach((row) => {
+        const raw = row?.[key];
+        if (raw == null || raw === "") return;
+        const value = Number(raw);
+        if (!Number.isNaN(value)) {
+          total += value;
+          count += 1;
+        }
+      });
+      return count ? total / count : null;
+    };
+    return {
+      estimated: sum(revenueRows, "estimated_revenue"),
+      ad: sum(revenueRows, "ad_revenue"),
+      gross: sum(revenueRows, "gross_revenue"),
+      rpmAvg: avg(revenueRows, "rpm"),
+    };
+  }, [revenueRows]);
+  const revenueChartData = useMemo(() => {
+    return (revenueRows || []).map((row) => ({
+      day: row.day,
+      estimated: Number(row?.estimated_revenue || 0),
+    }));
+  }, [revenueRows]);
   const subscribersXAxisTicks = useMemo(() => {
     const days = subscribersSummary.chart
       .map((row) => row.day)
@@ -337,6 +370,7 @@ const VideoList = () => {
           topSourcesResp,
           countryResp,
           subsResp,
+          revenueResp,
         ] = await Promise.all([
           fetch(
             `${apiBase}/api/video_overview/top_keywords?accountTag=${encodeURIComponent(
@@ -362,6 +396,12 @@ const VideoList = () => {
             )}&days=${rangeDays}`,
             { headers: authHeaders }
           ),
+          fetch(
+            `${apiBase}/api/revenue?accountTag=${encodeURIComponent(
+              selectedChannel
+            )}&range=${overviewRange}`,
+            { headers: authHeaders }
+          ),
         ]);
 
         const [
@@ -369,22 +409,26 @@ const VideoList = () => {
           topSourcesData,
           countryData,
           subsData,
+          revenueData,
         ] = await Promise.all([
           topKeywordsResp.ok ? topKeywordsResp.json() : [],
           topSourcesResp.ok ? topSourcesResp.json() : [],
           countryResp.ok ? countryResp.json() : { rows: [] },
           subsResp.ok ? subsResp.json() : [],
+          revenueResp.ok ? revenueResp.json() : { rows: [] },
         ]);
 
         setTopKeywords(Array.isArray(topKeywordsData) ? topKeywordsData : []);
         setTopSources(Array.isArray(topSourcesData) ? topSourcesData : []);
         setCountryViews(Array.isArray(countryData?.rows) ? countryData.rows : []);
         setSubscribersSeries(Array.isArray(subsData) ? subsData : []);
+        setRevenueRows(Array.isArray(revenueData?.rows) ? revenueData.rows : []);
       } catch (err) {
         setTopKeywords([]);
         setTopSources([]);
         setCountryViews([]);
         setSubscribersSeries([]);
+        setRevenueRows([]);
       }
     };
 
@@ -404,6 +448,12 @@ const VideoList = () => {
     if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
     if (n >= 1_000) return (n / 1_000).toFixed(1) + "K";
     return n.toString();
+  };
+  const formatCurrency = (value) => {
+    if (value == null) return "-";
+    const num = Number(value);
+    if (Number.isNaN(num)) return "-";
+    return `$${num.toFixed(2)}`;
   };
 
   const formatDate = (iso) => {
@@ -768,18 +818,9 @@ const VideoList = () => {
         </Box>
       ) : (
         <>
-        <Box sx={sectionSx}>
-          <Typography variant="subtitle1" fontWeight={700} mb={1}>
-            Latest 5 videos
-          </Typography>
-          <Box sx={latestRowSx}>
-            {latestVideos.map((v, idx) => renderVideoCard(v, idx))}
-          </Box>
-        </Box>
-
-        <Box
-          mt={2}
-          sx={{
+          <Box
+            mt={2}
+            sx={{
             display: "grid",
             gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
             gap: 2,
@@ -1034,16 +1075,16 @@ const VideoList = () => {
           </Box>
         </Box>
 
-        <Box
-          mt={2}
-          sx={{
-            display: "grid",
-            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
-            gap: 2,
-            width: "100%",
-          }}
-        >
-          <Box sx={{ ...sectionSx, p: 3 }}>
+          <Box
+            mt={2}
+            sx={{
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", md: "0.9fr 0.9fr 1.2fr" },
+              gap: 2,
+              width: "100%",
+            }}
+          >
+            <Box sx={{ ...sectionSx, p: 3 }}>
             <Typography variant="subtitle1" fontWeight={700} mb={1}>
               Top 10 keywords by views ({rangeLabel})
             </Typography>
@@ -1134,11 +1175,11 @@ const VideoList = () => {
                     </Button>
                   </Box>
                 )}
-              </>
-            )}
-          </Box>
+                </>
+              )}
+            </Box>
 
-          <Box sx={{ ...sectionSx, p: 3 }}>
+            <Box sx={{ ...sectionSx, p: 3 }}>
             <Typography variant="subtitle1" fontWeight={700} mb={1}>
               Top 10 sources by views ({rangeLabel})
             </Typography>
@@ -1229,14 +1270,113 @@ const VideoList = () => {
                     </Button>
                   </Box>
                 )}
-              </>
-            )}
-          </Box>
-        </Box>
+                </>
+              )}
+            </Box>
 
-          
-        </>
-      )}
+            <Box sx={{ ...sectionSx, p: 3 }}>
+              <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                Revenue ({rangeLabel})
+              </Typography>
+                {revenueRows.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    No data
+                  </Typography>
+                ) : (
+                  <>
+                    <Stack spacing={1.5}>
+                      <Box display="flex" justifyContent="space-between">
+                        <Typography variant="body2" color="text.secondary">
+                          Estimated
+                        </Typography>
+                        <Typography variant="body2" fontWeight={600}>
+                          {formatCurrency(revenueSummary.estimated)}
+                        </Typography>
+                      </Box>
+                      <Box display="flex" justifyContent="space-between">
+                        <Typography variant="body2" color="text.secondary">
+                          Ad revenue
+                        </Typography>
+                        <Typography variant="body2" fontWeight={600}>
+                          {formatCurrency(revenueSummary.ad)}
+                        </Typography>
+                      </Box>
+                      <Box display="flex" justifyContent="space-between">
+                        <Typography variant="body2" color="text.secondary">
+                          Gross revenue
+                        </Typography>
+                        <Typography variant="body2" fontWeight={600}>
+                          {formatCurrency(revenueSummary.gross)}
+                        </Typography>
+                      </Box>
+                      <Box display="flex" justifyContent="space-between">
+                        <Typography variant="body2" color="text.secondary">
+                          Avg RPM
+                        </Typography>
+                        <Typography variant="body2" fontWeight={600}>
+                          {formatCurrency(revenueSummary.rpmAvg)}
+                        </Typography>
+                      </Box>
+                    </Stack>
+                    {revenueChartData.length > 0 && (
+                      <Box mt={2} height={290} sx={{ ml: -3 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={revenueChartData}>
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              stroke={
+                                theme.palette.mode === "dark"
+                                  ? "rgba(148,163,184,0.2)"
+                                  : "rgba(15,23,42,0.1)"
+                              }
+                            />
+                            <XAxis
+                              dataKey="day"
+                              tickFormatter={formatDate}
+                              tick={{ fontSize: 11 }}
+                              interval="preserveStartEnd"
+                            />
+                            <YAxis
+                              tickFormatter={(value) => formatCurrency(value)}
+                              tick={{ fontSize: 11 }}
+                            />
+                            <Tooltip
+                              formatter={(value) => [
+                                formatCurrency(value),
+                                "Estimated",
+                              ]}
+                              labelFormatter={formatDate}
+                              contentStyle={chartTooltipStyles.contentStyle}
+                              labelStyle={chartTooltipStyles.labelStyle}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="estimated"
+                              stroke="#f59e0b"
+                              strokeWidth={2}
+                              dot={false}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </Box>
+                    )}
+                  </>
+                )}
+              </Box>
+            </Box>
+  
+          <Box mt={2} sx={sectionSx}>
+            <Typography variant="subtitle1" fontWeight={700} mb={1}>
+              Latest 5 videos
+            </Typography>
+            <Box sx={latestRowSx}>
+              {latestVideos.map((v, idx) => renderVideoCard(v, idx))}
+            </Box>
+          </Box>
+  
+            
+          </>
+        )}
     </Box>
   );
 };
