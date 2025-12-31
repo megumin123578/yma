@@ -84,7 +84,8 @@ def _load_timeseries_cache(account_tag: str, start_date, end_date):
 def _save_timeseries_cache(account_tag: str, start_date, end_date, rows):
     _ensure_timeseries_cache_table()
     try:
-        payload = json.dumps(rows)
+        payload_rows = [dict(r) for r in rows]
+        payload = json.dumps(payload_rows, default=str)
         with engine.begin() as conn:
             conn.execute(
                 text("""
@@ -113,6 +114,7 @@ def _save_timeseries_cache(account_tag: str, start_date, end_date, rows):
                     "payload": payload,
                 },
             )
+        print("[content.cache] save ok")
     except Exception as e:
         print("[content.cache] save failed:", e)
 

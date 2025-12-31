@@ -774,7 +774,6 @@ const ContentAnalytics = () => {
           <TableHead sx={tableHeadSx}>
             <TableRow>
               <TableCell>Video</TableCell>
-              <TableCell>Duration</TableCell>
               <TableCell>Publish Date</TableCell>
               <TableCell align="right">Views</TableCell>
               <TableCell align="right">Watch Hours</TableCell>
@@ -815,12 +814,32 @@ const ContentAnalytics = () => {
                       rel="noreferrer"
                       style={{ display: "inline-flex" }}
                     >
-                      <img
-                        src={r.thumbnail}
-                        width={90}
-                        style={{ borderRadius: 6 }}
-                        alt=""
-                      />
+                      <Box sx={{ position: "relative", display: "inline-flex" }}>
+                        <img
+                          src={r.thumbnail}
+                          width={90}
+                          style={{ borderRadius: 6 }}
+                          alt=""
+                        />
+                        {r.duration != null && (
+                          <Box
+                            sx={{
+                              position: "absolute",
+                              right: 4,
+                              bottom: 4,
+                              px: 0.5,
+                              py: 0.25,
+                              borderRadius: 0.75,
+                              fontSize: 11,
+                              fontWeight: 600,
+                              color: "#fff",
+                              backgroundColor: "rgba(15,23,42,0.8)",
+                            }}
+                          >
+                            {formatDuration(r.duration)}
+                          </Box>
+                        )}
+                      </Box>
                     </a>
                     <a
                       href={`https://www.youtube.com/watch?v=${r.id}`}
@@ -833,7 +852,6 @@ const ContentAnalytics = () => {
                   </Stack>
                 </TableCell>
 
-                <TableCell>{formatDuration(r.duration)}</TableCell>
                 <TableCell>
                   {r.published
                     ? dayjs(r.published).format("DD-MM-YYYY")
@@ -867,7 +885,6 @@ const ContentAnalytics = () => {
             {/* Total */}
             <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>TOTAL</TableCell>
-              <TableCell />
               <TableCell />
               <TableCell align="right">
                 {formatNumber(totals.views)}
