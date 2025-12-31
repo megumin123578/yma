@@ -979,105 +979,97 @@ const VideoList = () => {
               )}
             </Box>
           </Box>
-          <Box sx={{ display: "flex" }}>
-            <Box sx={{ ...sectionSx, p: 4, minHeight: 560, width: "100%" }}>
-              <Typography variant="subtitle1" fontWeight={700} mb={1}>
-                Views by country ({rangeLabel})
-              </Typography>
-              {countryViews.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No data
+            <Box sx={{ display: "flex" }}>
+              <Box sx={{ ...sectionSx, p: 4, minHeight: 560, width: "100%" }}>
+                <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                  Revenue ({rangeLabel})
                 </Typography>
-              ) : (
+                {revenueRows.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    No data
+                  </Typography>
+                ) : (
                   <>
-                    <Box height={290}>
-                      <ResponsiveChoropleth
-                        debounceResize={150}
-                        data={countryMapData}
-                        features={geoFeatures.features}
-                        valueFormat={formatNumber}
-                        domain={[0, countryDomainMax]}
-                        tooltip={({ feature }) => {
-                          const label = countryResolvers.nameOf(feature.id);
-                          const value = feature.value || 0;
-
-                          return (
-                            <Box
-                              sx={{
-                                px: 1.2,
-                                py: 0.75,
-                                borderRadius: 1,
-                                fontSize: 13,
-                                fontWeight: 600,
-                                bgcolor:
-                                  theme.palette.mode === "dark"
-                                    ? "rgba(0,0,0,0.75)"
-                                    : "rgba(255,255,255,0.95)",
-                                boxShadow: 3,
-                              }}
-                            >
-                              <div>{label}</div>
-                              <div>Views: {formatNumber(value)}</div>
-                            </Box>
-                          );
-                        }}
-                        unknownColor="#999"
-                        projectionScale={80}
-                        projectionTranslation={[0.5, 0.65]}
-                        borderWidth={1}
-                        borderColor="#fff"
-                      />
-                    </Box>
-                  <Box mt={2}>
-                    <Stack>
-                      {topCountries.map((row) => {
-                        const pct =
-                          countryDomainMax > 0
-                            ? Math.max(6, Math.round((row.value / countryDomainMax) * 100))
-                            : 0;
-                        return (
-                          <Box key={row.id}>
-                            <Box display="flex" justifyContent="space-between" mb={0.5}>
-                              <Typography variant="body2">
-                                {countryResolvers.nameOf(row.id)}
-                              </Typography>
-                              <Typography variant="body2" fontWeight={600}>
-                                {formatNumber(row.value)}
-                              </Typography>
-                            </Box>
-                            <Box
-                              sx={{
-                                height: 8,
-                                borderRadius: 999,
-                                bgcolor:
-                                  theme.palette.mode === "dark"
-                                    ? "rgba(148,163,184,0.2)"
-                                    : "rgba(15,23,42,0.12)",
-                                overflow: "hidden",
-                              }}
-                            >
-                              <Box
-                                sx={{
-                                  width: animateOverviewBars ? `${pct}%` : 0,
-                                  height: "100%",
-                                  borderRadius: 999,
-                                  background:
-                                    theme.palette.mode === "dark"
-                                      ? "linear-gradient(90deg, #38bdf8, #a855f7)"
-                                      : "linear-gradient(90deg, #0ea5e9, #6366f1)",
-                                  transition: "width 0.5s ease",
-                                }}
-                              />
-                            </Box>
-                          </Box>
-                        );
-                      })}
+                    <Stack spacing={1.5}>
+                      <Box display="flex" justifyContent="space-between">
+                        <Typography variant="body2" color="text.secondary">
+                          Estimated
+                        </Typography>
+                        <Typography variant="body2" fontWeight={600}>
+                          {formatCurrency(revenueSummary.estimated)}
+                        </Typography>
+                      </Box>
+                      <Box display="flex" justifyContent="space-between">
+                        <Typography variant="body2" color="text.secondary">
+                          Ad revenue
+                        </Typography>
+                        <Typography variant="body2" fontWeight={600}>
+                          {formatCurrency(revenueSummary.ad)}
+                        </Typography>
+                      </Box>
+                      <Box display="flex" justifyContent="space-between">
+                        <Typography variant="body2" color="text.secondary">
+                          Gross revenue
+                        </Typography>
+                        <Typography variant="body2" fontWeight={600}>
+                          {formatCurrency(revenueSummary.gross)}
+                        </Typography>
+                      </Box>
+                      <Box display="flex" justifyContent="space-between">
+                        <Typography variant="body2" color="text.secondary">
+                          Avg RPM
+                        </Typography>
+                        <Typography variant="body2" fontWeight={600}>
+                          {formatCurrency(revenueSummary.rpmAvg)}
+                        </Typography>
+                      </Box>
                     </Stack>
-                  </Box>
-                </>
-              )}
+                    {revenueChartData.length > 0 && (
+                      <Box mt={2} height={340} sx={{ ml: -3 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={revenueChartData}>
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              stroke={
+                                theme.palette.mode === "dark"
+                                  ? "rgba(148,163,184,0.2)"
+                                  : "rgba(15,23,42,0.1)"
+                              }
+                            />
+                            <XAxis
+                              dataKey="day"
+                              tickFormatter={formatDate}
+                              tick={{ fontSize: 11 }}
+                              interval="preserveStartEnd"
+                            />
+                            <YAxis
+                              tickFormatter={(value) => formatCurrency(value)}
+                              tick={{ fontSize: 11 }}
+                            />
+                            <Tooltip
+                              formatter={(value) => [
+                                formatCurrency(value),
+                                "Estimated",
+                              ]}
+                              labelFormatter={formatDate}
+                              contentStyle={chartTooltipStyles.contentStyle}
+                              labelStyle={chartTooltipStyles.labelStyle}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="estimated"
+                              stroke="#f59e0b"
+                              strokeWidth={2}
+                              dot={false}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </Box>
+                    )}
+                  </>
+                )}
+              </Box>
             </Box>
-          </Box>
         </Box>
 
           <Box
@@ -1283,93 +1275,100 @@ const VideoList = () => {
 
             <Box sx={{ ...sectionSx, p: 3 }}>
               <Typography variant="subtitle1" fontWeight={700} mb={1}>
-                Revenue ({rangeLabel})
+                Views by country ({rangeLabel})
               </Typography>
-                {revenueRows.length === 0 ? (
-                  <Typography variant="body2" color="text.secondary">
-                    No data
-                  </Typography>
-                ) : (
-                  <>
-                    <Stack spacing={1.5}>
-                      <Box display="flex" justifyContent="space-between">
-                        <Typography variant="body2" color="text.secondary">
-                          Estimated
-                        </Typography>
-                        <Typography variant="body2" fontWeight={600}>
-                          {formatCurrency(revenueSummary.estimated)}
-                        </Typography>
-                      </Box>
-                      <Box display="flex" justifyContent="space-between">
-                        <Typography variant="body2" color="text.secondary">
-                          Ad revenue
-                        </Typography>
-                        <Typography variant="body2" fontWeight={600}>
-                          {formatCurrency(revenueSummary.ad)}
-                        </Typography>
-                      </Box>
-                      <Box display="flex" justifyContent="space-between">
-                        <Typography variant="body2" color="text.secondary">
-                          Gross revenue
-                        </Typography>
-                        <Typography variant="body2" fontWeight={600}>
-                          {formatCurrency(revenueSummary.gross)}
-                        </Typography>
-                      </Box>
-                      <Box display="flex" justifyContent="space-between">
-                        <Typography variant="body2" color="text.secondary">
-                          Avg RPM
-                        </Typography>
-                        <Typography variant="body2" fontWeight={600}>
-                          {formatCurrency(revenueSummary.rpmAvg)}
-                        </Typography>
-                      </Box>
-                    </Stack>
-                    {revenueChartData.length > 0 && (
-                      <Box mt={2} height={290} sx={{ ml: -3 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={revenueChartData}>
-                            <CartesianGrid
-                              strokeDasharray="3 3"
-                              stroke={
+              {countryViews.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No data
+                </Typography>
+              ) : (
+                <>
+                  <Box height={240}>
+                    <ResponsiveChoropleth
+                      debounceResize={150}
+                      data={countryMapData}
+                      features={geoFeatures.features}
+                      valueFormat={formatNumber}
+                      domain={[0, countryDomainMax]}
+                      tooltip={({ feature }) => {
+                        const label = countryResolvers.nameOf(feature.id);
+                        const value = feature.value || 0;
+
+                        return (
+                          <Box
+                            sx={{
+                              px: 1.2,
+                              py: 0.75,
+                              borderRadius: 1,
+                              fontSize: 13,
+                              fontWeight: 600,
+                              bgcolor:
                                 theme.palette.mode === "dark"
-                                  ? "rgba(148,163,184,0.2)"
-                                  : "rgba(15,23,42,0.1)"
-                              }
-                            />
-                            <XAxis
-                              dataKey="day"
-                              tickFormatter={formatDate}
-                              tick={{ fontSize: 11 }}
-                              interval="preserveStartEnd"
-                            />
-                            <YAxis
-                              tickFormatter={(value) => formatCurrency(value)}
-                              tick={{ fontSize: 11 }}
-                            />
-                            <Tooltip
-                              formatter={(value) => [
-                                formatCurrency(value),
-                                "Estimated",
-                              ]}
-                              labelFormatter={formatDate}
-                              contentStyle={chartTooltipStyles.contentStyle}
-                              labelStyle={chartTooltipStyles.labelStyle}
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="estimated"
-                              stroke="#f59e0b"
-                              strokeWidth={2}
-                              dot={false}
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </Box>
-                    )}
-                  </>
-                )}
-              </Box>
+                                  ? "rgba(0,0,0,0.75)"
+                                  : "rgba(255,255,255,0.95)",
+                              boxShadow: 3,
+                            }}
+                          >
+                            <div>{label}</div>
+                            <div>Views: {formatNumber(value)}</div>
+                          </Box>
+                        );
+                      }}
+                      unknownColor="#999"
+                      projectionScale={80}
+                      projectionTranslation={[0.5, 0.65]}
+                      borderWidth={1}
+                      borderColor="#fff"
+                    />
+                  </Box>
+                  <Box mt={2}>
+                    <Stack>
+                      {topCountries.map((row) => {
+                        const pct =
+                          countryDomainMax > 0
+                            ? Math.max(6, Math.round((row.value / countryDomainMax) * 100))
+                            : 0;
+                        return (
+                          <Box key={row.id}>
+                            <Box display="flex" justifyContent="space-between" mb={0.5}>
+                              <Typography variant="body2">
+                                {countryResolvers.nameOf(row.id)}
+                              </Typography>
+                              <Typography variant="body2" fontWeight={600}>
+                                {formatNumber(row.value)}
+                              </Typography>
+                            </Box>
+                            <Box
+                              sx={{
+                                height: 8,
+                                borderRadius: 999,
+                                bgcolor:
+                                  theme.palette.mode === "dark"
+                                    ? "rgba(148,163,184,0.2)"
+                                    : "rgba(15,23,42,0.12)",
+                                overflow: "hidden",
+                              }}
+                            >
+                              <Box
+                                sx={{
+                                  width: `${pct}%`,
+                                  height: "100%",
+                                  borderRadius: 999,
+                                  background:
+                                    theme.palette.mode === "dark"
+                                      ? "linear-gradient(90deg, #38bdf8, #a855f7)"
+                                      : "linear-gradient(90deg, #0ea5e9, #6366f1)",
+                                }}
+                              />
+                            </Box>
+                          </Box>
+                        );
+                      })}
+                    </Stack>
+                  </Box>
+                </>
+              )}
+            </Box>
             </Box>
   
           <Box mt={2} sx={sectionSx}>
