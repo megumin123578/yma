@@ -12,6 +12,30 @@ from python_backend.module_reach import _ensure_reach_table
 
 router = APIRouter(prefix="/api/reach", tags=["reach"])
 
+def _is_external_source(source: str) -> bool:
+    if not source:
+        return False
+    upper = source.upper()
+    return upper.startswith("EXT") or "EXTERNAL" in upper
+
+
+def _load_latest_reach_range(conn, account_tag: str):
+    latest = conn.execute(
+        text(
+            """
+            SELECT start_date, end_date
+            FROM reach_video_metrics
+            WHERE account_tag = :acct
+            ORDER BY end_date DESC, start_date DESC
+            LIMIT 1
+            """
+        ),
+        {"acct": account_tag},
+    ).fetchone()
+    if not latest:
+        return None, None
+    return latest
+
 
 def _filter_hidden(accounts, hidden):
     hidden_all = set(hidden) | {sanitize_filename(tag) for tag in hidden}
@@ -124,4 +148,72 @@ def get_reach(
         "rows": rows,
         "start_date": str(start_date),
         "end_date": str(end_date),
+    }
+
+
+@router.get("/traffic_breakdown")
+def reach_traffic_breakdown(
+    accountTag: str = Query(None),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    pg_url = os.getenv("PG_URL")
+    if not pg_url:
+        return {"range": {"start": None, "end": None}, "external": [], "playlist": 0, "suggested": 0, "browse": 0}
+    if not accountTag:
+        return {"range": {"start": None, "end": None}, "external": [], "playlist": 0, "suggested": 0, "browse": 0}
+    allowed = get_allowed_account_tags(db, current_user)
+    safe_tag = sanitize_filename(accountTag)
+    if allowed is not None and safe_tag not in allowed:
+        return {"range": {"start": None, "end": None}, "external": [], "playlist": 0, "suggested": 0, "browse": 0}
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        if safe_tag in hidden_all:
+            return {"range": {"start": None, "end": None}, "external": [], "playlist": 0, "suggested": 0, "browse": 0}
+
+    engine = create_engine(pg_url, future=True)
+    with engine.begin() as conn:
+        _ensure_reach_table(conn)
+        start_date, end_date = _load_latest_reach_range(conn, safe_tag)
+        if not start_date or not end_date:
+            return {"range": {"start": None, "end": None}, "external": [], "playlist": 0, "suggested": 0, "browse": 0}
+        rows = conn.execute(
+            text(
+                """
+                SELECT source, SUM(views)::bigint AS views
+                FROM traffic_source_daily
+                WHERE account_tag = :acct
+                  AND day >= :start
+                  AND day <= :end
+                GROUP BY source
+                ORDER BY views DESC
+                """
+            ),
+            {"acct": safe_tag, "start": start_date, "end": end_date},
+        ).fetchall()
+
+    external = []
+    playlist = 0
+    suggested = 0
+    browse = 0
+    for src, views in rows:
+        src_val = src or ""
+        views_val = int(views or 0)
+        if _is_external_source(src_val):
+            external.append({"source": src_val, "views": views_val})
+        if "PLAYLIST" in src_val.upper():
+            playlist += views_val
+        if src_val.upper() == "SUGGESTED_VIDEO":
+            suggested += views_val
+        if src_val.upper() == "BROWSE":
+            browse += views_val
+
+    external_sorted = sorted(external, key=lambda x: x["views"], reverse=True)
+    return {
+        "range": {"start": str(start_date), "end": str(end_date)},
+        "external": external_sorted[:5],
+        "playlist": playlist,
+        "suggested": suggested,
+        "browse": browse,
     }

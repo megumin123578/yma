@@ -39,6 +39,13 @@ const ReachAnalytics = () => {
   });
   const [rows, setRows] = useState([]);
   const [range, setRange] = useState({ start: "", end: "" });
+  const [breakdown, setBreakdown] = useState({
+    range: { start: "", end: "" },
+    external: [],
+    playlist: 0,
+    suggested: 0,
+    browse: 0,
+  });
   const [loading, setLoading] = useState(false);
 
   const authHeaders = useMemo(() => {
@@ -116,6 +123,37 @@ const ReachAnalytics = () => {
     loadReach();
   }, [accountTag, authHeaders]);
 
+  useEffect(() => {
+    if (!accountTag) return;
+    const loadBreakdown = async () => {
+      try {
+        const resp = await fetch(
+          `${API_BASE}/api/reach/traffic_breakdown?accountTag=${encodeURIComponent(
+            accountTag
+          )}`,
+          { headers: authHeaders }
+        );
+        const data = await resp.json();
+        setBreakdown({
+          range: data?.range || { start: "", end: "" },
+          external: data?.external || [],
+          playlist: data?.playlist || 0,
+          suggested: data?.suggested || 0,
+          browse: data?.browse || 0,
+        });
+      } catch (err) {
+        setBreakdown({
+          range: { start: "", end: "" },
+          external: [],
+          playlist: 0,
+          suggested: 0,
+          browse: 0,
+        });
+      }
+    };
+    loadBreakdown();
+  }, [accountTag, authHeaders]);
+
   const headerSx = {
     background: isDark ? "rgba(15,23,42,0.9)" : "rgba(226,232,240,0.85)",
     "& .MuiTableCell-root": {
@@ -129,6 +167,14 @@ const ReachAnalytics = () => {
   };
 
   const displayRows = useMemo(() => rows.slice(0, 20), [rows]);
+  const maxExternal = useMemo(
+    () => Math.max(1, ...breakdown.external.map((row) => Number(row.views || 0))),
+    [breakdown.external]
+  );
+  const maxSuggestedBrowse = useMemo(
+    () => Math.max(1, Number(breakdown.suggested || 0), Number(breakdown.browse || 0)),
+    [breakdown.suggested, breakdown.browse]
+  );
 
   return (
     <Stack spacing={2}>
@@ -160,6 +206,204 @@ const ReachAnalytics = () => {
           </Typography>
         </Box>
       )}
+
+      <Box
+        display="grid"
+        gridTemplateColumns={{ xs: "1fr", md: "repeat(3, minmax(0, 1fr))" }}
+        gap={2}
+      >
+        <Box
+          sx={{
+            p: 2,
+            borderRadius: 3,
+            border: "1px solid",
+            borderColor: theme.palette.divider,
+            background:
+              theme.palette.mode === "dark"
+                ? "rgba(10,15,24,0.8)"
+                : "rgba(255,255,255,0.94)",
+            boxShadow:
+              theme.palette.mode === "dark"
+                ? "0 14px 28px rgba(15,23,42,0.4)"
+                : "0 14px 26px rgba(148,163,184,0.25)",
+          }}
+        >
+          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+            <Box>
+              <Typography variant="subtitle1" fontWeight={700}>
+                External traffic
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {breakdown.range?.start && breakdown.range?.end
+                  ? `${breakdown.range.start} → ${breakdown.range.end}`
+                  : "No data"}
+              </Typography>
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              views
+            </Typography>
+          </Stack>
+          {breakdown.external.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" mt={2}>
+              No external traffic data.
+            </Typography>
+          ) : (
+            <Stack spacing={1} mt={2}>
+              {breakdown.external.map((row) => {
+                const pct = Math.max(
+                  6,
+                  Math.round((row.views / maxExternal) * 100)
+                );
+                return (
+                  <Box key={row.source}>
+                    <Box display="flex" justifyContent="space-between" mb={0.5}>
+                      <Typography variant="body2">{row.source}</Typography>
+                      <Typography variant="body2" fontWeight={600}>
+                        {formatNumber(row.views)}
+                      </Typography>
+                    </Box>
+                    <Box
+                      sx={{
+                        height: 8,
+                        borderRadius: 999,
+                        bgcolor: isDark
+                          ? "rgba(148,163,184,0.2)"
+                          : "rgba(15,23,42,0.12)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: `${pct}%`,
+                          height: "100%",
+                          borderRadius: 999,
+                          background: isDark
+                            ? "linear-gradient(90deg, #38bdf8, #22d3ee)"
+                            : "linear-gradient(90deg, #0ea5e9, #22d3ee)",
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Stack>
+          )}
+        </Box>
+
+        <Box
+          sx={{
+            p: 2,
+            borderRadius: 3,
+            border: "1px solid",
+            borderColor: theme.palette.divider,
+            background:
+              theme.palette.mode === "dark"
+                ? "rgba(10,15,24,0.8)"
+                : "rgba(255,255,255,0.94)",
+            boxShadow:
+              theme.palette.mode === "dark"
+                ? "0 14px 28px rgba(15,23,42,0.4)"
+                : "0 14px 26px rgba(148,163,184,0.25)",
+          }}
+        >
+          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+            <Box>
+              <Typography variant="subtitle1" fontWeight={700}>
+                Playlist traffic
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {breakdown.range?.start && breakdown.range?.end
+                  ? `${breakdown.range.start} → ${breakdown.range.end}`
+                  : "No data"}
+              </Typography>
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              views
+            </Typography>
+          </Stack>
+          <Typography variant="h5" fontWeight={700} mt={2}>
+            {formatNumber(breakdown.playlist)}
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Views from playlist sources
+          </Typography>
+        </Box>
+
+        <Box
+          sx={{
+            p: 2,
+            borderRadius: 3,
+            border: "1px solid",
+            borderColor: theme.palette.divider,
+            background:
+              theme.palette.mode === "dark"
+                ? "rgba(10,15,24,0.8)"
+                : "rgba(255,255,255,0.94)",
+            boxShadow:
+              theme.palette.mode === "dark"
+                ? "0 14px 28px rgba(15,23,42,0.4)"
+                : "0 14px 26px rgba(148,163,184,0.25)",
+          }}
+        >
+          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+            <Box>
+              <Typography variant="subtitle1" fontWeight={700}>
+                Suggested vs Browse
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {breakdown.range?.start && breakdown.range?.end
+                  ? `${breakdown.range.start} → ${breakdown.range.end}`
+                  : "No data"}
+              </Typography>
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              views
+            </Typography>
+          </Stack>
+          <Stack spacing={1} mt={2}>
+            {[
+              { label: "Suggested", value: breakdown.suggested, color: "#22c55e" },
+              { label: "Browse", value: breakdown.browse, color: "#a855f7" },
+            ].map((item) => {
+              const pct = Math.max(
+                6,
+                Math.round((Number(item.value || 0) / maxSuggestedBrowse) * 100)
+              );
+              return (
+                <Box key={item.label}>
+                  <Box display="flex" justifyContent="space-between" mb={0.5}>
+                    <Typography variant="body2">{item.label}</Typography>
+                    <Typography variant="body2" fontWeight={600}>
+                      {formatNumber(item.value)}
+                    </Typography>
+                  </Box>
+                  <Box
+                    sx={{
+                      height: 8,
+                      borderRadius: 999,
+                      bgcolor: isDark
+                        ? "rgba(148,163,184,0.2)"
+                        : "rgba(15,23,42,0.12)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: `${pct}%`,
+                        height: "100%",
+                        borderRadius: 999,
+                        background: isDark
+                          ? `linear-gradient(90deg, ${item.color}, ${item.color}AA)`
+                          : `linear-gradient(90deg, ${item.color}, ${item.color}AA)`,
+                      }}
+                    />
+                  </Box>
+                </Box>
+              );
+            })}
+          </Stack>
+        </Box>
+      </Box>
 
       <TableContainer
         sx={{

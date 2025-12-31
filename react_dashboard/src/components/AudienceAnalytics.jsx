@@ -15,14 +15,13 @@ import {
 import { ResponsiveLine } from "@nivo/line";
 import { API_BASE } from "../config";
 
-const formatNumber = (value) => {
-  if (value == null) return "-";
-  const num = Number(value);
-  if (Number.isNaN(num)) return "-";
-  if (Math.abs(num) >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(num) >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
-  return num.toString();
+const formatRangeLabel = (range) => {
+  if (!range?.start || !range?.end) return "No data";
+  if (range.start === "2005-02-14") return "Lifetime";
+  return `${range.start} -> ${range.end}`;
 };
+
+
 
 const AudienceAnalytics = () => {
   const theme = useTheme();
@@ -412,9 +411,9 @@ const AudienceAnalytics = () => {
           <Box>
             <Typography variant="h6">Demographics</Typography>
             <Typography variant="caption" color="text.secondary">
-              {demoRange.start && demoRange.end
-                ? `Viewer distribution · ${demoRange.start} → ${demoRange.end}`
-                : "No data"}
+              {formatRangeLabel(demoRange) === "No data"
+                ? "No data"
+                : `Viewer distribution at ${formatRangeLabel(demoRange)}`}
             </Typography>
           </Box>
           <Typography variant="caption" color="text.secondary">
@@ -446,10 +445,7 @@ const AudienceAnalytics = () => {
               <Typography variant="subtitle2">Female</Typography>
               <Typography variant="subtitle2">Unspecified</Typography>
               {demoTable.map((row) => (
-                <Box
-                  key={row.age}
-                  display="contents"
-                >
+                <Box key={row.age} display="contents">
                   <Typography variant="body2">
                     {formatAgeLabel(row.age)}
                   </Typography>
@@ -489,9 +485,7 @@ const AudienceAnalytics = () => {
                 Devices
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                {deviceRange.start && deviceRange.end
-                  ? `${deviceRange.start} → ${deviceRange.end}`
-                  : "No data"}
+                {formatRangeLabel(deviceRange)}
               </Typography>
             </Box>
             <Typography variant="caption" color="text.secondary">
@@ -564,9 +558,7 @@ const AudienceAnalytics = () => {
                 Subscribed vs Not subscribed
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                {viewerTypeRange.start && viewerTypeRange.end
-                  ? `${viewerTypeRange.start} → ${viewerTypeRange.end}`
-                  : "No data"}
+                {formatRangeLabel(viewerTypeRange)}
               </Typography>
             </Box>
             <Typography variant="caption" color="text.secondary">
@@ -621,9 +613,7 @@ const AudienceAnalytics = () => {
             </Stack>
           )}
         </Box>
-
       </Box>
-
       <Box
         sx={{
           p: 2,
