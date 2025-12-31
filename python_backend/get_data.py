@@ -184,6 +184,8 @@ def _run_for_credential(cred_file: str) -> None:
                 raise RuntimeError("Missing PG_URL env var")
             creds = create_token_from_credentials(os.path.join(CREDENTIALS_FOLDER, cred_file))
             run_reach_analytics(creds, account_tag, pg_url, channel_id=channel_id)
+        elif stage == "traffic_source":
+            process_one(cred_file, channel_id=channel_id)
         else:
             raise RuntimeError(f"Unsupported stage: {stage}")
         _raise_if_stop_requested(account_tag, "stopped")

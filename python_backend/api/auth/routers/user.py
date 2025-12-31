@@ -745,7 +745,7 @@ def run_token_stage(
         raise HTTPException(status_code=400, detail="Invalid token filename")
 
     stage = (payload.stage or "").strip().lower()
-    if stage not in {"content", "overview", "audience", "reach"}:
+    if stage not in {"content", "overview", "audience", "reach", "traffic_source"}:
         raise HTTPException(status_code=400, detail="Invalid stage")
 
     is_admin = (current_user.username or "").lower() in _get_admin_users()

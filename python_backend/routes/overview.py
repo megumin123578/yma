@@ -15,7 +15,7 @@ from python_backend.api.auth.database import get_db
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.module_trafficsource import sanitize_filename
 from python_backend.module_trafficsource import create_token_from_credentials
-from python_backend.module_geography import fetch_geography
+from python_backend.module_geography import fetch_geography, load_geography_from_postgres, save_geography_to_postgres
 
 router = APIRouter(prefix="/api/video_overview", tags=["video_overview"])
 CREDENTIALS_DIR = "./python_backend/credentials"
@@ -386,7 +386,17 @@ def views_by_country(
     else:
         s = start_date
         e = end_date
-    rows = fetch_geography(creds, s.isoformat(), e.isoformat())
+    try:
+        rows = load_geography_from_postgres(accountTag, s.isoformat(), e.isoformat())
+    except Exception as e:
+        print(f"[WARN] Geography DB load failed: {e}")
+        rows = []
+    if not rows:
+        rows = fetch_geography(creds, s.isoformat(), e.isoformat())
+        try:
+            save_geography_to_postgres(rows, accountTag, s.isoformat(), e.isoformat())
+        except Exception as e:
+            print(f"[WARN] Geography DB save failed: {e}")
     return {"rows": rows}
 
 

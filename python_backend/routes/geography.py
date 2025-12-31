@@ -1,7 +1,11 @@
 from fastapi import APIRouter, Query, Depends
 from datetime import datetime, timedelta
 from python_backend.module_trafficsource import create_token_from_credentials
-from python_backend.module_geography import fetch_geography
+from python_backend.module_geography import (
+    fetch_geography,
+    load_geography_from_postgres,
+    save_geography_to_postgres,
+)
 
 import os
 from sqlalchemy.orm import Session
@@ -111,13 +115,22 @@ def api_geography(
     else:
         s = datetime.strptime(start, "%Y-%m-%d").date()
         e = datetime.strptime(end, "%Y-%m-%d").date()
-
-    # ========= Fetch data from YouTube =========
     try:
-        rows = fetch_geography(creds, s.isoformat(), e.isoformat())
+        rows = load_geography_from_postgres(channel, s.isoformat(), e.isoformat())
     except Exception as e:
-        # Channel hợp lệ nhưng không có data → KHÔNG xác minh
+        print(f"[WARN] Geography DB load failed: {e}")
         rows = []
+    if not rows:
+        # ========= Fetch data from YouTube =========
+        try:
+            rows = fetch_geography(creds, s.isoformat(), e.isoformat())
+        except Exception:
+            # Channel hop le nhung khong co data xac minh
+            rows = []
+        try:
+            save_geography_to_postgres(rows, channel, s.isoformat(), e.isoformat())
+        except Exception as e:
+            print(f"[WARN] Geography DB save failed: {e}")
 
     return {
         "start": s.isoformat(),
