@@ -253,6 +253,8 @@ const GeographyChart = ({ isDashboard = false }) => {
   const tablePaperSx = useMemo(
     () => ({
       mt: 2,
+      px: 2,
+      py: 1,
       borderRadius: 3,
       border: "1px solid",
       borderColor:
@@ -437,7 +439,8 @@ const GeographyChart = ({ isDashboard = false }) => {
       </Box>
 
       {/* ===== TABLE ===== */}
-      <TableContainer component={Paper} elevation={0} sx={tablePaperSx}>
+      <Box sx={{ px: 2 }}>
+        <TableContainer component={Paper} elevation={0} sx={tablePaperSx}>
         <Table size="small">
           <TableHead sx={tableHeadSx}>
           <TableRow>
@@ -551,7 +554,8 @@ const GeographyChart = ({ isDashboard = false }) => {
             ))}
           </TableBody>
         </Table>
-      </TableContainer>
+        </TableContainer>
+      </Box>
     </Stack>
   );
 };
