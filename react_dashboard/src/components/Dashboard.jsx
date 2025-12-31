@@ -105,6 +105,7 @@ const VideoList = () => {
   const [countryViews, setCountryViews] = useState([]);
   const [subscribersSeries, setSubscribersSeries] = useState([]);
   const [revenueRows, setRevenueRows] = useState([]);
+  const [animateOverviewBars, setAnimateOverviewBars] = useState(false);
   const [error, setError] = useState("");
   const activeRange =
     OVERVIEW_RANGES.find((range) => range.value === overviewRange) ||
@@ -418,17 +419,20 @@ const VideoList = () => {
           revenueResp.ok ? revenueResp.json() : { rows: [] },
         ]);
 
+        setAnimateOverviewBars(false);
         setTopKeywords(Array.isArray(topKeywordsData) ? topKeywordsData : []);
         setTopSources(Array.isArray(topSourcesData) ? topSourcesData : []);
         setCountryViews(Array.isArray(countryData?.rows) ? countryData.rows : []);
         setSubscribersSeries(Array.isArray(subsData) ? subsData : []);
         setRevenueRows(Array.isArray(revenueData?.rows) ? revenueData.rows : []);
+        requestAnimationFrame(() => setAnimateOverviewBars(true));
       } catch (err) {
         setTopKeywords([]);
         setTopSources([]);
         setCountryViews([]);
         setSubscribersSeries([]);
         setRevenueRows([]);
+        setAnimateOverviewBars(false);
       }
     };
 
@@ -985,45 +989,45 @@ const VideoList = () => {
                   No data
                 </Typography>
               ) : (
-                <>
-                  <Box height={290}>
-                    <ResponsiveChoropleth
-                      debounceResize={150}
-                      data={countryMapData}
-                      features={geoFeatures.features}
-                      valueFormat={formatNumber}
-                      domain={[0, countryDomainMax]}
-                      tooltip={({ feature }) => {
-                        const label = countryResolvers.nameOf(feature.id);
-                        const value = feature.value || 0;
+                  <>
+                    <Box height={290}>
+                      <ResponsiveChoropleth
+                        debounceResize={150}
+                        data={countryMapData}
+                        features={geoFeatures.features}
+                        valueFormat={formatNumber}
+                        domain={[0, countryDomainMax]}
+                        tooltip={({ feature }) => {
+                          const label = countryResolvers.nameOf(feature.id);
+                          const value = feature.value || 0;
 
-                        return (
-                          <Box
-                            sx={{
-                              px: 1.2,
-                              py: 0.75,
-                              borderRadius: 1,
-                              fontSize: 13,
-                              fontWeight: 600,
-                              bgcolor:
-                                theme.palette.mode === "dark"
-                                  ? "rgba(0,0,0,0.75)"
-                                  : "rgba(255,255,255,0.95)",
-                              boxShadow: 3,
-                            }}
-                          >
-                            <div>{label}</div>
-                            <div>Views: {formatNumber(value)}</div>
-                          </Box>
-                        );
-                      }}
-                      unknownColor="#999"
-                      projectionScale={80}
-                      projectionTranslation={[0.5, 0.65]}
-                      borderWidth={1}
-                      borderColor="#fff"
-                    />
-                  </Box>
+                          return (
+                            <Box
+                              sx={{
+                                px: 1.2,
+                                py: 0.75,
+                                borderRadius: 1,
+                                fontSize: 13,
+                                fontWeight: 600,
+                                bgcolor:
+                                  theme.palette.mode === "dark"
+                                    ? "rgba(0,0,0,0.75)"
+                                    : "rgba(255,255,255,0.95)",
+                                boxShadow: 3,
+                              }}
+                            >
+                              <div>{label}</div>
+                              <div>Views: {formatNumber(value)}</div>
+                            </Box>
+                          );
+                        }}
+                        unknownColor="#999"
+                        projectionScale={80}
+                        projectionTranslation={[0.5, 0.65]}
+                        borderWidth={1}
+                        borderColor="#fff"
+                      />
+                    </Box>
                   <Box mt={2}>
                     <Stack>
                       {topCountries.map((row) => {
@@ -1054,13 +1058,14 @@ const VideoList = () => {
                             >
                               <Box
                                 sx={{
-                                  width: `${pct}%`,
+                                  width: animateOverviewBars ? `${pct}%` : 0,
                                   height: "100%",
                                   borderRadius: 999,
                                   background:
                                     theme.palette.mode === "dark"
                                       ? "linear-gradient(90deg, #38bdf8, #a855f7)"
                                       : "linear-gradient(90deg, #0ea5e9, #6366f1)",
+                                  transition: "width 0.5s ease",
                                 }}
                               />
                             </Box>
@@ -1120,17 +1125,18 @@ const VideoList = () => {
                             overflow: "hidden",
                           }}
                         >
-                          <Box
-                            sx={{
-                              width: `${pct}%`,
-                              height: "100%",
-                              borderRadius: 999,
-                              background:
-                                theme.palette.mode === "dark"
-                                  ? "linear-gradient(90deg, #f59e0b, #f97316)"
-                                  : "linear-gradient(90deg, #f59e0b, #fb923c)",
-                            }}
-                          />
+                            <Box
+                              sx={{
+                                width: animateOverviewBars ? `${pct}%` : 0,
+                                height: "100%",
+                                borderRadius: 999,
+                                background:
+                                  theme.palette.mode === "dark"
+                                    ? "linear-gradient(90deg, #f59e0b, #f97316)"
+                                    : "linear-gradient(90deg, #f59e0b, #fb923c)",
+                                transition: "width 0.5s ease",
+                              }}
+                            />
                         </Box>
                       </Box>
                     );
@@ -1215,17 +1221,18 @@ const VideoList = () => {
                             overflow: "hidden",
                           }}
                         >
-                          <Box
-                            sx={{
-                              width: `${pct}%`,
-                              height: "100%",
-                              borderRadius: 999,
-                              background:
-                                theme.palette.mode === "dark"
-                                  ? "linear-gradient(90deg, #22c55e, #06b6d4)"
-                                  : "linear-gradient(90deg, #22c55e, #0ea5e9)",
-                            }}
-                          />
+                            <Box
+                              sx={{
+                                width: animateOverviewBars ? `${pct}%` : 0,
+                                height: "100%",
+                                borderRadius: 999,
+                                background:
+                                  theme.palette.mode === "dark"
+                                    ? "linear-gradient(90deg, #22c55e, #06b6d4)"
+                                    : "linear-gradient(90deg, #22c55e, #0ea5e9)",
+                                transition: "width 0.5s ease",
+                              }}
+                            />
                         </Box>
                       </Box>
                     );
