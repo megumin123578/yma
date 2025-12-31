@@ -7,7 +7,6 @@ from pydantic import BaseModel
 from datetime import date
 from sqlalchemy import text
 from python_backend.db import engine
-from typing import Optional
 from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user_optional
@@ -93,9 +92,6 @@ def list_channels(
         ORDER BY account_tag;
     """)
 
-    allowed = get_allowed_account_tags(db, current_user)
-    if allowed is not None:
-        rows = [r for r in rows if r["value"] in allowed]
     allowed = get_allowed_account_tags(db, current_user)
     if allowed is not None:
         rows = [r for r in rows if r["value"] in allowed]

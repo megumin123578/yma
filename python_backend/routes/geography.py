@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Depends
 from datetime import datetime, timedelta
 from python_backend.module_trafficsource import create_token_from_credentials
 from python_backend.module_geography import (
