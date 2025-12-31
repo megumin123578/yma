@@ -418,6 +418,18 @@ const VideoList = () => {
     return `${day}/${month}/${year}`; // dd/mm/YY
     };
 
+  const formatDateFull = (iso) => {
+    if (!iso) return "-";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+
+    const day = d.getDate().toString().padStart(2, "0");
+    const month = (d.getMonth() + 1).toString().padStart(2, "0");
+    const year = d.getFullYear().toString(); // YYYY
+
+    return `${day}-${month}-${year}`; // dd-mm-yyyy
+  };
+
   const sectionSx = {
     borderRadius: 3,
     border: "1px solid",
@@ -872,9 +884,13 @@ const VideoList = () => {
                                 dataKey="day"
                                 tick={{ fontSize: 11 }}
                                 ticks={subscribersXAxisTicks}
+                                tickFormatter={formatDateFull}
                               />
                               <YAxis tickFormatter={formatNumber} />
-                              <Tooltip {...chartTooltipStyles} />
+                              <Tooltip
+                                {...chartTooltipStyles}
+                                labelFormatter={formatDateFull}
+                              />
                               <Bar dataKey="gained" fill="#22c55e" radius={[6, 6, 0, 0]} />
                             </BarChart>
                           </ResponsiveContainer>
@@ -900,9 +916,13 @@ const VideoList = () => {
                                 dataKey="day"
                                 tick={{ fontSize: 11 }}
                                 ticks={subscribersXAxisTicks}
+                                tickFormatter={formatDateFull}
                               />
                               <YAxis tickFormatter={formatNumber} />
-                              <Tooltip {...chartTooltipStyles} />
+                              <Tooltip
+                                {...chartTooltipStyles}
+                                labelFormatter={formatDateFull}
+                              />
                               <Bar dataKey="change" fill="#7c3aed" radius={[6, 6, 0, 0]} />
                             </BarChart>
                           </ResponsiveContainer>
