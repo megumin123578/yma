@@ -483,6 +483,16 @@ const VideoList = () => {
 
     return `${day}-${month}-${year}`; // dd-mm-yyyy
   };
+  const formatDateMonth = (iso) => {
+    if (!iso) return "-";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+
+    const day = d.getDate().toString().padStart(2, "0");
+    const month = (d.getMonth() + 1).toString().padStart(2, "0");
+
+    return `${day}/${month}`; // dd/mm
+  };
 
   const sectionSx = {
     borderRadius: 3,
@@ -929,7 +939,7 @@ const VideoList = () => {
                                 dataKey="day"
                                 tick={{ fontSize: 11 }}
                                 ticks={subscribersXAxisTicks}
-                                tickFormatter={formatDateFull}
+                                  tickFormatter={formatDateMonth}
                               />
                               <YAxis tickFormatter={formatNumber} />
                               <Tooltip
@@ -961,7 +971,7 @@ const VideoList = () => {
                                 dataKey="day"
                                 tick={{ fontSize: 11 }}
                                 ticks={subscribersXAxisTicks}
-                                tickFormatter={formatDateFull}
+                                  tickFormatter={formatDateMonth}
                               />
                               <YAxis tickFormatter={formatNumber} />
                               <Tooltip
@@ -1038,7 +1048,7 @@ const VideoList = () => {
                             />
                             <XAxis
                               dataKey="day"
-                              tickFormatter={formatDate}
+                              tickFormatter={formatDateMonth}
                               tick={{ fontSize: 11 }}
                               interval="preserveStartEnd"
                             />
