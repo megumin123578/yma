@@ -10,6 +10,11 @@ ngrok http 8000
 -- To run react_dashboard
 npm --prefix react_dashboard run start
 
+--ipmort jose
+pip uninstall jose pycrypto crypto -y --uninstall if wrong package
+pip install python-jose[cryptography]
+
+
 -- xóa và tạo lại db
 \c postgres
 DROP DATABASE analytics;

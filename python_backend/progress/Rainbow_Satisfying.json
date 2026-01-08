@@ -1,1 +1,1 @@
-{"account_tag": "Rainbow_Satisfying", "stage": "done", "percent": 100, "status": "done", "message": "Completed traffic_source", "updated_at": "2025-12-31T09:21:14.123888Z"}
+{"account_tag": "Rainbow_Satisfying", "stage": "error", "percent": 0, "status": "error", "message": "('invalid_grant: Token has been expired or revoked.', {'error': 'invalid_grant', 'error_description': 'Token has been expired or revoked.'})", "updated_at": "2026-01-08T01:03:01.525111Z"}
