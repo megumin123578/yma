@@ -1,1 +1,1 @@
-{"account_tag": "test_channel", "stage": "audience", "percent": 83, "status": "running", "message": "Audience 1/3", "updated_at": "2026-01-08T08:36:13.932074Z"}
+{"account_tag": "test_channel", "stage": "done", "percent": 100, "status": "done", "message": "Completed", "updated_at": "2026-01-08T08:37:37.167085Z"}
