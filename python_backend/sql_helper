@@ -9,10 +9,23 @@ ngrok http 8000
 
 -- To run react_dashboard
 npm --prefix react_dashboard run start
+npm --prefix react_dashboard run start --port 8000
 
 --ipmort jose
 pip uninstall jose pycrypto crypto -y --uninstall if wrong package
 pip install python-jose[cryptography]
+
+-- install google api client
+pip install google-auth google-auth-oauthlib google-auth-httplib2
+pip install google-api-python-client
+
+--install python-multipart
+pip install python-multipart
+
+--venv
+py -3.11 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 
 
 -- xóa và tạo lại db
