@@ -241,7 +241,10 @@ const VideoList = () => {
       .map((row) => row.day)
       .filter(Boolean);
     if (!days.length) return [];
-    return [days[0], days[days.length - 1]];
+    const first = days[0];
+    const last = days[days.length - 1];
+    if (first === last) return [first];
+    return [first, last];
   }, [subscribersSummary.chart]);
   const chartTooltipStyles = useMemo(() => {
     const isDark = theme.palette.mode === "dark";
@@ -915,6 +918,7 @@ const VideoList = () => {
                                   tick={{ fontSize: 11 }}
                                   ticks={subscribersXAxisTicks}
                                   tickFormatter={formatDateMonth}
+                                  allowDuplicatedCategory={false}
                                 />
                                 <YAxis tickFormatter={formatNumber} />
                                 <Tooltip
@@ -947,6 +951,7 @@ const VideoList = () => {
                                   tick={{ fontSize: 11 }}
                                   ticks={subscribersXAxisTicks}
                                   tickFormatter={formatDateMonth}
+                                  allowDuplicatedCategory={false}
                                 />
                                 <YAxis tickFormatter={formatNumber} />
                                 <Tooltip
@@ -1026,6 +1031,7 @@ const VideoList = () => {
                               tickFormatter={formatDateMonth}
                               tick={{ fontSize: 11 }}
                               interval="preserveStartEnd"
+                              allowDuplicatedCategory={false}
                             />
                             <YAxis
                               tickFormatter={(value) => formatCurrency(value)}

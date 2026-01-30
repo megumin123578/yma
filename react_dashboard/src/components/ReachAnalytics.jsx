@@ -89,7 +89,7 @@ const ReachAnalytics = () => {
       }
     };
     loadChannels();
-  }, [accountTag]);
+  }, [accountTag, authHeaders]);
 
   useEffect(() => {
     if (!accountTag) return;
@@ -98,7 +98,7 @@ const ReachAnalytics = () => {
     } catch {
       // ignore storage errors
     }
-  }, [accountTag]);
+  }, [accountTag, authHeaders]);
 
   useEffect(() => {
     if (!accountTag) return;
@@ -120,7 +120,7 @@ const ReachAnalytics = () => {
       }
     };
     loadReach();
-  }, [accountTag]);
+  }, [accountTag, authHeaders]);
 
   useEffect(() => {
     if (!accountTag) return;
@@ -151,7 +151,7 @@ const ReachAnalytics = () => {
       }
     };
     loadBreakdown();
-  }, [accountTag]);
+  }, [accountTag, authHeaders]);
 
   const headerSx = {
     background: isDark ? "rgba(15,23,42,0.9)" : "rgba(226,232,240,0.85)",

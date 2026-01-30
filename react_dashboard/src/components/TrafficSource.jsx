@@ -557,7 +557,15 @@ const TrafficSourceChart = () => {
   }, [chartType, tsSeries, metric, includeSourceForCharts]);
 
   const barXTicks = useMemo(() => {
-    const xs = (barPrep.data || []).map((d) => d.bucket);
+    const xsRaw = (barPrep.data || []).map((d) => d.bucket);
+    const xs = Array.from(
+      new Map(
+        xsRaw.map((b) => {
+          const day = dayjs(b).isValid() ? dayjs(b).format("YYYY-MM-DD") : String(b);
+          return [day, day];
+        })
+      ).values()
+    );
     if (xs.length <= 7) return xs;
     const step = (xs.length - 1) / 6;
     const picks = [];

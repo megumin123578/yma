@@ -242,7 +242,7 @@ const RevenueAnalytics = () => {
       )}
 
       <Grid container spacing={2}>
-        <Grid item xs={12} md={4}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Paper elevation={0} sx={cardSx}>
             <Typography variant="subtitle2" color="text.secondary">
               Estimated Revenue
@@ -252,7 +252,7 @@ const RevenueAnalytics = () => {
             </Typography>
           </Paper>
         </Grid>
-        <Grid item xs={12} md={4}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Paper elevation={0} sx={cardSx}>
             <Typography variant="subtitle2" color="text.secondary">
               Ad Revenue
@@ -262,7 +262,7 @@ const RevenueAnalytics = () => {
             </Typography>
           </Paper>
         </Grid>
-        <Grid item xs={12} md={4}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Paper elevation={0} sx={cardSx}>
             <Typography variant="subtitle2" color="text.secondary">
               Gross Revenue
@@ -272,7 +272,7 @@ const RevenueAnalytics = () => {
             </Typography>
           </Paper>
         </Grid>
-        <Grid item xs={12} md={4}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Paper elevation={0} sx={cardSx}>
             <Typography variant="subtitle2" color="text.secondary">
               RPM (avg)
@@ -282,7 +282,7 @@ const RevenueAnalytics = () => {
             </Typography>
           </Paper>
         </Grid>
-        <Grid item xs={12} md={4}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Paper elevation={0} sx={cardSx}>
             <Typography variant="subtitle2" color="text.secondary">
               CPM (avg)
@@ -292,7 +292,7 @@ const RevenueAnalytics = () => {
             </Typography>
           </Paper>
         </Grid>
-        <Grid item xs={12} md={4}>
+        <Grid size={{ xs: 12, md: 4 }}>
           <Paper elevation={0} sx={cardSx}>
             <Typography variant="subtitle2" color="text.secondary">
               Monetized Playbacks
