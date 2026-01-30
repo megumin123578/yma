@@ -378,7 +378,7 @@ const ContentAnalytics = () => {
   // Chọn tick ngày thưa để không đè chữ
   const xTickValues = useMemo(() => {
     if (!timeseries.length) return [];
-    const allDates = timeseries.map((t) => new Date(t.bucket));
+    const allDates = timeseries.map((t) => dayjs(t.bucket).startOf("day").toDate());
     return pickTicks(allDates, 7); // tối đa 7 tick
   }, [timeseries]);
 

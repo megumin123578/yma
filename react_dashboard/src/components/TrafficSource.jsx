@@ -511,15 +511,23 @@ const TrafficSourceChart = () => {
 
   const lineDateTicks = useMemo(() => {
     if (!Array.isArray(lineSeries) || lineSeries.length === 0) return [];
+    const normalizeUtcDay = (d) =>
+      new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
     const uniq = new Map();
-    for (const s of lineSeries) for (const p of s.data) uniq.set(+p.x, p.x);
+    for (const s of lineSeries) {
+      for (const p of s.data) {
+        const raw = p.x instanceof Date ? p.x : new Date(p.x);
+        const norm = normalizeUtcDay(raw);
+        uniq.set(+norm, norm);
+      }
+    }
     const all = Array.from(uniq.values()).sort((a, b) => +a - +b);
     const MAX = 7;
     if (all.length <= MAX) return all;
     const step = (all.length - 1) / (MAX - 1);
     const picks = [];
     for (let i = 0; i < MAX; i++) picks.push(all[Math.round(i * step)]);
-    return Array.from(new Map(picks.map(d => [+d, d])).values());
+    return Array.from(new Map(picks.map((d) => [+d, d])).values());
   }, [lineSeries]);
 
   /* === Bar data (filtered) === */
