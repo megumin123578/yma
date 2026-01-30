@@ -10,3 +10,4 @@ pip install google-auth google-auth-oauthlib google-auth-httplib2
 pip install google-api-python-client
 pip install bs4
 pip install python-multipart
+pip install argon2_cffi

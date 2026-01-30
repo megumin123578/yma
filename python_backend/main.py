@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from python_backend.config import load_env
 
+load_env()
+
 from python_backend.api.auth.database import engine, Base
 from sqlalchemy import text, create_engine
 from python_backend.api.auth import models
@@ -21,8 +23,6 @@ from python_backend.routes.revenue import router as revenue_router
 from fastapi.staticfiles import StaticFiles
 from python_backend.api.auth.routers import auth, user
 from python_backend.api.auth.scheduler import start_scheduler
-
-load_env()
 
 app = FastAPI()
 

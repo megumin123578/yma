@@ -22,7 +22,7 @@ import {
 import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { ResponsiveChoropleth } from "@nivo/geo";
 import { geoFeatures } from "../data/mockGeoFeatures";
-import { API_BASE } from "../config";
+import api from "../services/api";
 
 // ===== Helpers =====
 const n = (v) => Number(v) || 0;
@@ -91,10 +91,6 @@ const GeographyChart = ({ isDashboard = false }) => {
   const [range, setRange] = useState("28d");
   const [channel, setChannel] = useState("");
   const [channels, setChannels] = useState([]);
-  const authHeaders = useMemo(() => {
-    const token = localStorage.getItem("access_token");
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
 
   // hiện / ẩn cột bảng
   const [visibleColumns, setVisibleColumns] = useState({
@@ -111,12 +107,11 @@ const GeographyChart = ({ isDashboard = false }) => {
 
   // ===== Fetch data =====
   useEffect(() => {
-    const url = `${API_BASE}/api/geography?range=${range}${
-      channel ? `&channel=${channel}` : ""
-    }`;
+    const url = `/api/geography?range=${range}${channel ? `&channel=${channel}` : ""
+      }`;
 
-    fetch(url, { headers: authHeaders })
-      .then((r) => r.json())
+    api.get(url)
+      .then((r) => r.data)
       .then((json) => {
         setRawData(json.rows || []);
 
@@ -151,7 +146,7 @@ const GeographyChart = ({ isDashboard = false }) => {
         }
       })
       .catch((err) => console.error("Geography API error:", err));
-  }, [range, channel, authHeaders]);
+  }, [range, channel]);
 
   // ===== ISO Resolver =====
   const resolvers = useMemo(() => {
@@ -317,64 +312,64 @@ const GeographyChart = ({ isDashboard = false }) => {
 
         {/* ⭐ Metrics = Map metric + Table columns */}
         <FormControl size="small" sx={{ minWidth: 160 }}>
-        <InputLabel>Metrics</InputLabel>
-        <Select
-          multiple
-          label="Metrics"
-          value={metricsSelectValue}
-          renderValue={() => "Metrics"}   // 👈 luôn chỉ hiện chữ "Metrics"
-        >
-          {/* Map metric */}
-          <ListSubheader>Map metric</ListSubheader>
-          {METRIC_OPTIONS.map((opt) => (
-            <MenuItem
-              key={`map-${opt.value}`}
-              value={`map:${opt.value}`}
-              onClick={() => setMetric(opt.value)}
-            >
-              <Radio checked={metric === opt.value}  sx={{
-                mr: 1,
-                color: "#ffffff",
-                "&.Mui-checked": {
-                  color: "#ffffff",
-                },
-              }} />
-              {opt.label}
-            </MenuItem>
-          ))}
-
-          <Divider sx={{ my: 0.5 }} />
-
-          {/* Table columns */}
-          <ListSubheader>Table columns</ListSubheader>
-          {TABLE_COLUMNS.map((col) => (
-            <MenuItem
-              key={`col-${col.key}`}
-              value={`col:${col.key}`}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setVisibleColumns((prev) => ({
-                  ...prev,
-                  [col.key]: !prev[col.key],
-                }));
-              }}
-            >
-              <Checkbox
-                checked={visibleColumns[col.key]}
-                sx={{
+          <InputLabel>Metrics</InputLabel>
+          <Select
+            multiple
+            label="Metrics"
+            value={metricsSelectValue}
+            renderValue={() => "Metrics"}   // 👈 luôn chỉ hiện chữ "Metrics"
+          >
+            {/* Map metric */}
+            <ListSubheader>Map metric</ListSubheader>
+            {METRIC_OPTIONS.map((opt) => (
+              <MenuItem
+                key={`map-${opt.value}`}
+                value={`map:${opt.value}`}
+                onClick={() => setMetric(opt.value)}
+              >
+                <Radio checked={metric === opt.value} sx={{
                   mr: 1,
                   color: "#ffffff",
                   "&.Mui-checked": {
                     color: "#ffffff",
                   },
+                }} />
+                {opt.label}
+              </MenuItem>
+            ))}
+
+            <Divider sx={{ my: 0.5 }} />
+
+            {/* Table columns */}
+            <ListSubheader>Table columns</ListSubheader>
+            {TABLE_COLUMNS.map((col) => (
+              <MenuItem
+                key={`col-${col.key}`}
+                value={`col:${col.key}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setVisibleColumns((prev) => ({
+                    ...prev,
+                    [col.key]: !prev[col.key],
+                  }));
                 }}
-              />
-              {col.label}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
+              >
+                <Checkbox
+                  checked={visibleColumns[col.key]}
+                  sx={{
+                    mr: 1,
+                    color: "#ffffff",
+                    "&.Mui-checked": {
+                      color: "#ffffff",
+                    },
+                  }}
+                />
+                {col.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
 
         {/* Channel */}
         <FormControl size="small" sx={{ minWidth: 160 }}>
@@ -441,76 +436,41 @@ const GeographyChart = ({ isDashboard = false }) => {
       {/* ===== TABLE ===== */}
       <Box sx={{ px: 2 }}>
         <TableContainer component={Paper} elevation={0} sx={tablePaperSx}>
-        <Table size="small">
-          <TableHead sx={tableHeadSx}>
-          <TableRow>
-            <TableCell>Country</TableCell>
+          <Table size="small">
+            <TableHead sx={tableHeadSx}>
+              <TableRow>
+                <TableCell>Country</TableCell>
 
-            {TABLE_COLUMNS.map(col =>
-              visibleColumns[col.key] && (
-                <TableCell
-                  key={col.key}
-                  align="right"
-                  sx={{
-                    width: col.width,
-                    minWidth: col.width,
-                    maxWidth: col.width,
-                  }}
-                >
-                  {col.label}
-                </TableCell>
-              )
-            )}
-          </TableRow>
-        </TableHead>
-
-
-          <TableBody>
-            {/* ⭐ TOTAL ROW TRÊN CÙNG ⭐ */}
-            <TableRow
-              sx={{
-                bgcolor:
-                  theme.palette.mode === "dark"
-                    ? "rgba(30,41,59,0.55)"
-                    : "rgba(226,232,240,0.6)",
-              }}
-            >
-              <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
-              {TABLE_COLUMNS.map(
-                (col) =>
+                {TABLE_COLUMNS.map(col =>
                   visibleColumns[col.key] && (
                     <TableCell
                       key={col.key}
                       align="right"
-                      sx={{ width: col.width }}
+                      sx={{
+                        width: col.width,
+                        minWidth: col.width,
+                        maxWidth: col.width,
+                      }}
                     >
-                      {col.key === "averageViewDuration"
-                        ? formatSeconds(totals[col.key])
-                        : col.key === "averageViewPercentage"
-                        ? percentStr(totals[col.key])
-                        : formatNumber(totals[col.key])}
+                      {col.label}
                     </TableCell>
                   )
-              )}
-            </TableRow>
+                )}
+              </TableRow>
+            </TableHead>
 
-            {/* DATA ROWS */}
-            {rows.map((r) => (
+
+            <TableBody>
+              {/* ⭐ TOTAL ROW TRÊN CÙNG ⭐ */}
               <TableRow
-                key={r.id}
                 sx={{
-                  transition: "transform 0.2s ease, background-color 0.2s ease",
-                  "&:hover": {
-                    backgroundColor:
-                      theme.palette.mode === "dark"
-                        ? "rgba(51,65,85,0.55)"
-                        : "rgba(226,232,240,0.6)",
-                    transform: "translateY(-1px)",
-                  },
+                  bgcolor:
+                    theme.palette.mode === "dark"
+                      ? "rgba(30,41,59,0.55)"
+                      : "rgba(226,232,240,0.6)",
                 }}
               >
-                <TableCell sx={{ width: 160 }}>{r.label}</TableCell>
-
+                <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
                 {TABLE_COLUMNS.map(
                   (col) =>
                     visibleColumns[col.key] && (
@@ -519,41 +479,76 @@ const GeographyChart = ({ isDashboard = false }) => {
                         align="right"
                         sx={{ width: col.width }}
                       >
-                        {col.key === "views" ? (
-                          <>
-                            {formatNumber(r.views)}{" "}
-                            <span style={{ opacity: 0.6 }}>
-                              ({percentStr(r.viewsPct)})
-                            </span>
-                          </>
-                        ) : col.key === "engagedViews" ? (
-                          <>
-                            {formatNumber(r.engagedViews)}{" "}
-                            <span style={{ opacity: 0.6 }}>
-                              ({percentStr(r.engagedPct)})
-                            </span>
-                          </>
-                        ) : col.key === "watchTimeHours" ? (
-                          <>
-                            {formatNumber(r.watchTimeHours)}{" "}
-                            <span style={{ opacity: 0.6 }}>
-                              ({percentStr(r.watchTimePct)})
-                            </span>
-                          </>
-                        ) : col.key === "averageViewDuration" ? (
-                          formatSeconds(r.averageViewDuration)
-                        ) : col.key === "averageViewPercentage" ? (
-                          percentStr(r.averageViewPercentage)
-                        ) : (
-                          formatNumber(r[col.key])
-                        )}
+                        {col.key === "averageViewDuration"
+                          ? formatSeconds(totals[col.key])
+                          : col.key === "averageViewPercentage"
+                            ? percentStr(totals[col.key])
+                            : formatNumber(totals[col.key])}
                       </TableCell>
                     )
                 )}
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+
+              {/* DATA ROWS */}
+              {rows.map((r) => (
+                <TableRow
+                  key={r.id}
+                  sx={{
+                    transition: "transform 0.2s ease, background-color 0.2s ease",
+                    "&:hover": {
+                      backgroundColor:
+                        theme.palette.mode === "dark"
+                          ? "rgba(51,65,85,0.55)"
+                          : "rgba(226,232,240,0.6)",
+                      transform: "translateY(-1px)",
+                    },
+                  }}
+                >
+                  <TableCell sx={{ width: 160 }}>{r.label}</TableCell>
+
+                  {TABLE_COLUMNS.map(
+                    (col) =>
+                      visibleColumns[col.key] && (
+                        <TableCell
+                          key={col.key}
+                          align="right"
+                          sx={{ width: col.width }}
+                        >
+                          {col.key === "views" ? (
+                            <>
+                              {formatNumber(r.views)}{" "}
+                              <span style={{ opacity: 0.6 }}>
+                                ({percentStr(r.viewsPct)})
+                              </span>
+                            </>
+                          ) : col.key === "engagedViews" ? (
+                            <>
+                              {formatNumber(r.engagedViews)}{" "}
+                              <span style={{ opacity: 0.6 }}>
+                                ({percentStr(r.engagedPct)})
+                              </span>
+                            </>
+                          ) : col.key === "watchTimeHours" ? (
+                            <>
+                              {formatNumber(r.watchTimeHours)}{" "}
+                              <span style={{ opacity: 0.6 }}>
+                                ({percentStr(r.watchTimePct)})
+                              </span>
+                            </>
+                          ) : col.key === "averageViewDuration" ? (
+                            formatSeconds(r.averageViewDuration)
+                          ) : col.key === "averageViewPercentage" ? (
+                            percentStr(r.averageViewPercentage)
+                          ) : (
+                            formatNumber(r[col.key])
+                          )}
+                        </TableCell>
+                      )
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </TableContainer>
       </Box>
     </Stack>

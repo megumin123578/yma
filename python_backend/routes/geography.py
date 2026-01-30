@@ -17,14 +17,16 @@ from python_backend.module_trafficsource import sanitize_filename
 
 router = APIRouter(prefix="/api/geography")
 
-CREDENTIALS_DIR = "./python_backend/credentials"
+TOKEN_DIR = "./python_backend/token"
 
 def load_all_credentials():
     creds = {}
-    for fname in os.listdir(CREDENTIALS_DIR):
-        if fname.endswith(".json"):
-            channel = fname.replace(".json", "")
-            full_path = os.path.join(CREDENTIALS_DIR, fname)
+    if not os.path.exists(TOKEN_DIR):
+        return creds
+    for fname in os.listdir(TOKEN_DIR):
+        if fname.endswith(".pickle"):
+            channel = fname.replace(".pickle", "")
+            full_path = os.path.join(TOKEN_DIR, fname)
             creds[channel] = full_path
     return creds
 

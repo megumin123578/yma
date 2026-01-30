@@ -36,6 +36,10 @@
 
     // TUỲ CHỌN: nếu bạn KHÔNG dùng proxy CRA, set endpoint tuyệt đối:
     // window.__SHEET_ENDPOINT__ = "http://127.0.0.1:8001/api/sheet/append";
+    // Runtime config to avoid relying on build-time environment variables.
+    window.__APP_CONFIG__ = {
+      API_BASE: "https://api.tuanfmcaa.site",
+    };
   </script>
 </body>
 

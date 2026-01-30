@@ -17,7 +17,7 @@ from python_backend.module_trafficsource import create_token_from_credentials
 from python_backend.module_geography import fetch_geography, load_geography_from_postgres, save_geography_to_postgres
 
 router = APIRouter(prefix="/api/video_overview", tags=["video_overview"])
-CREDENTIALS_DIR = "./python_backend/credentials"
+TOKEN_DIR = "./python_backend/token"
 
 
 
@@ -46,12 +46,12 @@ def _allowed_or_hidden_blocked(current_user, db, account_tag: str) -> bool:
 def _load_credential_path(account_tag: str) -> Optional[str]:
     if not account_tag:
         return None
-    direct = os.path.join(CREDENTIALS_DIR, f"{account_tag}.json")
+    direct = os.path.join(TOKEN_DIR, f"{account_tag}.pickle")
     if os.path.exists(direct):
         return direct
     safe = sanitize_filename(account_tag)
     if safe != account_tag:
-        safe_path = os.path.join(CREDENTIALS_DIR, f"{safe}.json")
+        safe_path = os.path.join(TOKEN_DIR, f"{safe}.pickle")
         if os.path.exists(safe_path):
             return safe_path
     return None

@@ -49,7 +49,6 @@ const CredentialsDialog = ({ open, onClose }) => {
   const panel = isDark ? "rgba(20, 28, 40, 0.55)" : "rgba(255,255,255,0.7)";
   const border = isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.08)";
   const accent = isDark ? "#7de0d2" : theme.palette.primary.main;
-  const [file, setFile] = useState(null);
   const [filename, setFilename] = useState("");
   const [status, setStatus] = useState({ type: "", message: "" });
   const [uploading, setUploading] = useState(false);
@@ -146,7 +145,6 @@ const CredentialsDialog = ({ open, onClose }) => {
 
   useEffect(() => {
     if (open) {
-      setFile(null);
       setFilename("");
       setStatus({ type: "", message: "" });
       setUploading(false);
@@ -284,41 +282,13 @@ const CredentialsDialog = ({ open, onClose }) => {
     return () => clearTimeout(timer);
   }, [progress.status, progress.percent, autoReloaded]);
 
-  const handleSelectFile = (event) => {
-    const selected = event.target.files?.[0];
-    if (!selected) return;
-
-    if (!selected.name.toLowerCase().endsWith(".json")) {
-      setStatus({
-        type: "error",
-        message: "Please select a .json credentials file.",
-      });
-      setFile(null);
-      setFilename("");
-      return;
-    }
-
-    setStatus({ type: "", message: "" });
-    setFile(selected);
-    setAuthUrl("");
-    setProgress({ status: "idle", percent: 0, stage: "" });
-    setAutoReloaded(false);
-    const base = selected.name.toLowerCase().endsWith(".json")
-      ? selected.name.slice(0, -5)
-      : selected.name;
-    setFilename(base);
-    handleUpload(selected, base);
-  };
-
   const handleFilenameChange = (event) => {
-    const raw = event.target.value || "";
-    setFilename(raw.toLowerCase().endsWith(".json") ? raw.slice(0, -5) : raw);
+    setFilename(event.target.value || "");
   };
 
-  const handleUpload = async (fileOverride, nameOverride) => {
-    const targetFile = fileOverride || file;
-    const targetName = typeof nameOverride === "string" ? nameOverride : filename;
-    if (!targetFile || uploading) return;
+  const handleStartOAuth = async () => {
+    const targetName = (filename || "").trim();
+    if (!targetName || uploading) return;
 
     setUploading(true);
     setStatus({ type: "", message: "" });
@@ -326,9 +296,10 @@ const CredentialsDialog = ({ open, onClose }) => {
     setAutoReloaded(false);
 
     try {
-      const safeName = targetName.trim() ? `${targetName.trim()}.json` : "";
-      const data = await uploadCredentials(targetFile, safeName);
+      const data = await uploadCredentials(targetName);
       const nextUrl = data?.auth_url || "";
+      const sanitized = data?.account_tag || targetName;
+      setFilename(sanitized);
       setAuthUrl(nextUrl);
       if (!nextUrl) {
         await loadTokens();
@@ -336,12 +307,12 @@ const CredentialsDialog = ({ open, onClose }) => {
       setStatus({
         type: "success",
         message: nextUrl
-          ? "Credentials uploaded. Click the link to authorize."
-          : "Credentials uploaded successfully.",
+          ? "Authorization link created. Click to continue."
+          : "Authorization started.",
       });
     } catch (err) {
       const message =
-        err?.response?.data?.detail || "Upload failed. Please try again.";
+        err?.response?.data?.detail || "Authorization failed. Please try again.";
       setStatus({ type: "error", message });
     } finally {
       setUploading(false);
@@ -592,7 +563,7 @@ const CredentialsDialog = ({ open, onClose }) => {
             Setting
           </Typography>
           <Typography variant="body2" sx={{ color: isDark ? "#aab4c2" : "text.secondary" }}>
-            Setting credentials and schedules for automatic data fetching.
+            Connect Google accounts and schedules for automatic data fetching.
           </Typography>
         </Box>
       </DialogTitle>
@@ -705,13 +676,29 @@ const CredentialsDialog = ({ open, onClose }) => {
                   }}
                 >
                   <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
-                    Upload credentials
+                    Connect Google account
                   </Typography>
+
+                  <TextField
+                    label="Account tag (name to identify this channel)"
+                    size="small"
+                    value={filename}
+                    onChange={handleFilenameChange}
+                    placeholder="e.g. my_channel"
+                    InputLabelProps={{ style: { color: isDark ? "#aab4c2" : undefined } }}
+                    sx={{
+                      input: { color: isDark ? "#e9edf2" : undefined },
+                      "& .MuiOutlinedInput-notchedOutline": {
+                        borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
+                      },
+                    }}
+                  />
 
                   <Button
                     variant="outlined"
-                    component="label"
                     startIcon={<UploadFileIcon />}
+                    onClick={handleStartOAuth}
+                    disabled={!filename.trim() || uploading}
                     sx={{
                       ...shimmerSx,
                       borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
@@ -724,31 +711,8 @@ const CredentialsDialog = ({ open, onClose }) => {
                       },
                     }}
                   >
-                    {file ? file.name : "Choose Credentials file"}
-                    <input
-                      hidden
-                      type="file"
-                      accept=".json,application/json"
-                      onChange={handleSelectFile}
-                    />
+                    Create authorization link
                   </Button>
-
-                  {file && (
-                    <TextField
-                      label="Rename file to: "
-                      size="small"
-                      value={filename}
-                      onChange={handleFilenameChange}
-                      placeholder="example.json"
-                      InputLabelProps={{ style: { color: isDark ? "#aab4c2" : undefined } }}
-                      sx={{
-                        input: { color: isDark ? "#e9edf2" : undefined },
-                        "& .MuiOutlinedInput-notchedOutline": {
-                          borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
-                        },
-                      }}
-                    />
-                  )}
                 </Box>
 
                 {status.message && (
@@ -1345,7 +1309,7 @@ const CredentialsDialog = ({ open, onClose }) => {
         <DialogTitle>Confirm Delete</DialogTitle>
         <DialogContent>
           <Typography variant="body2">
-            This will delete the token and its matching credentials file. Continue?
+            This will delete the token. Continue?
           </Typography>
         </DialogContent>
         <DialogActions>

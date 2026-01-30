@@ -16,18 +16,10 @@ except ModuleNotFoundError:
     from module_channel_daily import run_channel_daily
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-DEFAULT_CREDENTIALS = os.path.join(REPO_ROOT, "python_backend", "credentials")
 DEFAULT_TOKEN = os.path.join(REPO_ROOT, "python_backend", "token")
 
-if os.path.exists(DEFAULT_CREDENTIALS):
-    CREDENTIALS_FOLDER = DEFAULT_CREDENTIALS
 if os.path.exists(DEFAULT_TOKEN):
     TOKEN_FOLDER = DEFAULT_TOKEN
-
-if not os.path.exists(CREDENTIALS_FOLDER):
-    fallback_credentials = os.path.join(os.path.dirname(__file__), "credentials")
-    if os.path.exists(fallback_credentials):
-        CREDENTIALS_FOLDER = fallback_credentials
 
 if not os.path.exists(TOKEN_FOLDER):
     fallback_token = os.path.join(os.path.dirname(__file__), "token")
@@ -35,13 +27,13 @@ if not os.path.exists(TOKEN_FOLDER):
         TOKEN_FOLDER = fallback_token
 
 
-def _resolve_credential_file(name: str) -> str:
+def _resolve_token_file(name: str) -> str:
     base = os.path.basename(name or "")
-    if base.lower().endswith(".pickle"):
-        base = base[:-7]
     if base.lower().endswith(".json"):
         base = base[:-5]
-    return f"{base}.json"
+    if not base.lower().endswith(".pickle"):
+        base = f"{base}.pickle"
+    return base
 
 
 def _progress_path(account_tag: str) -> str:
@@ -177,13 +169,13 @@ def _run_for_credential(cred_file: str) -> None:
             pg_url = os.getenv("PG_URL")
             if not pg_url:
                 raise RuntimeError("Missing PG_URL env var")
-            creds = create_token_from_credentials(os.path.join(CREDENTIALS_FOLDER, cred_file))
+            creds = create_token_from_credentials(os.path.join(TOKEN_FOLDER, cred_file))
             run_audience_analytics(creds, account_tag, pg_url, channel_id=channel_id)
         elif stage == "reach":
             pg_url = os.getenv("PG_URL")
             if not pg_url:
                 raise RuntimeError("Missing PG_URL env var")
-            creds = create_token_from_credentials(os.path.join(CREDENTIALS_FOLDER, cred_file))
+            creds = create_token_from_credentials(os.path.join(TOKEN_FOLDER, cred_file))
             run_reach_analytics(creds, account_tag, pg_url, channel_id=channel_id)
         elif stage == "traffic_source":
             process_one(cred_file, channel_id=channel_id)
@@ -191,7 +183,7 @@ def _run_for_credential(cred_file: str) -> None:
             pg_url = os.getenv("PG_URL")
             if not pg_url:
                 raise RuntimeError("Missing PG_URL env var")
-            creds = create_token_from_credentials(os.path.join(CREDENTIALS_FOLDER, cred_file))
+            creds = create_token_from_credentials(os.path.join(TOKEN_FOLDER, cred_file))
             run_revenue_analytics(creds, account_tag, pg_url, channel_id=channel_id)
         else:
             raise RuntimeError(f"Unsupported stage: {stage}")
@@ -216,7 +208,7 @@ def _run_for_credential(cred_file: str) -> None:
     pg_url = os.getenv("PG_URL")
     if not pg_url:
         raise RuntimeError("Missing PG_URL env var")
-    creds = create_token_from_credentials(os.path.join(CREDENTIALS_FOLDER, cred_file))
+    creds = create_token_from_credentials(os.path.join(TOKEN_FOLDER, cred_file))
     run_audience_analytics(creds, account_tag, pg_url, channel_id=channel_id)
     _update_schedule_run("running", 4, 6, "Audience done")
     _raise_if_stop_requested(account_tag, "stopped")
@@ -231,28 +223,19 @@ def _run_for_credential(cred_file: str) -> None:
 
 
 def main():
-    if not os.path.exists(CREDENTIALS_FOLDER):
-        print(f"Credentials folder '{CREDENTIALS_FOLDER}' does not exist.")
-        return
-
     os.makedirs(TOKEN_FOLDER, exist_ok=True)
 
     target_arg = sys.argv[1] if len(sys.argv) > 1 else ""
 
-    files = [f for f in os.listdir(CREDENTIALS_FOLDER) if f.endswith(".json")]
-    if not files:
-        print(f"No credentials files found in {CREDENTIALS_FOLDER}.")
-        return
-
     token_files = [f for f in os.listdir(TOKEN_FOLDER) if f.endswith(".pickle")]
 
     if target_arg:
-        cred_file = _resolve_credential_file(target_arg)
-        cred_path = os.path.join(CREDENTIALS_FOLDER, cred_file)
+        cred_file = _resolve_token_file(target_arg)
+        token_path = os.path.join(TOKEN_FOLDER, cred_file)
         account_tag = os.path.splitext(os.path.basename(cred_file))[0]
-        if not os.path.exists(cred_path):
-            _write_progress(account_tag, "error", 0, "error", "Credential file not found")
-            print(f"Credential file not found: {cred_file}")
+        if not os.path.exists(token_path):
+            _write_progress(account_tag, "error", 0, "error", "Token not found")
+            print(f"Token not found: {cred_file}")
             return
         try:
             _update_schedule_run("running", 0, 1, "Processing 1 account")
@@ -279,14 +262,7 @@ def main():
     _update_schedule_run("running", 0, total, "Processing tokens")
     for token_file in token_files:
         account_tag = os.path.splitext(os.path.basename(token_file))[0]
-        cred_file = _resolve_credential_file(token_file)
-        cred_path = os.path.join(CREDENTIALS_FOLDER, cred_file)
-        if not os.path.exists(cred_path):
-            _write_progress(account_tag, "error", 0, "error", "Credential file not found")
-            _update_schedule_run(
-                "running", ok, total, f"Missing credentials for {account_tag}"
-            )
-            continue
+        cred_file = _resolve_token_file(token_file)
         try:
             _run_for_credential(cred_file)
             ok += 1

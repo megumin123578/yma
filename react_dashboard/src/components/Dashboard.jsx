@@ -22,7 +22,7 @@ import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined
 import { ResponsiveChoropleth } from "@nivo/geo";
 import { tokens } from "../theme";
 import Header from "./Header";
-import { API_BASE } from "../config";
+import api from "../services/api";
 import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { geoFeatures } from "../data/mockGeoFeatures";
 import {
@@ -72,11 +72,6 @@ const VideoList = () => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
   const textOnDark = "#fff";
-  const apiBase = API_BASE;
-  const authHeaders = useMemo(() => {
-    const token = localStorage.getItem("access_token");
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
 
   const [channels, setChannels] = useState([]);
   const [selectedChannel, setSelectedChannel] = useState(() => {
@@ -270,11 +265,8 @@ const VideoList = () => {
     const fetchChannels = async () => {
       try {
         setLoadingChannels(true);
-        const res = await fetch(`${apiBase}/api/video_overview/channels`, {
-          headers: authHeaders,
-        });
-        if (!res.ok) throw new Error("Failed to load channels");
-        const data = await res.json();
+        const res = await api.get("/api/video_overview/channels");
+        const data = res.data;
         const items = data.items || [];
         const order = (() => {
           try {
@@ -310,7 +302,7 @@ const VideoList = () => {
     };
 
     fetchChannels();
-  }, [apiBase, authHeaders, selectedChannel]);
+  }, [selectedChannel]);
 
   useEffect(() => {
     if (!selectedChannel) return;
@@ -342,14 +334,12 @@ const VideoList = () => {
       try {
         setLoadingVideos(true);
         setError("");
-        const res = await fetch(
-          `${apiBase}/api/video_overview/videos?accountTag=${encodeURIComponent(
+        const res = await api.get(
+          `/api/video_overview/videos?accountTag=${encodeURIComponent(
             selectedChannel
-          )}`,
-          { headers: authHeaders }
+          )}`
         );
-        if (!res.ok) throw new Error("Failed to load videos");
-        const data = await res.json();
+        const data = res.data;
         setVideos(data || []);
       } catch (err) {
         console.error(err);
@@ -360,7 +350,7 @@ const VideoList = () => {
     };
 
     fetchVideos();
-  }, [apiBase, selectedChannel, authHeaders]);
+  }, [selectedChannel]);
 
   useEffect(() => {
     if (!selectedChannel) return;
@@ -373,51 +363,38 @@ const VideoList = () => {
           subsResp,
           revenueResp,
         ] = await Promise.all([
-          fetch(
-            `${apiBase}/api/video_overview/top_keywords?accountTag=${encodeURIComponent(
+          api.get(
+            `/api/video_overview/top_keywords?accountTag=${encodeURIComponent(
               selectedChannel
-            )}&limit=${keywordLimit}&range=${overviewRange}`,
-            { headers: authHeaders }
+            )}&limit=${keywordLimit}&range=${overviewRange}`
           ),
-          fetch(
-            `${apiBase}/api/video_overview/top_sources?accountTag=${encodeURIComponent(
+          api.get(
+            `/api/video_overview/top_sources?accountTag=${encodeURIComponent(
               selectedChannel
-            )}&limit=${sourceLimit}&range=${overviewRange}`,
-            { headers: authHeaders }
+            )}&limit=${sourceLimit}&range=${overviewRange}`
           ),
-          fetch(
-            `${apiBase}/api/video_overview/views_by_country?accountTag=${encodeURIComponent(
+          api.get(
+            `/api/video_overview/views_by_country?accountTag=${encodeURIComponent(
               selectedChannel
-            )}&range=${overviewRange}`,
-            { headers: authHeaders }
+            )}&range=${overviewRange}`
           ),
-          fetch(
-            `${apiBase}/api/video_overview/subscribers_timeseries?accountTag=${encodeURIComponent(
+          api.get(
+            `/api/video_overview/subscribers_timeseries?accountTag=${encodeURIComponent(
               selectedChannel
-            )}&days=${rangeDays}`,
-            { headers: authHeaders }
+            )}&days=${rangeDays}`
           ),
-          fetch(
-            `${apiBase}/api/revenue?accountTag=${encodeURIComponent(
+          api.get(
+            `/api/revenue?accountTag=${encodeURIComponent(
               selectedChannel
-            )}&range=${overviewRange}`,
-            { headers: authHeaders }
+            )}&range=${overviewRange}`
           ),
         ]);
 
-        const [
-          topKeywordsData,
-          topSourcesData,
-          countryData,
-          subsData,
-          revenueData,
-        ] = await Promise.all([
-          topKeywordsResp.ok ? topKeywordsResp.json() : [],
-          topSourcesResp.ok ? topSourcesResp.json() : [],
-          countryResp.ok ? countryResp.json() : { rows: [] },
-          subsResp.ok ? subsResp.json() : [],
-          revenueResp.ok ? revenueResp.json() : { rows: [] },
-        ]);
+        const topKeywordsData = topKeywordsResp.data;
+        const topSourcesData = topSourcesResp.data;
+        const countryData = countryResp.data;
+        const subsData = subsResp.data;
+        const revenueData = revenueResp.data;
 
         setAnimateOverviewBars(false);
         setTopKeywords(Array.isArray(topKeywordsData) ? topKeywordsData : []);
@@ -438,9 +415,7 @@ const VideoList = () => {
 
     fetchOverviewExtras();
   }, [
-    apiBase,
     selectedChannel,
-    authHeaders,
     overviewRange,
     rangeDays,
     keywordLimit,
@@ -470,7 +445,7 @@ const VideoList = () => {
     const year = d.getFullYear().toString().slice(-2); // "YY"
 
     return `${day}/${month}/${year}`; // dd/mm/YY
-    };
+  };
 
   const formatDateFull = (iso) => {
     if (!iso) return "-";
@@ -835,160 +810,160 @@ const VideoList = () => {
           <Box
             mt={2}
             sx={{
-            display: "grid",
-            gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
-            gap: 2,
-            width: "100%",
-          }}
-        >
-          <Box sx={{ display: "flex" }}>
-            <Box sx={{ ...sectionSx, p: 4, minHeight: 560, width: "100%" }}>
-              <Typography variant="h5" fontWeight={700} mb={2}>
-                Subscribers ({rangeLabel})
-              </Typography>
-              {subscribersSeries.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">
-                  No data
+              display: "grid",
+              gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+              gap: 2,
+              width: "100%",
+            }}
+          >
+            <Box sx={{ display: "flex" }}>
+              <Box sx={{ ...sectionSx, p: 4, minHeight: 560, width: "100%" }}>
+                <Typography variant="h5" fontWeight={700} mb={2}>
+                  Subscribers ({rangeLabel})
                 </Typography>
-              ) : (
-                <>
-                  <Grid container spacing={2} mb={2}>
-                    <Grid size={{ xs: 12, md: 3 }}>
-                      <Box sx={statCardSx}>
-                        <Typography variant="body2" color="text.secondary">
-                          Gained
-                        </Typography>
-                        <Typography variant="h5" fontWeight={700}>
-                          {formatNumber(subscribersSummary.stats.gained)}
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          sx={{ color: pctColor(subscribersSummary.stats.gainedPct) }}
-                        >
-                          {formatPct(subscribersSummary.stats.gainedPct)}
-                        </Typography>
-                      </Box>
+                {subscribersSeries.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    No data
+                  </Typography>
+                ) : (
+                  <>
+                    <Grid container spacing={2} mb={2}>
+                      <Grid size={{ xs: 12, md: 3 }}>
+                        <Box sx={statCardSx}>
+                          <Typography variant="body2" color="text.secondary">
+                            Gained
+                          </Typography>
+                          <Typography variant="h5" fontWeight={700}>
+                            {formatNumber(subscribersSummary.stats.gained)}
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{ color: pctColor(subscribersSummary.stats.gainedPct) }}
+                          >
+                            {formatPct(subscribersSummary.stats.gainedPct)}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 3 }}>
+                        <Box sx={statCardSx}>
+                          <Typography variant="body2" color="text.secondary">
+                            Lost
+                          </Typography>
+                          <Typography variant="h5" fontWeight={700}>
+                            {formatNumber(subscribersSummary.stats.lost)}
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{ color: pctColor(-subscribersSummary.stats.lostPct) }}
+                          >
+                            {formatPct(subscribersSummary.stats.lostPct)}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 3 }}>
+                        <Box sx={statCardSx}>
+                          <Typography variant="body2" color="text.secondary">
+                            Change
+                          </Typography>
+                          <Typography variant="h5" fontWeight={700}>
+                            {formatNumber(subscribersSummary.stats.change)}
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{ color: pctColor(subscribersSummary.stats.changePct) }}
+                          >
+                            {formatPct(subscribersSummary.stats.changePct)}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 3 }}>
+                        <Box sx={statCardSx}>
+                          <Typography variant="body2" color="text.secondary">
+                            Avg daily change
+                          </Typography>
+                          <Typography variant="h5" fontWeight={700}>
+                            {formatNumber(Math.round(subscribersSummary.stats.avg))}
+                          </Typography>
+                          <Typography
+                            variant="body2"
+                            sx={{ color: pctColor(subscribersSummary.stats.avgPct) }}
+                          >
+                            {formatPct(subscribersSummary.stats.avgPct)}
+                          </Typography>
+                        </Box>
+                      </Grid>
                     </Grid>
-                    <Grid size={{ xs: 12, md: 3 }}>
-                      <Box sx={statCardSx}>
-                        <Typography variant="body2" color="text.secondary">
-                          Lost
-                        </Typography>
-                        <Typography variant="h5" fontWeight={700}>
-                          {formatNumber(subscribersSummary.stats.lost)}
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          sx={{ color: pctColor(-subscribersSummary.stats.lostPct) }}
-                        >
-                          {formatPct(subscribersSummary.stats.lostPct)}
-                        </Typography>
-                      </Box>
-                    </Grid>
-                    <Grid size={{ xs: 12, md: 3 }}>
-                      <Box sx={statCardSx}>
-                        <Typography variant="body2" color="text.secondary">
-                          Change
-                        </Typography>
-                        <Typography variant="h5" fontWeight={700}>
-                          {formatNumber(subscribersSummary.stats.change)}
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          sx={{ color: pctColor(subscribersSummary.stats.changePct) }}
-                        >
-                          {formatPct(subscribersSummary.stats.changePct)}
-                        </Typography>
-                      </Box>
-                    </Grid>
-                    <Grid size={{ xs: 12, md: 3 }}>
-                      <Box sx={statCardSx}>
-                        <Typography variant="body2" color="text.secondary">
-                          Avg daily change
-                        </Typography>
-                        <Typography variant="h5" fontWeight={700}>
-                          {formatNumber(Math.round(subscribersSummary.stats.avg))}
-                        </Typography>
-                        <Typography
-                          variant="body2"
-                          sx={{ color: pctColor(subscribersSummary.stats.avgPct) }}
-                        >
-                          {formatPct(subscribersSummary.stats.avgPct)}
-                        </Typography>
-                      </Box>
-                    </Grid>
-                  </Grid>
 
-                  <Grid container spacing={2} sx={{ minWidth: 0 }}>
-                    <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
-                      <Box sx={{ ...chartCardSx, minWidth: 0, width: "100%" }}>
-                        <Typography variant="subtitle1" fontWeight={700} mb={0.5}>
-                          Gained
-                        </Typography>
-                        <Box sx={{ width: "100%", minWidth: 0, minHeight: 0 }}>
-                          <ResponsiveContainer width="100%" height={320} minWidth={0} minHeight={0}>
-                            <BarChart
-                              data={subscribersSummary.chart}
-                              margin={{ top: 4, right: 6, left: -30, bottom: -6 }}
-                            >
-                              <CartesianGrid
-                                stroke="rgba(148,163,184,0.2)"
-                                strokeDasharray="3 3"
-                              />
-                              <XAxis
-                                dataKey="day"
-                                tick={{ fontSize: 11 }}
-                                ticks={subscribersXAxisTicks}
+                    <Grid container spacing={2} sx={{ minWidth: 0 }}>
+                      <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
+                        <Box sx={{ ...chartCardSx, minWidth: 0, width: "100%" }}>
+                          <Typography variant="subtitle1" fontWeight={700} mb={0.5}>
+                            Gained
+                          </Typography>
+                          <Box sx={{ width: "100%", minWidth: 0, minHeight: 0 }}>
+                            <ResponsiveContainer width="100%" height={320} minWidth={0} minHeight={0}>
+                              <BarChart
+                                data={subscribersSummary.chart}
+                                margin={{ top: 4, right: 6, left: -30, bottom: -6 }}
+                              >
+                                <CartesianGrid
+                                  stroke="rgba(148,163,184,0.2)"
+                                  strokeDasharray="3 3"
+                                />
+                                <XAxis
+                                  dataKey="day"
+                                  tick={{ fontSize: 11 }}
+                                  ticks={subscribersXAxisTicks}
                                   tickFormatter={formatDateMonth}
-                              />
-                              <YAxis tickFormatter={formatNumber} />
-                              <Tooltip
-                                {...chartTooltipStyles}
-                                labelFormatter={formatDateFull}
-                              />
-                              <Bar dataKey="gained" fill="#22c55e" radius={[6, 6, 0, 0]} />
-                            </BarChart>
-                          </ResponsiveContainer>
+                                />
+                                <YAxis tickFormatter={formatNumber} />
+                                <Tooltip
+                                  {...chartTooltipStyles}
+                                  labelFormatter={formatDateFull}
+                                />
+                                <Bar dataKey="gained" fill="#22c55e" radius={[6, 6, 0, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </Box>
                         </Box>
-                      </Box>
-                    </Grid>
-                    <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
-                      <Box sx={{ ...chartCardSx, minWidth: 0, width: "100%" }}>
-                        <Typography variant="subtitle1" fontWeight={700} mb={0.5}>
-                          Change
-                        </Typography>
-                        <Box sx={{ width: "100%", minWidth: 0, minHeight: 0 }}>
-                          <ResponsiveContainer width="100%" height={320} minWidth={0} minHeight={0}>
-                            <BarChart
-                              data={subscribersSummary.chart}
-                              margin={{ top: 4, right: 6, left: -30, bottom: -6 }}
-                            >
-                              <CartesianGrid
-                                stroke="rgba(148,163,184,0.2)"
-                                strokeDasharray="3 3"
-                              />
-                              <XAxis
-                                dataKey="day"
-                                tick={{ fontSize: 11 }}
-                                ticks={subscribersXAxisTicks}
+                      </Grid>
+                      <Grid size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
+                        <Box sx={{ ...chartCardSx, minWidth: 0, width: "100%" }}>
+                          <Typography variant="subtitle1" fontWeight={700} mb={0.5}>
+                            Change
+                          </Typography>
+                          <Box sx={{ width: "100%", minWidth: 0, minHeight: 0 }}>
+                            <ResponsiveContainer width="100%" height={320} minWidth={0} minHeight={0}>
+                              <BarChart
+                                data={subscribersSummary.chart}
+                                margin={{ top: 4, right: 6, left: -30, bottom: -6 }}
+                              >
+                                <CartesianGrid
+                                  stroke="rgba(148,163,184,0.2)"
+                                  strokeDasharray="3 3"
+                                />
+                                <XAxis
+                                  dataKey="day"
+                                  tick={{ fontSize: 11 }}
+                                  ticks={subscribersXAxisTicks}
                                   tickFormatter={formatDateMonth}
-                              />
-                              <YAxis tickFormatter={formatNumber} />
-                              <Tooltip
-                                {...chartTooltipStyles}
-                                labelFormatter={formatDateFull}
-                              />
-                              <Bar dataKey="change" fill="#7c3aed" radius={[6, 6, 0, 0]} />
-                            </BarChart>
-                          </ResponsiveContainer>
+                                />
+                                <YAxis tickFormatter={formatNumber} />
+                                <Tooltip
+                                  {...chartTooltipStyles}
+                                  labelFormatter={formatDateFull}
+                                />
+                                <Bar dataKey="change" fill="#7c3aed" radius={[6, 6, 0, 0]} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </Box>
                         </Box>
-                      </Box>
+                      </Grid>
                     </Grid>
-                  </Grid>
-                </>
-              )}
+                  </>
+                )}
+              </Box>
             </Box>
-          </Box>
             <Box sx={{ display: "flex" }}>
               <Box sx={{ ...sectionSx, p: 4, minHeight: 560, width: "100%" }}>
                 <Typography variant="subtitle1" fontWeight={700} mb={1}>
@@ -1001,7 +976,7 @@ const VideoList = () => {
                 ) : (
                   <>
                     <Stack spacing={1.5} alignItems="flex-end">
-                      <Box display="flex" alignItems="baseline" gap={1.5} sx={{ textAlign: "left", minWidth:100 }}>
+                      <Box display="flex" alignItems="baseline" gap={1.5} sx={{ textAlign: "left", minWidth: 100 }}>
                         <Typography variant="body2" color="text.secondary">
                           Estimated
                         </Typography>
@@ -1080,7 +1055,7 @@ const VideoList = () => {
                 )}
               </Box>
             </Box>
-        </Box>
+          </Box>
 
           <Box
             mt={2}
@@ -1092,41 +1067,41 @@ const VideoList = () => {
             }}
           >
             <Box sx={{ ...sectionSx, p: 3 }}>
-            <Typography variant="subtitle1" fontWeight={700} mb={1}>
-              Top 10 keywords by views ({rangeLabel})
-            </Typography>
-            {topKeywords.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No data
+              <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                Top 10 keywords by views ({rangeLabel})
               </Typography>
-            ) : (
-              <>
-                <Stack spacing={1}>
-                  {topKeywords.map((k) => {
-                    const value = Number(k.views) || 0;
-                    const pct = Math.max(
-                      6,
-                      Math.round((value / topKeywordMax) * 100)
-                    );
-                    return (
-                      <Box key={k.keyword}>
-                        <Box display="flex" justifyContent="space-between" mb={0.5}>
-                          <Typography variant="body2">{k.keyword}</Typography>
-                          <Typography variant="body2" fontWeight={600}>
-                            {formatNumber(value)}
-                          </Typography>
-                        </Box>
-                        <Box
-                          sx={{
-                            height: 8,
-                            borderRadius: 999,
-                            bgcolor:
-                              theme.palette.mode === "dark"
-                                ? "rgba(148,163,184,0.2)"
-                                : "rgba(15,23,42,0.12)",
-                            overflow: "hidden",
-                          }}
-                        >
+              {topKeywords.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No data
+                </Typography>
+              ) : (
+                <>
+                  <Stack spacing={1}>
+                    {topKeywords.map((k) => {
+                      const value = Number(k.views) || 0;
+                      const pct = Math.max(
+                        6,
+                        Math.round((value / topKeywordMax) * 100)
+                      );
+                      return (
+                        <Box key={k.keyword}>
+                          <Box display="flex" justifyContent="space-between" mb={0.5}>
+                            <Typography variant="body2">{k.keyword}</Typography>
+                            <Typography variant="body2" fontWeight={600}>
+                              {formatNumber(value)}
+                            </Typography>
+                          </Box>
+                          <Box
+                            sx={{
+                              height: 8,
+                              borderRadius: 999,
+                              bgcolor:
+                                theme.palette.mode === "dark"
+                                  ? "rgba(148,163,184,0.2)"
+                                  : "rgba(15,23,42,0.12)",
+                              overflow: "hidden",
+                            }}
+                          >
                             <Box
                               sx={{
                                 width: animateOverviewBars ? `${pct}%` : 0,
@@ -1139,90 +1114,90 @@ const VideoList = () => {
                                 transition: "width 0.5s ease",
                               }}
                             />
+                          </Box>
                         </Box>
-                      </Box>
-                    );
-                  })}
-                </Stack>
-                {canLoadMoreKeywords && (
-                  <Box mt={2} display="flex" justifyContent="center">
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      sx={{
-                        transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                        color:
-                          theme.palette.mode === "dark" ? "#e2e8f0" : "#0f172a",
-                        borderColor:
-                          theme.palette.mode === "dark"
-                            ? "rgba(148,163,184,0.5)"
-                            : "rgba(15,23,42,0.25)",
-                        "&:hover": {
-                          transform: "translateY(-1px)",
-                          boxShadow:
-                            theme.palette.mode === "dark"
-                              ? "0 8px 18px rgba(2,6,23,0.5)"
-                              : "0 8px 18px rgba(15,23,42,0.12)",
+                      );
+                    })}
+                  </Stack>
+                  {canLoadMoreKeywords && (
+                    <Box mt={2} display="flex" justifyContent="center">
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        sx={{
+                          transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                          color:
+                            theme.palette.mode === "dark" ? "#e2e8f0" : "#0f172a",
                           borderColor:
                             theme.palette.mode === "dark"
-                              ? "rgba(148,163,184,0.9)"
-                              : "rgba(15,23,42,0.5)",
-                          backgroundColor:
-                            theme.palette.mode === "dark"
-                              ? "rgba(148,163,184,0.12)"
-                              : "rgba(15,23,42,0.04)",
-                        },
-                      }}
-                      onClick={() =>
-                        setKeywordLimit((prev) =>
-                          Math.min(prev + OVERVIEW_LIMIT_STEP, OVERVIEW_LIMIT_MAX)
-                        )
-                      }
-                    >
-                      Load more
-                    </Button>
-                  </Box>
-                )}
+                              ? "rgba(148,163,184,0.5)"
+                              : "rgba(15,23,42,0.25)",
+                          "&:hover": {
+                            transform: "translateY(-1px)",
+                            boxShadow:
+                              theme.palette.mode === "dark"
+                                ? "0 8px 18px rgba(2,6,23,0.5)"
+                                : "0 8px 18px rgba(15,23,42,0.12)",
+                            borderColor:
+                              theme.palette.mode === "dark"
+                                ? "rgba(148,163,184,0.9)"
+                                : "rgba(15,23,42,0.5)",
+                            backgroundColor:
+                              theme.palette.mode === "dark"
+                                ? "rgba(148,163,184,0.12)"
+                                : "rgba(15,23,42,0.04)",
+                          },
+                        }}
+                        onClick={() =>
+                          setKeywordLimit((prev) =>
+                            Math.min(prev + OVERVIEW_LIMIT_STEP, OVERVIEW_LIMIT_MAX)
+                          )
+                        }
+                      >
+                        Load more
+                      </Button>
+                    </Box>
+                  )}
                 </>
               )}
             </Box>
 
             <Box sx={{ ...sectionSx, p: 3 }}>
-            <Typography variant="subtitle1" fontWeight={700} mb={1}>
-              Top 10 sources by views ({rangeLabel})
-            </Typography>
-            {topSources.length === 0 ? (
-              <Typography variant="body2" color="text.secondary">
-                No data
+              <Typography variant="subtitle1" fontWeight={700} mb={1}>
+                Top 10 sources by views ({rangeLabel})
               </Typography>
-            ) : (
-              <>
-                <Stack spacing={1}>
-                  {topSources.map((s) => {
-                    const value = Number(s.views) || 0;
-                    const pct = Math.max(
-                      6,
-                      Math.round((value / topSourceMax) * 100)
-                    );
-                    return (
-                      <Box key={s.source}>
-                        <Box display="flex" justifyContent="space-between" mb={0.5}>
-                          <Typography variant="body2">{s.source}</Typography>
-                          <Typography variant="body2" fontWeight={600}>
-                            {formatNumber(value)}
-                          </Typography>
-                        </Box>
-                        <Box
-                          sx={{
-                            height: 8,
-                            borderRadius: 999,
-                            bgcolor:
-                              theme.palette.mode === "dark"
-                                ? "rgba(148,163,184,0.2)"
-                                : "rgba(15,23,42,0.12)",
-                            overflow: "hidden",
-                          }}
-                        >
+              {topSources.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No data
+                </Typography>
+              ) : (
+                <>
+                  <Stack spacing={1}>
+                    {topSources.map((s) => {
+                      const value = Number(s.views) || 0;
+                      const pct = Math.max(
+                        6,
+                        Math.round((value / topSourceMax) * 100)
+                      );
+                      return (
+                        <Box key={s.source}>
+                          <Box display="flex" justifyContent="space-between" mb={0.5}>
+                            <Typography variant="body2">{s.source}</Typography>
+                            <Typography variant="body2" fontWeight={600}>
+                              {formatNumber(value)}
+                            </Typography>
+                          </Box>
+                          <Box
+                            sx={{
+                              height: 8,
+                              borderRadius: 999,
+                              bgcolor:
+                                theme.palette.mode === "dark"
+                                  ? "rgba(148,163,184,0.2)"
+                                  : "rgba(15,23,42,0.12)",
+                              overflow: "hidden",
+                            }}
+                          >
                             <Box
                               sx={{
                                 width: animateOverviewBars ? `${pct}%` : 0,
@@ -1235,50 +1210,50 @@ const VideoList = () => {
                                 transition: "width 0.5s ease",
                               }}
                             />
+                          </Box>
                         </Box>
-                      </Box>
-                    );
-                  })}
-                </Stack>
-                {canLoadMoreSources && (
-                  <Box mt={2} display="flex" justifyContent="center">
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      sx={{
-                        transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                        color:
-                          theme.palette.mode === "dark" ? "#e2e8f0" : "#0f172a",
-                        borderColor:
-                          theme.palette.mode === "dark"
-                            ? "rgba(148,163,184,0.5)"
-                            : "rgba(15,23,42,0.25)",
-                        "&:hover": {
-                          transform: "translateY(-1px)",
-                          boxShadow:
-                            theme.palette.mode === "dark"
-                              ? "0 8px 18px rgba(2,6,23,0.5)"
-                              : "0 8px 18px rgba(15,23,42,0.12)",
+                      );
+                    })}
+                  </Stack>
+                  {canLoadMoreSources && (
+                    <Box mt={2} display="flex" justifyContent="center">
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        sx={{
+                          transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                          color:
+                            theme.palette.mode === "dark" ? "#e2e8f0" : "#0f172a",
                           borderColor:
                             theme.palette.mode === "dark"
-                              ? "rgba(148,163,184,0.9)"
-                              : "rgba(15,23,42,0.5)",
-                          backgroundColor:
-                            theme.palette.mode === "dark"
-                              ? "rgba(148,163,184,0.12)"
-                              : "rgba(15,23,42,0.04)",
-                        },
-                      }}
-                      onClick={() =>
-                        setSourceLimit((prev) =>
-                          Math.min(prev + OVERVIEW_LIMIT_STEP, OVERVIEW_LIMIT_MAX)
-                        )
-                      }
-                    >
-                      Load more
-                    </Button>
-                  </Box>
-                )}
+                              ? "rgba(148,163,184,0.5)"
+                              : "rgba(15,23,42,0.25)",
+                          "&:hover": {
+                            transform: "translateY(-1px)",
+                            boxShadow:
+                              theme.palette.mode === "dark"
+                                ? "0 8px 18px rgba(2,6,23,0.5)"
+                                : "0 8px 18px rgba(15,23,42,0.12)",
+                            borderColor:
+                              theme.palette.mode === "dark"
+                                ? "rgba(148,163,184,0.9)"
+                                : "rgba(15,23,42,0.5)",
+                            backgroundColor:
+                              theme.palette.mode === "dark"
+                                ? "rgba(148,163,184,0.12)"
+                                : "rgba(15,23,42,0.04)",
+                          },
+                        }}
+                        onClick={() =>
+                          setSourceLimit((prev) =>
+                            Math.min(prev + OVERVIEW_LIMIT_STEP, OVERVIEW_LIMIT_MAX)
+                          )
+                        }
+                      >
+                        Load more
+                      </Button>
+                    </Box>
+                  )}
                 </>
               )}
             </Box>
@@ -1379,8 +1354,8 @@ const VideoList = () => {
                 </>
               )}
             </Box>
-            </Box>
-  
+          </Box>
+
           <Box mt={2} sx={sectionSx}>
             <Typography variant="subtitle1" fontWeight={700} mb={1}>
               Latest 5 videos
@@ -1389,10 +1364,10 @@ const VideoList = () => {
               {latestVideos.map((v, idx) => renderVideoCard(v, idx))}
             </Box>
           </Box>
-  
-            
-          </>
-        )}
+
+
+        </>
+      )}
     </Box>
   );
 };

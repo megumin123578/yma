@@ -35,7 +35,7 @@ import {
   pickTicks, // dùng để chọn ít tick ngày
 } from "./Module";
 
-import { API_BASE } from "../config";
+import api from "../services/api";
 
 /* Extra periods – chỉ khai báo value + label (không chứa ngày) */
 const EXTRA_PERIODS = [
@@ -64,6 +64,78 @@ const formatMetricValue = (metric, v) => {
   return formatNumber(v);
 };
 
+const VideoThumbnail = ({ src, videoId, alt, duration }) => {
+  const theme = useTheme();
+  const [currentSrc, setCurrentSrc] = useState(src);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setCurrentSrc(src);
+    setHasError(false);
+  }, [src]);
+
+  // Better retry logic:
+  const handleImgError = (e) => {
+    if (videoId && currentSrc.includes("mqdefault")) {
+      setCurrentSrc(`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`);
+    } else if (videoId && currentSrc.includes("hqdefault")) {
+      setCurrentSrc(`https://i.ytimg.com/vi/${videoId}/default.jpg`);
+    } else {
+      setHasError(true);
+    }
+  };
+
+  if (hasError || !currentSrc) {
+    return (
+      <Box
+        sx={{
+          width: 90,
+          aspectRatio: "16/9",
+          borderRadius: 1.5,
+          bgcolor: theme.palette.mode === "dark" ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          border: "1px solid",
+          borderColor: theme.palette.divider,
+        }}
+      >
+        {/* Optional: Icon for missing image? */}
+      </Box>
+    );
+  }
+
+  return (
+    <Box sx={{ position: "relative", display: "inline-flex" }}>
+      <img
+        src={currentSrc}
+        width={90}
+        style={{ borderRadius: 6 }}
+        alt={alt || ""}
+        onError={handleImgError}
+      />
+      {duration != null && (
+        <Box
+          sx={{
+            position: "absolute",
+            right: 4,
+            bottom: 4,
+            px: 0.5,
+            py: 0.25,
+            borderRadius: 0.75,
+            fontSize: 11,
+            fontWeight: 600,
+            color: "#fff",
+            backgroundColor: "rgba(15,23,42,0.8)",
+          }}
+        >
+          {formatDuration(duration)}
+        </Box>
+      )}
+    </Box>
+  );
+};
+
 const ContentAnalytics = () => {
   const theme = useTheme();
 
@@ -84,21 +156,14 @@ const ContentAnalytics = () => {
   });
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const authHeaders = useMemo(() => {
-    const token = localStorage.getItem("access_token");
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
-
   /* ================================
      LOAD CHANNELS
   ================================= */
   useEffect(() => {
     (async () => {
       try {
-        const resp = await fetch(`${API_BASE}/api/content/channels`, {
-          headers: authHeaders,
-        });
-        const data = await resp.json();
+        const resp = await api.get("/api/content/channels");
+        const data = resp.data;
 
         const items =
           data.items?.map((c) => ({
@@ -134,7 +199,7 @@ const ContentAnalytics = () => {
         console.error("Load channels failed:", err);
       }
     })();
-  }, [channelId, authHeaders]);
+  }, [channelId]);
 
   useEffect(() => {
     if (!channelId) return;
@@ -152,40 +217,40 @@ const ContentAnalytics = () => {
     async (start, end) => {
       if (!channelId) return;
       try {
-        const resp = await fetch(`${API_BASE}/api/content/list`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders },
-          body: JSON.stringify({ start, end, channelId }),
+        const resp = await api.post("/api/content/list", {
+          start,
+          end,
+          channelId,
         });
 
-        const raw = await resp.json();
+        const raw = resp.data;
         setVideos(raw.items ?? []);
       } catch (err) {
         console.error("Fetch videos failed:", err);
         setVideos([]);
       }
     },
-    [channelId, authHeaders]
+    [channelId]
   );
 
   const fetchTimeseries = useCallback(
     async (start, end) => {
       if (!channelId) return;
       try {
-        const resp = await fetch(`${API_BASE}/api/content/timeseries`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders },
-          body: JSON.stringify({ start, end, channelId }),
+        const resp = await api.post("/api/content/timeseries", {
+          start,
+          end,
+          channelId,
         });
 
-        const raw = await resp.json();
+        const raw = resp.data;
         setTimeseries(raw.items ?? []);
       } catch (err) {
         console.error("Fetch timeseries failed:", err);
         setTimeseries([]);
       }
     },
-    [channelId, authHeaders]
+    [channelId]
   );
 
 
@@ -504,11 +569,10 @@ const ContentAnalytics = () => {
           height: 420,
           minWidth: 320,
           borderRadius: 2,
-          border: `1px solid ${
-            theme.palette.mode === "dark"
-              ? "rgba(255,255,255,0.08)"
-              : "rgba(0,0,0,0.06)"
-          }`,
+          border: `1px solid ${theme.palette.mode === "dark"
+            ? "rgba(255,255,255,0.08)"
+            : "rgba(0,0,0,0.06)"
+            }`,
           p: 1,
         }}
       >
@@ -625,39 +689,39 @@ const ContentAnalytics = () => {
                     .sort((a, b) => (b.data.y ?? 0) - (a.data.y ?? 0))
                     .slice(0, 5)
                     .map((p) => {
-                    const value = formatMetricValue(metric, p.data.y);
-                    const name = p.data.title || p.serieId;
-                    const label =
-                      name && name.length > 28 ? `${name.slice(0, 28)}...` : name;
+                      const value = formatMetricValue(metric, p.data.y);
+                      const name = p.data.title || p.serieId;
+                      const label =
+                        name && name.length > 28 ? `${name.slice(0, 28)}...` : name;
 
-                    return (
-                      <Box
-                        key={p.id}
-                        sx={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 1,
-                        }}
-                      >
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-                          <span
-                            style={{
-                              width: 10,
-                              height: 10,
-                              borderRadius: 2,
-                              background: seriesColors[p.serieId] || p.color,
-                              display: "inline-block",
-                            }}
-                          />
-                          <span style={{ fontSize: 12, fontWeight: 600 }}>
-                            {label}
-                          </span>
+                      return (
+                        <Box
+                          key={p.id}
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 1,
+                          }}
+                        >
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+                            <span
+                              style={{
+                                width: 10,
+                                height: 10,
+                                borderRadius: 2,
+                                background: seriesColors[p.serieId] || p.color,
+                                display: "inline-block",
+                              }}
+                            />
+                            <span style={{ fontSize: 12, fontWeight: 600 }}>
+                              {label}
+                            </span>
+                          </Box>
+                          <span>{value}</span>
                         </Box>
-                        <span>{value}</span>
-                      </Box>
-                    );
-                  })}
+                      );
+                    })}
                 </Box>
               );
             }}
@@ -814,32 +878,7 @@ const ContentAnalytics = () => {
                       rel="noreferrer"
                       style={{ display: "inline-flex" }}
                     >
-                      <Box sx={{ position: "relative", display: "inline-flex" }}>
-                        <img
-                          src={r.thumbnail}
-                          width={90}
-                          style={{ borderRadius: 6 }}
-                          alt=""
-                        />
-                        {r.duration != null && (
-                          <Box
-                            sx={{
-                              position: "absolute",
-                              right: 4,
-                              bottom: 4,
-                              px: 0.5,
-                              py: 0.25,
-                              borderRadius: 0.75,
-                              fontSize: 11,
-                              fontWeight: 600,
-                              color: "#fff",
-                              backgroundColor: "rgba(15,23,42,0.8)",
-                            }}
-                          >
-                            {formatDuration(r.duration)}
-                          </Box>
-                        )}
-                      </Box>
+                      <VideoThumbnail src={r.thumbnail} duration={r.duration} videoId={r.id} />
                     </a>
                     <a
                       href={`https://www.youtube.com/watch?v=${r.id}`}
@@ -895,18 +934,18 @@ const ContentAnalytics = () => {
               <TableCell align="right">
                 {formatNumber(totals.subs)}
               </TableCell>
-            <TableCell align="right">
-              {formatNumber(totals.cardImpressions)}
-            </TableCell>
-            <TableCell align="right">
-              {formatNumber(totals.adImpressions)}
-            </TableCell>
-            <TableCell align="right">
-              {formatNumber(totals.annotationImpressions)}
-            </TableCell>
-          </TableRow>
-        </TableBody>
-      </Table>
+              <TableCell align="right">
+                {formatNumber(totals.cardImpressions)}
+              </TableCell>
+              <TableCell align="right">
+                {formatNumber(totals.adImpressions)}
+              </TableCell>
+              <TableCell align="right">
+                {formatNumber(totals.annotationImpressions)}
+              </TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
       </TableContainer>
     </Stack>
   );

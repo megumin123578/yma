@@ -6,11 +6,11 @@ import pickle
 import subprocess
 import sys
 from typing import List, Optional
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, Form, Query, UploadFile, File
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, text
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from python_backend.api.auth.database import get_db
@@ -29,9 +29,6 @@ router = APIRouter(prefix="/users", tags=["Users"])
 UPLOAD_DIR = "python_backend/api/uploads/avatars"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-CREDENTIALS_DIR = "python_backend/credentials"
-os.makedirs(CREDENTIALS_DIR, exist_ok=True)
-
 TOKEN_DIR = "python_backend/token"
 os.makedirs(TOKEN_DIR, exist_ok=True)
 
@@ -42,16 +39,11 @@ OAUTH_REDIRECT_URL = os.getenv(
     "OAUTH_REDIRECT_URL",
     "https://4b0de643968e.ngrok-free.app/api/users/credentials/callback",
 )
+OAUTH_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 
 PENDING_OAUTH = {}
 _ADMIN_ENV_KEY = "ADMIN_USERNAME"
-
-
-def _safe_filename(name: str) -> str:
-    base = os.path.basename(name or "")
-    if not base:
-        return "credentials.json"
-    return re.sub(r"[^A-Za-z0-9_.-]", "_", base)
 
 
 def _safe_token_filename(name: str) -> str:
@@ -80,6 +72,26 @@ def _load_token_credentials(token_name: str):
         else:
             raise HTTPException(status_code=400, detail="Token is not valid")
     return creds
+
+
+def _build_oauth_flow() -> Flow:
+    if not OAUTH_CLIENT_ID or not OAUTH_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=500,
+            detail="Missing GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET",
+        )
+    client_config = {
+        "web": {
+            "client_id": OAUTH_CLIENT_ID,
+            "client_secret": OAUTH_CLIENT_SECRET,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [OAUTH_REDIRECT_URL],
+        }
+    }
+    flow = Flow.from_client_config(client_config, scopes=SCOPES)
+    flow.redirect_uri = OAUTH_REDIRECT_URL
+    return flow
 
 
 def _require_admin(current_user: User) -> None:
@@ -246,41 +258,30 @@ def upload_avatar(
     return {"avatarUrl": avatar_url}
 
 
+class OAuthStartPayload(BaseModel):
+    account_tag: str
+
+
 @router.post("/credentials")
-def upload_credentials(
-    credentials: UploadFile = File(...),
-    filename: str = Form(None),
+def start_oauth(
+    payload: OAuthStartPayload,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    base_name = filename if filename is not None else credentials.filename
-    filename = _safe_filename(base_name)
-    if not filename.lower().endswith(".json"):
-        filename = f"{filename}.json"
-    if not filename.lower().endswith(".json"):
-        raise HTTPException(status_code=400, detail="Credentials must be a .json file")
+    account_tag_raw = (payload.account_tag or "").strip()
+    if not account_tag_raw:
+        raise HTTPException(status_code=400, detail="account_tag is required")
+    account_tag = sanitize_filename(account_tag_raw)
+    if not account_tag:
+        raise HTTPException(status_code=400, detail="Invalid account_tag")
 
-    content = credentials.file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail="Empty credentials file")
-
-    try:
-        json.loads(content.decode("utf-8"))
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON file")
-
-    file_path = os.path.join(CREDENTIALS_DIR, filename)
-    progress_path = os.path.join(PROGRESS_DIR, f"{os.path.splitext(filename)[0]}.json")
+    progress_path = os.path.join(PROGRESS_DIR, f"{account_tag}.json")
     if os.path.exists(progress_path):
         try:
             os.remove(progress_path)
         except Exception:
             pass
 
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    account_tag = os.path.splitext(os.path.basename(filename))[0]
     cred_row = (
         db.query(UserCredential)
         .filter(
@@ -304,20 +305,19 @@ def upload_credentials(
         )
     db.commit()
 
-    flow = InstalledAppFlow.from_client_secrets_file(file_path, SCOPES)
-    flow.redirect_uri = OAUTH_REDIRECT_URL
+    flow = _build_oauth_flow()
     auth_url, state = flow.authorization_url(
         access_type="offline",
         prompt="consent",
+        include_granted_scopes="true",
     )
     PENDING_OAUTH[state] = {
-        "cred_path": file_path,
         "created_at": time.time(),
         "user_id": current_user.id,
         "account_tag": account_tag,
     }
 
-    return {"filename": filename, "auth_url": auth_url, "state": state}
+    return {"account_tag": account_tag, "auth_url": auth_url, "state": state}
 
 
 @router.get("/credentials/callback", response_class=HTMLResponse)
@@ -334,16 +334,14 @@ def credentials_callback(
     if not pending:
         raise HTTPException(status_code=400, detail="Invalid or expired state")
 
-    cred_path = pending["cred_path"]
-    flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
-    flow.redirect_uri = OAUTH_REDIRECT_URL
+    account_tag = pending.get("account_tag") or ""
+    flow = _build_oauth_flow()
     try:
         flow.fetch_token(code=code)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to fetch token: {e}")
 
-    account_tag = pending.get("account_tag") or os.path.splitext(os.path.basename(cred_path))[0]
-    token_filename = os.path.splitext(os.path.basename(cred_path))[0] + ".pickle"
+    token_filename = f"{account_tag}.pickle"
     token_path = os.path.join(TOKEN_DIR, token_filename)
     with open(token_path, "wb") as f:
         pickle.dump(flow.credentials, f)
@@ -821,9 +819,6 @@ def delete_token(
     )
     if not owned:
         raise HTTPException(status_code=404, detail="Token not found")
-    cred_path = os.path.join(CREDENTIALS_DIR, f"{base_name}.json")
-    if os.path.exists(cred_path):
-        os.remove(cred_path)
     progress_path = os.path.join(PROGRESS_DIR, f"{base_name}.json")
     if os.path.exists(progress_path):
         try:

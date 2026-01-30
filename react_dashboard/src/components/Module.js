@@ -1,6 +1,7 @@
 // Module.js
 import * as React from "react";
 import { Box, Typography } from "@mui/material";
+import api from "../services/api";
 
 // ===== Helpers =====
 export const n = (v) => (isNaN(+v) ? 0 : +v);
@@ -445,17 +446,12 @@ export const SPREADSHEET_ID =
 
 export async function appendToSheet(row, { worksheetIndex = 5 } = {}) {
   if (!SPREADSHEET_ID) throw new Error("Missing SPREADSHEET_ID");
-  const res = await fetch(SHEET_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sheet_file: SPREADSHEET_ID,
-      worksheet_index: worksheetIndex,
-      rows: [row],
-    }),
+  const res = await api.post(SHEET_ENDPOINT, {
+    sheet_file: SPREADSHEET_ID,
+    worksheet_index: worksheetIndex,
+    rows: [row],
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  return res.data;
 }
 
 // Module.js (thêm vào cuối file, và export)
@@ -467,7 +463,7 @@ export const SEGMENTER =
 export function countGraphemes(str = "") {
   if (!str) return 0;
   if (!SEGMENTER) return Array.from(str).length; // fallback
- let n = 0;
+  let n = 0;
   const iterator = SEGMENTER.segment(str);
   for (let item = iterator.next(); !item.done; item = iterator.next()) {
     n++;
@@ -499,7 +495,7 @@ export function formatDuration(iso) {
   const s = parseInt(match[3] || 0, 10);
 
   const parts = [];
-  if (h>0) parts.push(String(h).padStart(2,'0'));
+  if (h > 0) parts.push(String(h).padStart(2, '0'));
   parts.push(String(m).padStart(2, "0"));
   parts.push(String(s).padStart(2, "0"));
 

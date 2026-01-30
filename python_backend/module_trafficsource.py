@@ -61,10 +61,13 @@ def sanitize_filename(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9_\-\.]", "_", s)
 
 def create_token_from_credentials(cred_path: str):
-    #save token as .pickle
     os.makedirs(TOKEN_FOLDER, exist_ok=True)
-    token_filename = os.path.splitext(os.path.basename(cred_path))[0] + ".pickle"
+    base = os.path.splitext(os.path.basename(cred_path))[0]
+    token_filename = f"{base}.pickle"
     token_path = os.path.join(TOKEN_FOLDER, token_filename)
+
+    if cred_path.lower().endswith(".pickle") and os.path.exists(cred_path):
+        token_path = cred_path
 
     creds = None
     if os.path.exists(token_path):
@@ -74,9 +77,11 @@ def create_token_from_credentials(cred_path: str):
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
-        else:
+        elif os.path.exists(cred_path) and cred_path.lower().endswith(".json"):
             flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
             creds = flow.run_local_server(port=0)
+        else:
+            raise RuntimeError("Missing or invalid token for account")
         with open(token_path, "wb") as f:
             pickle.dump(creds, f)
     return creds
@@ -396,7 +401,7 @@ def run_traffic_source_lifetime_daily_to_postgres(
 
 # ===== One-account runner =====
 def process_one(cred_file: str, channel_id: Optional[str] = None):
-    cred_path = os.path.join(CREDENTIALS_FOLDER, cred_file)
+    cred_path = os.path.join(TOKEN_FOLDER, cred_file)
     account_tag = sanitize_filename(os.path.splitext(os.path.basename(cred_file))[0])
 
     print(f"\nProcessing {cred_file} (mode: {'OWNER' if IS_OWNER_MODE else 'CHANNEL'})...")

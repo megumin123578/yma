@@ -13,7 +13,7 @@ import {
   useTheme,
 } from "@mui/material";
 import { ResponsiveLine } from "@nivo/line";
-import { API_BASE } from "../config";
+import api from "../services/api";
 
 const formatRangeLabel = (range) => {
   if (!range?.start || !range?.end) return "No data";
@@ -40,18 +40,11 @@ const AudienceAnalytics = () => {
   const [videoId, setVideoId] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const authHeaders = useMemo(() => {
-    const token = localStorage.getItem("access_token");
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
-
   useEffect(() => {
     const loadAccounts = async () => {
       try {
-        const resp = await fetch(`${API_BASE}/api/audience/demographics`, {
-          headers: authHeaders,
-        });
-        const data = await resp.json();
+        const resp = await api.get("/api/audience/demographics");
+        const data = resp.data;
         const nextAccounts = data?.availableAccounts || [];
         const order = (() => {
           try {
@@ -81,18 +74,17 @@ const AudienceAnalytics = () => {
       }
     };
     loadAccounts();
-  }, [accountTag, authHeaders]);
+  }, [accountTag]);
 
   useEffect(() => {
     if (!accountTag) return;
     const loadDemographics = async () => {
       setLoading(true);
       try {
-        const resp = await fetch(
-          `${API_BASE}/api/audience/demographics?accountTag=${encodeURIComponent(accountTag)}`,
-          { headers: authHeaders }
+        const resp = await api.get(
+          `/api/audience/demographics?accountTag=${encodeURIComponent(accountTag)}`
         );
-        const data = await resp.json();
+        const data = resp.data;
         setDemoRows(data?.rows || []);
         setDemoRange({ start: data?.start_date || "", end: data?.end_date || "" });
       } catch (err) {
@@ -103,18 +95,17 @@ const AudienceAnalytics = () => {
       }
     };
     loadDemographics();
-  }, [accountTag, authHeaders]);
+  }, [accountTag]);
 
   useEffect(() => {
     if (!accountTag) return;
     const loadDevices = async () => {
       setLoading(true);
       try {
-        const resp = await fetch(
-          `${API_BASE}/api/audience/devices?accountTag=${encodeURIComponent(accountTag)}`,
-          { headers: authHeaders }
+        const resp = await api.get(
+          `/api/audience/devices?accountTag=${encodeURIComponent(accountTag)}`
         );
-        const data = await resp.json();
+        const data = resp.data;
         setDeviceRows(data?.rows || []);
         setDeviceRange({ start: data?.start_date || "", end: data?.end_date || "" });
       } catch (err) {
@@ -125,18 +116,17 @@ const AudienceAnalytics = () => {
       }
     };
     loadDevices();
-  }, [accountTag, authHeaders]);
+  }, [accountTag]);
 
   useEffect(() => {
     if (!accountTag) return;
     const loadViewerTypes = async () => {
       setLoading(true);
       try {
-        const resp = await fetch(
-          `${API_BASE}/api/audience/viewer_types?accountTag=${encodeURIComponent(accountTag)}`,
-          { headers: authHeaders }
+        const resp = await api.get(
+          `/api/audience/viewer_types?accountTag=${encodeURIComponent(accountTag)}`
         );
-        const data = await resp.json();
+        const data = resp.data;
         setViewerTypeRows(data?.rows || []);
         setViewerTypeRange({ start: data?.start_date || "", end: data?.end_date || "" });
       } catch (err) {
@@ -147,17 +137,16 @@ const AudienceAnalytics = () => {
       }
     };
     loadViewerTypes();
-  }, [accountTag, authHeaders]);
+  }, [accountTag]);
 
   useEffect(() => {
     if (!accountTag) return;
     const loadVideos = async () => {
       try {
-        const resp = await fetch(
-          `${API_BASE}/api/audience/retention?accountTag=${encodeURIComponent(accountTag)}`,
-          { headers: authHeaders }
+        const resp = await api.get(
+          `/api/audience/retention?accountTag=${encodeURIComponent(accountTag)}`
         );
-        const data = await resp.json();
+        const data = resp.data;
         const list = data?.videos || [];
         setVideos(list);
         if (list.length > 0) {
@@ -171,7 +160,7 @@ const AudienceAnalytics = () => {
       }
     };
     loadVideos();
-  }, [accountTag, authHeaders]);
+  }, [accountTag]);
 
   useEffect(() => {
     if (!accountTag || !videoId) {
@@ -181,13 +170,12 @@ const AudienceAnalytics = () => {
     const loadRetention = async () => {
       setLoading(true);
       try {
-        const resp = await fetch(
-          `${API_BASE}/api/audience/retention?accountTag=${encodeURIComponent(
+        const resp = await api.get(
+          `/api/audience/retention?accountTag=${encodeURIComponent(
             accountTag
-          )}&videoId=${encodeURIComponent(videoId)}`,
-          { headers: authHeaders }
+          )}&videoId=${encodeURIComponent(videoId)}`
         );
-        const data = await resp.json();
+        const data = resp.data;
         setRetentionRows(data?.rows || []);
         setRetentionRange({ start: data?.start_date || "", end: data?.end_date || "" });
       } catch (err) {
@@ -198,7 +186,7 @@ const AudienceAnalytics = () => {
       }
     };
     loadRetention();
-  }, [accountTag, videoId, authHeaders]);
+  }, [accountTag, videoId]);
 
   const demoTable = useMemo(() => {
     const map = {};
@@ -680,131 +668,131 @@ const AudienceAnalytics = () => {
         ) : (
           <Box sx={{ height: 380 }}>
             <ResponsiveLine
-            data={retentionSeries}
-            margin={{ top: 40, right: 20, bottom: 70, left: 70 }}
-            xScale={{ type: "linear", min: 0, max: 1 }}
-            yScale={{ type: "linear", min: 0, max: "auto" }}
-            curve="monotoneX"
-            axisBottom={{
-              legend: "Video progress (0% → 100%)",
-              legendOffset: 44,
-              legendPosition: "middle",
-              format: (value) => `${Math.round(value * 100)}%`,
-              tickValues: [0, 0.25, 0.5, 0.75, 1],
-              tickSize: 10,
-              tickPadding: 10,
-              tickRotation: 0,
-            }}
-            axisLeft={{
-              legend: "Audience retention (%)",
-              legendOffset: -58,
-              legendPosition: "middle",
-              format: (value) => `${Math.round(value * 100)}%`,
-              tickValues: 6,
-              tickSize: 8,
-              tickPadding: 8,
-            }}
-            colors={["#22d3ee", "#f97316"]}
-            enableArea
-            areaOpacity={0.18}
-            lineWidth={3}
-            enablePoints={false}
-            useMesh
-            enableSlices="x"
-            enableGridX
-            gridXValues={[0, 0.25, 0.5, 0.75, 1]}
-            defs={[
-              {
-                id: "retentionGradient",
-                type: "linearGradient",
-                colors: [
-                  { offset: 0, color: "#22d3ee", opacity: 0.35 },
-                  { offset: 100, color: "#22d3ee", opacity: 0 },
-                ],
-              },
-              {
-                id: "relativeGradient",
-                type: "linearGradient",
-                colors: [
-                  { offset: 0, color: "#f97316", opacity: 0.3 },
-                  { offset: 100, color: "#f97316", opacity: 0 },
-                ],
-              },
-            ]}
-            fill={[
-              { match: { id: "Audience Watch Ratio" }, id: "retentionGradient" },
-              { match: { id: "Relative Retention" }, id: "relativeGradient" },
-            ]}
-            sliceTooltip={({ slice }) => (
-              <Box
-                sx={{
-                  px: 1.4,
-                  py: 0.8,
-                  borderRadius: 1.5,
-                  minWidth: 180,
-                  bgcolor: isDark ? "rgba(15, 23, 42, 0.95)" : "rgba(255,255,255,0.98)",
-                  border: `1px solid ${isDark ? "rgba(148, 163, 184, 0.25)" : "rgba(15,23,42,0.15)"}`,
-                  color: isDark ? "#e5e7eb" : "#111827",
-                  boxShadow: isDark
-                    ? "0 12px 26px rgba(0,0,0,0.45)"
-                    : "0 12px 26px rgba(15,23,42,0.18)",
-                  backdropFilter: "blur(6px)",
-                }}
-              >
-                <Typography variant="caption" sx={{ fontWeight: 600, letterSpacing: 0.3 }}>
-                  {`${Math.round(slice.points[0].data.x * 100)}% video`}
-                </Typography>
-                {slice.points.map((point) => (
-                  <Box
-                    key={point.id}
-                    display="flex"
-                    alignItems="center"
-                    justifyContent="space-between"
-                    gap={2}
-                  >
-                    <Box display="flex" alignItems="center" gap={1}>
-                      <Box
-                        sx={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          bgcolor: point.color,
-                        }}
-                      />
-                      <Typography variant="caption">{point.serieId}</Typography>
-                    </Box>
-                    <Typography variant="caption" sx={{ fontWeight: 700, color: point.color }}>
-                      {`${Math.round(point.data.y * 100)}%`}
-                    </Typography>
-                  </Box>
-                ))}
-              </Box>
-            )}
-            theme={{
-              textColor: isDark ? "#e5e7eb" : "#111827",
-              axis: {
-                domain: {
-                  line: { stroke: isDark ? "#e2e8f0" : "#334155", strokeWidth: 2 },
+              data={retentionSeries}
+              margin={{ top: 40, right: 20, bottom: 70, left: 70 }}
+              xScale={{ type: "linear", min: 0, max: 1 }}
+              yScale={{ type: "linear", min: 0, max: "auto" }}
+              curve="monotoneX"
+              axisBottom={{
+                legend: "Video progress (0% → 100%)",
+                legendOffset: 44,
+                legendPosition: "middle",
+                format: (value) => `${Math.round(value * 100)}%`,
+                tickValues: [0, 0.25, 0.5, 0.75, 1],
+                tickSize: 10,
+                tickPadding: 10,
+                tickRotation: 0,
+              }}
+              axisLeft={{
+                legend: "Audience retention (%)",
+                legendOffset: -58,
+                legendPosition: "middle",
+                format: (value) => `${Math.round(value * 100)}%`,
+                tickValues: 6,
+                tickSize: 8,
+                tickPadding: 8,
+              }}
+              colors={["#22d3ee", "#f97316"]}
+              enableArea
+              areaOpacity={0.18}
+              lineWidth={3}
+              enablePoints={false}
+              useMesh
+              enableSlices="x"
+              enableGridX
+              gridXValues={[0, 0.25, 0.5, 0.75, 1]}
+              defs={[
+                {
+                  id: "retentionGradient",
+                  type: "linearGradient",
+                  colors: [
+                    { offset: 0, color: "#22d3ee", opacity: 0.35 },
+                    { offset: 100, color: "#22d3ee", opacity: 0 },
+                  ],
                 },
-                ticks: {
-                  line: { stroke: isDark ? "#e2e8f0" : "#334155", strokeWidth: 1 },
+                {
+                  id: "relativeGradient",
+                  type: "linearGradient",
+                  colors: [
+                    { offset: 0, color: "#f97316", opacity: 0.3 },
+                    { offset: 100, color: "#f97316", opacity: 0 },
+                  ],
+                },
+              ]}
+              fill={[
+                { match: { id: "Audience Watch Ratio" }, id: "retentionGradient" },
+                { match: { id: "Relative Retention" }, id: "relativeGradient" },
+              ]}
+              sliceTooltip={({ slice }) => (
+                <Box
+                  sx={{
+                    px: 1.4,
+                    py: 0.8,
+                    borderRadius: 1.5,
+                    minWidth: 180,
+                    bgcolor: isDark ? "rgba(15, 23, 42, 0.95)" : "rgba(255,255,255,0.98)",
+                    border: `1px solid ${isDark ? "rgba(148, 163, 184, 0.25)" : "rgba(15,23,42,0.15)"}`,
+                    color: isDark ? "#e5e7eb" : "#111827",
+                    boxShadow: isDark
+                      ? "0 12px 26px rgba(0,0,0,0.45)"
+                      : "0 12px 26px rgba(15,23,42,0.18)",
+                    backdropFilter: "blur(6px)",
+                  }}
+                >
+                  <Typography variant="caption" sx={{ fontWeight: 600, letterSpacing: 0.3 }}>
+                    {`${Math.round(slice.points[0].data.x * 100)}% video`}
+                  </Typography>
+                  {slice.points.map((point) => (
+                    <Box
+                      key={point.id}
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      gap={2}
+                    >
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <Box
+                          sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            bgcolor: point.color,
+                          }}
+                        />
+                        <Typography variant="caption">{point.serieId}</Typography>
+                      </Box>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: point.color }}>
+                        {`${Math.round(point.data.y * 100)}%`}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+              theme={{
+                textColor: isDark ? "#e5e7eb" : "#111827",
+                axis: {
+                  domain: {
+                    line: { stroke: isDark ? "#e2e8f0" : "#334155", strokeWidth: 2 },
+                  },
+                  ticks: {
+                    line: { stroke: isDark ? "#e2e8f0" : "#334155", strokeWidth: 1 },
+                    text: { fill: isDark ? "#e5e7eb" : "#111827" },
+                  },
+                  legend: { text: { fill: isDark ? "#e5e7eb" : "#111827" } },
+                },
+                grid: {
+                  line: { stroke: isDark ? "#1f2937" : "#e2e8f0" },
+                },
+                legends: {
                   text: { fill: isDark ? "#e5e7eb" : "#111827" },
                 },
-                legend: { text: { fill: isDark ? "#e5e7eb" : "#111827" } },
-              },
-              grid: {
-                line: { stroke: isDark ? "#1f2937" : "#e2e8f0" },
-              },
-              legends: {
-                text: { fill: isDark ? "#e5e7eb" : "#111827" },
-              },
-              tooltip: {
-                container: {
-                  background: isDark ? "#111827" : "#ffffff",
-                  color: isDark ? "#e5e7eb" : "#111827",
+                tooltip: {
+                  container: {
+                    background: isDark ? "#111827" : "#ffffff",
+                    color: isDark ? "#e5e7eb" : "#111827",
+                  },
                 },
-              },
-            }}
+              }}
             />
           </Box>
         )}

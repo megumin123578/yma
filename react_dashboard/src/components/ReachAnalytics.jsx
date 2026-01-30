@@ -16,7 +16,7 @@ import {
   Typography,
   useTheme,
 } from "@mui/material";
-import { API_BASE } from "../config";
+import api from "../services/api";
 import { formatNumber } from "./Module";
 
 const formatPct = (value) => {
@@ -29,6 +29,10 @@ const formatPct = (value) => {
 const ReachAnalytics = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
+  const authHeaders = useMemo(() => {
+    const token = localStorage.getItem("access_token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }, []);
   const [accounts, setAccounts] = useState([]);
   const [accountTag, setAccountTag] = useState(() => {
     try {
@@ -48,18 +52,13 @@ const ReachAnalytics = () => {
   });
   const [loading, setLoading] = useState(false);
 
-  const authHeaders = useMemo(() => {
-    const token = localStorage.getItem("access_token");
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
-
   useEffect(() => {
     const loadChannels = async () => {
       try {
-        const resp = await fetch(`${API_BASE}/api/reach/channels`, {
+        const resp = await api.get("/api/reach/channels", {
           headers: authHeaders,
         });
-        const data = await resp.json();
+        const data = resp.data;
         const items = data?.items || [];
         const order = (() => {
           try {
@@ -90,7 +89,7 @@ const ReachAnalytics = () => {
       }
     };
     loadChannels();
-  }, [accountTag, authHeaders]);
+  }, [accountTag]);
 
   useEffect(() => {
     if (!accountTag) return;
@@ -106,11 +105,11 @@ const ReachAnalytics = () => {
     const loadReach = async () => {
       setLoading(true);
       try {
-        const resp = await fetch(
-          `${API_BASE}/api/reach?accountTag=${encodeURIComponent(accountTag)}`,
+        const resp = await api.get(
+          `/api/reach?accountTag=${encodeURIComponent(accountTag)}`,
           { headers: authHeaders }
         );
-        const data = await resp.json();
+        const data = resp.data;
         setRows(data?.rows || []);
         setRange({ start: data?.start_date || "", end: data?.end_date || "" });
       } catch (err) {
@@ -121,19 +120,19 @@ const ReachAnalytics = () => {
       }
     };
     loadReach();
-  }, [accountTag, authHeaders]);
+  }, [accountTag]);
 
   useEffect(() => {
     if (!accountTag) return;
     const loadBreakdown = async () => {
       try {
-        const resp = await fetch(
-          `${API_BASE}/api/reach/traffic_breakdown?accountTag=${encodeURIComponent(
+        const resp = await api.get(
+          `/api/reach/traffic_breakdown?accountTag=${encodeURIComponent(
             accountTag
           )}`,
           { headers: authHeaders }
         );
-        const data = await resp.json();
+        const data = resp.data;
         setBreakdown({
           range: data?.range || { start: "", end: "" },
           external: data?.external || [],
@@ -152,7 +151,7 @@ const ReachAnalytics = () => {
       }
     };
     loadBreakdown();
-  }, [accountTag, authHeaders]);
+  }, [accountTag]);
 
   const headerSx = {
     background: isDark ? "rgba(15,23,42,0.9)" : "rgba(226,232,240,0.85)",

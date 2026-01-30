@@ -21,7 +21,7 @@ import {
   CartesianGrid,
 } from "recharts";
 import dayjs from "dayjs";
-import { API_BASE } from "../config";
+import api from "../services/api";
 import { tokens } from "../theme";
 
 const RANGE_OPTIONS = [
@@ -51,10 +51,6 @@ const formatCurrency = (value) => {
 const RevenueAnalytics = () => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
-  const authHeaders = useMemo(() => {
-    const token = localStorage.getItem("access_token");
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
 
   const [channels, setChannels] = useState([]);
   const [channel, setChannel] = useState("");
@@ -66,11 +62,8 @@ const RevenueAnalytics = () => {
     let stop = false;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/revenue/channels`, {
-          headers: authHeaders,
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const res = await api.get("/api/revenue/channels");
+        const data = res.data;
         const items = (data?.items || []).map((value) => ({
           value,
           label: value,
@@ -94,7 +87,7 @@ const RevenueAnalytics = () => {
     return () => {
       stop = true;
     };
-  }, [authHeaders, channel]);
+  }, [channel]);
 
   useEffect(() => {
     if (!channel) {
@@ -105,14 +98,12 @@ const RevenueAnalytics = () => {
     (async () => {
       try {
         setError("");
-        const res = await fetch(
-          `${API_BASE}/api/revenue?accountTag=${encodeURIComponent(
+        const res = await api.get(
+          `/api/revenue?accountTag=${encodeURIComponent(
             channel
-          )}&range=${range}`,
-          { headers: authHeaders }
+          )}&range=${range}`
         );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const data = res.data;
         const list = Array.isArray(data?.rows) ? data.rows : [];
         if (!stop) {
           setRows(list);
@@ -128,7 +119,7 @@ const RevenueAnalytics = () => {
     return () => {
       stop = true;
     };
-  }, [authHeaders, channel, range]);
+  }, [channel, range]);
 
   const chartData = useMemo(() => {
     return rows.map((row) => ({
