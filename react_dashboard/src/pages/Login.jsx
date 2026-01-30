@@ -231,6 +231,47 @@ const Login = () => {
           </Button>
         </Typography>
       </Box>
+      <Box mt={2} textAlign="center">
+        <Typography variant="caption" color={subtitleColor}>
+          By using this app, you agree to our
+          <Button
+            component={Link}
+            to="/terms"
+            variant="text"
+            sx={{
+              ml: 0.5,
+              color: "#90caf9",
+              textTransform: "none",
+              fontSize: "0.75rem",
+              "&:hover": {
+                backgroundColor: "transparent",
+                textDecoration: "underline",
+              },
+            }}
+          >
+            Terms
+          </Button>
+          and
+          <Button
+            component={Link}
+            to="/privacy"
+            variant="text"
+            sx={{
+              ml: 0.5,
+              color: "#90caf9",
+              textTransform: "none",
+              fontSize: "0.75rem",
+              "&:hover": {
+                backgroundColor: "transparent",
+                textDecoration: "underline",
+              },
+            }}
+          >
+            Privacy Policy
+          </Button>
+          .
+        </Typography>
+      </Box>
     </Paper>
   );
 };

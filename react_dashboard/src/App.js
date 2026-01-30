@@ -22,6 +22,9 @@ import SmmstoreAnalyticsScene from "./scenes/smmstore_analytics";
 import AudienceAnalyticsScene from "./scenes/audience_analytics";
 import ReachAnalyticsScene from "./scenes/reach_analytics";
 import RevenueAnalyticsScene from "./scenes/revenue";
+import PrivacyPage from "./scenes/privacy";
+import TermsPage from "./scenes/terms";
+import LandingPage from "./scenes/landing";
 
 
 function App() {
@@ -31,7 +34,14 @@ function App() {
   const location = useLocation();
   const { user, loading } = useContext(UserContext);
 
-  const noLayoutRoutes = ["/", "/register", "/forgot-password"];
+  const noLayoutRoutes = [
+    "/",
+    "/login",
+    "/register",
+    "/forgot-password",
+    "/privacy",
+    "/terms",
+  ];
   const isNoLayout = noLayoutRoutes.includes(location.pathname);
 
   const ProtectedRoute = ({ children }) => {
@@ -60,9 +70,12 @@ function App() {
 
         <Routes>
           {/* Auth */}
-          <Route path="/" element={<LoginPage />} />
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
 
           {/* App */}
           <Route

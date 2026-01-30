@@ -12,6 +12,11 @@ $env:PORT=3001; npm --prefix react_dashboard start
 npm --prefix react_dashboard run start
 npm --prefix react_dashboard run start --port 8000
 
+--build and deploy with serv
+npm --prefix react_dashboard run build 
+npx serve -s react_dashboard/build -l 3001
+
+
 --ipmort jose
 pip uninstall jose pycrypto crypto -y --uninstall if wrong package
 pip install python-jose[cryptography]

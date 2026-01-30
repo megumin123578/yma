@@ -10,7 +10,7 @@ import {
   useTheme,
 } from "@mui/material";
 import { register } from "../services/authService";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 /* ================= Password Strength ================= */
 const getPasswordStrength = (password) => {
@@ -102,7 +102,7 @@ const Register = () => {
       }
 
       setSuccess("Account created successfully!");
-      setTimeout(() => navigate("/"), 1500);
+      setTimeout(() => navigate("/login"), 1500);
     } catch (err) {
       setError("Sign up failed!");
     } finally {
@@ -269,10 +269,51 @@ const Register = () => {
               textDecoration: "underline",
             },
           }}
-          onClick={() => navigate("/")}
+          onClick={() => navigate("/login")}
         >
           Back to Login
         </Button>
+      </Box>
+      <Box mt={2} textAlign="center">
+        <Typography variant="caption" color={subtitleColor}>
+          By creating an account, you agree to our
+          <Button
+            component={Link}
+            to="/terms"
+            variant="text"
+            sx={{
+              ml: 0.5,
+              color: "#90caf9",
+              textTransform: "none",
+              fontSize: "0.75rem",
+              "&:hover": {
+                backgroundColor: "transparent",
+                textDecoration: "underline",
+              },
+            }}
+          >
+            Terms
+          </Button>
+          and
+          <Button
+            component={Link}
+            to="/privacy"
+            variant="text"
+            sx={{
+              ml: 0.5,
+              color: "#90caf9",
+              textTransform: "none",
+              fontSize: "0.75rem",
+              "&:hover": {
+                backgroundColor: "transparent",
+                textDecoration: "underline",
+              },
+            }}
+          >
+            Privacy Policy
+          </Button>
+          .
+        </Typography>
       </Box>
     </Paper>
   );

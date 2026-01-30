@@ -89,7 +89,7 @@ const ForgotPassword = () => {
     try {
       await resetPassword(username.trim(), newPassword);
       setSuccess("Password reset successfully. You can login now.");
-      setTimeout(() => navigate("/"), 1200);
+      setTimeout(() => navigate("/login"), 1200);
     } catch (err) {
       setError("Username not found or reset failed.");
     } finally {
@@ -287,7 +287,7 @@ const ForgotPassword = () => {
               textDecoration: "underline",
             },
           }}
-          onClick={() => navigate("/")}
+          onClick={() => navigate("/login")}
         >
           Back to Login
         </Button>
