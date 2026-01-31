@@ -26,6 +26,26 @@ from python_backend.api.auth.scheduler import start_scheduler
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://192.168.1.162:3000",
+        "http://192.168.1.162:3001",
+        "http://192.168.1.162:3002",
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "https://tuanfmcaa.site",
+        "https://app.tuanfmcaa.site",
+        "http://tuanfmcaa.site",
+        "http://app.tuanfmcaa.site",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 Base.metadata.create_all(bind=engine)
 
 start_scheduler()
@@ -227,13 +247,7 @@ def ensure_user_credentials_selected_channel():
 
 ensure_user_credentials_selected_channel()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS middleware moved to top
 
 app.include_router(ts_router)
 app.include_router(geo_router)

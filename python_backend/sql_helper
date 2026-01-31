@@ -4,6 +4,7 @@ setx PG_URL "postgresql+psycopg2://postgres:V!etdu1492003@localhost:5432/analyti
 -- To run fast api
 python -m uvicorn main:app --reload
 python -m uvicorn python_backend.main:app --reload
+python -m uvicorn python_backend.main:app --host 0.0.0.0 --port 8001 --reload
 uvicorn python_backend.main:app --host 0.0.0.0 --port 8000 --reload
 ngrok http 8000
 
