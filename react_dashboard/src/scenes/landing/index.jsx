@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Box,
@@ -11,7 +10,7 @@ import {
   alpha,
   Paper,
 } from "@mui/material";
-import { motion, useScroll, useTransform, useSpring } from "framer-motion";
+import { motion, useScroll, useSpring } from "framer-motion";
 import {
   TrendingUp,
   BarChart,
@@ -20,7 +19,6 @@ import {
   Security,
   Speed,
   ArrowForward,
-  CheckCircle,
 } from "@mui/icons-material";
 
 const FeatureCard = ({ icon: Icon, title, description, delay }) => {
@@ -227,12 +225,6 @@ const LandingPage = () => {
               </Typography>
             </Box>
 
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" color="text.secondary">
-                Read our <Link to="/privacy" style={{ color: "#38bdf8", textDecoration: "underline" }}>Privacy Policy</Link>.
-              </Typography>
-            </Box>
-
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -310,14 +302,8 @@ const LandingPage = () => {
             <strong>Google Sign-In:</strong> We use Google Sign-In to securely authenticate you and obtain the necessary read-only permissions to fetch your channel's analytics data. We do not modify your videos or channel settings.
           </Typography>
           <Typography variant="body1" paragraph>
-            <strong>Privacy Policy:</strong> <Link to="/privacy" style={{ color: "#38bdf8", textDecoration: "underline" }}>Read our Privacy Policy</Link> to learn more about how we handle your data.
+            <strong>Privacy Policy:</strong> Review our policy for details on how we handle your data.
           </Typography>
-
-          <Box mt={2}>
-            <Typography variant="body2">
-              Read our <Link to="/privacy" style={{ color: "#38bdf8", textDecoration: "underline" }}>Privacy Policy</Link> to learn more about how we handle your data.
-            </Typography>
-          </Box>
         </Box>
       </Container>
 
@@ -387,55 +373,6 @@ const LandingPage = () => {
           </Grid>
         </Grid>
       </Container>
-
-      {/* CTA Section */}
-      <Box sx={{ py: 15, position: "relative", overflow: "hidden" }}>
-        <Box
-          sx={{
-            position: "absolute",
-            inset: 0,
-            background: isDark
-              ? "linear-gradient(180deg, transparent 0%, rgba(56,189,248,0.05) 100%)"
-              : "linear-gradient(180deg, transparent 0%, rgba(56,189,248,0.05) 100%)",
-            zIndex: 0
-          }}
-        />
-        <Container maxWidth="md" sx={{ position: "relative", zIndex: 1, textAlign: "center" }}>
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.5 }}
-            viewport={{ once: true }}
-          >
-            <Typography variant="h2" fontWeight={800} mb={3}>
-              Ready to scale your channel?
-            </Typography>
-
-            <Button
-              component={Link}
-              to="/register"
-              variant="contained"
-              size="large"
-              sx={{
-                px: 6,
-                py: 2,
-                fontSize: "1.2rem",
-                borderRadius: 4,
-                fontWeight: 700,
-                background: "linear-gradient(90deg, #38bdf8, #6366f1)",
-                boxShadow: "0 20px 40px -10px rgba(56,189,248,0.5)",
-                "&:hover": {
-                  transform: "translateY(-3px)",
-                  background: "linear-gradient(90deg, #60a5fa, #7c3aed)",
-                  boxShadow: "0 25px 50px -12px rgba(56,189,248,0.6)",
-                },
-              }}
-            >
-              Start
-            </Button>
-          </motion.div>
-        </Container>
-      </Box>
 
       {/* Footer */}
       <Box
