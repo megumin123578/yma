@@ -323,7 +323,7 @@ const LandingPage = () => {
         </Box>
 
         <Grid container spacing={4}>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <FeatureCard
               delay={0.1}
               icon={TrendingUp}
@@ -331,7 +331,7 @@ const LandingPage = () => {
               description="Go beyond basic views. Analyze watch time, retention rates, and engagement metrics with detailed, interactive charts."
             />
           </Grid>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <FeatureCard
               delay={0.2}
               icon={People}
@@ -339,7 +339,7 @@ const LandingPage = () => {
               description="Understand who watches your videos. Demographics, geography, and active times to help you publish when it matters."
             />
           </Grid>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <FeatureCard
               delay={0.3}
               icon={MonetizationOn}
@@ -347,7 +347,7 @@ const LandingPage = () => {
               description="Track your estimated revenue, CPM, and RPM across different videos to identify your most profitable content."
             />
           </Grid>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <FeatureCard
               delay={0.4}
               icon={BarChart}
@@ -355,7 +355,7 @@ const LandingPage = () => {
               description="Discover how viewers find you. Search trends, suggested videos, and external sites driving traffic to your channel."
             />
           </Grid>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <FeatureCard
               delay={0.5}
               icon={Speed}
@@ -363,7 +363,7 @@ const LandingPage = () => {
               description="Compare your current performance against your historical data to stay on track with your growth goals."
             />
           </Grid>
-          <Grid item xs={12} md={4}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <FeatureCard
               delay={0.6}
               icon={Security}

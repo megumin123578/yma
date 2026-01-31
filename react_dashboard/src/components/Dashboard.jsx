@@ -6,20 +6,14 @@ import {
     CardMedia,
     CardContent,
     Typography,
-    Chip,
     Stack,
     Button,
     TextField,
     MenuItem,
     CircularProgress,
     useTheme,
-    alpha,
 } from "@mui/material";
 import { motion } from "framer-motion";
-import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
-import ThumbUpAltOutlinedIcon from "@mui/icons-material/ThumbUpAltOutlined";
-import CommentOutlinedIcon from "@mui/icons-material/CommentOutlined";
-import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
@@ -77,7 +71,6 @@ const VideoList = () => {
     const theme = useTheme();
     const isDark = theme.palette.mode === "dark";
     const colors = tokens(theme.palette.mode);
-    const textOnDark = "#fff";
 
     const [channels, setChannels] = useState([]);
     const [selectedChannel, setSelectedChannel] = useState(() => {
@@ -659,7 +652,7 @@ const VideoList = () => {
                                 { label: "Avg Duration", val: `${v.average_view_duration_seconds}s` },
                                 { label: "CTR", val: `${v.annotation_click_through_rate || 0}%` },
                             ].map((item) => (
-                                <Grid item xs={6} key={item.label}>
+                                <Grid size={{ xs: 6 }} key={item.label}>
                                     <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                                         {item.label}
                                     </Typography>
@@ -980,8 +973,8 @@ const VideoList = () => {
                                             </Box>
                                         </Stack>
                                         {revenueChartData.length > 0 && (
-                                            <Box mt={2} height={340} sx={{ ml: -3 }}>
-                                                <ResponsiveContainer width="100%" height="100%">
+                                            <Box mt={2} sx={{ ml: -3, minWidth: 0, width: "100%" }}>
+                                                <ResponsiveContainer width="100%" height={320} minWidth={0} minHeight={0}>
                                                     <LineChart data={revenueChartData}>
                                                         <CartesianGrid
                                                             strokeDasharray="3 3"
