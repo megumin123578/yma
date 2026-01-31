@@ -21,7 +21,6 @@ from google.auth.transport.requests import Request
 
 router = APIRouter(prefix="/api/content", tags=["content"])
 
-CREDENTIALS_DIR = "./python_backend/credentials"
 TOKEN_DIR = "./python_backend/token"
 
 
@@ -131,20 +130,25 @@ def list_channels(
         if current_user:
             hidden = get_hidden_account_tags(db, current_user.id)
             hidden_all = hidden | {sanitize_filename(t) for t in hidden}
-        for fname in os.listdir(CREDENTIALS_DIR):
-            if not fname.endswith(".json"):
-                continue
 
-            raw = fname[:-5]               # bỏ .json
-            value = sanitize_filename(raw) 
+        rows = (
+            db.query(UserCredential)
+            .filter(UserCredential.token_name.isnot(None))
+            .order_by(UserCredential.updated_at.desc())
+            .all()
+        )
+        seen = set()
+        for row in rows:
+            value = sanitize_filename(row.account_tag or "")
+            if not value or value in seen:
+                continue
             if allowed is not None and value not in allowed:
                 continue
-            if hidden_all and (value in hidden_all or raw in hidden_all):
+            if hidden_all and value in hidden_all:
                 continue
-            items.append({
-                "value": value,  
-                "label": raw,   
-            })
+            seen.add(value)
+            label = row.account_tag or value
+            items.append({"value": value, "label": label})
     except Exception as e:
         print("[content.channels] ERROR:", e)
 

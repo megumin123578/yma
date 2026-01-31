@@ -8,6 +8,7 @@ import {
   InputLabel,
   MenuItem,
   Select,
+  Skeleton,
   Stack,
   Typography,
   useTheme,
@@ -283,6 +284,12 @@ const AudienceAnalytics = () => {
     return items.filter((item) => seriesIds.has(item.id));
   }, [retentionSeries]);
 
+  const showDemoSkeleton = loading && demoRows.length === 0;
+  const showDeviceSkeleton = loading && deviceRows.length === 0;
+  const showViewerSkeleton = loading && viewerTypeRows.length === 0;
+  const showRetentionSkeleton =
+    loading && retentionSeries[0].data.length === 0;
+
   return (
     <Box display="flex" flexDirection="column" gap={3}>
       <Box
@@ -409,7 +416,32 @@ const AudienceAnalytics = () => {
           </Typography>
         </Stack>
 
-        {demoTable.length === 0 ? (
+        {showDemoSkeleton ? (
+          <Box mt={2}>
+            <Box
+              display="grid"
+              gridTemplateColumns="repeat(4, minmax(0, 1fr))"
+              gap={1}
+              sx={{
+                p: 1,
+                borderRadius: 1.5,
+                bgcolor: isDark ? "rgba(15,23,42,0.45)" : "rgba(255,255,255,0.9)",
+                boxShadow: isDark
+                  ? "0 0 0 1px rgba(56,189,248,0.2)"
+                  : "0 0 0 1px rgba(14,165,233,0.2)",
+              }}
+            >
+              {Array.from({ length: 16 }).map((_, idx) => (
+                <Skeleton
+                  key={`demo-skel-${idx}`}
+                  height={18}
+                  animation="wave"
+                  sx={{ borderRadius: 1 }}
+                />
+              ))}
+            </Box>
+          </Box>
+        ) : demoTable.length === 0 ? (
           <Typography variant="body2" color="text.secondary" mt={2}>
             No demographics data available.
           </Typography>
@@ -480,7 +512,19 @@ const AudienceAnalytics = () => {
               % viewers
             </Typography>
           </Stack>
-          {deviceList.length === 0 ? (
+          {showDeviceSkeleton ? (
+            <Stack spacing={1.2} mt={2}>
+              {Array.from({ length: 5 }).map((_, idx) => (
+                <Box key={`device-skel-${idx}`}>
+                  <Box display="flex" justifyContent="space-between" mb={0.6}>
+                    <Skeleton width={120} height={18} />
+                    <Skeleton width={48} height={18} />
+                  </Box>
+                  <Skeleton height={10} sx={{ borderRadius: 999 }} />
+                </Box>
+              ))}
+            </Stack>
+          ) : deviceList.length === 0 ? (
             <Typography variant="body2" color="text.secondary" mt={2}>
               No device data available.
             </Typography>
@@ -553,7 +597,19 @@ const AudienceAnalytics = () => {
               % viewers
             </Typography>
           </Stack>
-          {viewerTypeList.length === 0 ? (
+          {showViewerSkeleton ? (
+            <Stack spacing={1.2} mt={2}>
+              {Array.from({ length: 3 }).map((_, idx) => (
+                <Box key={`viewer-skel-${idx}`}>
+                  <Box display="flex" justifyContent="space-between" mb={0.6}>
+                    <Skeleton width={140} height={18} />
+                    <Skeleton width={48} height={18} />
+                  </Box>
+                  <Skeleton height={10} sx={{ borderRadius: 999 }} />
+                </Box>
+              ))}
+            </Stack>
+          ) : viewerTypeList.length === 0 ? (
             <Typography variant="body2" color="text.secondary" mt={2}>
               No viewer type data available.
             </Typography>
@@ -661,7 +717,15 @@ const AudienceAnalytics = () => {
         )}
         <Divider sx={{ my: 1, borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.08)" }} />
 
-        {retentionSeries[0].data.length === 0 ? (
+        {showRetentionSkeleton ? (
+          <Box mt={2}>
+            <Stack direction="row" spacing={2} mb={1}>
+              <Skeleton width={140} height={18} />
+              <Skeleton width={140} height={18} />
+            </Stack>
+            <Skeleton height={360} sx={{ borderRadius: 2 }} />
+          </Box>
+        ) : retentionSeries[0].data.length === 0 ? (
           <Typography variant="body2" color="text.secondary" mt={2}>
             No retention data available.
           </Typography>
