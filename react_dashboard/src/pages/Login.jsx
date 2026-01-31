@@ -18,6 +18,7 @@ import {
 } from "@mui/material";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { Link, useNavigate } from "react-router-dom";
 import { login } from "../services/authService";
 import { motion } from "framer-motion";
@@ -83,6 +84,25 @@ const Login = () => {
         justifyContent: "center",
       }}
     >
+      {/* Return to Landing Page */}
+      <IconButton
+        component={Link}
+        to="/"
+        sx={{
+          position: "absolute",
+          top: 20,
+          left: 20,
+          zIndex: 10,
+          color: isDark ? "white" : "text.primary",
+          bgcolor: isDark ? "rgba(255,255,255,0.1)" : "rgba(255,255,255,0.6)",
+          backdropFilter: "blur(10px)",
+          "&:hover": {
+            bgcolor: isDark ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.9)",
+          },
+        }}
+      >
+        <ArrowBackIcon />
+      </IconButton>
       {/* Animated Background Shapes */}
       <Box
         component={motion.div}

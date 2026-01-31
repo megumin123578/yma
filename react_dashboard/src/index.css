@@ -34,3 +34,22 @@ root,
 ::-webkit-scrollbar-track:hover{
   background: #5555;
 }
+
+/* Fix browser autofill background color */
+input:-webkit-autofill,
+input:-webkit-autofill:hover, 
+input:-webkit-autofill:focus, 
+input:-webkit-autofill:active{
+    -webkit-box-shadow: 0 0 0 30px #262b3b inset !important;
+    -webkit-text-fill-color: white !important;
+}
+
+@media (prefers-color-scheme: light) {
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover, 
+  input:-webkit-autofill:focus, 
+  input:-webkit-autofill:active{
+      -webkit-box-shadow: 0 0 0 30px #ffffff inset !important;
+      -webkit-text-fill-color: #000000 !important;
+  }
+}
