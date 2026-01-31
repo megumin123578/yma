@@ -8,9 +8,13 @@ import {
   Alert,
   LinearProgress,
   useTheme,
+  Container,
+  alpha,
+  Stack,
 } from "@mui/material";
 import { register } from "../services/authService";
 import { Link, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 
 /* ================= Password Strength ================= */
 const getPasswordStrength = (password) => {
@@ -42,20 +46,23 @@ const strengthLabel = (score) => {
 const Register = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
-  const paperBg = isDark
-    ? "linear-gradient(180deg, #1e1e2f, #1a1a27)"
-    : theme.palette.background.paper;
-  const paperShadow = isDark
-    ? "0 20px 50px rgba(0,0,0,0.35)"
-    : "0 14px 40px rgba(0,0,0,0.15)";
+
+  const pageBg = isDark
+    ? "radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%)"
+    : "radial-gradient(circle at 50% 0%, #e0f2fe 0%, #f8fafc 100%)";
+
+  const cardBg = isDark
+    ? alpha(theme.palette.background.paper, 0.4)
+    : alpha("#ffffff", 0.6);
+
   const titleColor = isDark ? "white" : theme.palette.text.primary;
   const subtitleColor = isDark
     ? "rgba(255,255,255,0.7)"
     : theme.palette.text.secondary;
   const labelColor = isDark ? "#bdbdbd" : theme.palette.text.secondary;
   const inputColor = isDark ? "white" : theme.palette.text.primary;
-  const borderColor = isDark ? "#555" : "#d0d0d0";
-  const hoverBorder = isDark ? "#90caf9" : theme.palette.primary.main;
+  const borderColor = isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)";
+  const hoverBorder = isDark ? "#38bdf8" : "#6366f1";
 
   const [form, setForm] = useState({
     username: "",
@@ -111,211 +118,275 @@ const Register = () => {
   };
 
   return (
-    <Paper
-      elevation={0}
+    <Box
       sx={{
-        p: 5,
-        width: 520,
-        borderRadius: 4,
-        background: paperBg,
-        boxShadow: paperShadow,
-        animation: "fadeInUp 0.6s ease",
-        "@keyframes fadeInUp": {
-          from: { opacity: 0, transform: "translateY(30px)" },
-          to: { opacity: 1, transform: "translateY(0)" },
-        },
-        transition: "all 0.3s ease",
-        "&:hover": {
-          transform: "translateY(-4px)",
-          boxShadow: isDark
-            ? "0 28px 70px rgba(0,0,0,0.45)"
-            : "0 18px 40px rgba(0,0,0,0.12)",
-        },
+        minHeight: "100vh",
+        background: pageBg,
+        overflow: "hidden",
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
       }}
     >
-      <Typography variant="h5" fontWeight="bold" mb={1} color={titleColor}>
-        Create Account
-      </Typography>
+      {/* Animated Background Shapes */}
+      <Box
+        component={motion.div}
+        animate={{
+          y: [0, -20, 0],
+          rotate: [0, 5, 0],
+        }}
+        transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+        sx={{
+          position: "absolute",
+          top: "10%",
+          left: "20%",
+          width: "30vw",
+          height: "30vw",
+          borderRadius: "50%",
+          background: isDark
+            ? "radial-gradient(circle, rgba(56,189,248,0.15) 0%, transparent 70%)"
+            : "radial-gradient(circle, rgba(56,189,248,0.25) 0%, transparent 70%)",
+          filter: "blur(60px)",
+          zIndex: 0,
+        }}
+      />
+      <Box
+        component={motion.div}
+        animate={{
+          y: [0, 30, 0],
+          x: [0, -20, 0],
+        }}
+        transition={{ duration: 12, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+        sx={{
+          position: "absolute",
+          bottom: "10%",
+          right: "20%",
+          width: "25vw",
+          height: "25vw",
+          borderRadius: "50%",
+          background: isDark
+            ? "radial-gradient(circle, rgba(168,85,247,0.12) 0%, transparent 70%)"
+            : "radial-gradient(circle, rgba(168,85,247,0.2) 0%, transparent 70%)",
+          filter: "blur(80px)",
+          zIndex: 0,
+        }}
+      />
 
-      <Typography
-        variant="body2"
-        mb={3}
-        color={subtitleColor}
-      >
-        Fill in the information below to create a new account.
-      </Typography>
-
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-      {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
-
-      <Box component="form" onSubmit={handleSubmit}>
-        {/* Username */}
-        <TextField
-          name="username"
-          label="Username"
-          fullWidth
-          margin="normal"
-          value={form.username}
-          onChange={handleChange}
-          required
-          InputLabelProps={{ style: { color: labelColor } }}
-          InputProps={{ style: { color: inputColor } }}
-          sx={{
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 2,
-              "& fieldset": { borderColor },
-              "&:hover fieldset": { borderColor: hoverBorder },
-              "&.Mui-focused fieldset": { borderColor: hoverBorder },
-            },
-          }}
-        />
-
-        {/* Password */}
-        <TextField
-          name="password"
-          label="Password"
-          type="password"
-          fullWidth
-          margin="normal"
-          value={form.password}
-          onChange={handleChange}
-          required
-          InputLabelProps={{ style: { color: labelColor } }}
-          InputProps={{ style: { color: inputColor } }}
-          sx={{
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 2,
-              "& fieldset": { borderColor },
-              "&:hover fieldset": { borderColor: hoverBorder },
-              "&.Mui-focused fieldset": { borderColor: hoverBorder },
-            },
-          }}
-        />
-
-        {/* Password strength */}
-        {form.password && (
-          <Box mt={1}>
-            <LinearProgress
-              variant="determinate"
-              value={(strength / 5) * 100}
-              color={strengthInfo.color}
-              sx={{ height: 8, borderRadius: 4 }}
-            />
-            <Typography
-              variant="caption"
-              color={`${strengthInfo.color}.main`}
-            >
-              {strengthInfo.label}
-            </Typography>
-          </Box>
-        )}
-
-        {/* Confirm password */}
-        <TextField
-          name="confirm_password"
-          label="Confirm Password"
-          type="password"
-          fullWidth
-          margin="normal"
-          value={form.confirm_password}
-          onChange={handleChange}
-          required
-          InputLabelProps={{ style: { color: labelColor } }}
-          InputProps={{ style: { color: inputColor } }}
-          sx={{
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 2,
-              "& fieldset": { borderColor },
-              "&:hover fieldset": { borderColor: hoverBorder },
-              "&.Mui-focused fieldset": { borderColor: hoverBorder },
-            },
-          }}
-        />
-
-        {/* Submit */}
-        <Button
-          type="submit"
-          variant="contained"
-          fullWidth
-          disabled={loading}
-          sx={{
-            mt: 3,
-            py: 1.4,
-            fontWeight: 600,
-            borderRadius: 2,
-            background: "linear-gradient(90deg, #42a5f5, #478ed1)",
-            transition: "all 0.3s ease",
-            "&:hover": {
-              background: "linear-gradient(90deg, #64b5f6, #5e92f3)",
-              transform: "translateY(-2px)",
-              boxShadow: "0 10px 25px rgba(66,165,245,0.4)",
-            },
-            "&:active": { transform: "translateY(0)" },
-          }}
+      <Container maxWidth="xs" sx={{ position: "relative", zIndex: 1 }}>
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
         >
-          {loading ? "Creating account..." : "Register"}
-        </Button>
-
-        {/* Back to login */}
-        <Button
-          variant="text"
-          fullWidth
-          sx={{
-            mt: 1,
-            color: "#90caf9",
-            textTransform: "none",
-            "&:hover": {
-              backgroundColor: "transparent",
-              textDecoration: "underline",
-            },
-          }}
-          onClick={() => navigate("/login")}
-        >
-          Back to Login
-        </Button>
-      </Box>
-      <Box mt={2} textAlign="center">
-        <Typography variant="caption" color={subtitleColor}>
-          By creating an account, you agree to our
-          <Button
-            component={Link}
-            to="/terms"
-            variant="text"
+          <Paper
+            elevation={0}
             sx={{
-              ml: 0.5,
-              color: "#90caf9",
-              textTransform: "none",
-              fontSize: "0.75rem",
-              "&:hover": {
-                backgroundColor: "transparent",
-                textDecoration: "underline",
-              },
+              p: { xs: 4, sm: 5 },
+              borderRadius: 4,
+              background: cardBg,
+              backdropFilter: "blur(20px)",
+              border: "1px solid",
+              borderColor: borderColor,
+              boxShadow: isDark
+                ? "0 20px 50px rgba(0,0,0,0.4)"
+                : "0 20px 50px rgba(0,0,0,0.1)",
             }}
           >
-            Terms
-          </Button>
-          and
-          <Button
-            component={Link}
-            to="/privacy"
-            variant="text"
-            sx={{
-              ml: 0.5,
-              color: "#90caf9",
-              textTransform: "none",
-              fontSize: "0.75rem",
-              "&:hover": {
-                backgroundColor: "transparent",
-                textDecoration: "underline",
-              },
-            }}
-          >
-            Privacy Policy
-          </Button>
-          .
-        </Typography>
-      </Box>
-    </Paper>
+            <Box textAlign="center" mb={4}>
+              <Typography
+                variant="h3"
+                fontWeight={800}
+                color={titleColor}
+                gutterBottom
+                sx={{
+                  background: isDark
+                    ? "linear-gradient(to right, #ffffff, #94a3b8)"
+                    : "linear-gradient(to right, #1e293b, #475569)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                }}
+              >
+                Create Account
+              </Typography>
+              <Typography variant="body2" color={subtitleColor}>
+                Join us today and start your journey.
+              </Typography>
+            </Box>
+
+            {error && (
+              <Alert
+                severity="error"
+                sx={{
+                  mb: 3,
+                  borderRadius: 2,
+                  bgcolor: isDark ? "rgba(211,47,47,0.1)" : "rgba(211,47,47,0.05)",
+                  color: isDark ? "#ffcdd2" : "#d32f2f",
+                }}
+              >
+                {error}
+              </Alert>
+            )}
+            {success && (
+              <Alert
+                severity="success"
+                sx={{
+                  mb: 3,
+                  borderRadius: 2,
+                  bgcolor: isDark ? "rgba(46,125,50,0.1)" : "rgba(46,125,50,0.05)",
+                  color: isDark ? "#a5d6a7" : "#388e3c",
+                }}
+              >
+                {success}
+              </Alert>
+            )}
+
+            <Box component="form" onSubmit={handleSubmit}>
+              <TextField
+                name="username"
+                label="Username"
+                fullWidth
+                margin="normal"
+                value={form.username}
+                onChange={handleChange}
+                required
+                InputLabelProps={{ style: { color: labelColor } }}
+                InputProps={{
+                  style: { color: inputColor },
+                  sx: {
+                    borderRadius: 2,
+                    bgcolor: isDark ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.4)",
+                    "& fieldset": { borderColor: borderColor },
+                    "&:hover fieldset": { borderColor: hoverBorder },
+                    "&.Mui-focused fieldset": { borderColor: hoverBorder },
+                  },
+                }}
+              />
+
+              <TextField
+                name="password"
+                label="Password"
+                type="password"
+                fullWidth
+                margin="normal"
+                value={form.password}
+                onChange={handleChange}
+                required
+                InputLabelProps={{ style: { color: labelColor } }}
+                InputProps={{
+                  style: { color: inputColor },
+                  sx: {
+                    borderRadius: 2,
+                    bgcolor: isDark ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.4)",
+                    "& fieldset": { borderColor: borderColor },
+                    "&:hover fieldset": { borderColor: hoverBorder },
+                    "&.Mui-focused fieldset": { borderColor: hoverBorder },
+                  },
+                }}
+              />
+
+              {form.password && (
+                <Box mt={1} mb={2}>
+                  <LinearProgress
+                    variant="determinate"
+                    value={(strength / 5) * 100}
+                    color={strengthInfo.color}
+                    sx={{ height: 6, borderRadius: 3, bgcolor: alpha("#000", 0.1) }}
+                  />
+                  <Typography
+                    variant="caption"
+                    sx={{ color: `${strengthInfo.color}.main`, mt: 0.5, display: "block", fontWeight: 600 }}
+                  >
+                    Strength: {strengthInfo.label}
+                  </Typography>
+                </Box>
+              )}
+
+              <TextField
+                name="confirm_password"
+                label="Confirm Password"
+                type="password"
+                fullWidth
+                margin="normal"
+                value={form.confirm_password}
+                onChange={handleChange}
+                required
+                InputLabelProps={{ style: { color: labelColor } }}
+                InputProps={{
+                  style: { color: inputColor },
+                  sx: {
+                    borderRadius: 2,
+                    bgcolor: isDark ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.4)",
+                    "& fieldset": { borderColor: borderColor },
+                    "&:hover fieldset": { borderColor: hoverBorder },
+                    "&.Mui-focused fieldset": { borderColor: hoverBorder },
+                  },
+                }}
+              />
+
+              <Button
+                type="submit"
+                variant="contained"
+                fullWidth
+                disabled={loading}
+                sx={{
+                  mt: 3,
+                  py: 1.5,
+                  fontWeight: 700,
+                  fontSize: "1rem",
+                  borderRadius: 3,
+                  textTransform: "none",
+                  background: "linear-gradient(90deg, #38bdf8, #6366f1)",
+                  boxShadow: "0 10px 30px -10px rgba(99,102,241,0.5)",
+                  "&:hover": {
+                    background: "linear-gradient(90deg, #60a5fa, #7c3aed)",
+                    transform: "translateY(-2px)",
+                    boxShadow: "0 20px 40px -10px rgba(99,102,241,0.6)",
+                  },
+                  "&:disabled": {
+                    background: "rgba(0,0,0,0.12)",
+                    boxShadow: "none",
+                  },
+                }}
+              >
+                {loading ? "Creating account..." : "Register"}
+              </Button>
+            </Box>
+
+            <Stack direction="row" spacing={1} justifyContent="center" mt={4}>
+              <Typography variant="body2" color={subtitleColor}>
+                Already have an account?
+              </Typography>
+              <Button
+                component={Link}
+                to="/login"
+                variant="text"
+                size="small"
+                sx={{
+                  padding: 0,
+                  minWidth: "auto",
+                  color: isDark ? "#38bdf8" : "#6366f1",
+                  textTransform: "none",
+                  fontWeight: 600,
+                  "&:hover": {
+                    backgroundColor: "transparent",
+                    textDecoration: "underline",
+                  },
+                }}
+              >
+                Login
+              </Button>
+            </Stack>
+
+            <Box mt={2} textAlign="center">
+              <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.7 }}>
+                © {new Date().getFullYear()} FMC
+              </Typography>
+            </Box>
+          </Paper>
+        </motion.div>
+      </Container>
+    </Box>
   );
 };
 

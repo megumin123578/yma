@@ -12,29 +12,37 @@ import {
   useTheme,
   IconButton,
   InputAdornment,
+  Container,
+  alpha,
+  Stack,
 } from "@mui/material";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import VisibilityOffOutlinedIcon from "@mui/icons-material/VisibilityOffOutlined";
 import { Link, useNavigate } from "react-router-dom";
 import { login } from "../services/authService";
+import { motion } from "framer-motion";
 
 const Login = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
-  const paperBg = isDark
-    ? "linear-gradient(180deg, #1e1e2f, #1a1a27)"
-    : theme.palette.background.paper;
-  const paperShadow = isDark
-    ? "0 20px 50px rgba(0,0,0,0.35)"
-    : "0 14px 40px rgba(0,0,0,0.15)";
+
+  // Modern background matching Landing Page
+  const pageBg = isDark
+    ? "radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0f172a 100%)"
+    : "radial-gradient(circle at 50% 0%, #e0f2fe 0%, #f8fafc 100%)";
+
+  const cardBg = isDark
+    ? alpha(theme.palette.background.paper, 0.4)
+    : alpha("#ffffff", 0.6);
+
   const titleColor = isDark ? "white" : theme.palette.text.primary;
   const subtitleColor = isDark
     ? "rgba(255,255,255,0.7)"
     : theme.palette.text.secondary;
   const labelColor = isDark ? "#bdbdbd" : theme.palette.text.secondary;
   const inputColor = isDark ? "white" : theme.palette.text.primary;
-  const borderColor = isDark ? "#555" : "#d0d0d0";
-  const hoverBorder = isDark ? "#90caf9" : theme.palette.primary.main;
+  const borderColor = isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)";
+  const hoverBorder = isDark ? "#38bdf8" : "#6366f1";
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -64,215 +72,256 @@ const Login = () => {
   };
 
   return (
-    <Paper
-      elevation={0}
+    <Box
       sx={{
-        p: 5,
-        width: 520,
-        borderRadius: 4,
-        background: paperBg,
-        boxShadow: paperShadow,
-        animation: "fadeInUp 0.6s ease",
-        "@keyframes fadeInUp": {
-          from: { opacity: 0, transform: "translateY(30px)" },
-          to: { opacity: 1, transform: "translateY(0)" },
-        },
-        transition: "all 0.3s ease",
-        "&:hover": {
-            transform: "translateY(-4px)",
-            boxShadow: isDark
-              ? "0 28px 70px rgba(0,0,0,0.45)"
-              : "0 18px 40px rgba(0,0,0,0.12)",
-          },
+        minHeight: "100vh",
+        background: pageBg,
+        overflow: "hidden",
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {/* Animated Background Shapes */}
+      <Box
+        component={motion.div}
+        animate={{
+          y: [0, -20, 0],
+          rotate: [0, 5, 0],
         }}
-      >
-      <Typography variant="h5" fontWeight="bold" mb={1} color={titleColor}>
-        Login
-      </Typography>
+        transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
+        sx={{
+          position: "absolute",
+          top: "10%",
+          left: "20%",
+          width: "30vw",
+          height: "30vw",
+          borderRadius: "50%",
+          background: isDark
+            ? "radial-gradient(circle, rgba(56,189,248,0.15) 0%, transparent 70%)"
+            : "radial-gradient(circle, rgba(56,189,248,0.25) 0%, transparent 70%)",
+          filter: "blur(60px)",
+          zIndex: 0,
+        }}
+      />
+      <Box
+        component={motion.div}
+        animate={{
+          y: [0, 30, 0],
+          x: [0, -20, 0],
+        }}
+        transition={{ duration: 12, repeat: Infinity, ease: "easeInOut", delay: 1 }}
+        sx={{
+          position: "absolute",
+          bottom: "10%",
+          right: "20%",
+          width: "25vw",
+          height: "25vw",
+          borderRadius: "50%",
+          background: isDark
+            ? "radial-gradient(circle, rgba(168,85,247,0.12) 0%, transparent 70%)"
+            : "radial-gradient(circle, rgba(168,85,247,0.2) 0%, transparent 70%)",
+          filter: "blur(80px)",
+          zIndex: 0,
+        }}
+      />
 
-      <Typography
-        variant="body2"
-        mb={3}
-        color={subtitleColor}
-      >
-        Enter your credentials to access your account.
-      </Typography>
-
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-
-      <Box component="form" onSubmit={handleSubmit}>
-        {/* Username */}
-        <TextField
-          label="Username"
-          fullWidth
-          margin="normal"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          required
-          InputLabelProps={{ style: { color: labelColor } }}
-          InputProps={{ style: { color: inputColor } }}
-          sx={{
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 2,
-              "& fieldset": { borderColor },
-              "&:hover fieldset": { borderColor: hoverBorder },
-              "&.Mui-focused fieldset": { borderColor: hoverBorder },
-            },
-          }}
-        />
-
-        {/* Password */}
-        <TextField
-          label="Password"
-          type={showPassword ? "text" : "password"}
-          fullWidth
-          margin="normal"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          InputLabelProps={{ style: { color: labelColor } }}
-          InputProps={{
-            style: { color: inputColor },
-            endAdornment: (
-              <InputAdornment position="end">
-                <IconButton
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  edge="end"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  sx={{ color: labelColor }}
-                >
-                  {showPassword ? (
-                    <VisibilityOffOutlinedIcon fontSize="small" />
-                  ) : (
-                    <VisibilityOutlinedIcon fontSize="small" />
-                  )}
-                </IconButton>
-              </InputAdornment>
-            ),
-          }}
-          sx={{
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 2,
-              "& fieldset": { borderColor },
-              "&:hover fieldset": { borderColor: hoverBorder },
-              "&.Mui-focused fieldset": { borderColor: hoverBorder },
-            },
-          }}
-        />
-
-        {/* Forgot password */}
-        <Box textAlign="right" mt={1}>
-          <Button
-            component={Link}
-            to="/forgot-password"
-            variant="text"
-            sx={{
-              color: "#90caf9",
-              textTransform: "none",
-              "&:hover": {
-                backgroundColor: "transparent",
-                textDecoration: "underline",
-              },
-            }}
-          >
-            Forgot password?
-          </Button>
-        </Box>
-
-        {/* Submit */}
-        <Button
-          type="submit"
-          variant="contained"
-          fullWidth
-          disabled={loading}
-          sx={{
-            mt: 3,
-            py: 1.4,
-            fontWeight: 600,
-            borderRadius: 2,
-            background: "linear-gradient(90deg, #42a5f5, #478ed1)",
-            transition: "all 0.3s ease",
-            "&:hover": {
-              background: "linear-gradient(90deg, #64b5f6, #5e92f3)",
-              transform: "translateY(-2px)",
-              boxShadow: "0 10px 25px rgba(66,165,245,0.4)",
-            },
-            "&:active": { transform: "translateY(0)" },
-          }}
+      <Container maxWidth="xs" sx={{ position: "relative", zIndex: 1 }}>
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
         >
-          {loading ? "Logging in..." : "Login"}
-        </Button>
-      </Box>
+          <Paper
+            elevation={0}
+            sx={{
+              p: { xs: 4, sm: 5 },
+              borderRadius: 4,
+              background: cardBg,
+              backdropFilter: "blur(20px)",
+              border: "1px solid",
+              borderColor: borderColor,
+              boxShadow: isDark
+                ? "0 20px 50px rgba(0,0,0,0.4)"
+                : "0 20px 50px rgba(0,0,0,0.1)",
+            }}
+          >
+            <Box textAlign="center" mb={4}>
+              <Typography
+                variant="h3"
+                fontWeight={800}
+                color={titleColor}
+                gutterBottom
+                sx={{
+                  background: isDark
+                    ? "linear-gradient(to right, #ffffff, #94a3b8)"
+                    : "linear-gradient(to right, #1e293b, #475569)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                }}
+              >
+                Welcome Back
+              </Typography>
+              <Typography variant="body2" color={subtitleColor}>
+                Enter your credentials to access your account.
+              </Typography>
+            </Box>
 
-      {/* Register */}
-      <Box mt={3} textAlign="center">
-        <Typography variant="body2" color={subtitleColor}>
-          Don’t have an account?
-          <Button
-            component={Link}
-            to="/register"
-            variant="text"
-            sx={{
-              ml: 1,
-              color: "#90caf9",
-              textTransform: "none",
-              fontWeight: 500,
-              "&:hover": {
-                backgroundColor: "transparent",
-                textDecoration: "underline",
-              },
-            }}
-          >
-            Register
-          </Button>
-        </Typography>
-      </Box>
-      <Box mt={2} textAlign="center">
-        <Typography variant="caption" color={subtitleColor}>
-          By using this app, you agree to our
-          <Button
-            component={Link}
-            to="/terms"
-            variant="text"
-            sx={{
-              ml: 0.5,
-              color: "#90caf9",
-              textTransform: "none",
-              fontSize: "0.75rem",
-              "&:hover": {
-                backgroundColor: "transparent",
-                textDecoration: "underline",
-              },
-            }}
-          >
-            Terms
-          </Button>
-          and
-          <Button
-            component={Link}
-            to="/privacy"
-            variant="text"
-            sx={{
-              ml: 0.5,
-              color: "#90caf9",
-              textTransform: "none",
-              fontSize: "0.75rem",
-              "&:hover": {
-                backgroundColor: "transparent",
-                textDecoration: "underline",
-              },
-            }}
-          >
-            Privacy Policy
-          </Button>
-          .
-        </Typography>
-      </Box>
-    </Paper>
+            {error && (
+              <Alert
+                severity="error"
+                sx={{
+                  mb: 3,
+                  borderRadius: 2,
+                  bgcolor: isDark ? "rgba(211,47,47,0.1)" : "rgba(211,47,47,0.05)",
+                  color: isDark ? "#ffcdd2" : "#d32f2f",
+                }}
+              >
+                {error}
+              </Alert>
+            )}
+
+            <Box component="form" onSubmit={handleSubmit}>
+              <TextField
+                label="Username"
+                fullWidth
+                margin="normal"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                InputLabelProps={{ style: { color: labelColor } }}
+                InputProps={{
+                  style: { color: inputColor },
+                  sx: {
+                    borderRadius: 2,
+                    bgcolor: isDark ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.4)",
+                    "& fieldset": { borderColor: borderColor },
+                    "&:hover fieldset": { borderColor: hoverBorder },
+                    "&.Mui-focused fieldset": { borderColor: hoverBorder },
+                  },
+                }}
+              />
+
+              <TextField
+                label="Password"
+                type={showPassword ? "text" : "password"}
+                fullWidth
+                margin="normal"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                InputLabelProps={{ style: { color: labelColor } }}
+                InputProps={{
+                  style: { color: inputColor },
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        edge="end"
+                        sx={{ color: labelColor }}
+                      >
+                        {showPassword ? (
+                          <VisibilityOffOutlinedIcon fontSize="small" />
+                        ) : (
+                          <VisibilityOutlinedIcon fontSize="small" />
+                        )}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                  sx: {
+                    borderRadius: 2,
+                    bgcolor: isDark ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.4)",
+                    "& fieldset": { borderColor: borderColor },
+                    "&:hover fieldset": { borderColor: hoverBorder },
+                    "&.Mui-focused fieldset": { borderColor: hoverBorder },
+                  },
+                }}
+              />
+
+              <Box textAlign="right" mt={1} mb={3}>
+                <Button
+                  component={Link}
+                  to="/forgot-password"
+                  variant="text"
+                  size="small"
+                  sx={{
+                    color: isDark ? "#38bdf8" : "#6366f1",
+                    textTransform: "none",
+                    fontWeight: 500,
+                    "&:hover": {
+                      backgroundColor: "transparent",
+                      textDecoration: "underline",
+                    },
+                  }}
+                >
+                  Forgot password?
+                </Button>
+              </Box>
+
+              <Button
+                type="submit"
+                variant="contained"
+                fullWidth
+                disabled={loading}
+                sx={{
+                  py: 1.5,
+                  fontWeight: 700,
+                  fontSize: "1rem",
+                  borderRadius: 3,
+                  textTransform: "none",
+                  background: "linear-gradient(90deg, #38bdf8, #6366f1)",
+                  boxShadow: "0 10px 30px -10px rgba(99,102,241,0.5)",
+                  "&:hover": {
+                    background: "linear-gradient(90deg, #60a5fa, #7c3aed)",
+                    transform: "translateY(-2px)",
+                    boxShadow: "0 20px 40px -10px rgba(99,102,241,0.6)",
+                  },
+                  "&:disabled": {
+                    background: "rgba(0,0,0,0.12)",
+                    boxShadow: "none",
+                  },
+                }}
+              >
+                {loading ? "Logging in..." : "Login"}
+              </Button>
+            </Box>
+
+            <Stack direction="row" spacing={1} justifyContent="center" mt={4}>
+              <Typography variant="body2" color={subtitleColor}>
+                Don’t have an account?
+              </Typography>
+              <Button
+                component={Link}
+                to="/register"
+                variant="text"
+                size="small"
+                sx={{
+                  padding: 0,
+                  minWidth: "auto",
+                  color: isDark ? "#38bdf8" : "#6366f1",
+                  textTransform: "none",
+                  fontWeight: 600,
+                  "&:hover": {
+                    backgroundColor: "transparent",
+                    textDecoration: "underline",
+                  },
+                }}
+              >
+                Sign Up
+              </Button>
+            </Stack>
+
+            <Box mt={2} textAlign="center">
+              <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.7 }}>
+                © {new Date().getFullYear()} FMC
+              </Typography>
+            </Box>
+
+          </Paper>
+        </motion.div>
+      </Container>
+    </Box>
   );
 };
 
