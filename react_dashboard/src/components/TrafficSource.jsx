@@ -874,8 +874,7 @@ const TrafficSourceChart = () => {
               },
             }}
             enableGridX={false}
-            labelSkipWidth={12}
-            labelSkipHeight={12}
+            enableLabel={false}
             tooltip={({ id, value, indexValue }) => (
               <Box sx={{ px: 1, py: 0.5, borderRadius: 1, boxShadow: 3, bgcolor: theme.palette.mode === "dark" ? "rgba(0,0,0,0.75)" : "rgba(255,255,255,0.95)" }}>
                 <div><b>{String(id)}</b></div>

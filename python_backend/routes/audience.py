@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
+from python_backend.api.auth.models import UserCredential
 from python_backend.module_trafficsource import sanitize_filename
 
 
@@ -15,6 +16,22 @@ router = APIRouter(prefix="/api/audience", tags=["audience"])
 def _filter_hidden(accounts, hidden):
     hidden_all = set(hidden) | {sanitize_filename(tag) for tag in hidden}
     return [acct for acct in accounts if acct not in hidden_all]
+
+
+def _label_accounts(db: Session, accounts: list) -> list:
+    if not accounts:
+        return []
+    rows = (
+        db.query(UserCredential.account_tag, UserCredential.selected_channel_title)
+        .filter(UserCredential.account_tag.in_(accounts))
+        .all()
+    )
+    label_map = {
+        sanitize_filename(row.account_tag): (row.selected_channel_title or row.account_tag)
+        for row in rows
+        if row.account_tag
+    }
+    return [{"value": tag, "label": label_map.get(tag, tag)} for tag in accounts]
 
 
 @router.get("/demographics")
@@ -39,7 +56,7 @@ def get_demographics(
                 if allowed is not None:
                     accounts = [acct for acct in accounts if acct in allowed]
                 accounts = _filter_hidden(accounts, hidden)
-                return {"availableAccounts": accounts, "rows": []}
+                return {"availableAccounts": _label_accounts(db, accounts), "rows": []}
 
             safe_tag = sanitize_filename(accountTag)
             if allowed is not None and safe_tag not in allowed:
@@ -316,4 +333,3 @@ def get_viewer_types(
             }
     except Exception:
         return {"availableAccounts": [], "rows": []}
-

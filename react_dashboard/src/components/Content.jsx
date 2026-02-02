@@ -591,6 +591,8 @@ const ContentAnalytics = () => {
             colors={(serie) => seriesColors[serie.id] || "#60a5fa"}
             useMesh
             enableSlices="x"
+            enableCrosshair
+            crosshairType="cross"
             axisBottom={{
               tickValues: xTickValues,
               tickSize: 0,
@@ -657,6 +659,16 @@ const ContentAnalytics = () => {
                       : "rgba(148,163,184,0.25)",
                   strokeWidth: 1,
                   strokeDasharray: "4 4",
+                },
+              },
+              crosshair: {
+                line: {
+                  stroke:
+                    theme.palette.mode === "dark"
+                      ? "rgba(226,232,240,0.45)"
+                      : "rgba(15,23,42,0.35)",
+                  strokeWidth: 1,
+                  strokeDasharray: "3 3",
                 },
               },
             }}

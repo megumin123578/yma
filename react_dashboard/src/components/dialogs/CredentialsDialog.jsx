@@ -8,9 +8,7 @@ import {
   Menu,
   MenuItem,
   Box,
-  Stack,
   Typography,
-  TextField,
   Divider,
   Fade,
   Checkbox,
@@ -49,7 +47,6 @@ const CredentialsDialog = ({ open, onClose }) => {
   const panel = isDark ? "rgba(20, 28, 40, 0.55)" : "rgba(255,255,255,0.7)";
   const border = isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.08)";
   const accent = isDark ? "#7de0d2" : theme.palette.primary.main;
-  const [filename, setFilename] = useState("");
   const [status, setStatus] = useState({ type: "", message: "" });
   const [uploading, setUploading] = useState(false);
   const [authUrl, setAuthUrl] = useState("");
@@ -145,7 +142,6 @@ const CredentialsDialog = ({ open, onClose }) => {
 
   useEffect(() => {
     if (open) {
-      setFilename("");
       setStatus({ type: "", message: "" });
       setUploading(false);
       setAuthUrl("");
@@ -198,7 +194,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   }, [open, activeTab]);
 
   useEffect(() => {
-    if (!authUrl || !filename) return;
+    if (!authUrl) return;
     let stopped = false;
     setTokenSyncing(true);
 
@@ -207,7 +203,7 @@ const CredentialsDialog = ({ open, onClose }) => {
         const data = await listTokens();
         const nextTokens = data?.tokens || [];
         setTokens(nextTokens);
-        if (nextTokens.some((t) => t.name === `${filename}.pickle`)) {
+        if (nextTokens.some((t) => t?.name)) {
           stopped = true;
           setTokenSyncing(false);
         }
@@ -226,49 +222,7 @@ const CredentialsDialog = ({ open, onClose }) => {
     poll();
 
     return () => clearInterval(intervalId);
-  }, [authUrl, filename, setTokenSyncing]);
-
-  useEffect(() => {
-    if (!filename) return;
-    let canceled = false;
-    const tokenName = `${filename}.pickle`;
-
-    const pollProgress = async () => {
-      try {
-        const data = await getTokenProgress(tokenName);
-        if (!canceled) {
-          setProgress({
-            status: data?.status || "idle",
-            percent: data?.percent ?? 0,
-            stage: data?.stage || "",
-            message: data?.message || "",
-          });
-        }
-        if (data?.status === "done" || data?.status === "error") {
-          return true;
-        }
-      } catch (err) {
-        if (!canceled) {
-          setProgress({ status: "idle", percent: 0, stage: "" });
-        }
-      }
-      return false;
-    };
-
-    const intervalId = setInterval(async () => {
-      const done = await pollProgress();
-      if (done) {
-        clearInterval(intervalId);
-      }
-    }, 2000);
-
-    pollProgress();
-
-    return () => {
-      canceled = true;
-      clearInterval(intervalId);
-    };
-  }, [filename]);
+  }, [authUrl, setTokenSyncing]);
 
   useEffect(() => {
     const shouldReload =
@@ -282,10 +236,6 @@ const CredentialsDialog = ({ open, onClose }) => {
     return () => clearTimeout(timer);
   }, [progress.status, progress.percent, autoReloaded]);
 
-  const handleFilenameChange = (event) => {
-    setFilename(event.target.value || "");
-  };
-
   const handleStartOAuth = async () => {
     const targetName = "";
     if (uploading) return;
@@ -298,7 +248,6 @@ const CredentialsDialog = ({ open, onClose }) => {
     try {
       const data = await uploadCredentials(targetName);
       const nextUrl = data?.auth_url || "";
-      setFilename("");
       setAuthUrl(nextUrl);
       if (!nextUrl) {
         await loadTokens();

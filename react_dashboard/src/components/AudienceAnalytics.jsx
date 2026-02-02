@@ -46,7 +46,16 @@ const AudienceAnalytics = () => {
       try {
         const resp = await api.get("/api/audience/demographics");
         const data = resp.data;
-        const nextAccounts = data?.availableAccounts || [];
+        const nextAccounts = (data?.availableAccounts || [])
+          .map((item) => {
+            if (typeof item === "string") return { value: item, label: item };
+            const value = item?.value || item?.name || "";
+            return {
+              value,
+              label: item?.label || item?.name || value,
+            };
+          })
+          .filter((item) => item.value);
         const order = (() => {
           try {
             return JSON.parse(localStorage.getItem("tokens.order") || "[]");
@@ -57,18 +66,19 @@ const AudienceAnalytics = () => {
           .map((name) => (name || "").replace(/\.pickle$/i, ""))
           .filter(Boolean);
         const orderKey = (value) => String(value || "").toLowerCase();
-        const byName = new Map(nextAccounts.map((acct) => [orderKey(acct), acct]));
+        const byName = new Map(nextAccounts.map((acct) => [orderKey(acct.value), acct]));
         const ordered = order
           .map((name) => byName.get(orderKey(name)))
           .filter(Boolean);
+        const orderKeys = new Set(order.map(orderKey));
         const remaining = nextAccounts.filter(
-          (acct) => !order.map(orderKey).includes(orderKey(acct))
+          (acct) => !orderKeys.has(orderKey(acct.value))
         );
         const finalAccounts = [...ordered, ...remaining];
         setAccounts(finalAccounts);
-        if (!accountTag && nextAccounts.length > 0) {
-          const next = ordered.length ? ordered[0] : nextAccounts[0];
-          setAccountTag(next);
+        if (!accountTag && finalAccounts.length > 0) {
+          const next = ordered.length ? ordered[0] : finalAccounts[0];
+          setAccountTag(next.value);
         }
       } catch (err) {
         setAccounts([]);
@@ -312,8 +322,8 @@ const AudienceAnalytics = () => {
             onChange={(event) => setAccountTag(event.target.value)}
           >
             {accounts.map((acct) => (
-              <MenuItem key={acct} value={acct}>
-                {acct}
+              <MenuItem key={acct.value} value={acct.value}>
+                {acct.label || acct.value}
               </MenuItem>
             ))}
           </Select>
