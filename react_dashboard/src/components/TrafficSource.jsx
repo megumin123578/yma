@@ -1,5 +1,5 @@
-// src/components/Trafficsource.jsx
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+// src/components/TrafficSource.jsx
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import { useTheme } from "@mui/material/styles";
 import {
   Box,
@@ -18,7 +18,6 @@ import {
   MenuItem,
   Checkbox,
   ListItemText,
-  Button,
 } from "@mui/material";
 
 import { ResponsivePie } from "@nivo/pie";
@@ -51,7 +50,6 @@ const LAG_PERIODS = new Set(["last7", "last28", "last90", "last365"]);
 const pad2 = (x) => String(x).padStart(2, "0");
 const toYMD = (d) =>
   `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
-const formatPercent = (v) => `${n(v).toFixed(2)}%`;
 
 function applyDataLag(range, periodValue, now = new Date(), lagDays = DATA_LAG_DAYS) {
   if (!range?.start || !range?.end || !Number.isFinite(lagDays) || lagDays <= 0) return range;
@@ -93,6 +91,7 @@ const loadStoredFilters = () => {
 
 const TrafficSourceChart = () => {
   const theme = useTheme();
+  const chartRef = useRef(null);
 
   /* === Controls === */
   const [chartType, setChartType] = useState(() => loadStoredFilters()?.chartType || "pie");
@@ -102,6 +101,7 @@ const TrafficSourceChart = () => {
 
   const [channels, setChannels] = useState([]);
   const [channel, setChannel] = useState(() => loadStoredFilters()?.channel || "");
+
   const authHeaders = useMemo(() => {
     const token = localStorage.getItem("access_token");
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -134,12 +134,8 @@ const TrafficSourceChart = () => {
           .filter(Boolean);
         const orderKey = (value) => String(value || "").toLowerCase();
         const byId = new Map(norm.map((c) => [orderKey(c.value), c]));
-        const ordered = order
-          .map((name) => byId.get(orderKey(name)))
-          .filter(Boolean);
-        const remaining = norm.filter(
-          (c) => !order.map(orderKey).includes(orderKey(c.value))
-        );
+        const ordered = order.map((name) => byId.get(orderKey(name))).filter(Boolean);
+        const remaining = norm.filter((c) => !order.map(orderKey).includes(orderKey(c.value)));
         const finalChannels = [...ordered, ...remaining];
         if (!stop) {
           setChannels(finalChannels);
@@ -182,7 +178,6 @@ const TrafficSourceChart = () => {
         if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
         const data = await resp.json();
         setTsData(Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : []);
-        if (!Array.isArray(data) && !Array.isArray(data?.items)) setErrorMsg("Dữ liệu trả về không đúng định dạng mảng.");
       } catch (e) {
         console.error(e);
         setTsData([]);
@@ -224,7 +219,6 @@ const TrafficSourceChart = () => {
     if (periodValue === "month_prev2") return getMonthRange(2, now);
 
     const out = getRangeForPeriod(periodValue, now) || {};
-
     if (periodValue === "lifetime") {
       const today = toYMD(now);
       return {
@@ -232,58 +226,39 @@ const TrafficSourceChart = () => {
         end: out.end && out.end.trim() ? out.end : today,
       };
     }
-
     if (LAG_PERIODS.has(periodValue)) return applyDataLag(out, periodValue, now);
     return out;
   }, []);
 
-  useEffect(() => {
-    if (!channel) return;
+  const currentRange = useMemo(() => {
     const isCustom = period === "custom";
     const now = new Date();
-    const { start, end } = isCustom ? { start: startDate, end: endDate } : computeRange(period, now);
+    return isCustom ? { start: startDate, end: endDate } : computeRange(period, now);
+  }, [period, startDate, endDate, computeRange]);
 
-    if (isCustom && (!start || !end)) return;
+  useEffect(() => {
+    if (!channel) return;
+    const { start, end } = currentRange;
+    if (period === "custom" && (!start || !end)) return;
     if (!start || !end) {
       setErrorMsg("Hãy chọn thời gian hợp lệ.");
       return;
     }
-
     fetchRange(start, end);
     if (chartType !== "pie") fetchTimeseries(start, end, interval);
-  }, [
-    chartType,
-    period,
-    channel,
-    interval,
-    startDate,
-    endDate,
-    computeRange,
-    fetchRange,
-    fetchTimeseries,
-  ]);
+  }, [chartType, period, channel, interval, startDate, endDate, currentRange, fetchRange, fetchTimeseries]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem(
         FILTERS_STORAGE_KEY,
-        JSON.stringify({
-          chartType,
-          metric,
-          period,
-          interval,
-          channel,
-          startDate,
-          endDate,
-        })
+        JSON.stringify({ chartType, metric, period, interval, channel, startDate, endDate })
       );
-    } catch (e) {
-      // ignore storage errors
-    }
+    } catch (e) { }
   }, [chartType, metric, period, interval, channel, startDate, endDate]);
 
-  /* === Table aggregation (base for charts + header filter list) === */
+  /* === Table aggregation === */
   const { totals, rows } = useMemo(() => {
     const src = Array.isArray(tsData) ? tsData : [];
     const rawRows = src.map((d, i) => {
@@ -295,27 +270,17 @@ const TrafficSourceChart = () => {
       const avgPct = n(d.averageViewPercentage);
       const engaged = n(d.engagedViews);
       return {
-        id,
-        label,
-        views,
-        estimatedMinutesWatched: emw,
-        averageViewDuration: avgDur,
-        averageViewPercentage: avgPct,
-        engagedViews: engaged,
-        sortValue: METRICS[metric].valueOf(d),
+        id, label, views, estimatedMinutesWatched: emw,
+        averageViewDuration: avgDur, averageViewPercentage: avgPct, engagedViews: engaged,
+        sortValue: mconf.valueOf(d),
       };
     });
-
-
 
     const tViews = rawRows.reduce((s, r) => s + r.views, 0);
     const tEmw = rawRows.reduce((s, r) => s + r.estimatedMinutesWatched, 0);
     const tEng = rawRows.reduce((s, r) => s + r.engagedViews, 0);
-
-    const wAvgDur =
-      tViews > 0 ? rawRows.reduce((s, r) => s + r.averageViewDuration * r.views, 0) / tViews : 0;
-    const wAvgPct =
-      tViews > 0 ? rawRows.reduce((s, r) => s + r.averageViewPercentage * r.views, 0) / tViews : 0;
+    const wAvgDur = tViews > 0 ? rawRows.reduce((s, r) => s + r.averageViewDuration * r.views, 0) / tViews : 0;
+    const wAvgPct = tViews > 0 ? rawRows.reduce((s, r) => s + r.averageViewPercentage * r.views, 0) / tViews : 0;
 
     const sortedRows = rawRows
       .map((r) => ({
@@ -327,294 +292,151 @@ const TrafficSourceChart = () => {
       .sort((a, b) => b.sortValue - a.sortValue);
 
     return {
-      totals: {
-        views: tViews,
-        estimatedMinutesWatched: tEmw,
-        averageViewDuration: wAvgDur,
-        averageViewPercentage: wAvgPct,
-        engagedViews: tEng,
-      },
+      totals: { views: tViews, estimatedMinutesWatched: tEmw, averageViewDuration: wAvgDur, averageViewPercentage: wAvgPct, engagedViews: tEng },
       rows: sortedRows,
     };
-  }, [tsData, metric]);
+  }, [tsData, mconf]);
 
-
-  /* === Source filter state (affects charts only) === */
-  const [selectedSources, setSelectedSources] = useState([]); // ids
-  const allSourceItems = useMemo(
-    () => rows.map(r => ({ id: String(r.id), label: r.label || String(r.id) })),
-    [rows]
-  );
+  const [selectedSources, setSelectedSources] = useState([]);
+  const allSourceItems = useMemo(() => rows.map(r => ({ id: String(r.id), label: r.label || String(r.id) })), [rows]);
   const sourceFilterActive = selectedSources.length > 0;
-  const includeSource = useCallback(
-    (srcId) => (!sourceFilterActive ? true : selectedSources.includes(String(srcId))),
-    [sourceFilterActive, selectedSources]
-  );
-
-  // ---- Top-5 LINE/BAR----
-  const top5IdsForCharts = useMemo(() => {
-    if (chartType === "pie") return [];
-    if (Array.isArray(tsSeries) && tsSeries.length) {
-      const agg = new Map(); // source -> sum(metric)
-      for (const it of tsSeries) {
-        const s = String(it.source || "Unknown");
-        const v = n(METRICS[metric].valueOf(it));
-        agg.set(s, (agg.get(s) || 0) + v);
-      }
-      return Array.from(agg.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([id]) => String(id));
-    }
-    // fallback theo bảng tổng hợp (rows)
-    return rows.slice(0, 5).map(r => String(r.id));
-  }, [chartType, tsSeries, metric, rows]);
 
   const includeSourceForCharts = useCallback(
     (srcId) => {
-      // Nếu người dùng đã chọn filter -> tôn trọng lựa chọn
       if (sourceFilterActive) return selectedSources.includes(String(srcId));
-      // Mặc định với LINE/BAR chỉ hiển thị Top-5
-      if (chartType !== "pie") return top5IdsForCharts.includes(String(srcId));
-      // Pie giữ nguyên: hiển thị tất cả
-      return true;
+      if (chartType === "pie") return true;
+      // Top 5 fallback
+      const top5 = rows.slice(0, 5).map(r => String(r.id));
+      return top5.includes(String(srcId));
     },
-    [sourceFilterActive, selectedSources, chartType, top5IdsForCharts]
+    [sourceFilterActive, selectedSources, chartType, rows]
   );
 
-  /* === Color map (stable across charts + table) === */
+  const getSourceDisplayName = useCallback((id) => {
+    const r = rows.find(x => String(x.id) === String(id));
+    return r?.label || id;
+  }, [rows]);
+
   const seriesIdsForPalette = useMemo(() => {
     const ids = new Set(rows.map(r => String(r.id)));
     for (const it of (tsSeries || [])) ids.add(String(it.source || "Unknown"));
     return Array.from(ids);
   }, [rows, tsSeries]);
 
-  const colorMap = useMemo(() => makeDistinctPalette(seriesIdsForPalette), [seriesIdsForPalette]);
+  const colorMap = useMemo(() => makeDistinctPalette(seriesIdsForPalette, { useDark: theme.palette.mode === "dark" }), [seriesIdsForPalette, theme.palette.mode]);
 
-  const top5Ids = useMemo(() => rows.slice(0, 5).map(r => String(r.id)), [rows]);
-
-  const tablePaperSx = useMemo(
-    () => ({
-      mt: 1,
-      borderRadius: 3,
-      border: "1px solid",
-      borderColor:
-        theme.palette.mode === "dark"
-          ? "rgba(148,163,184,0.22)"
-          : "rgba(15,23,42,0.12)",
-      background:
-        theme.palette.mode === "dark"
-          ? "rgba(10,15,24,0.82)"
-          : "rgba(255,255,255,0.94)",
-      boxShadow:
-        theme.palette.mode === "dark"
-          ? "0 14px 28px rgba(15,23,42,0.4)"
-          : "0 14px 26px rgba(148,163,184,0.25)",
-      overflow: "auto",
-    }),
-    [theme.palette.mode]
-  );
-
-  const tableHeadSx = useMemo(
-    () => ({
-      background:
-        theme.palette.mode === "dark"
-          ? "rgba(15,23,42,0.9)"
-          : "rgba(226,232,240,0.85)",
-      "& .MuiTableCell-root": {
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
-        fontSize: "0.72rem",
-        color:
-          theme.palette.mode === "dark"
-            ? "rgba(226,232,240,0.85)"
-            : "rgba(15,23,42,0.75)",
-      },
-    }),
-    [theme.palette.mode]
-  );
-
-
-
-  /* === Pie data (filtered by selectedSources) === */
-  let pieData = useMemo(() => {
-    const src = Array.isArray(tsData) ? tsData : [];
-    return src
-      .map((d, i) => {
-        const id = String(d.id ?? d.label ?? d.insightTrafficSourceType ?? `item-${i}`);
-        const label = d.label ?? d.insightTrafficSourceType ?? `item-${i}`;
-        const value = mconf.valueOf(d);
-        return { id, label, value };
-      })
-      .filter((d) => n(d.value) > 0);
-  }, [tsData, mconf]);
-  pieData = useMemo(() => pieData.filter(d => includeSource(d.id)), [pieData, includeSource]);
-  const pieTotal = useMemo(() => pieData.reduce((s, d) => s + n(d.value), 0), [pieData]);
-
-  const PieTooltip = ({ datum }) => {
-    const pct = pieTotal > 0 ? ((datum.value / pieTotal) * 100).toFixed(1) : "0.0";
-    const fmt =
-      metric === "averageViewPercentage"
-        ? `${n(datum.value).toFixed(2)}%`
-        : metric === "averageViewDuration"
-          ? formatSeconds(datum.value)
-          : formatNumber(datum.value);
-    return (
-      <Box
-        sx={{
-          px: 1.25, py: 0.75, borderRadius: 1, boxShadow: 3, fontSize: 13, fontWeight: 600,
-          color: theme.palette.mode === "dark" ? theme.palette.grey[100] : theme.palette.grey[900],
-          bgcolor: theme.palette.mode === "dark" ? "rgba(0,0,0,0.75)" : "rgba(255,255,255,0.95)",
-          border: `1px solid ${theme.palette.mode === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)"}`
-        }}
-      >
-        <div style={{ marginBottom: 4 }}>{datum.label}</div>
-        <div>{METRICS[metric].label}: {fmt}</div>
-        <div>%: {pct}%</div>
-      </Box>
-    );
-  };
-
-  const getSourceDisplayName = useCallback(
-    (src) => {
-      const hit = rows.find((r) => r.id === src);
-      return (hit && (hit.label || hit.id)) || src || "Unknown";
-    },
-    [rows]
-  );
-
-  /* === Line series (filtered) === */
+  /* === Line Series with Padding and Alignment === */
   const lineSeries = useMemo(() => {
     if (chartType !== "line") return [];
+
+    // 1. All dates in tsSeries
+    const allDatesSet = new Set();
+    tsSeries.forEach(it => {
+      const d = toUTCDate(it.bucket) || new Date(it.bucket);
+      if (d) allDatesSet.add(d.getTime());
+    });
+    const allDatesSorted = Array.from(allDatesSet).sort((a, b) => a - b).map(t => new Date(t));
+
     const per = new Map();
     const EPS = 1e-9;
 
     for (const it of tsSeries) {
       const src = String(it.source || "Unknown");
-      const yNum = n(METRICS[metric].valueOf(it));
-      if (!per.has(src)) per.set(src, { data: [], hasNonZero: false });
-
+      const yNum = n(mconf.valueOf(it));
+      if (!per.has(src)) per.set(src, new Map());
       const d = toUTCDate(it.bucket) || new Date(it.bucket);
-      const item = { x: d, y: yNum, source: src, sourceLabel: getSourceDisplayName(src) };
-      const acc = per.get(src);
-      acc.data.push(item);
-      if (Math.abs(yNum) > EPS && Number.isFinite(yNum)) acc.hasNonZero = true;
+      if (d) per.get(src).set(d.getTime(), yNum);
     }
-    for (const s of per.values()) s.data.sort((a, b) => +a.x - +b.x);
 
-    return Array.from(per.entries())
-      .filter(([, s]) => s.hasNonZero)
-      .map(([id, s]) => ({ id: String(id), data: s.data }))
-      .filter(s => includeSourceForCharts(s.id));
-  }, [chartType, tsSeries, metric, getSourceDisplayName, includeSourceForCharts]);
-
-  const lineDateTicks = useMemo(() => {
-    if (!Array.isArray(lineSeries) || lineSeries.length === 0) return [];
-    const normalizeUtcDay = (d) =>
-      new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-    const uniq = new Map();
-    for (const s of lineSeries) {
-      for (const p of s.data) {
-        const raw = p.x instanceof Date ? p.x : new Date(p.x);
-        const norm = normalizeUtcDay(raw);
-        uniq.set(+norm, norm);
+    const result = [];
+    for (const [src, dataMap] of per.entries()) {
+      let nonZero = false;
+      const data = allDatesSorted.map(d => {
+        const y = dataMap.get(d.getTime()) || 0;
+        if (Math.abs(y) > EPS) nonZero = true;
+        return { x: d, y, source: src, sourceLabel: getSourceDisplayName(src) };
+      });
+      if (nonZero && includeSourceForCharts(src)) {
+        result.push({ id: src, data });
       }
     }
-    const all = Array.from(uniq.values()).sort((a, b) => +a - +b);
-    const MAX = 7;
-    if (all.length <= MAX) return all;
-    const step = (all.length - 1) / (MAX - 1);
-    const picks = [];
-    for (let i = 0; i < MAX; i++) picks.push(all[Math.round(i * step)]);
-    return Array.from(new Map(picks.map((d) => [+d, d])).values());
+    return result;
+  }, [chartType, tsSeries, mconf, getSourceDisplayName, includeSourceForCharts]);
+
+  const lineDateExtent = useMemo(() => {
+    if (!lineSeries.length || !lineSeries[0].data.length) return { min: "auto", max: "auto" };
+    const first = lineSeries[0].data[0].x;
+    const last = lineSeries[0].data[lineSeries[0].data.length - 1].x;
+    return { min: first, max: last };
   }, [lineSeries]);
 
-  /* === Bar data (filtered) === */
+  const lineDateTicks = useMemo(() => {
+    const all = [];
+    lineSeries.forEach(s => s.data.forEach(p => all.push(p.x)));
+    const uniq = Array.from(new Set(all.map(d => d.getTime()))).sort().map(t => new Date(t));
+    if (uniq.length <= 7) return uniq;
+    const step = (uniq.length - 1) / 6;
+    const picks = [];
+    for (let i = 0; i < 7; i++) picks.push(uniq[Math.round(i * step)]);
+    return picks;
+  }, [lineSeries]);
+
   const barPrep = useMemo(() => {
     if (chartType !== "bar") return { data: [], keys: [] };
-    const buckets = new Map(); // bucket -> Map(source -> value)
+    const buckets = new Map();
     const sources = new Set();
-
     for (const it of tsSeries) {
       const b = String(it.bucket);
       const s = String(it.source || "Unknown");
       if (!includeSourceForCharts(s)) continue;
-      const yVal = n(METRICS[metric].valueOf(it));
+      const yVal = n(mconf.valueOf(it));
       sources.add(s);
       if (!buckets.has(b)) buckets.set(b, new Map());
       buckets.get(b).set(s, (buckets.get(b).get(s) || 0) + yVal);
     }
-
-    const sortedBuckets = Array.from(buckets.keys()).sort((a, b) => new Date(a) - new Date(b));
-    const keys = Array.from(sources.values()).sort();
-    const data = sortedBuckets.map((b) => {
+    const sortedB = Array.from(buckets.keys()).sort((a, b) => new Date(a) - new Date(b));
+    const keys = Array.from(sources).sort();
+    const data = sortedB.map(b => {
       const row = { bucket: b };
       for (const k of keys) row[k] = buckets.get(b).get(k) || 0;
       return row;
     });
     return { data, keys };
-  }, [chartType, tsSeries, metric, includeSourceForCharts]);
+  }, [chartType, tsSeries, mconf, includeSourceForCharts]);
 
   const barXTicks = useMemo(() => {
-    const xsRaw = (barPrep.data || []).map((d) => d.bucket);
-    const xs = Array.from(
-      new Map(
-        xsRaw.map((b) => {
-          const day = dayjs(b).isValid() ? dayjs(b).format("YYYY-MM-DD") : String(b);
-          return [day, day];
-        })
-      ).values()
-    );
+    const xs = barPrep.data.map(d => d.bucket);
     if (xs.length <= 7) return xs;
     const step = (xs.length - 1) / 6;
     const picks = [];
     for (let i = 0; i < 7; i++) picks.push(xs[Math.round(i * step)]);
-    return Array.from(new Set(picks));
+    return picks;
   }, [barPrep.data]);
 
-  /* === Center label for Pie === */
   const CenterLabel = ({ centerX, centerY }) => (
     <g transform={`translate(${centerX}, ${centerY})`}>
-      <text
-        textAnchor="middle"
-        dominantBaseline="central"
-        style={{
-          fontSize: 12,
-          fill: theme.palette.mode === "dark" ? theme.palette.grey[300] : theme.palette.grey[700],
-          fontWeight: 600,
-        }}
-        y={-8}
-      >
-        {METRICS[metric].label}
+      <text textAnchor="middle" dominantBaseline="central" style={{ fontSize: 12, fill: theme.palette.text.secondary, fontWeight: 600 }} y={-8}>
+        {mconf.label}
       </text>
-      <text
-        textAnchor="middle"
-        dominantBaseline="central"
-        style={{
-          fontSize: 16,
-          fill: theme.palette.mode === "dark" ? theme.palette.grey[100] : theme.palette.grey[900],
-          fontWeight: 800,
-        }}
-        y={12}
-      >
-        {metric === "averageViewPercentage"
-          ? `${pieTotal.toFixed(2)}`
-          : metric === "averageViewDuration"
-            ? formatSeconds(pieTotal)
-            : formatNumber(pieTotal)}
+      <text textAnchor="middle" dominantBaseline="central" style={{ fontSize: 16, fill: theme.palette.text.primary, fontWeight: 800 }} y={12}>
+        {metric === "averageViewPercentage" ? `${totals.averageViewPercentage.toFixed(2)}` : metric === "averageViewDuration" ? formatSeconds(totals.averageViewDuration) : formatNumber(totals.views)}
       </text>
     </g>
   );
 
-  /* === UI === */
+  const tablePaperSx = useMemo(() => ({
+    mt: 1, borderRadius: 3, border: "1px solid", borderColor: theme.palette.divider,
+    background: theme.palette.mode === "dark" ? "rgba(10,15,24,0.82)" : "rgba(255,255,255,0.94)",
+    boxShadow: theme.palette.mode === "dark" ? "0 14px 28px rgba(0,0,0,0.4)" : "0 14px 26px rgba(0,0,0,0.1)",
+    overflow: "auto",
+  }), [theme.palette.divider, theme.palette.mode]);
+
   return (
     <Stack spacing={1.5}>
-      {/* Controls (NO source filter here) */}
       <Stack direction="row" alignItems="center" spacing={2} sx={{ px: 1, flexWrap: "wrap", rowGap: 1.25 }}>
-        <FormControl size="small" sx={{ minWidth: 160 }}>
-          <InputLabel id="chart-type-label">Chart</InputLabel>
-          <Select labelId="chart-type-label" value={chartType} label="Chart" onChange={(e) => setChartType(e.target.value)}>
+        <FormControl size="small" sx={{ minWidth: 140 }}>
+          <InputLabel>Chart</InputLabel>
+          <Select value={chartType} label="Chart" onChange={(e) => setChartType(e.target.value)}>
             <MenuItem value="pie">Pie</MenuItem>
             <MenuItem value="line">Line</MenuItem>
             <MenuItem value="bar">Bar</MenuItem>
@@ -622,497 +444,147 @@ const TrafficSourceChart = () => {
         </FormControl>
 
         {chartType !== "pie" && (
-          <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel id="interval-select-label">Interval</InputLabel>
-            <Select labelId="interval-select-label" value={interval} label="Interval" onChange={(e) => setInterval(e.target.value)}>
+          <FormControl size="small" sx={{ minWidth: 140 }}>
+            <InputLabel>Interval</InputLabel>
+            <Select value={interval} label="Interval" onChange={(e) => setInterval(e.target.value)}>
               <MenuItem value="daily">Daily</MenuItem>
               <MenuItem value="weekly">Weekly</MenuItem>
               <MenuItem value="monthly">Monthly</MenuItem>
-              <MenuItem value="yearly">Yearly</MenuItem>
             </Select>
           </FormControl>
         )}
 
-        <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel id="metric-select-label">Metric</InputLabel>
-          <Select labelId="metric-select-label" value={metric} label="Metric" onChange={(e) => setMetric(e.target.value)}>
-            {METRIC_OPTIONS.map((opt) => (
-              <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-            ))}
+        <FormControl size="small" sx={{ minWidth: 180 }}>
+          <InputLabel>Metric</InputLabel>
+          <Select value={metric} label="Metric" onChange={(e) => setMetric(e.target.value)}>
+            {METRIC_OPTIONS.map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
           </Select>
         </FormControl>
 
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75, minWidth: 280 }}>
-          <FormControl size="small">
-            <InputLabel id="period-select-label">Period</InputLabel>
-            <Select labelId="period-select-label" value={period} label="Period" onChange={(e) => setPeriod(e.target.value)}>
-              {[...PERIOD_OPTIONS, ...EXTRA_PERIODS].map((opt) => (
-                <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          {period === "custom" && (
-            <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale="en">
-              <Paper variant="outlined" sx={{ p: 0.5, display: "flex", alignItems: "center", gap: 1, borderRadius: 1 }}>
-                <DatePicker
-                  label="Start date"
-                  value={startDate ? dayjs(startDate) : null}
-                  onChange={(v) => setStartDate(v ? v.format("YYYY-MM-DD") : "")}
-                  format="DD-MM-YYYY"
-                  disableFuture
-                  maxDate={endDate ? dayjs(endDate) : dayjs()}
-                  slotProps={{ textField: { size: "small", sx: { width: 170 } } }}
-                />
-                <DatePicker
-                  label="End date"
-                  value={endDate ? dayjs(endDate) : null}
-                  onChange={(v) => setEndDate(v ? v.format("YYYY-MM-DD") : "")}
-                  format="DD-MM-YYYY"
-                  disableFuture
-                  minDate={startDate ? dayjs(startDate) : undefined}
-                  slotProps={{ textField: { size: "small", sx: { width: 170 } } }}
-                />
-              </Paper>
-            </LocalizationProvider>
-          )}
-        </Box>
-
-        <FormControl size="small" sx={{ minWidth: 260, ml: "auto" }}>
-          <InputLabel id="channel-select-label">Channel</InputLabel>
-          <Select
-            labelId="channel-select-label"
-            value={channels.some((opt) => opt.value === channel) ? channel : ""}
-            label="Channel"
-            onChange={(e) => setChannel(e.target.value)}
-          >
-            {channels.length === 0 ? (
-              <MenuItem value="" disabled>(Không tìm thấy channel nào)</MenuItem>
-            ) : (
-              channels.map((opt) => <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>)
-            )}
+        <FormControl size="small" sx={{ minWidth: 160 }}>
+          <InputLabel>Period</InputLabel>
+          <Select value={period} label="Period" onChange={(e) => setPeriod(e.target.value)}>
+            {[...PERIOD_OPTIONS, ...EXTRA_PERIODS].map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
           </Select>
         </FormControl>
 
-        {errorMsg && <Typography variant="body2" color="error">{errorMsg}</Typography>}
+        {period === "custom" && (
+          <LocalizationProvider dateAdapter={AdapterDayjs}>
+            <DatePicker label="Start" value={startDate ? dayjs(startDate) : null} onChange={v => setStartDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={{ textField: { size: "small" } }} />
+            <DatePicker label="End" value={endDate ? dayjs(endDate) : null} onChange={v => setEndDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={{ textField: { size: "small" } }} />
+          </LocalizationProvider>
+        )}
+
+        <FormControl size="small" sx={{ minWidth: 240, ml: "auto" }}>
+          <InputLabel>Channel</InputLabel>
+          <Select value={channel} label="Channel" onChange={e => setChannel(e.target.value)}>
+            {channels.map(c => <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>)}
+          </Select>
+        </FormControl>
       </Stack>
 
-      {/* CHART AREA */}
+      {errorMsg && <Typography color="error" variant="body2" sx={{ px: 1 }}>{errorMsg}</Typography>}
+
       <Box sx={{ height: 420 }}>
         {chartType === "pie" && (
           <ResponsivePie
-            debounceResize={150}
-            data={pieData}
-            colors={(d) => colorMap[String(d.id)] ?? "#888"}
-            borderWidth={1}
-            borderColor={{ from: "color", modifiers: [["darker", 0.2]] }}
-            margin={{ top: 30, right: 24, bottom: 60, left: 24 }}
-            innerRadius={0.55}
-            padAngle={0.7}
-            cornerRadius={3}
+            data={rows.filter(r => includeSourceForCharts(r.id)).map(r => ({ id: String(r.id), label: r.label, value: r.sortValue }))}
+            colors={d => colorMap[d.id] || "#888"}
+            margin={{ top: 40, right: 80, bottom: 80, left: 80 }}
+            innerRadius={0.5} padAngle={1} cornerRadius={3}
             activeOuterRadiusOffset={8}
-            valueFormat={(v) =>
-              metric === "averageViewPercentage"
-                ? `${n(v).toFixed(2)}%`
-                : metric === "averageViewDuration"
-                  ? formatSeconds(v)
-                  : formatNumber(v)
-            }
-            sortByValue
-            enableArcLinkLabels
-            arcLinkLabelsSkipAngle={8}
-            arcLinkLabelsTextColor={theme.palette.mode === "dark" ? "#eee" : "#111"}
-            arcLinkLabelsThickness={2}
-            arcLinkLabelsColor={{ from: "color" }}
-            enableArcLabels
-            arcLabelsRadiusOffset={0.42}
-            arcLabelsSkipAngle={10}
-            arcLabelsComponent={() => (
-              <text
-                textAnchor="middle"
-                dominantBaseline="central"
-                style={{
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  fill: theme.palette.mode === "dark" ? "rgba(255,255,255,0.92)" : "rgba(0,0,0,0.82)",
-                  paintOrder: "stroke",
-                  strokeWidth: 3,
-                  stroke: theme.palette.mode === "dark" ? "rgba(0,0,0,0.45)" : "rgba(255,255,255,0.9)",
-                }}
-              />
-            )}
-            tooltip={PieTooltip}
-            theme={{
-              background: "transparent",
-              textColor: theme.palette.mode === "dark" ? "#eee" : "#111",
-            }}
-            motionConfig="gentle"
-            legends={[]} // hidden, using table as legend
+            enableArcLinkLabels arcLinkLabelsSkipAngle={10} arcLinkLabelsTextColor={theme.palette.text.primary}
             layers={["arcs", "arcLabels", "arcLinkLabels", "legends", CenterLabel]}
+            tooltip={({ datum }) => (
+              <Box sx={{ p: 1, bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                <Typography variant="body2" fontWeight={700}>{datum.label}</Typography>
+                <Typography variant="caption">{mconf.label}: {metric === "averageViewDuration" ? formatSeconds(datum.value) : formatNumber(datum.value)}</Typography>
+              </Box>
+            )}
           />
         )}
 
         {chartType === "line" && (
-          <ResponsiveLine
-            debounceResize={150}
-            data={lineSeries}
-            colors={({ id }) => colorMap[String(id)] ?? "#888"}
-            margin={{ top: 30, right: 24, bottom: 70, left: 60 }}
-            xScale={{ type: "time", format: "%d-%m-%Y", useUTC: true, precision: "day" }}
-            xFormat="time:%d-%m-%Y"
-            axisBottom={{
-              format: "%d-%m-%Y",
-              tickRotation: 0,
-              tickPadding: 10,
-              tickSize: 0,
-              tickValues: lineDateTicks,
-              renderTick: (tick) => {
-                const raw =
-                  tick.format && tick.value
-                    ? tick.format(tick.value)
-                    : tick.value instanceof Date
-                      ? `${String(tick.value.getUTCDate()).padStart(2, "0")}-${String(tick.value.getUTCMonth() + 1).padStart(2, "0")}-${tick.value.getUTCFullYear()}`
-                      : String(tick.value);
-                const xLabelColor = theme.palette.mode === "dark" ? "#e5e7eb" : "#334155";
+          <Box ref={chartRef} sx={{ height: "100%" }}>
+            <ResponsiveLine
+              data={lineSeries}
+              colors={d => colorMap[d.id] || "#888"}
+              margin={{ top: 30, right: 8, bottom: 60, left: 60 }}
+              xScale={{ type: "time", format: "native", useUTC: true, precision: "day", min: lineDateExtent.min, max: lineDateExtent.max }}
+              yScale={{ type: "linear", min: 0, max: "auto" }}
+              curve="linear"
+              axisBottom={{ format: "%d/%m", tickValues: lineDateTicks }}
+              enablePoints={true} pointSize={6} useMesh enableSlices="x"
+              sliceTooltip={({ slice }) => {
+                const isRight = chartRef.current && slice.x > chartRef.current.offsetWidth / 2;
                 return (
-                  <g transform={`translate(${tick.x},${tick.y})`} style={{ pointerEvents: "none" }}>
-                    <text y={6} textAnchor="middle" dominantBaseline="hanging" style={{ fill: xLabelColor, fontSize: 12, fontWeight: 600, letterSpacing: 0.2 }}>
-                      {raw}
-                    </text>
-                  </g>
-                );
-              },
-            }}
-            yScale={{ type: "linear", stacked: false, min: 0 }}
-            enableArea
-            areaOpacity={0.15}
-            enableGridX={false}
-            enableGridY
-            pointSize={6}
-            useMesh
-            enableSlices="x"
-            sliceTooltip={({ slice }) => {
-              const p0 = slice.points[0];
-              const dateLabel =
-                typeof p0?.data?.xFormatted === "string"
-                  ? p0.data.xFormatted
-                  : p0?.data?.x instanceof Date
-                    ? new Intl.DateTimeFormat("vi-VN").format(p0.data.x)
-                    : String(p0?.data?.x ?? "");
-
-              const colorOf = (p) =>
-                colorMap[String(p.serieId)]         // ưu tiên màu trong palette ổn định
-                ?? p.color                          // fallback khác của Nivo
-
-              return (
-                <Box sx={{
-                  px: 1.25, py: 1, minWidth: 220, borderRadius: 1.25,
-                  border: `1px solid ${theme.palette.divider}`, boxShadow: 3,
-                  bgcolor: theme.palette.mode === "dark" ? "rgba(17,17,17,0.9)" : "rgba(255,255,255,0.98)",
-                  fontSize: 14, lineHeight: 1.25, fontVariantNumeric: "tabular-nums"
-                }}>
-                  <Box sx={{ color: "text.secondary", mb: 0.75 }}>{dateLabel}</Box>
-
-                  {slice.points.map(p => {
-                    const name = p.data.sourceLabel || p.serieId || "Unknown";
-                    const valueStr =
-                      metric === "averageViewPercentage"
-                        ? `${n(p.data.yFormatted).toFixed(2)}%`
-                        : metric === "averageViewDuration"
-                          ? formatSeconds(p.data.yFormatted)
-                          : formatNumber(p.data.yFormatted);
-
-                    return (
-                      <Box key={p.id} sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.25 }}>
-                        <span
-                          style={{
-                            width: 10, height: 10, borderRadius: 2,
-                            background: colorOf(p), display: "inline-block"
-                          }}
-                        />
-                        <b style={{ fontSize: 12, flex: 1 }}>{String(name)}</b>
-                        <span>{valueStr}</span>
+                  <Box sx={{
+                    p: 1.5, borderRadius: 1.5, minWidth: 200,
+                    bgcolor: theme.palette.mode === "dark" ? "rgba(10,15,24,0.95)" : "rgba(255,255,255,0.98)",
+                    border: "1px solid", borderColor: "divider", boxShadow: 10,
+                    transform: isRight ? "translateX(-110%)" : "translateX(10%)", transition: "transform 0.1s"
+                  }}>
+                    <Typography variant="caption" color="text.secondary">{dayjs(slice.points[0].data.x).format("DD/MM/YYYY")}</Typography>
+                    {slice.points.map(p => (
+                      <Box key={p.id} display="flex" alignItems="center" justifyContent="space-between" gap={2} mt={0.5}>
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: p.color }} />
+                          <Typography variant="body2">{getSourceDisplayName(p.serieId)}</Typography>
+                        </Box>
+                        <Typography variant="body2" fontWeight={700}>
+                          {metric === "averageViewPercentage" ? `${n(p.data.y).toFixed(2)}%` : metric === "averageViewDuration" ? formatSeconds(p.data.y) : formatNumber(p.data.y)}
+                        </Typography>
                       </Box>
-                    );
-                  })}
-                </Box>
-              );
-            }}
-
-          />
+                    ))}
+                  </Box>
+                )
+              }}
+              theme={{ axis: { ticks: { text: { fontSize: 11, fill: theme.palette.text.secondary } } } }}
+            />
+          </Box>
         )}
 
         {chartType === "bar" && (
           <ResponsiveBar
-            debounceResize={150}
-            data={barPrep.data}
-            keys={barPrep.keys}
-            indexBy="bucket"
-            colors={({ id }) => colorMap[String(id)] ?? "#888"}
-            margin={{ top: 30, right: 24, bottom: 60, left: 60 }}
-            padding={0.2}
-            valueScale={{ type: "linear" }}
-            indexScale={{ type: "band", round: true }}
-            axisBottom={{
-              tickRotation: 0,
-              tickValues: barXTicks,
-              renderTick: (tick) => {
-                const raw =
-                  tick.format && tick.value
-                    ? tick.format(tick.value)
-                    : tick.value instanceof Date
-                      ? new Intl.DateTimeFormat("sv-SE").format(tick.value)
-                      : String(tick.value);
-                const xLabelColor = theme.palette.mode === "dark" ? "#e5e7eb" : "#334155";
-                return (
-                  <g transform={`translate(${tick.x},${tick.y})`} style={{ pointerEvents: "none" }}>
-                    <text y={6} textAnchor="middle" dominantBaseline="hanging" style={{ fill: xLabelColor, fontSize: 12, fontWeight: 600, letterSpacing: 0.2 }}>
-                      {raw}
-                    </text>
-                  </g>
-                );
-              },
-            }}
-            enableGridX={false}
-            enableLabel={false}
+            data={barPrep.data} keys={barPrep.keys} indexBy="bucket"
+            colors={d => colorMap[d.id] || "#888"}
+            margin={{ top: 30, right: 30, bottom: 60, left: 60 }}
+            padding={0.3} axisBottom={{ format: v => dayjs(v).format("DD/MM"), tickValues: barXTicks }}
+            labelSkipWidth={12} labelSkipHeight={12}
             tooltip={({ id, value, indexValue }) => (
-              <Box sx={{ px: 1, py: 0.5, borderRadius: 1, boxShadow: 3, bgcolor: theme.palette.mode === "dark" ? "rgba(0,0,0,0.75)" : "rgba(255,255,255,0.95)" }}>
-                <div><b>{String(id)}</b></div>
-                <div>{String(indexValue)}</div>
-                <div>
-                  {metric === "averageViewPercentage"
-                    ? `${n(value).toFixed(2)}%`
-                    : metric === "averageViewDuration"
-                      ? formatSeconds(value)
-                      : formatNumber(value)}
-                </div>
+              <Box sx={{ p: 1, bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                <Typography variant="caption" display="block">{dayjs(indexValue).format("DD/MM/YYYY")}</Typography>
+                <Typography variant="body2" fontWeight={700}>{getSourceDisplayName(id)}: {formatNumber(value)}</Typography>
               </Box>
             )}
-            legends={[]}
           />
         )}
       </Box>
 
-      {/* TABLE */}
-      <TableContainer
-        component={Paper}
-        elevation={0}
-        sx={tablePaperSx}
-      >
-        <Table size="small" stickyHeader sx={{ minWidth: 1120 }}>
-          <TableHead sx={tableHeadSx}>
+      <TableContainer component={Paper} elevation={0} sx={tablePaperSx}>
+        <Table size="small" stickyHeader>
+          <TableHead sx={{ bgcolor: "background.default" }}>
             <TableRow>
-              {/* Header Source + inline Select filter */}
-              <TableCell sx={{ fontWeight: 700, whiteSpace: "nowrap" }}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <span>Source</span>
-                  <FormControl
-                    size="small"
-                    variant="standard"
-                    sx={{
-                      minWidth: 140,
-                      "& .MuiInputBase-root": { fontSize: 12, fontWeight: 500 },
-                    }}
-                  >
-
-                    <Select
-                      labelId="source-select-label-inline"
-                      multiple
-                      value={selectedSources}
-                      onChange={(e) => setSelectedSources(e.target.value)}
-                      renderValue={(selected) => {
-                        if (!selected?.length) return "All";
-                        const names = selected
-                          .map(id => allSourceItems.find(x => x.id === id)?.label || id)
-                          .slice(0, 2)
-                          .join(", ");
-                        return selected.length > 2 ? `${names} (+${selected.length - 2})` : names;
-                      }}
-                      displayEmpty
-                      disableUnderline
-                      sx={{
-                        "& .MuiSelect-select": { py: 0.2, px: 0.8 },
-                        borderRadius: 1,
-                        border: (t) => `1px solid ${t.palette.divider}`,
-                        bgcolor: "background.paper",
-                      }}
-                      MenuProps={{ PaperProps: { style: { maxHeight: 360 } } }}
-                    >
-                      {/* Menu Item */}
-                      <MenuItem
-                        value="ALL"
-                      >
-                        <Box sx={{ display: "flex", alignItems: "center", width: "100%" }}>
-                          {/* Bên trái: checkbox + nhãn (All) */}
-                          <Box sx={{ display: "flex", alignItems: "center", flex: 1, minWidth: 0 }}>
-                            <Checkbox
-                              size="small"
-                              checked={selectedSources.length === 0}
-                              indeterminate={selectedSources.length > 0}
-                              tabIndex={-1}
-                              disableRipple
-                                sx={{
-                                  mr: 0.5,
-                                  color: "#ffffff",
-                                  "&.Mui-checked": {
-                                    color: "#ffffff !important",
-                                  },
-                                  "&.MuiCheckbox-indeterminate": {
-                                    color: "#ffffff !important",
-                                  },
-                                }}
-                            />
-                            <ListItemText
-                              primary="(All)"
-                              slotProps={{ primary: { sx: { fontSize: 13 } } }}
-                            />
-                          </Box>
-
-                          {/* Clear select button */}
-                          <Button
-                            size="small"
-                            variant="text"
-                            onClick={(e) => {
-
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setSelectedSources([]);
-
-                            }}
-                            sx={(t) => ({
-                              color: t.palette.mode === "dark" ? t.palette.info.light : t.palette.info.main,
-                              "&:hover": { color: t.palette.info.dark, backgroundColor: "transparent" },
-                            })}
-                          >
-                            Clear
-                          </Button>
-                        </Box>
-                      </MenuItem>
-
-
-
-
-                      {allSourceItems.map((opt) => {
-                        const checked = selectedSources.indexOf(opt.id) > -1;
-                        return (
-                          <MenuItem key={opt.id} value={opt.id} dense>
-                            <Checkbox
-                              size="small"
-                              checked={checked}
-                              tabIndex={-1}
-                              disableRipple
-                              sx={{
-                                mr: 1,
-                                color: "#ffffff",        
-                                "&.Mui-checked": {
-                                  color: "#ffffff !important",
-                                },
-                              }}
-                            />
-                            {/* chấm màu để khớp chart */}
-                            <span
-                              style={{
-                                width: 10,
-                                height: 10,
-                                borderRadius: 3,
-                                display: "inline-block",
-                                marginRight: 8,
-                                background: colorMap[String(opt.id)] ?? "#00c8ff", // fallback cũng dùng cùng tông
-                              }}
-                            />
-
-                            <ListItemText
-                              primary={opt.label}
-                              slotProps={{ primary: { sx: { fontSize: 13 } } }}
-                            />
-                          </MenuItem>
-                        );
-                      })}
-
-                    </Select>
-                  </FormControl>
-
-                </Box>
-              </TableCell>
-
+              <TableCell sx={{ fontWeight: 700 }}>Source</TableCell>
               <TableCell align="right" sx={{ fontWeight: 700 }}>Views</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>Estimated Minutes</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>Avg View Duration</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>Avg View %</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>Engaged Views</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 700 }}>Avg Dur</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 700 }}>Avg %</TableCell>
             </TableRow>
           </TableHead>
-
           <TableBody>
-            <TableRow>
-              <TableCell sx={{ fontWeight: 900 }}>Total</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>{formatNumber(totals.views)}</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>{formatNumber(totals.estimatedMinutesWatched)}</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>{formatSeconds(totals.averageViewDuration)}</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>{formatPercent(totals.averageViewPercentage)}</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>{formatNumber(totals.engagedViews)}</TableCell>
-            </TableRow>
             {rows.map((r) => (
-              <TableRow
-                key={r.id}
-                sx={{
-                  transition: "transform 0.2s ease, background-color 0.2s ease",
-                  "&:hover": {
-                    backgroundColor:
-                      theme.palette.mode === "dark"
-                        ? "rgba(51,65,85,0.55)"
-                        : "rgba(226,232,240,0.6)",
-                    transform: "translateY(-1px)",
-                  },
-                }}
-              >
+              <TableRow key={r.id} hover>
                 <TableCell>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    {top5Ids.includes(String(r.id)) && (
-                      <span
-                        style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: 3,
-                          display: "inline-block",
-                          background: colorMap[String(r.id)] ?? "#888",
-                        }}
-                      />
-                    )}
-                    <span
-                      style={{
-                        fontWeight: top5Ids.includes(String(r.id)) ? 700 : 500,
-                        color: top5Ids.includes(String(r.id))
-                          ? (theme.palette.mode === "dark" ? "#e5e7eb" : "#111827")
-                          : "inherit",
-                      }}
-                    >
-                      {r.label}
-                    </span>
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <Box sx={{ width: 12, height: 12, borderRadius: 1, bgcolor: colorMap[r.id] }} />
+                    {r.label}
                   </Box>
                 </TableCell>
-                <TableCell align="right">{formatNumber(r.views)}</TableCell>
-                <TableCell align="right">{formatNumber(r.estimatedMinutesWatched)}</TableCell>
+                <TableCell align="right">{formatNumber(r.views)} ({r.viewsPct.toFixed(1)}%)</TableCell>
                 <TableCell align="right">{formatSeconds(r.averageViewDuration)}</TableCell>
-                <TableCell align="right">{formatPercent(r.averageViewPercentage)}</TableCell>
-                <TableCell align="right">{formatNumber(r.engagedViews)}</TableCell>
+                <TableCell align="right">{r.averageViewPercentage.toFixed(2)}%</TableCell>
               </TableRow>
             ))}
-            <TableRow>
-              <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>
-                {formatNumber(totals.views)}
-              </TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>
-                {formatNumber(totals.estimatedMinutesWatched)}
-              </TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>
-                {formatSeconds(totals.averageViewDuration)}
-              </TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>
-                {formatNumber(totals.engagedViews)}
-              </TableCell>
-            </TableRow>
           </TableBody>
         </Table>
       </TableContainer>

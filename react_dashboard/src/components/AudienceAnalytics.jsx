@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import {
   Avatar,
   Box,
@@ -26,6 +26,7 @@ const formatRangeLabel = (range) => {
 
 const AudienceAnalytics = () => {
   const theme = useTheme();
+  const chartRef = useRef(null);
   const isDark = theme.palette.mode === "dark";
   const [accountTag, setAccountTag] = useState("");
   const [accounts, setAccounts] = useState([]);
@@ -740,7 +741,7 @@ const AudienceAnalytics = () => {
             No retention data available.
           </Typography>
         ) : (
-          <Box sx={{ height: 380 }}>
+          <Box ref={chartRef} sx={{ height: 380 }}>
             <ResponsiveLine
               data={retentionSeries}
               margin={{ top: 40, right: 20, bottom: 70, left: 70 }}
@@ -767,8 +768,6 @@ const AudienceAnalytics = () => {
                 tickPadding: 8,
               }}
               colors={["#22d3ee", "#f97316"]}
-              enableArea
-              areaOpacity={0.18}
               lineWidth={3}
               enablePoints={false}
               useMesh
@@ -797,51 +796,59 @@ const AudienceAnalytics = () => {
                 { match: { id: "Audience Watch Ratio" }, id: "retentionGradient" },
                 { match: { id: "Relative Retention" }, id: "relativeGradient" },
               ]}
-              sliceTooltip={({ slice }) => (
-                <Box
-                  sx={{
-                    px: 1.4,
-                    py: 0.8,
-                    borderRadius: 1.5,
-                    minWidth: 180,
-                    bgcolor: isDark ? "rgba(15, 23, 42, 0.95)" : "rgba(255,255,255,0.98)",
-                    border: `1px solid ${isDark ? "rgba(148, 163, 184, 0.25)" : "rgba(15,23,42,0.15)"}`,
-                    color: isDark ? "#e5e7eb" : "#111827",
-                    boxShadow: isDark
-                      ? "0 12px 26px rgba(0,0,0,0.45)"
-                      : "0 12px 26px rgba(15,23,42,0.18)",
-                    backdropFilter: "blur(6px)",
-                  }}
-                >
-                  <Typography variant="caption" sx={{ fontWeight: 600, letterSpacing: 0.3 }}>
-                    {`${Math.round(slice.points[0].data.x * 100)}% video`}
-                  </Typography>
-                  {slice.points.map((point) => (
-                    <Box
-                      key={point.id}
-                      display="flex"
-                      alignItems="center"
-                      justifyContent="space-between"
-                      gap={2}
-                    >
-                      <Box display="flex" alignItems="center" gap={1}>
-                        <Box
-                          sx={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: "50%",
-                            bgcolor: point.color,
-                          }}
-                        />
-                        <Typography variant="caption">{point.serieId}</Typography>
+              sliceTooltip={({ slice }) => {
+                const isRightSide =
+                  chartRef.current && slice.x > chartRef.current.offsetWidth / 2;
+                return (
+                  <Box
+                    sx={{
+                      px: 1.4,
+                      py: 0.8,
+                      borderRadius: 1.5,
+                      minWidth: 180,
+                      bgcolor: isDark ? "rgba(15, 23, 42, 0.95)" : "rgba(255,255,255,0.98)",
+                      border: `1px solid ${isDark ? "rgba(148, 163, 184, 0.25)" : "rgba(15,23,42,0.15)"}`,
+                      color: isDark ? "#e5e7eb" : "#111827",
+                      boxShadow: isDark
+                        ? "0 12px 26px rgba(0,0,0,0.45)"
+                        : "0 12px 26px rgba(15,23,42,0.18)",
+                      backdropFilter: "blur(6px)",
+                      transform: isRightSide ? "translateX(-110%)" : "translateX(10%)",
+                      transition: "transform 0.15s ease-out",
+                    }}
+                  >
+                    <Typography variant="caption" sx={{ fontWeight: 600, letterSpacing: 0.3 }}>
+                      {`${Math.round(slice.points[0].data.x * 100)}% video`}
+                    </Typography>
+                    {slice.points.map((point) => (
+                      <Box
+                        key={point.id}
+                        display="flex"
+                        alignItems="center"
+                        justifyContent="space-between"
+                        gap={2}
+                      >
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Box
+                            sx={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: "50%",
+                              bgcolor: point.serieId === "Relative Retention" ? "#f97316" : "#22d3ee",
+                            }}
+                          />
+                          <Typography variant="body2" sx={{ fontSize: "0.80rem" }}>
+                            {point.serieId}
+                          </Typography>
+                        </Box>
+                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                          {`${(point.data.y * 100).toFixed(1)}%`}
+                        </Typography>
                       </Box>
-                      <Typography variant="caption" sx={{ fontWeight: 700, color: point.color }}>
-                        {`${Math.round(point.data.y * 100)}%`}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Box>
-              )}
+                    ))}
+                  </Box>
+                )
+              }}
               theme={{
                 textColor: isDark ? "#e5e7eb" : "#111827",
                 axis: {

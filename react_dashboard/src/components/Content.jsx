@@ -1,5 +1,4 @@
-// src/components/ContentAnalytics.jsx
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTheme } from "@mui/material/styles";
 import {
   Box,
@@ -12,9 +11,9 @@ import {
   TableRow,
   Paper,
   FormControl,
+  InputLabel,
   Select,
   MenuItem,
-  InputLabel,
 } from "@mui/material";
 
 import dayjs from "dayjs";
@@ -142,6 +141,7 @@ const ContentAnalytics = () => {
   const [videos, setVideos] = useState([]);
   const [timeseries, setTimeseries] = useState([]);
   const [channelList, setChannelList] = useState([]);
+  const chartRef = useRef(null);
 
   const [chartType, setChartType] = useState("line");
   const [metric, setMetric] = useState("views");
@@ -344,36 +344,57 @@ const ContentAnalytics = () => {
   /* ================================
      CHART DATA
   ================================= */
+  const { start: periodStart, end: periodEnd } = resolvePeriod();
+
   const lineData = useMemo(() => {
     if (chartType !== "line") return [];
+
+    // 1. Identify all unique dates in the timeseries
+    const allDatesSet = new Set();
+    timeseries.forEach(t => {
+      const d = dayjs(t.bucket).startOf('day').toDate().getTime();
+      allDatesSet.add(d);
+    });
+    const allDatesSorted = Array.from(allDatesSet).sort((a, b) => a - b).map(t => new Date(t));
 
     const map = new Map();
     timeseries.forEach((t) => {
       const id = t.videoId;
       if (!id) return;
-
       const title = t.title || id;
-
       if (!map.has(id)) {
-        map.set(id, { id, data: [] });
+        map.set(id, new Map());
       }
-
       const metricKey =
         {
           views: "views",
-          estimatedMinutesWatched: "watch_hours", // map sang watch_hours
+          estimatedMinutesWatched: "watch_hours",
         }[metric] ?? "views";
 
-      map.get(id).data.push({
-        x: new Date(t.bucket),
-        y: n(t[metricKey]),
-        videoId: id,
-        title,
-      });
+      const d = dayjs(t.bucket).startOf('day').toDate().getTime();
+      map.get(id).set(d, { y: n(t[metricKey]), title });
     });
 
-    return [...map.values()];
+    return Array.from(map.entries()).map(([id, dataMap]) => {
+      const data = allDatesSorted.map(d => {
+        const entry = dataMap.get(d.getTime());
+        return {
+          x: d,
+          y: entry ? entry.y : 0,
+          videoId: id,
+          title: entry ? entry.title : id
+        };
+      });
+      return { id, data };
+    });
   }, [timeseries, chartType, metric]);
+
+  const lineDateExtent = useMemo(() => {
+    if (!lineData.length || !lineData[0].data.length) return { min: "auto", max: "auto" };
+    const first = lineData[0].data[0].x;
+    const last = lineData[0].data[lineData[0].data.length - 1].x;
+    return { min: first, max: last };
+  }, [lineData]);
 
   // Chọn tick ngày thưa để không đè chữ
   const xTickValues = useMemo(() => {
@@ -565,6 +586,7 @@ const ContentAnalytics = () => {
 
       {/* CHART */}
       <Box
+        ref={chartRef}
         sx={{
           height: 420,
           minWidth: 320,
@@ -580,12 +602,17 @@ const ContentAnalytics = () => {
           <ResponsiveLine
             debounceResize={150}
             data={lineData}
-            margin={{ top: 32, right: 24, bottom: 64, left: 56 }}
-            xScale={{ type: "time", format: "native", useUTC: false, precision: "day" }}
+            margin={{ top: 32, right: 8, bottom: 64, left: 56 }}
+            xScale={{
+              type: "time",
+              format: "native",
+              useUTC: false,
+              precision: "day",
+              min: lineDateExtent.min,
+              max: lineDateExtent.max
+            }}
             yScale={{ type: "linear", min: 0, stacked: false }}
-            curve="monotoneX"
-            enableArea
-            areaOpacity={0.12}
+            curve="linear"
             enablePoints={true}
             pointSize={6}
             colors={(serie) => seriesColors[serie.id] || "#60a5fa"}
@@ -679,6 +706,8 @@ const ContentAnalytics = () => {
                   ? dayjs(p0.data.x).format("DD/MM/YYYY")
                   : String(p0?.data?.x ?? "");
 
+              const isRightSide = chartRef.current && slice.x > chartRef.current.offsetWidth / 2;
+
               return (
                 <Box
                   sx={{
@@ -692,6 +721,8 @@ const ContentAnalytics = () => {
                     border: `1px solid ${theme.palette.divider}`,
                     boxShadow: 3,
                     fontSize: 13,
+                    transform: isRightSide ? "translateX(-110%)" : "translateX(10%)",
+                    transition: "transform 0.1s ease-out",
                   }}
                 >
                   <Box sx={{ mb: 0.75, color: "text.secondary" }}>{dateLabel}</Box>
