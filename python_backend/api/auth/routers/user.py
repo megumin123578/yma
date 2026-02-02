@@ -269,12 +269,8 @@ def start_oauth(
     db: Session = Depends(get_db),
 ):
     account_tag_raw = (payload.account_tag or "").strip()
-    auto_name = not account_tag_raw
-    account_tag = sanitize_filename(account_tag_raw) if account_tag_raw else ""
-    if account_tag_raw and not account_tag:
-        raise HTTPException(status_code=400, detail="Invalid account_tag")
-    if auto_name:
-        account_tag = f"pending_{current_user.id}_{int(time.time() * 1000)}"
+    auto_name = True
+    account_tag = f"pending_{current_user.id}_{int(time.time() * 1000)}"
 
     progress_path = os.path.join(PROGRESS_DIR, f"{account_tag}.json")
     if os.path.exists(progress_path):
@@ -319,7 +315,7 @@ def start_oauth(
         "auto_name": auto_name,
     }
 
-    return {"account_tag": account_tag_raw, "auth_url": auth_url, "state": state}
+    return {"account_tag": "", "auth_url": auth_url, "state": state}
 
 
 @router.get("/credentials/callback", response_class=HTMLResponse)

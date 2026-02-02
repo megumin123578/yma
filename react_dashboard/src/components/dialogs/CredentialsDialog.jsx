@@ -287,7 +287,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   };
 
   const handleStartOAuth = async () => {
-    const targetName = (filename || "").trim();
+    const targetName = "";
     if (uploading) return;
 
     setUploading(true);
@@ -298,8 +298,7 @@ const CredentialsDialog = ({ open, onClose }) => {
     try {
       const data = await uploadCredentials(targetName);
       const nextUrl = data?.auth_url || "";
-      const sanitized = data?.account_tag || targetName;
-      setFilename(sanitized);
+      setFilename("");
       setAuthUrl(nextUrl);
       if (!nextUrl) {
         await loadTokens();
@@ -680,21 +679,6 @@ const CredentialsDialog = ({ open, onClose }) => {
                     Connect Google account
                   </Typography>
 
-                  <TextField
-                    label="Account tag (name to identify this channel)"
-                    size="small"
-                    value={filename}
-                    onChange={handleFilenameChange}
-                    placeholder="e.g. my_channel"
-                    InputLabelProps={{ style: { color: isDark ? "#aab4c2" : undefined } }}
-                    sx={{
-                      input: { color: isDark ? "#e9edf2" : undefined },
-                      "& .MuiOutlinedInput-notchedOutline": {
-                        borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
-                      },
-                    }}
-                  />
-
                   <Button
                     variant="contained"
                     color="success"
@@ -712,7 +696,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                       },
                     }}
                   >
-                    Connect Google Account
+                    Add Channel
                   </Button>
                 </Box>
 
