@@ -115,7 +115,7 @@ const Sidebar = () => {
                     minWidth: 0,
                   }}
                 >
-                  FUNTIME MEDIA
+                  YT Manage App
                 </Typography>
                 <IconButton onClick={() => setIsCollapsed(!isCollapsed)}>
                   <MenuOutlinedIcon />
