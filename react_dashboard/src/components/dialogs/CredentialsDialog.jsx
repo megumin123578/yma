@@ -21,7 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dayjs from "dayjs";
 import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
-import UploadFileIcon from "@mui/icons-material/UploadFile";
+import LinkIcon from "@mui/icons-material/Link";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
@@ -288,7 +288,7 @@ const CredentialsDialog = ({ open, onClose }) => {
 
   const handleStartOAuth = async () => {
     const targetName = (filename || "").trim();
-    if (!targetName || uploading) return;
+    if (uploading) return;
 
     setUploading(true);
     setStatus({ type: "", message: "" });
@@ -306,10 +306,11 @@ const CredentialsDialog = ({ open, onClose }) => {
       }
       setStatus({
         type: "success",
-        message: nextUrl
-          ? "Authorization link created. Click to continue."
-          : "Authorization started.",
+        message: nextUrl ? "Redirecting to Google..." : "Authorization started.",
       });
+      if (nextUrl) {
+        window.open(nextUrl, "_blank", "noopener");
+      }
     } catch (err) {
       const message =
         err?.response?.data?.detail || "Authorization failed. Please try again.";
@@ -695,23 +696,23 @@ const CredentialsDialog = ({ open, onClose }) => {
                   />
 
                   <Button
-                    variant="outlined"
-                    startIcon={<UploadFileIcon />}
+                    variant="contained"
+                    color="success"
+                    startIcon={<LinkIcon />}
                     onClick={handleStartOAuth}
-                    disabled={!filename.trim() || uploading}
+                    disabled={uploading}
                     sx={{
                       ...shimmerSx,
-                      borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
+                      bgcolor: isDark ? "#2b8a7b" : undefined,
                       color: isDark ? "#e9edf2" : undefined,
                       transition: "all 180ms ease",
                       "&:hover": {
-                        borderColor: isDark ? "rgba(255,255,255,0.4)" : undefined,
-                        backgroundColor: isDark ? "rgba(255,255,255,0.06)" : undefined,
+                        bgcolor: isDark ? "#247468" : undefined,
                         transform: "translateY(-1px)",
                       },
                     }}
                   >
-                    Create authorization link
+                    Connect Google Account
                   </Button>
                 </Box>
 
@@ -728,46 +729,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                   </Typography>
                 )}
 
-                {authUrl && (
-                  <Stack direction="column" spacing={1}>
-                    <TextField
-                      label="Authorization link"
-                      size="small"
-                      value={authUrl}
-                      InputProps={{ readOnly: true }}
-                      onFocus={(event) => event.target.select()}
-                      sx={{
-                        "& .MuiOutlinedInput-root": {
-                          backgroundColor: isDark
-                            ? "rgba(15,23,42,0.45)"
-                            : "rgba(255,255,255,0.9)",
-                        },
-                      }}
-                    />
-                    <Stack direction="row" spacing={1} flexWrap="wrap">
-                      <Button
-                        variant="contained"
-                        color="success"
-                        href={authUrl}
-                        target="_blank"
-                        rel="noopener"
-                        size="large"
-                        fullWidth
-                        sx={{
-                          ...shimmerSx,
-                          bgcolor: isDark ? "#2b8a7b" : undefined,
-                          transition: "transform 180ms ease",
-                          "&:hover": {
-                            bgcolor: isDark ? "#247468" : undefined,
-                            transform: "translateY(-1px)",
-                          },
-                        }}
-                      >
-                        Open Authorization Link
-                      </Button>
-                    </Stack>
-                  </Stack>
-                )}
+                {null}
 
                 {progress.status !== "idle" && (
                   <Box display="flex" flexDirection="column" gap={0.5}>
@@ -850,9 +812,11 @@ const CredentialsDialog = ({ open, onClose }) => {
                     <Box display="flex" flexDirection="column" gap={1}>
                       {tokens.map((token) => {
                         const tokenName = typeof token === "string" ? token : token.name || "";
-                        const displayName = tokenName.toLowerCase().endsWith(".pickle")
-                          ? tokenName.slice(0, -7)
-                          : tokenName;
+                        const displayName =
+                          (typeof token === "object" && token.label) ||
+                          (tokenName.toLowerCase().endsWith(".pickle")
+                            ? tokenName.slice(0, -7)
+                            : tokenName);
                         const isHidden = typeof token === "string" ? false : !!token.hidden;
                         return (
                           <Box

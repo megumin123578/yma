@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
+from python_backend.api.auth.models import UserCredential
 from python_backend.module_trafficsource import sanitize_filename
 from python_backend.module_revenue import _ensure_revenue_table
 
@@ -60,7 +61,20 @@ def list_channels(
     if allowed is not None:
         items = [acct for acct in items if acct in allowed]
     items = _filter_hidden(items, hidden)
-    return {"items": items}
+    label_map = {}
+    if items:
+        creds = (
+            db.query(UserCredential.account_tag, UserCredential.selected_channel_title)
+            .filter(UserCredential.account_tag.in_(items))
+            .all()
+        )
+        label_map = {
+            sanitize_filename(row.account_tag): (row.selected_channel_title or row.account_tag)
+            for row in creds
+            if row.account_tag
+        }
+    labeled = [{"value": tag, "label": label_map.get(tag, tag)} for tag in items]
+    return {"items": labeled}
 
 
 @router.get("/")

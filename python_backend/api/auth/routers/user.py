@@ -269,11 +269,12 @@ def start_oauth(
     db: Session = Depends(get_db),
 ):
     account_tag_raw = (payload.account_tag or "").strip()
-    if not account_tag_raw:
-        raise HTTPException(status_code=400, detail="account_tag is required")
-    account_tag = sanitize_filename(account_tag_raw)
-    if not account_tag:
+    auto_name = not account_tag_raw
+    account_tag = sanitize_filename(account_tag_raw) if account_tag_raw else ""
+    if account_tag_raw and not account_tag:
         raise HTTPException(status_code=400, detail="Invalid account_tag")
+    if auto_name:
+        account_tag = f"pending_{current_user.id}_{int(time.time() * 1000)}"
 
     progress_path = os.path.join(PROGRESS_DIR, f"{account_tag}.json")
     if os.path.exists(progress_path):
@@ -315,9 +316,10 @@ def start_oauth(
         "created_at": time.time(),
         "user_id": current_user.id,
         "account_tag": account_tag,
+        "auto_name": auto_name,
     }
 
-    return {"account_tag": account_tag, "auth_url": auth_url, "state": state}
+    return {"account_tag": account_tag_raw, "auth_url": auth_url, "state": state}
 
 
 @router.get("/credentials/callback", response_class=HTMLResponse)
@@ -464,8 +466,56 @@ def select_channel_after_auth(
     )
     if not cred_row:
         raise HTTPException(status_code=404, detail="Credential not found")
+    if pending.get("auto_name"):
+        new_tag = sanitize_filename(title) or account_tag
+        if new_tag:
+            existing = (
+                db.query(UserCredential)
+                .filter(
+                    UserCredential.user_id == user_id,
+                    UserCredential.account_tag == new_tag,
+                )
+                .first()
+            )
+            if existing and existing.id != cred_row.id:
+                base = new_tag
+                counter = 2
+                while True:
+                    candidate = f"{base}_{counter}"
+                    existing = (
+                        db.query(UserCredential)
+                        .filter(
+                            UserCredential.user_id == user_id,
+                            UserCredential.account_tag == candidate,
+                        )
+                        .first()
+                    )
+                    if not existing:
+                        new_tag = candidate
+                        break
+                    counter += 1
+        if new_tag and new_tag != account_tag:
+            new_token_name = f"{new_tag}.pickle"
+            old_token_path = os.path.join(TOKEN_DIR, token_name)
+            new_token_path = os.path.join(TOKEN_DIR, new_token_name)
+            if os.path.exists(old_token_path):
+                try:
+                    os.replace(old_token_path, new_token_path)
+                except Exception:
+                    pass
+            old_progress = os.path.join(PROGRESS_DIR, f"{account_tag}.json")
+            new_progress = os.path.join(PROGRESS_DIR, f"{new_tag}.json")
+            if os.path.exists(old_progress):
+                try:
+                    os.replace(old_progress, new_progress)
+                except Exception:
+                    pass
+            account_tag = new_tag
+            token_name = new_token_name
     cred_row.selected_channel_id = channel_id
     cred_row.selected_channel_title = title
+    cred_row.account_tag = account_tag
+    cred_row.token_name = token_name
     cred_row.updated_at = datetime.utcnow()
     db.add(cred_row)
     db.commit()
@@ -504,16 +554,40 @@ def list_tokens(
     is_admin = (current_user.username or "").lower() in _get_admin_users()
     hidden = set()
     allowed = None
+    labels = {}
     if not is_admin:
         hidden = get_hidden_account_tags(db, current_user.id)
-        allowed = {
-            row.token_name
-            for row in db.query(UserCredential.token_name)
+        rows = (
+            db.query(
+                UserCredential.token_name,
+                UserCredential.selected_channel_title,
+                UserCredential.account_tag,
+            )
             .filter(
                 UserCredential.user_id == current_user.id,
                 UserCredential.token_name.isnot(None),
             )
             .all()
+        )
+        allowed = {row.token_name for row in rows if row.token_name}
+        labels = {
+            row.token_name: (row.selected_channel_title or row.account_tag or "")
+            for row in rows
+            if row.token_name
+        }
+    else:
+        rows = (
+            db.query(
+                UserCredential.token_name,
+                UserCredential.selected_channel_title,
+                UserCredential.account_tag,
+            )
+            .filter(UserCredential.token_name.isnot(None))
+            .all()
+        )
+        labels = {
+            row.token_name: (row.selected_channel_title or row.account_tag or "")
+            for row in rows
             if row.token_name
         }
 
@@ -530,7 +604,13 @@ def list_tokens(
         if not os.path.exists(token_path):
             continue
         base = os.path.splitext(name)[0]
-        files.append({"name": name, "hidden": base in hidden})
+        files.append(
+            {
+                "name": name,
+                "hidden": base in hidden,
+                "label": labels.get(name, ""),
+            }
+        )
     files.sort(key=lambda x: x["name"])
     return {"tokens": files}
 

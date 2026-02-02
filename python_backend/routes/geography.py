@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
+from python_backend.api.auth.models import UserCredential
 from python_backend.module_trafficsource import sanitize_filename
 
 router = APIRouter(prefix="/api/geography")
@@ -29,6 +30,22 @@ def load_all_credentials():
             full_path = os.path.join(TOKEN_DIR, fname)
             creds[channel] = full_path
     return creds
+
+
+def _label_channels(db: Session, channels: list) -> list:
+    if not channels:
+        return []
+    rows = (
+        db.query(UserCredential.account_tag, UserCredential.selected_channel_title)
+        .filter(UserCredential.account_tag.in_(channels))
+        .all()
+    )
+    label_map = {
+        sanitize_filename(row.account_tag): (row.selected_channel_title or row.account_tag)
+        for row in rows
+        if row.account_tag
+    }
+    return [{"value": tag, "label": label_map.get(tag, tag)} for tag in channels]
 
 
 def get_range_dates(range_key: str):
@@ -73,21 +90,23 @@ def api_geography(
 
     # Nếu channel = None → không chọn gì → trả về availableChannels
     if not channel:
+        available = list(CHANNEL_CREDENTIALS.keys())
         return {
             "start": None,
             "end": None,
             "channel": None,
             "rows": [],
-            "availableChannels": list(CHANNEL_CREDENTIALS.keys()),
+            "availableChannels": _label_channels(db, available),
         }
 
     if channel not in CHANNEL_CREDENTIALS:
+        available = list(CHANNEL_CREDENTIALS.keys())
         return {
             "start": None,
             "end": None,
             "channel": channel,
             "rows": [],
-            "availableChannels": list(CHANNEL_CREDENTIALS.keys()),
+            "availableChannels": _label_channels(db, available),
         }
 
     cred_file = CHANNEL_CREDENTIALS[channel]
@@ -101,7 +120,7 @@ def api_geography(
             "channel": channel,
             "rows": [],
             "error": "invalid_credentials",
-            "availableChannels": list(CHANNEL_CREDENTIALS.keys()),
+            "availableChannels": _label_channels(db, list(CHANNEL_CREDENTIALS.keys())),
         }
 
     # ========= date range logic =========

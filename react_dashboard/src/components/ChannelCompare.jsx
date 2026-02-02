@@ -144,7 +144,16 @@ const ChannelCompare = () => {
         });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
-        const list = Array.isArray(data?.items) ? data.items : [];
+        const list = (Array.isArray(data?.items) ? data.items : [])
+          .map((item) => {
+            if (typeof item === "string") return { value: item, label: item };
+            const value = item?.value || item?.name || "";
+            return {
+              value,
+              label: item?.label || item?.name || value,
+            };
+          })
+          .filter((item) => item.value);
         if (!stop) setChannels(list);
       } catch {
         if (!stop) setChannels([]);

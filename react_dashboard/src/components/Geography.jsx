@@ -116,6 +116,16 @@ const GeographyChart = ({ isDashboard = false }) => {
         setRawData(json.rows || []);
 
         if (json.availableChannels) {
+          const normalized = (Array.isArray(json.availableChannels) ? json.availableChannels : [])
+            .map((item) => {
+              if (typeof item === "string") return { value: item, label: item };
+              const value = item?.value || item?.name || "";
+              return {
+                value,
+                label: item?.label || item?.name || value,
+              };
+            })
+            .filter((item) => item.value);
           const orderKey = (value) =>
             String(value || "")
               .trim()
@@ -133,15 +143,15 @@ const GeographyChart = ({ isDashboard = false }) => {
             .map(orderKey)
             .filter(Boolean);
           const orderIndex = new Map(orderList.map((key, idx) => [key, idx]));
-          const finalChannels = [...json.availableChannels].sort((a, b) => {
-            const ai = orderIndex.has(orderKey(a)) ? orderIndex.get(orderKey(a)) : Number.MAX_SAFE_INTEGER;
-            const bi = orderIndex.has(orderKey(b)) ? orderIndex.get(orderKey(b)) : Number.MAX_SAFE_INTEGER;
+          const finalChannels = [...normalized].sort((a, b) => {
+            const ai = orderIndex.has(orderKey(a.value)) ? orderIndex.get(orderKey(a.value)) : Number.MAX_SAFE_INTEGER;
+            const bi = orderIndex.has(orderKey(b.value)) ? orderIndex.get(orderKey(b.value)) : Number.MAX_SAFE_INTEGER;
             if (ai !== bi) return ai - bi;
-            return String(a).localeCompare(String(b));
+            return String(a.label).localeCompare(String(b.label));
           });
           setChannels(finalChannels);
           if (!channel && finalChannels.length > 0) {
-            setChannel(finalChannels[0]);
+            setChannel(finalChannels[0].value);
           }
         }
       })
@@ -380,8 +390,8 @@ const GeographyChart = ({ isDashboard = false }) => {
             onChange={(e) => setChannel(e.target.value)}
           >
             {channels.map((c) => (
-              <MenuItem key={c} value={c}>
-                {c}
+              <MenuItem key={c.value} value={c.value}>
+                {c.label || c.value}
               </MenuItem>
             ))}
           </Select>

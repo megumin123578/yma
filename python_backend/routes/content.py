@@ -147,7 +147,7 @@ def list_channels(
             if hidden_all and value in hidden_all:
                 continue
             seen.add(value)
-            label = row.account_tag or value
+            label = row.selected_channel_title or row.account_tag or value
             items.append({"value": value, "label": label})
     except Exception as e:
         print("[content.channels] ERROR:", e)

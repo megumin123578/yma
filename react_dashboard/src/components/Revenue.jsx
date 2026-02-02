@@ -64,10 +64,16 @@ const RevenueAnalytics = () => {
       try {
         const res = await api.get("/api/revenue/channels");
         const data = res.data;
-        const items = (data?.items || []).map((value) => ({
-          value,
-          label: value,
-        }));
+        const items = (data?.items || [])
+          .map((item) => {
+            if (typeof item === "string") return { value: item, label: item };
+            const value = item?.value || item?.name || "";
+            return {
+              value,
+              label: item?.label || item?.name || value,
+            };
+          })
+          .filter((item) => item.value);
         if (!stop) {
           setChannels(items);
           if (!items.length) {
