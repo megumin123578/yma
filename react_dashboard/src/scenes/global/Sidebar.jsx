@@ -1,7 +1,7 @@
 import { useState, useContext } from "react";
 import { ProSidebar, Menu, MenuItem} from "react-pro-sidebar";
 import { Box, IconButton, Typography, useTheme } from "@mui/material";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import "react-pro-sidebar/dist/css/styles.css";
 import { tokens } from "../../theme";
 
@@ -19,15 +19,14 @@ import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import WebhookIcon from '@mui/icons-material/Webhook';
 import { UserContext } from "../../context/UserContext";
 
-const Item = ({ title, to, icon, selected, setSelected }) => {
+const Item = ({ title, to, icon, isActive }) => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
 
   return (
     <MenuItem
-      active={selected === title}
+      active={isActive}
       style={{ color: colors.grey[100] }}
-      onClick={() => setSelected(title)}
       icon={icon}
     >
       <Typography>{title}</Typography>
@@ -41,7 +40,14 @@ const Sidebar = () => {
   const colors = tokens(theme.palette.mode);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [selected, setSelected] = useState("Dashboard");
+  const location = useLocation();
+  const pathname = location.pathname || "/dashboard";
+
+  const isActivePath = (to) => {
+    if (!to) return false;
+    if (to === "/dashboard") return pathname === "/" || pathname === "/dashboard";
+    return pathname === to || pathname.startsWith(`${to}/`);
+  };
 
   const { user } = useContext(UserContext);
 
@@ -161,8 +167,7 @@ const Sidebar = () => {
               title="Dashboard"
               to="/dashboard"
               icon={<HomeOutlinedIcon />}
-              selected={selected}
-              setSelected={setSelected}
+              isActive={isActivePath("/dashboard")}
             />
 
             <Typography
@@ -177,48 +182,42 @@ const Sidebar = () => {
               title="Content"
               to="/content"
               icon={<DatasetIcon />}
-              selected={selected}
-              setSelected={setSelected}
+              isActive={isActivePath("/content")}
             />
 
             <Item
               title="Traffic Source"
               to="/traffic_source"
               icon={<DeviceUnknownIcon />}
-              selected={selected}
-              setSelected={setSelected}
+              isActive={isActivePath("/traffic_source")}
             />
 
             <Item
               title="Geography Chart"
               to="/geography"
               icon={<MapOutlinedIcon />}
-              selected={selected}
-              setSelected={setSelected}
+              isActive={isActivePath("/geography")}
             />
 
             <Item
               title="Audience Analytics"
               to="/audience_analytics"
               icon={<GroupsOutlinedIcon />}
-              selected={selected}
-              setSelected={setSelected}
+              isActive={isActivePath("/audience_analytics")}
             />
 
             <Item
               title="Reach"
               to="/reach"
               icon={<VisibilityOutlinedIcon />}
-              selected={selected}
-              setSelected={setSelected}
+              isActive={isActivePath("/reach")}
             />
 
             <Item
               title="Revenue"
               to="/revenue"
               icon={<AttachMoneyIcon />}
-              selected={selected}
-              setSelected={setSelected}
+              isActive={isActivePath("/revenue")}
             />
             
 
@@ -234,16 +233,14 @@ const Sidebar = () => {
               title="Channel Compare"
               to="/channel_compare"
               icon={<BarChartOutlinedIcon />}
-              selected={selected}
-              setSelected={setSelected}
+              isActive={isActivePath("/channel_compare")}
             />
 
             <Item
               title="Rivals Channel"
               to="/rivals"
               icon={<WebhookIcon />}
-              selected={selected}
-              setSelected={setSelected}
+              isActive={isActivePath("/rivals")}
             />
 
             <Typography
@@ -258,16 +255,14 @@ const Sidebar = () => {
               title="SMMStore Orders"
               to="/smmstore"
               icon={<AttachMoneyIcon />}
-              selected={selected}
-              setSelected={setSelected}
+              isActive={isActivePath("/smmstore")}
             />
 
             <Item
               title="SMMStore Analytics"
               to="/smmstore_analytics"
               icon={<BarChartOutlinedIcon />}
-              selected={selected}
-              setSelected={setSelected}
+              isActive={isActivePath("/smmstore_analytics")}
             />
 
             {/* <Item
