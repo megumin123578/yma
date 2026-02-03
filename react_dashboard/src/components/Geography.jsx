@@ -8,7 +8,6 @@ import {
   Select,
   MenuItem,
   TableContainer,
-  Paper,
   Table,
   TableHead,
   TableRow,
@@ -19,12 +18,8 @@ import {
   Divider,
   ListSubheader,
   Typography,
-  Chip,
-  Avatar,
-  Grid,
 } from "@mui/material";
 import { motion, AnimatePresence } from "framer-motion";
-import PublicIcon from "@mui/icons-material/Public";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import YouTubeIcon from "@mui/icons-material/YouTube";

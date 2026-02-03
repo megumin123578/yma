@@ -5,7 +5,6 @@ import {
   Box,
   Stack,
   Typography,
-  Paper,
   Table,
   TableBody,
   TableCell,
@@ -16,7 +15,14 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Divider,
 } from "@mui/material";
+import { motion, AnimatePresence } from "framer-motion";
+import BarChartIcon from "@mui/icons-material/BarChart";
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import YouTubeIcon from "@mui/icons-material/YouTube";
+import PieChartIcon from "@mui/icons-material/PieChart";
+import TimelineIcon from "@mui/icons-material/Timeline";
 
 import { ResponsivePie } from "@nivo/pie";
 import { ResponsiveLine } from "@nivo/line";
@@ -89,6 +95,7 @@ const loadStoredFilters = () => {
 
 const TrafficSourceChart = () => {
   const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
   const chartRef = useRef(null);
 
   /* === Controls === */
@@ -421,178 +428,309 @@ const TrafficSourceChart = () => {
     </g>
   );
 
+  const glassSx = useMemo(() => ({
+    bgcolor: isDark ? "rgba(15, 23, 42, 0.65)" : "rgba(255, 255, 255, 0.8)",
+    backdropFilter: "blur(12px)",
+    borderRadius: 4,
+    border: "1px solid",
+    borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
+    boxShadow: isDark ? "0 8px 32px rgba(0,0,0,0.4)" : "0 8px 24px rgba(15,23,42,0.08)",
+  }), [isDark]);
+
   const tablePaperSx = useMemo(() => ({
-    mt: 1, borderRadius: 3, border: "1px solid", borderColor: theme.palette.divider,
-    background: theme.palette.mode === "dark" ? "rgba(10,15,24,0.82)" : "rgba(255,255,255,0.94)",
-    boxShadow: theme.palette.mode === "dark" ? "0 14px 28px rgba(0,0,0,0.4)" : "0 14px 26px rgba(0,0,0,0.1)",
-    overflow: "auto",
-  }), [theme.palette.divider, theme.palette.mode]);
+    ...glassSx,
+    p: 1,
+    overflow: "hidden",
+  }), [glassSx]);
 
   return (
-    <Stack spacing={1.5}>
-      <Stack direction="row" alignItems="center" spacing={2} sx={{ px: 1, flexWrap: "wrap", rowGap: 1.25 }}>
-        <FormControl size="small" sx={{ minWidth: 140 }}>
-          <InputLabel>Chart</InputLabel>
-          <Select value={chartType} label="Chart" onChange={(e) => setChartType(e.target.value)}>
-            <MenuItem value="pie">Pie</MenuItem>
-            <MenuItem value="line">Line</MenuItem>
-            <MenuItem value="bar">Bar</MenuItem>
-          </Select>
-        </FormControl>
-
-        {chartType !== "pie" && (
+    <motion.div
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+    >
+      <Stack spacing={2}>
+        {/* SELECTORS */}
+        <Stack direction="row" alignItems="center" spacing={2} sx={{ flexWrap: "wrap", rowGap: 2 }}>
           <FormControl size="small" sx={{ minWidth: 140 }}>
-            <InputLabel>Interval</InputLabel>
-            <Select value={interval} label="Interval" onChange={(e) => setInterval(e.target.value)}>
-              <MenuItem value="daily">Daily</MenuItem>
-              <MenuItem value="weekly">Weekly</MenuItem>
-              <MenuItem value="monthly">Monthly</MenuItem>
+            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <PieChartIcon sx={{ fontSize: 16 }} /> Chart
+            </InputLabel>
+            <Select value={chartType} label="Chart" onChange={(e) => setChartType(e.target.value)}>
+              <MenuItem value="pie">Pie</MenuItem>
+              <MenuItem value="line">Line</MenuItem>
+              <MenuItem value="bar">Bar</MenuItem>
             </Select>
           </FormControl>
-        )}
 
-        <FormControl size="small" sx={{ minWidth: 180 }}>
-          <InputLabel>Metric</InputLabel>
-          <Select value={metric} label="Metric" onChange={(e) => setMetric(e.target.value)}>
-            {METRIC_OPTIONS.map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
-          </Select>
-        </FormControl>
+          {chartType !== "pie" && (
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <TimelineIcon sx={{ fontSize: 16 }} /> Interval
+              </InputLabel>
+              <Select value={interval} label="Interval" onChange={(e) => setInterval(e.target.value)}>
+                <MenuItem value="daily">Daily</MenuItem>
+                <MenuItem value="weekly">Weekly</MenuItem>
+                <MenuItem value="monthly">Monthly</MenuItem>
+              </Select>
+            </FormControl>
+          )}
 
-        <FormControl size="small" sx={{ minWidth: 160 }}>
-          <InputLabel>Period</InputLabel>
-          <Select value={period} label="Period" onChange={(e) => setPeriod(e.target.value)}>
-            {[...PERIOD_OPTIONS, ...EXTRA_PERIODS].map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
-          </Select>
-        </FormControl>
+          <FormControl size="small" sx={{ minWidth: 180 }}>
+            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <BarChartIcon sx={{ fontSize: 16 }} /> Metric
+            </InputLabel>
+            <Select value={metric} label="Metric" onChange={(e) => setMetric(e.target.value)}>
+              {METRIC_OPTIONS.map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+            </Select>
+          </FormControl>
 
-        {period === "custom" && (
-          <LocalizationProvider dateAdapter={AdapterDayjs}>
-            <DatePicker label="Start" value={startDate ? dayjs(startDate) : null} onChange={v => setStartDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={{ textField: { size: "small" } }} />
-            <DatePicker label="End" value={endDate ? dayjs(endDate) : null} onChange={v => setEndDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={{ textField: { size: "small" } }} />
-          </LocalizationProvider>
-        )}
+          <FormControl size="small" sx={{ minWidth: 160 }}>
+            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <CalendarMonthIcon sx={{ fontSize: 16 }} /> Period
+            </InputLabel>
+            <Select value={period} label="Period" onChange={(e) => setPeriod(e.target.value)}>
+              {[...PERIOD_OPTIONS, ...EXTRA_PERIODS].map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+            </Select>
+          </FormControl>
 
-        <FormControl size="small" sx={{ minWidth: 240, ml: "auto" }}>
-          <InputLabel>Channel</InputLabel>
-          <Select value={channel} label="Channel" onChange={e => setChannel(e.target.value)}>
-            {channels.map(c => <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>)}
-          </Select>
-        </FormControl>
-      </Stack>
+          {period === "custom" && (
+            <LocalizationProvider dateAdapter={AdapterDayjs}>
+              <DatePicker label="Start" value={startDate ? dayjs(startDate) : null} onChange={v => setStartDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={{ textField: { size: "small" } }} />
+              <DatePicker label="End" value={endDate ? dayjs(endDate) : null} onChange={v => setEndDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={{ textField: { size: "small" } }} />
+            </LocalizationProvider>
+          )}
 
-      {errorMsg && <Typography color="error" variant="body2" sx={{ px: 1 }}>{errorMsg}</Typography>}
+          <FormControl size="small" sx={{ minWidth: 240 }}>
+            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <YouTubeIcon sx={{ fontSize: 16 }} /> Channel
+            </InputLabel>
+            <Select
+              value={channel}
+              label="Channel"
+              onChange={e => setChannel(e.target.value)}
+              renderValue={(v) => {
+                const sel = channels.find(c => c.value === v);
+                return sel ? sel.label : v;
+              }}
+            >
+              {channels.map(c => <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>)}
+            </Select>
+          </FormControl>
+        </Stack>
 
-      <Box sx={{ height: 420 }}>
-        {chartType === "pie" && (
+        {errorMsg && <Typography color="error" variant="body2" sx={{ px: 1 }}>{errorMsg}</Typography>}
+
+        {/* CHART SECTION */}
+        <Box
+          sx={{
+            ...glassSx,
+            height: 480,
+            p: 0.5,
+            position: "relative",
+            background: isDark
+              ? `radial-gradient(circle at 50% 50%, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 1) 100%)`
+              : `radial-gradient(circle at 50% 50%, #f8fafc 0%, #f1f5f9 100%)`,
+          }}
+        >
+          {chartType === "pie" && (
             <ResponsivePie
               data={rows.filter(r => includeSourceForCharts(r.id)).map(r => ({ id: String(r.id), label: r.label, value: r.sortValue }))}
               colors={d => colorMap[d.id] || "#888"}
-              margin={{ top: 40, right: 80, bottom: 80, left: 80 }}
-              innerRadius={0.5} padAngle={0} cornerRadius={2}
+              margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+              innerRadius={0.6} padAngle={1} cornerRadius={4}
               activeOuterRadiusOffset={8}
-              enableArcLabels
-              arcLabelsSkipAngle={12}
-              arcLabelsTextColor={theme.palette.text.primary}
+              enableArcLabels={false}
               enableArcLinkLabels
-              arcLinkLabelsSkipAngle={12}
+              arcLinkLabelsSkipAngle={10}
               arcLinkLabelsTextColor={theme.palette.text.primary}
+              arcLinkLabelsThickness={2}
+              arcLinkLabelsColor={{ from: "color" }}
               layers={["arcs", "arcLabels", "arcLinkLabels", "legends", CenterLabel]}
               tooltip={({ datum }) => (
-              <Box sx={{ p: 1.25, bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
-                <Typography variant="body1" fontWeight={700}>{datum.label}</Typography>
-                <Typography variant="body2" sx={{ mt: 0.25 }}>
-                  {mconf.label}: {metric === "averageViewDuration" ? formatSeconds(datum.value) : formatNumber(datum.value)}
-                </Typography>
-              </Box>
-            )}
-          />
-        )}
-
-        {chartType === "line" && (
-          <Box ref={chartRef} sx={{ height: "100%" }}>
-            <ResponsiveLine
-              data={lineSeries}
-              colors={d => colorMap[d.id] || "#888"}
-              margin={{ top: 30, right: 8, bottom: 60, left: 60 }}
-              xScale={{ type: "time", format: "native", useUTC: true, precision: "day", min: lineDateExtent.min, max: lineDateExtent.max }}
-              yScale={{ type: "linear", min: 0, max: "auto" }}
-              curve="linear"
-              axisBottom={{ format: "%d/%m", tickValues: lineDateTicks }}
-              enablePoints={true} pointSize={6} useMesh enableSlices="x"
-              sliceTooltip={({ slice }) => {
-                const isRight = chartRef.current && slice.x > chartRef.current.offsetWidth / 2;
-                return (
-                  <Box sx={{
-                    p: 1.5, borderRadius: 1.5, minWidth: 220,
-                    bgcolor: theme.palette.mode === "dark" ? "rgba(10,15,24,0.95)" : "rgba(255,255,255,0.98)",
-                    border: "1px solid", borderColor: "divider", boxShadow: 10,
-                    transform: isRight ? "translateX(-110%)" : "translateX(10%)", transition: "transform 0.1s"
-                  }}>
-                    <Typography variant="body2" color="text.secondary">{dayjs(slice.points[0].data.x).format("DD/MM/YYYY")}</Typography>
-                    {slice.points.map(p => (
-                      <Box key={p.id} display="flex" alignItems="center" justifyContent="space-between" gap={2} mt={0.5}>
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: p.color }} />
-                          <Typography variant="body2" sx={{ fontSize: 14 }}>{getSourceDisplayName(p.serieId)}</Typography>
-                        </Box>
-                        <Typography variant="body2" sx={{ fontSize: 14 }} fontWeight={700}>
-                          {metric === "averageViewPercentage" ? `${n(p.data.y).toFixed(2)}%` : metric === "averageViewDuration" ? formatSeconds(p.data.y) : formatNumber(p.data.y)}
-                        </Typography>
-                      </Box>
-                    ))}
-                  </Box>
-                )
-              }}
-              theme={{ axis: { ticks: { text: { fontSize: 11, fill: theme.palette.text.secondary } } } }}
+                <Box
+                  sx={{
+                    p: 1.5,
+                    bgcolor: isDark ? "#111827" : "#ffffff",
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: 2,
+                    boxShadow: 4,
+                    minWidth: 160
+                  }}
+                >
+                  <Typography variant="subtitle2" fontWeight={800} color={isDark ? "#f8fafc" : "#0f172a"}>{datum.label}</Typography>
+                  <Divider sx={{ my: 0.5, opacity: 0.1 }} />
+                  <Typography variant="body2" sx={{ color: isDark ? "#94a3b8" : "#64748b" }}>
+                    {mconf.label}: <strong style={{ color: isDark ? "#f8fafc" : "#0f172a" }}>{metric === "averageViewDuration" ? formatSeconds(datum.value) : formatNumber(datum.value)}</strong>
+                  </Typography>
+                </Box>
+              )}
             />
-          </Box>
-        )}
+          )}
 
-        {chartType === "bar" && (
-          <ResponsiveBar
-            data={barPrep.data} keys={barPrep.keys} indexBy="bucket"
-            colors={d => colorMap[d.id] || "#888"}
-            margin={{ top: 30, right: 30, bottom: 60, left: 60 }}
-            padding={0.3} axisBottom={{ format: v => dayjs(v).format("DD/MM"), tickValues: barXTicks }}
-            labelSkipWidth={12} labelSkipHeight={12}
+          {chartType === "line" && (
+            <Box ref={chartRef} sx={{ height: "100%" }}>
+              <ResponsiveLine
+                data={lineSeries}
+                colors={d => colorMap[d.id] || "#888"}
+                margin={{ top: 20, right: 20, bottom: 60, left: 60 }}
+                xScale={{ type: "time", format: "native", useUTC: true, precision: "day", min: lineDateExtent.min, max: lineDateExtent.max }}
+                yScale={{ type: "linear", min: 0, max: "auto" }}
+                curve="monotoneX"
+                axisBottom={{
+                  format: "%d/%m",
+                  tickValues: lineDateTicks,
+                  tickPadding: 10,
+                }}
+                enablePoints={true}
+                pointSize={8}
+                pointColor="#fff"
+                pointBorderWidth={2}
+                pointBorderColor={{ from: "serieColor" }}
+                useMesh
+                enableSlices="x"
+                sliceTooltip={({ slice }) => {
+                  const isRight = chartRef.current && slice.x > chartRef.current.offsetWidth / 2;
+                  return (
+                    <Box sx={{
+                      p: 1.5, borderRadius: 2.5, minWidth: 220,
+                      bgcolor: isDark ? "rgba(11, 15, 25, 0.98)" : "rgba(255,255,255,0.98)",
+                      border: "1px solid",
+                      borderColor: isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.08)",
+                      boxShadow: isDark ? "0 12px 36px rgba(0,0,0,0.5)" : "0 8px 24px rgba(15,23,42,0.15)",
+                      transform: isRight ? "translateX(-110%)" : "translateX(10%)", transition: "transform 0.1s"
+                    }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{dayjs(slice.points[0].data.x).format("DD/MM/YYYY")}</Typography>
+                      {slice.points.map(p => (
+                        <Box key={p.id} display="flex" alignItems="center" justifyContent="space-between" gap={2} mt={0.5}>
+                          <Box display="flex" alignItems="center" gap={1}>
+                            <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: p.color }} />
+                            <Typography variant="body2" sx={{ fontSize: 13, fontWeight: 500 }}>{getSourceDisplayName(p.serieId)}</Typography>
+                          </Box>
+                          <Typography variant="body2" sx={{ fontSize: 13, fontWeight: 800 }}>
+                            {metric === "averageViewPercentage" ? `${n(p.data.y).toFixed(2)}%` : metric === "averageViewDuration" ? formatSeconds(p.data.y) : formatNumber(p.data.y)}
+                          </Typography>
+                        </Box>
+                      ))}
+                    </Box>
+                  )
+                }}
+                theme={{
+                  axis: {
+                    ticks: { text: { fontSize: 11, fill: theme.palette.text.secondary } },
+                    domain: { line: { stroke: "transparent" } }
+                  },
+                  grid: { line: { stroke: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)" } }
+                }}
+              />
+            </Box>
+          )}
+
+          {chartType === "bar" && (
+            <ResponsiveBar
+              data={barPrep.data}
+              keys={barPrep.keys}
+              indexBy="bucket"
+              colors={d => colorMap[d.id] || "#888"}
+              margin={{ top: 30, right: 30, bottom: 60, left: 60 }}
+              padding={0.3}
+              borderRadius={4}
+              axisBottom={{ format: v => dayjs(v).format("DD/MM"), tickValues: barXTicks }}
+              labelSkipWidth={12}
+              labelSkipHeight={12}
+              enableGridY
+              theme={{
+                axis: { ticks: { text: { fontSize: 11, fill: theme.palette.text.secondary } } },
+                grid: { line: { stroke: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)" } }
+              }}
               tooltip={({ id, value, indexValue }) => (
-              <Box sx={{ p: 1.25, bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
-                <Typography variant="body2" color="text.secondary" display="block">{dayjs(indexValue).format("DD/MM/YYYY")}</Typography>
-                <Typography variant="body1" fontWeight={700}>{getSourceDisplayName(id)}: {formatNumber(value)}</Typography>
-              </Box>
-            )}
-          />
-        )}
-      </Box>
+                <Box
+                  sx={{
+                    p: 1.5,
+                    bgcolor: isDark ? "#111827" : "#ffffff",
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: 2,
+                    boxShadow: 4,
+                    minWidth: 160
+                  }}
+                >
+                  <Typography variant="caption" color="text.secondary" display="block">{dayjs(indexValue).format("DD/MM/YYYY")}</Typography>
+                  <Typography variant="subtitle2" fontWeight={800}>{getSourceDisplayName(id)}: {formatNumber(value)}</Typography>
+                </Box>
+              )}
+            />
+          )}
+        </Box>
 
-      <TableContainer component={Paper} elevation={0} sx={tablePaperSx}>
-        <Table size="small" stickyHeader>
-          <TableHead sx={{ bgcolor: "background.default" }}>
-            <TableRow>
-              <TableCell sx={{ fontWeight: 700 }}>Source</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>Views</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>Avg Dur</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 700 }}>Avg %</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.id} hover>
-                <TableCell>
-                  <Box display="flex" alignItems="center" gap={1}>
-                    <Box sx={{ width: 12, height: 12, borderRadius: 1, bgcolor: colorMap[r.id] }} />
-                    {r.label}
-                  </Box>
-                </TableCell>
-                <TableCell align="right">{formatNumber(r.views)} ({r.viewsPct.toFixed(1)}%)</TableCell>
-                <TableCell align="right">{formatSeconds(r.averageViewDuration)}</TableCell>
-                <TableCell align="right">{r.averageViewPercentage.toFixed(2)}%</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </Stack>
+        {/* TABLE SECTION */}
+        <Box sx={tablePaperSx}>
+          <TableContainer>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow sx={{ "& .MuiTableCell-head": { py: 2, fontWeight: 800, textTransform: "uppercase", fontSize: 11, letterSpacing: 1, opacity: 0.7 } }}>
+                  <TableCell>Source</TableCell>
+                  <TableCell align="right">Views</TableCell>
+                  <TableCell align="right">Avg Dur</TableCell>
+                  <TableCell align="right">Avg %</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {/* TOTAL ROW */}
+                <TableRow sx={{ bgcolor: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)" }}>
+                  <TableCell sx={{ fontWeight: 900 }}>Total</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 900 }}>{formatNumber(totals.views)}</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 900 }}>{formatSeconds(totals.averageViewDuration)}</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 900 }}>{totals.averageViewPercentage.toFixed(2)}%</TableCell>
+                </TableRow>
+
+                <AnimatePresence mode="popLayout">
+                  {rows.map((r, idx) => (
+                    <TableRow
+                      key={r.id}
+                      hover
+                      component={motion.tr}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.03 }}
+                      sx={{ "&:hover": { bgcolor: isDark ? "rgba(255,255,255,0.02) !important" : "rgba(0,0,0,0.01) !important" } }}
+                    >
+                      <TableCell sx={{ fontWeight: 600, fontSize: 13, borderLeft: idx < 3 ? `3px solid ${colorMap[r.id]}` : "none" }}>
+                        <Box display="flex" alignItems="center" gap={1.5}>
+                          <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: colorMap[r.id] }} />
+                          {r.label}
+                        </Box>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                            {formatNumber(r.views)}
+                          </Typography>
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.5, width: 80 }}>
+                            <Box sx={{ flex: 1, height: 4, bgcolor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)", borderRadius: 2, overflow: "hidden" }}>
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${r.viewsPct}%` }}
+                                transition={{ duration: 1, delay: idx * 0.05 }}
+                                style={{ height: "100%", background: colorMap[r.id], borderRadius: 2 }}
+                              />
+                            </Box>
+                            <Typography sx={{ fontSize: 9, opacity: 0.6, width: 30, textAlign: "right" }}>{Math.round(r.viewsPct)}%</Typography>
+                          </Box>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontSize: 13 }}>{formatSeconds(r.averageViewDuration)}</TableCell>
+                      <TableCell align="right" sx={{ fontSize: 13 }}>{r.averageViewPercentage.toFixed(2)}%</TableCell>
+                    </TableRow>
+                  ))}
+                </AnimatePresence>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      </Stack>
+    </motion.div>
   );
 };
 
