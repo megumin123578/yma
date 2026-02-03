@@ -355,17 +355,18 @@ const TrafficSourceChart = () => {
     const result = [];
     for (const [src, dataMap] of per.entries()) {
       let nonZero = false;
+      const color = colorMap[src] || "#888";
       const data = allDatesSorted.map(d => {
         const y = dataMap.get(d.getTime()) || 0;
         if (Math.abs(y) > EPS) nonZero = true;
-        return { x: d, y, source: src, sourceLabel: getSourceDisplayName(src) };
+        return { x: d, y, source: src, sourceLabel: getSourceDisplayName(src), color };
       });
       if (nonZero && includeSourceForCharts(src)) {
-        result.push({ id: src, data });
+        result.push({ id: src, data, color });
       }
     }
     return result;
-  }, [chartType, tsSeries, mconf, getSourceDisplayName, includeSourceForCharts]);
+  }, [chartType, tsSeries, mconf, getSourceDisplayName, includeSourceForCharts, colorMap]);
 
   const lineDateExtent = useMemo(() => {
     if (!lineSeries.length || !lineSeries[0].data.length) return { min: "auto", max: "auto" };
@@ -525,7 +526,7 @@ const TrafficSourceChart = () => {
         <Box
           sx={{
             ...glassSx,
-            height: 480,
+            height: 560,
             p: 0.5,
             position: "relative",
             background: isDark
@@ -537,7 +538,7 @@ const TrafficSourceChart = () => {
             <ResponsivePie
               data={rows.filter(r => includeSourceForCharts(r.id)).map(r => ({ id: String(r.id), label: r.label, value: r.sortValue }))}
               colors={d => colorMap[d.id] || "#888"}
-              margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+              margin={{ top: 50, right: 50, bottom: 50, left: 50 }}
               innerRadius={0.6} padAngle={0} cornerRadius={2}
               activeOuterRadiusOffset={8}
               enableArcLabels={false}
@@ -594,27 +595,84 @@ const TrafficSourceChart = () => {
                   const isRight = chartRef.current && slice.x > chartRef.current.offsetWidth / 2;
                   return (
                     <Box sx={{
-                      p: 1.5, borderRadius: 2.5, minWidth: 220,
+                      p: 2, borderRadius: 3, minWidth: 240,
                       bgcolor: isDark ? "rgba(11, 15, 25, 0.98)" : "rgba(255,255,255,0.98)",
                       border: "1px solid",
                       borderColor: isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.08)",
-                      boxShadow: isDark ? "0 12px 36px rgba(0,0,0,0.5)" : "0 8px 24px rgba(15,23,42,0.15)",
-                      transform: isRight ? "translateX(-110%)" : "translateX(10%)", transition: "transform 0.1s"
+                      boxShadow: isDark ? "0 12px 36px rgba(0,0,0,0.6)" : "0 8px 24px rgba(15,23,42,0.15)",
+                      backdropFilter: "blur(12px)",
+                      transform: isRight ? "translateX(-110%)" : "translateX(10%)",
+                      transition: "transform 0.1s"
                     }}>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>{dayjs(slice.points[0].data.x).format("DD/MM/YYYY")}</Typography>
-                      {slice.points.map(p => (
-                        <Box key={p.id} display="flex" alignItems="center" justifyContent="space-between" gap={2} mt={0.5}>
-                          <Box display="flex" alignItems="center" gap={1}>
-                            <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: p.color }} />
-                            <Typography variant="body2" sx={{ fontSize: 13, fontWeight: 500 }}>{getSourceDisplayName(p.serieId)}</Typography>
-                          </Box>
-                          <Typography variant="body2" sx={{ fontSize: 13, fontWeight: 800 }}>
-                            {metric === "averageViewPercentage" ? `${n(p.data.y).toFixed(2)}%` : metric === "averageViewDuration" ? formatSeconds(p.data.y) : formatNumber(p.data.y)}
-                          </Typography>
-                        </Box>
-                      ))}
+                      <Box sx={{ mb: 1, pb: 1, borderBottom: `1px solid ${isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.06)"}` }}>
+                        <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          {dayjs(slice.points[0].data.x).format("DD MMMM YYYY")}
+                        </Typography>
+                      </Box>
+                      <Stack spacing={1}>
+                        {slice.points.map(p => {
+                          // Prioritize color embedded in the data point itself
+                          const color = p.data.color || colorMap[p.serieId] || p.serieColor || "#888";
+                          // Get label from data point if possible, or fallback to serieId
+                          const label = p.data.sourceLabel || getSourceDisplayName(p.serieId);
+
+                          return (
+                            <Box
+                              key={p.id}
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: 2,
+                                px: 1.5,
+                                py: 0.75,
+                                borderRadius: 2,
+                                bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)",
+                                borderLeft: `4px solid ${color}`,
+                              }}
+                            >
+                              <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, flex: 1 }}>
+                                <Box sx={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: "50%",
+                                  bgcolor: color,
+                                  flexShrink: 0,
+                                  boxShadow: `0 0 8px ${color}`,
+                                  border: `2px solid ${isDark ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.4)"}`
+                                }} />
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    color: isDark ? "#f8fafc" : "#0f172a",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap"
+                                  }}
+                                >
+                                  {label}
+                                </Typography>
+                              </Stack>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontSize: 13,
+                                  fontWeight: 900,
+                                  color: color,
+                                  ml: 1,
+                                  fontFamily: "'Roboto Mono', monospace"
+                                }}
+                              >
+                                {metric === "averageViewPercentage" ? `${n(p.data.y).toFixed(2)}%` : metric === "averageViewDuration" ? formatSeconds(p.data.y) : formatNumber(p.data.y)}
+                              </Typography>
+                            </Box>
+                          );
+                        })}
+                      </Stack>
                     </Box>
-                  )
+                  );
                 }}
                 theme={{
                   axis: {
