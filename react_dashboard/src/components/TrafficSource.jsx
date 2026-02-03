@@ -691,31 +691,87 @@ const TrafficSourceChart = () => {
               keys={barPrep.keys}
               indexBy="bucket"
               colors={d => colorMap[d.id] || "#888"}
-              margin={{ top: 30, right: 30, bottom: 60, left: 60 }}
-              padding={0.3}
-              borderRadius={4}
-              axisBottom={{ format: v => dayjs(v).format("DD/MM"), tickValues: barXTicks }}
+              margin={{ top: 20, right: 20, bottom: 60, left: 60 }}
+              padding={0.4}
+              innerPadding={2}
+              borderRadius={6}
+              axisBottom={{
+                format: v => dayjs(v).format("DD/MM"),
+                tickValues: barXTicks,
+                tickPadding: 10,
+              }}
+              enableGridY={true}
+              gridYValues={5}
               labelSkipWidth={12}
               labelSkipHeight={12}
-              enableGridY
+              motionConfig="gentle"
               theme={{
-                axis: { ticks: { text: { fontSize: 11, fill: theme.palette.text.secondary } } },
-                grid: { line: { stroke: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)" } }
+                axis: {
+                  ticks: { text: { fontSize: 11, fill: theme.palette.text.secondary, fontWeight: 500 } },
+                  domain: { line: { stroke: "transparent" } }
+                },
+                grid: { line: { stroke: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)", strokeDasharray: "4 4" } }
               }}
-              tooltip={({ id, value, indexValue }) => (
+              tooltip={({ id, value, indexValue, color }) => (
                 <Box
                   sx={{
-                    p: 1.5,
-                    bgcolor: isDark ? "#111827" : "#ffffff",
+                    p: 2,
+                    borderRadius: 3,
+                    minWidth: 200,
+                    bgcolor: isDark ? "rgba(11, 15, 25, 0.98)" : "rgba(255, 255, 255, 0.98)",
                     border: "1px solid",
-                    borderColor: "divider",
-                    borderRadius: 2,
-                    boxShadow: 4,
-                    minWidth: 160
+                    borderColor: isDark ? "rgba(255, 255, 255, 0.15)" : "rgba(0, 0, 0, 0.08)",
+                    boxShadow: isDark ? "0 12px 36px rgba(0,0,0,0.6)" : "0 8px 24px rgba(15,23,42,0.15)",
+                    backdropFilter: "blur(12px)",
                   }}
                 >
-                  <Typography variant="caption" color="text.secondary" display="block">{dayjs(indexValue).format("DD/MM/YYYY")}</Typography>
-                  <Typography variant="subtitle2" fontWeight={800}>{getSourceDisplayName(id)}: {formatNumber(value)}</Typography>
+                  <Box sx={{ mb: 1, pb: 1, borderBottom: `1px solid ${isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.06)"}` }}>
+                    <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      {dayjs(indexValue).format("DD MMMM YYYY")}
+                    </Typography>
+                  </Box>
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 2,
+                      px: 1.5,
+                      py: 1,
+                      borderRadius: 2,
+                      bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)",
+                      borderLeft: `4px solid ${color}`,
+                    }}
+                  >
+                    <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, flex: 1 }}>
+                      <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: color, flexShrink: 0, boxShadow: `0 0 8px ${color}` }} />
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: isDark ? "#f8fafc" : "#0f172a",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap"
+                        }}
+                      >
+                        {getSourceDisplayName(id)}
+                      </Typography>
+                    </Stack>
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        fontSize: 14,
+                        fontWeight: 900,
+                        color: color,
+                        ml: 1,
+                        fontFamily: "'Roboto Mono', monospace"
+                      }}
+                    >
+                      {metric === "averageViewPercentage" ? `${n(value).toFixed(2)}%` : metric === "averageViewDuration" ? formatSeconds(value) : formatNumber(value)}
+                    </Typography>
+                  </Box>
                 </Box>
               )}
             />
