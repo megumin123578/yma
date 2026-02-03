@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Box,
   Stack,
@@ -196,8 +196,10 @@ const ChannelCompare = () => {
     );
   }, [channels]);
 
-  const getChannelLabel = (value) =>
-    channelLabelMap.get(String(value)) || value;
+  const getChannelLabel = useCallback(
+    (value) => channelLabelMap.get(String(value)) || value,
+    [channelLabelMap]
+  );
 
   const barData = useMemo(
     () =>
@@ -209,7 +211,7 @@ const ChannelCompare = () => {
         trend: r.trend,
         isAnomaly: r.isAnomaly,
       })),
-    [visibleRows, channelLabelMap]
+    [visibleRows, getChannelLabel]
   );
 
   const barHeight = Math.max(320, visibleRows.length * 28);
