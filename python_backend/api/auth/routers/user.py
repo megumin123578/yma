@@ -307,7 +307,7 @@ def start_oauth(
     auth_url, state = flow.authorization_url(
         access_type="offline",
         prompt="consent",
-        include_granted_scopes="true",
+        include_granted_scopes="false",
     )
     PENDING_OAUTH[state] = {
         "created_at": time.time(),

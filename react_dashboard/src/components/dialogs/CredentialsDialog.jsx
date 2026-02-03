@@ -525,6 +525,24 @@ const CredentialsDialog = ({ open, onClose }) => {
     return { bg: "rgba(148,163,184,0.2)", fg: "#94a3b8" };
   };
 
+  const formatProgressStage = (stage) => {
+    const key = String(stage || "").toLowerCase();
+    const map = {
+      traffic_source: "Traffic Source",
+      geography: "Geography",
+      content: "Content",
+      overview: "Overview",
+      audience: "Audience",
+      reach: "Reach",
+      revenue: "Revenue",
+      subscribers: "Subscribers",
+      queued: "Queued",
+      running: "Running",
+      done: "Completed",
+    };
+    return map[key] || stage;
+  };
+
 
   return (
     <Dialog
@@ -702,7 +720,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                   </Button>
                 </Box>
 
-                {status.message && (
+                {progress.status === "idle" && status.message && (
                   <Typography
                     variant="body2"
                     color={
@@ -720,8 +738,21 @@ const CredentialsDialog = ({ open, onClose }) => {
                 {progress.status !== "idle" && (
                   <Box display="flex" flexDirection="column" gap={0.5}>
                     <Box display="flex" alignItems="center" justifyContent="space-between">
-                      <Typography variant="body2" color="text.secondary">
-                        {progress.stage || "Processing"}
+                      <Typography
+                        variant="body2"
+                        color={
+                          progress.status === "done"
+                            ? "text.secondary"
+                            : status.message
+                            ? theme.palette.success.main
+                            : "text.secondary"
+                        }
+                      >
+                        {progress.status === "done"
+                          ? "Completed"
+                          : status.message
+                          ? `${status.message}${progress.stage ? ` • ${formatProgressStage(progress.stage)}` : ""}`
+                          : formatProgressStage(progress.stage) || "Processing"}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         {progress.percent}%
@@ -744,11 +775,6 @@ const CredentialsDialog = ({ open, onClose }) => {
                         }}
                       />
                     </Box>
-                    {progress.message && (
-                      <Typography variant="caption" color="text.secondary">
-                        {progress.message}
-                      </Typography>
-                    )}
                   </Box>
                 )}
 
