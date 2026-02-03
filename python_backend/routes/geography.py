@@ -158,5 +158,5 @@ def api_geography(
         "end": e.isoformat(),
         "channel": channel,
         "rows": rows,
-        "availableChannels": _label_channels(db, list(CHANNEL_CREDENTIALS.keys())),
+        "availableChannels": list(CHANNEL_CREDENTIALS.keys()),
     }

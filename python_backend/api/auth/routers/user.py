@@ -43,6 +43,7 @@ OAUTH_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 
 PENDING_OAUTH = {}
+RECENT_OAUTH = {}
 _ADMIN_ENV_KEY = "ADMIN_USERNAME"
 
 
@@ -516,6 +517,11 @@ def select_channel_after_auth(
     db.add(cred_row)
     db.commit()
 
+    RECENT_OAUTH[state] = {
+        "token_name": token_name,
+        "account_tag": account_tag,
+        "updated_at": time.time(),
+    }
     PENDING_OAUTH.pop(state, None)
     _write_progress_file(account_tag, "queued", 0, "queued", "Queued after channel selection")
     _kickoff_get_data(account_tag)
@@ -540,6 +546,25 @@ def select_channel_after_auth(
   </body>
 </html>
 """
+
+
+@router.get("/credentials/state/{state}")
+def oauth_state(state: str):
+    pending = PENDING_OAUTH.get(state)
+    if pending:
+        return {
+            "ready": False,
+            "token_name": pending.get("token_name"),
+            "account_tag": pending.get("account_tag"),
+        }
+    recent = RECENT_OAUTH.pop(state, None)
+    if recent:
+        return {
+            "ready": True,
+            "token_name": recent.get("token_name"),
+            "account_tag": recent.get("account_tag"),
+        }
+    return {"ready": False}
 
 
 @router.get("/tokens")

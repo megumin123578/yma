@@ -24,6 +24,11 @@ export const uploadCredentials = (accountTag) => {
     .then((res) => res.data);
 };
 
+export const getOAuthState = async (state) => {
+  const res = await api.get(`/api/users/credentials/state/${encodeURIComponent(state)}`);
+  return res.data;
+};
+
 export const getMe = async () => {
   const res = await api.get("/api/users/me");
   return mapUser(res.data);

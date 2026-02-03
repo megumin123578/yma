@@ -16,8 +16,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Checkbox,
-  ListItemText,
 } from "@mui/material";
 
 import { ResponsivePie } from "@nivo/pie";
@@ -297,8 +295,7 @@ const TrafficSourceChart = () => {
     };
   }, [tsData, mconf]);
 
-  const [selectedSources, setSelectedSources] = useState([]);
-  const allSourceItems = useMemo(() => rows.map(r => ({ id: String(r.id), label: r.label || String(r.id) })), [rows]);
+  const [selectedSources] = useState([]);
   const sourceFilterActive = selectedSources.length > 0;
 
   const includeSourceForCharts = useCallback(

@@ -344,8 +344,6 @@ const ContentAnalytics = () => {
   /* ================================
      CHART DATA
   ================================= */
-  const { start: periodStart, end: periodEnd } = resolvePeriod();
-
   const lineData = useMemo(() => {
     if (chartType !== "line") return [];
 

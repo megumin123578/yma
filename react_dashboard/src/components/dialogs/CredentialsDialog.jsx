@@ -32,6 +32,7 @@ import {
   setTokenVisibility,
   runToken,
   runTokenStage,
+  getOAuthState,
   listSchedules,
   createSchedule,
   updateSchedule,
@@ -50,6 +51,8 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [status, setStatus] = useState({ type: "", message: "" });
   const [uploading, setUploading] = useState(false);
   const [authUrl, setAuthUrl] = useState("");
+  const [oauthState, setOauthState] = useState("");
+  const [latestTokenName, setLatestTokenName] = useState("");
   const [tokens, setTokens] = useState([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
   const [, setTokenSyncing] = useState(false);
@@ -145,6 +148,8 @@ const CredentialsDialog = ({ open, onClose }) => {
       setStatus({ type: "", message: "" });
       setUploading(false);
       setAuthUrl("");
+      setOauthState("");
+      setLatestTokenName("");
       setProgress({ status: "idle", percent: 0, stage: "" });
       setAutoReloaded(false);
       setActiveTab("add");
@@ -194,35 +199,81 @@ const CredentialsDialog = ({ open, onClose }) => {
   }, [open, activeTab]);
 
   useEffect(() => {
-    if (!authUrl) return;
+    if (!authUrl || !oauthState) return;
     let stopped = false;
     setTokenSyncing(true);
 
     const poll = async () => {
       try {
-        const data = await listTokens();
-        const nextTokens = data?.tokens || [];
-        setTokens(nextTokens);
-        if (nextTokens.some((t) => t?.name)) {
-          stopped = true;
+        const data = await getOAuthState(oauthState);
+        if (data?.ready && data?.token_name) {
+          setLatestTokenName(data.token_name);
+          setOauthState("");
           setTokenSyncing(false);
+          await loadTokens();
+          return true;
         }
-      } catch (err) {
-        setTokens([]);
-        setTokenSyncing(false);
+      } catch {
+        // ignore
       }
+      return false;
     };
 
-    const intervalId = setInterval(() => {
+    const intervalId = setInterval(async () => {
       if (!stopped) {
-        poll();
+        const done = await poll();
+        if (done) {
+          stopped = true;
+          clearInterval(intervalId);
+        }
       }
     }, 2000);
 
     poll();
 
     return () => clearInterval(intervalId);
-  }, [authUrl, setTokenSyncing]);
+  }, [authUrl, oauthState, loadTokens, setTokenSyncing]);
+
+  useEffect(() => {
+    if (!latestTokenName) return;
+    let canceled = false;
+
+    const pollProgress = async () => {
+      try {
+        const data = await getTokenProgress(latestTokenName);
+        if (!canceled) {
+          setProgress({
+            status: data?.status || "idle",
+            percent: data?.percent ?? 0,
+            stage: data?.stage || "",
+            message: data?.message || "",
+          });
+        }
+        if (data?.status === "done" || data?.status === "error") {
+          return true;
+        }
+      } catch (err) {
+        if (!canceled) {
+          setProgress({ status: "idle", percent: 0, stage: "" });
+        }
+      }
+      return false;
+    };
+
+    const intervalId = setInterval(async () => {
+      const done = await pollProgress();
+      if (done) {
+        clearInterval(intervalId);
+      }
+    }, 2000);
+
+    pollProgress();
+
+    return () => {
+      canceled = true;
+      clearInterval(intervalId);
+    };
+  }, [latestTokenName]);
 
   useEffect(() => {
     const shouldReload =
@@ -248,7 +299,9 @@ const CredentialsDialog = ({ open, onClose }) => {
     try {
       const data = await uploadCredentials(targetName);
       const nextUrl = data?.auth_url || "";
+      const nextState = data?.state || "";
       setAuthUrl(nextUrl);
+      setOauthState(nextState);
       if (!nextUrl) {
         await loadTokens();
       }

@@ -116,14 +116,23 @@ const GeographyChart = ({ isDashboard = false }) => {
         setRawData(json.rows || []);
 
         if (json.availableChannels) {
+          const existingLabelMap = new Map(
+            (channels || [])
+              .filter((c) => c && typeof c === "object" && c.value)
+              .map((c) => [c.value, c.label || c.value])
+          );
           const normalized = (Array.isArray(json.availableChannels) ? json.availableChannels : [])
             .map((item) => {
-              if (typeof item === "string") return { value: item, label: item };
+              if (typeof item === "string") {
+                return {
+                  value: item,
+                  label: existingLabelMap.get(item) || item,
+                };
+              }
               const value = item?.value || item?.name || "";
-              return {
-                value,
-                label: item?.label || item?.name || value,
-              };
+              const label =
+                item?.label || item?.name || existingLabelMap.get(value) || value;
+              return { value, label };
             })
             .filter((item) => item.value);
           const orderKey = (value) =>
@@ -156,7 +165,7 @@ const GeographyChart = ({ isDashboard = false }) => {
         }
       })
       .catch((err) => console.error("Geography API error:", err));
-  }, [range, channel]);
+  }, [range, channel, channels]);
 
   // ===== ISO Resolver =====
   const resolvers = useMemo(() => {
@@ -388,6 +397,10 @@ const GeographyChart = ({ isDashboard = false }) => {
             label="Channel"
             value={channel}
             onChange={(e) => setChannel(e.target.value)}
+            renderValue={(value) => {
+              const current = channels.find((c) => c.value === value);
+              return current?.label || value || "";
+            }}
           >
             {channels.map((c) => (
               <MenuItem key={c.value} value={c.value}>
