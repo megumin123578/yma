@@ -538,7 +538,7 @@ const TrafficSourceChart = () => {
               data={rows.filter(r => includeSourceForCharts(r.id)).map(r => ({ id: String(r.id), label: r.label, value: r.sortValue }))}
               colors={d => colorMap[d.id] || "#888"}
               margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
-              innerRadius={0.6} padAngle={1} cornerRadius={4}
+              innerRadius={0.6} padAngle={0} cornerRadius={2}
               activeOuterRadiusOffset={8}
               enableArcLabels={false}
               enableArcLinkLabels
