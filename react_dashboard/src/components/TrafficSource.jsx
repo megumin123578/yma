@@ -498,9 +498,11 @@ const TrafficSourceChart = () => {
               arcLinkLabelsTextColor={theme.palette.text.primary}
               layers={["arcs", "arcLabels", "arcLinkLabels", "legends", CenterLabel]}
               tooltip={({ datum }) => (
-                <Box sx={{ p: 1, bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
-                  <Typography variant="body2" fontWeight={700}>{datum.label}</Typography>
-                <Typography variant="caption">{mconf.label}: {metric === "averageViewDuration" ? formatSeconds(datum.value) : formatNumber(datum.value)}</Typography>
+              <Box sx={{ p: 1.25, bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                <Typography variant="body1" fontWeight={700}>{datum.label}</Typography>
+                <Typography variant="body2" sx={{ mt: 0.25 }}>
+                  {mconf.label}: {metric === "averageViewDuration" ? formatSeconds(datum.value) : formatNumber(datum.value)}
+                </Typography>
               </Box>
             )}
           />
@@ -521,19 +523,19 @@ const TrafficSourceChart = () => {
                 const isRight = chartRef.current && slice.x > chartRef.current.offsetWidth / 2;
                 return (
                   <Box sx={{
-                    p: 1.5, borderRadius: 1.5, minWidth: 200,
+                    p: 1.5, borderRadius: 1.5, minWidth: 220,
                     bgcolor: theme.palette.mode === "dark" ? "rgba(10,15,24,0.95)" : "rgba(255,255,255,0.98)",
                     border: "1px solid", borderColor: "divider", boxShadow: 10,
                     transform: isRight ? "translateX(-110%)" : "translateX(10%)", transition: "transform 0.1s"
                   }}>
-                    <Typography variant="caption" color="text.secondary">{dayjs(slice.points[0].data.x).format("DD/MM/YYYY")}</Typography>
+                    <Typography variant="body2" color="text.secondary">{dayjs(slice.points[0].data.x).format("DD/MM/YYYY")}</Typography>
                     {slice.points.map(p => (
                       <Box key={p.id} display="flex" alignItems="center" justifyContent="space-between" gap={2} mt={0.5}>
                         <Box display="flex" alignItems="center" gap={1}>
                           <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: p.color }} />
-                          <Typography variant="body2">{getSourceDisplayName(p.serieId)}</Typography>
+                          <Typography variant="body2" sx={{ fontSize: 14 }}>{getSourceDisplayName(p.serieId)}</Typography>
                         </Box>
-                        <Typography variant="body2" fontWeight={700}>
+                        <Typography variant="body2" sx={{ fontSize: 14 }} fontWeight={700}>
                           {metric === "averageViewPercentage" ? `${n(p.data.y).toFixed(2)}%` : metric === "averageViewDuration" ? formatSeconds(p.data.y) : formatNumber(p.data.y)}
                         </Typography>
                       </Box>
@@ -553,10 +555,10 @@ const TrafficSourceChart = () => {
             margin={{ top: 30, right: 30, bottom: 60, left: 60 }}
             padding={0.3} axisBottom={{ format: v => dayjs(v).format("DD/MM"), tickValues: barXTicks }}
             labelSkipWidth={12} labelSkipHeight={12}
-            tooltip={({ id, value, indexValue }) => (
-              <Box sx={{ p: 1, bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
-                <Typography variant="caption" display="block">{dayjs(indexValue).format("DD/MM/YYYY")}</Typography>
-                <Typography variant="body2" fontWeight={700}>{getSourceDisplayName(id)}: {formatNumber(value)}</Typography>
+              tooltip={({ id, value, indexValue }) => (
+              <Box sx={{ p: 1.25, bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                <Typography variant="body2" color="text.secondary" display="block">{dayjs(indexValue).format("DD/MM/YYYY")}</Typography>
+                <Typography variant="body1" fontWeight={700}>{getSourceDisplayName(id)}: {formatNumber(value)}</Typography>
               </Box>
             )}
           />
