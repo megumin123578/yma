@@ -97,6 +97,15 @@ const CredentialsDialog = ({ open, onClose }) => {
   };
   const progressTimersRef = useRef({});
 
+  const cleanError = (msg) => {
+    if (!msg) return "";
+    let s = String(msg).trim();
+    if (s.startsWith("(") && s.endsWith(")")) {
+      s = s.slice(1, -1).trim();
+    }
+    return s;
+  };
+
   const applyTokenOrder = (items) => {
     let order = [];
     try {
@@ -587,14 +596,15 @@ const CredentialsDialog = ({ open, onClose }) => {
           </Typography>
         </Box>
       </DialogTitle>
-      <DialogContent sx={{ position: "relative", zIndex: 1, minHeight: 520 }}>
-        <Box display="flex" gap={2} mt={1}>
+      <DialogContent sx={{ position: "relative", zIndex: 1, minHeight: 520, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <Box display="flex" gap={2} mt={1} flex={1} overflow="hidden">
           <Box
             sx={{
               minWidth: 140,
               display: "flex",
               flexDirection: "column",
               gap: 1,
+              flexShrink: 0,
             }}
           >
             <Button
@@ -608,15 +618,15 @@ const CredentialsDialog = ({ open, onClose }) => {
                   activeTab === "add"
                     ? "#ffffff"
                     : isDark
-                    ? "#ffffff"
-                    : "rgba(15,23,42,0.9)",
+                      ? "#ffffff"
+                      : "rgba(15,23,42,0.9)",
                 bgcolor: activeTab === "add" ? accent : "transparent",
                 "&:hover": {
                   bgcolor: activeTab === "add"
                     ? accent
                     : isDark
-                    ? "rgba(255,255,255,0.06)"
-                    : "rgba(15,23,42,0.06)",
+                      ? "rgba(255,255,255,0.06)"
+                      : "rgba(15,23,42,0.06)",
                 },
               }}
             >
@@ -633,15 +643,15 @@ const CredentialsDialog = ({ open, onClose }) => {
                   activeTab === "schedule"
                     ? "#ffffff"
                     : isDark
-                    ? "#ffffff"
-                    : "rgba(15,23,42,0.9)",
+                      ? "#ffffff"
+                      : "rgba(15,23,42,0.9)",
                 bgcolor: activeTab === "schedule" ? accent : "transparent",
                 "&:hover": {
                   bgcolor: activeTab === "schedule"
                     ? accent
                     : isDark
-                    ? "rgba(255,255,255,0.06)"
-                    : "rgba(15,23,42,0.06)",
+                      ? "rgba(255,255,255,0.06)"
+                      : "rgba(15,23,42,0.06)",
                 },
               }}
             >
@@ -658,15 +668,15 @@ const CredentialsDialog = ({ open, onClose }) => {
                   activeTab === "logs"
                     ? "#ffffff"
                     : isDark
-                    ? "#ffffff"
-                    : "rgba(15,23,42,0.9)",
+                      ? "#ffffff"
+                      : "rgba(15,23,42,0.9)",
                 bgcolor: activeTab === "logs" ? accent : "transparent",
                 "&:hover": {
                   bgcolor: activeTab === "logs"
                     ? accent
                     : isDark
-                    ? "rgba(255,255,255,0.06)"
-                    : "rgba(15,23,42,0.06)",
+                      ? "rgba(255,255,255,0.06)"
+                      : "rgba(15,23,42,0.06)",
                 },
               }}
             >
@@ -674,7 +684,7 @@ const CredentialsDialog = ({ open, onClose }) => {
             </Button>
           </Box>
 
-          <Box display="flex" flexDirection="column" gap={2} flex={1}>
+          <Box display="flex" flexDirection="column" gap={2} flex={1} sx={{ overflowY: "auto", pr: 1.5, py: 0.5 }}>
             {activeTab === "add" ? (
               <>
                 <Box
@@ -729,7 +739,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                         : theme.palette.success.main
                     }
                   >
-                    {status.message}
+                    {cleanError(status.message)}
                   </Typography>
                 )}
 
@@ -744,15 +754,15 @@ const CredentialsDialog = ({ open, onClose }) => {
                           progress.status === "done"
                             ? "text.secondary"
                             : status.message
-                            ? theme.palette.success.main
-                            : "text.secondary"
+                              ? theme.palette.success.main
+                              : "text.secondary"
                         }
                       >
                         {progress.status === "done"
                           ? "Completed"
                           : status.message
-                          ? `${status.message}${progress.stage ? ` • ${formatProgressStage(progress.stage)}` : ""}`
-                          : formatProgressStage(progress.stage) || "Processing"}
+                            ? `${cleanError(status.message)}${progress.stage ? ` • ${formatProgressStage(progress.stage)}` : ""}`
+                            : formatProgressStage(progress.stage) || "Processing"}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         {progress.percent}%
@@ -871,7 +881,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                                 ? { transform: "translateY(6px)" }
                                 : {}),
                             }}
-                            >
+                          >
                             <IconButton
                               size="small"
                               sx={{
@@ -920,34 +930,34 @@ const CredentialsDialog = ({ open, onClose }) => {
                             >
                               <Box display="flex" alignItems="center" justifyContent="space-between" gap={0.5}>
                                 <Box display="flex" alignItems="center" gap={1.5}>
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  onClick={() => handleRunToken(tokenName)}
-                                  sx={{
-                                    ...shimmerSx,
-                                    borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
-                                    color: isDark ? "#e9edf2" : undefined,
-                                    minWidth: 32,
-                                    px: 0.75,
-                                  }}
-                                  aria-label={`Run ${displayName}`}
-                                >
-                                  <PlayArrowIcon fontSize="small" />
-                                </Button>
-                                <IconButton
-                                  size="small"
-                                  onClick={(event) => openTokenMenu(event, tokenName)}
-                                  sx={{
-                                    ...shimmerSx,
-                                    border: `1px solid ${border}`,
-                                    color: isDark ? "#e9edf2" : undefined,
-                                  }}
-                                  aria-label={`Run options for ${displayName}`}
-                                >
-                                  <MoreVertIcon fontSize="small" />
-                                </IconButton>
-                                <Typography variant="body2">{displayName}</Typography>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => handleRunToken(tokenName)}
+                                    sx={{
+                                      ...shimmerSx,
+                                      borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
+                                      color: isDark ? "#e9edf2" : undefined,
+                                      minWidth: 32,
+                                      px: 0.75,
+                                    }}
+                                    aria-label={`Run ${displayName}`}
+                                  >
+                                    <PlayArrowIcon fontSize="small" />
+                                  </Button>
+                                  <IconButton
+                                    size="small"
+                                    onClick={(event) => openTokenMenu(event, tokenName)}
+                                    sx={{
+                                      ...shimmerSx,
+                                      border: `1px solid ${border}`,
+                                      color: isDark ? "#e9edf2" : undefined,
+                                    }}
+                                    aria-label={`Run options for ${displayName}`}
+                                  >
+                                    <MoreVertIcon fontSize="small" />
+                                  </IconButton>
+                                  <Typography variant="body2">{displayName}</Typography>
                                 </Box>
                                 <Button
                                   size="small"
@@ -1019,7 +1029,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                               : theme.palette.success.main
                           }
                         >
-                          {status.message}
+                          {cleanError(status.message)}
                         </Typography>
                       )}
                       <LocalizationProvider dateAdapter={AdapterDayjs}>
@@ -1149,7 +1159,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                     <Box display="flex" flexDirection="column" gap={1} mt={1}>
                       {runsError ? (
                         <Typography variant="body2" color="text.secondary">
-                          {runsError}
+                          {cleanError(runsError)}
                         </Typography>
                       ) : scheduleRuns.length === 0 ? (
                         <Typography variant="body2" color="text.secondary">
@@ -1194,7 +1204,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                                       {run.status || "unknown"}
                                     </Box>
                                     <Typography variant="body2">
-                                      {run.message || "No details"}
+                                      {cleanError(run.message) || "No details"}
                                     </Typography>
                                   </Box>
                                   {run.status === "running" && (

@@ -20,16 +20,28 @@ router = APIRouter(prefix="/api/geography")
 
 TOKEN_DIR = "./python_backend/token"
 
-def load_all_credentials():
+
+def load_all_credentials(db: Session):
     creds = {}
-    if not os.path.exists(TOKEN_DIR):
-        return creds
-    for fname in os.listdir(TOKEN_DIR):
-        if fname.endswith(".pickle"):
-            channel = fname.replace(".pickle", "")
-            full_path = os.path.join(TOKEN_DIR, fname)
-            creds[channel] = full_path
-    return creds
+    labels = {}
+    rows = (
+        db.query(UserCredential)
+        .filter(UserCredential.token_name.isnot(None))
+        .all()
+    )
+    for row in rows:
+        token_name = row.token_name
+        if not token_name:
+            continue
+        token_path = os.path.join(TOKEN_DIR, token_name)
+        if not os.path.exists(token_path):
+            continue
+        account_tag = row.account_tag or ""
+        if not account_tag:
+            continue
+        creds[account_tag] = token_path
+        labels[account_tag] = row.selected_channel_title or account_tag
+    return creds, labels
 
 
 def _label_channels(db: Session, channels: list) -> list:
@@ -75,18 +87,20 @@ def api_geography(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
-    CHANNEL_CREDENTIALS = load_all_credentials()
+    CHANNEL_CREDENTIALS, CHANNEL_LABELS = load_all_credentials(db)
     allowed = get_allowed_account_tags(db, current_user)
     if allowed is not None:
         CHANNEL_CREDENTIALS = {
             k: v for k, v in CHANNEL_CREDENTIALS.items() if sanitize_filename(k) in allowed
         }
+        CHANNEL_LABELS = {k: v for k, v in CHANNEL_LABELS.items() if k in CHANNEL_CREDENTIALS}
     if current_user:
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}
         CHANNEL_CREDENTIALS = {
             k: v for k, v in CHANNEL_CREDENTIALS.items() if k not in hidden_all
         }
+        CHANNEL_LABELS = {k: v for k, v in CHANNEL_LABELS.items() if k in CHANNEL_CREDENTIALS}
 
     # Nếu channel = None → không chọn gì → trả về availableChannels
     if not channel:
@@ -96,7 +110,9 @@ def api_geography(
             "end": None,
             "channel": None,
             "rows": [],
-            "availableChannels": _label_channels(db, available),
+            "availableChannels": [
+                {"value": tag, "label": CHANNEL_LABELS.get(tag, tag)} for tag in available
+            ],
         }
 
     if channel not in CHANNEL_CREDENTIALS:
@@ -106,7 +122,9 @@ def api_geography(
             "end": None,
             "channel": channel,
             "rows": [],
-            "availableChannels": _label_channels(db, available),
+            "availableChannels": [
+                {"value": tag, "label": CHANNEL_LABELS.get(tag, tag)} for tag in available
+            ],
         }
 
     cred_file = CHANNEL_CREDENTIALS[channel]
@@ -120,7 +138,10 @@ def api_geography(
             "channel": channel,
             "rows": [],
             "error": "invalid_credentials",
-            "availableChannels": _label_channels(db, list(CHANNEL_CREDENTIALS.keys())),
+            "availableChannels": [
+                {"value": tag, "label": CHANNEL_LABELS.get(tag, tag)}
+                for tag in list(CHANNEL_CREDENTIALS.keys())
+            ],
         }
 
     # ========= date range logic =========

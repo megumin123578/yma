@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useTheme } from "@mui/material/styles";
 import {
   Box,
@@ -82,18 +82,30 @@ const TABLE_COLUMNS = [
   { key: "averageViewDuration", label: "Avg Duration", width: 150 },
   { key: "averageViewPercentage", label: "Avg %", width: 140 },
 ];
+const FILTERS_STORAGE_KEY = "geography.filters";
+
+const loadStoredFilters = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(FILTERS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+};
 
 const GeographyChart = ({ isDashboard = false }) => {
   const theme = useTheme();
 
   // ===== State =====
   const [rawData, setRawData] = useState([]);
-  const [range, setRange] = useState("28d");
-  const [channel, setChannel] = useState("");
+  const [range, setRange] = useState(() => loadStoredFilters()?.range || "28d");
+  const [channel, setChannel] = useState(() => loadStoredFilters()?.channel || "");
   const [channels, setChannels] = useState([]);
+  const channelsRef = useRef([]);
 
   // hiện / ẩn cột bảng
-  const [visibleColumns, setVisibleColumns] = useState({
+  const [visibleColumns, setVisibleColumns] = useState(() => loadStoredFilters()?.visibleColumns || {
     views: true,
     engagedViews: true,
     watchTimeHours: true,
@@ -102,7 +114,7 @@ const GeographyChart = ({ isDashboard = false }) => {
   });
 
   // metric dùng cho MAP
-  const [metric, setMetric] = useState("views");
+  const [metric, setMetric] = useState(() => loadStoredFilters()?.metric || "views");
   const mconf = METRICS[metric];
 
   // ===== Fetch data =====
@@ -117,7 +129,7 @@ const GeographyChart = ({ isDashboard = false }) => {
 
         if (json.availableChannels) {
           const existingLabelMap = new Map(
-            (channels || [])
+            (channelsRef.current || [])
               .filter((c) => c && typeof c === "object" && c.value)
               .map((c) => [c.value, c.label || c.value])
           );
@@ -135,37 +147,57 @@ const GeographyChart = ({ isDashboard = false }) => {
               return { value, label };
             })
             .filter((item) => item.value);
-          const orderKey = (value) =>
-            String(value || "")
-              .trim()
-              .replace(/\s+/g, "_")
-              .replace(/[^A-Za-z0-9_.-]/g, "_")
-              .toLowerCase();
-          const orderList = (() => {
-            try {
-              return JSON.parse(localStorage.getItem("tokens.order") || "[]");
-            } catch {
-              return [];
+
+          // Tránh infinite loop: chỉ set nếu list thực sự thay đổi
+          const currentListStr = JSON.stringify((channelsRef.current || []).map(c => c.value));
+          const newListStr = JSON.stringify(normalized.map(c => c.value));
+
+          if (currentListStr !== newListStr || (channelsRef.current || []).length === 0) {
+            const orderKey = (value) =>
+              String(value || "")
+                .trim()
+                .replace(/\s+/g, "_")
+                .replace(/[^A-Za-z0-9_.-]/g, "_")
+                .toLowerCase();
+            const orderList = (() => {
+              try {
+                return JSON.parse(localStorage.getItem("tokens.order") || "[]");
+              } catch {
+                return [];
+              }
+            })()
+              .map((name) => String(name || "").replace(/.pickle$/i, ""))
+              .map(orderKey)
+              .filter(Boolean);
+            const orderIndex = new Map(orderList.map((key, idx) => [key, idx]));
+            const finalChannels = [...normalized].sort((a, b) => {
+              const ai = orderIndex.has(orderKey(a.value)) ? orderIndex.get(orderKey(a.value)) : Number.MAX_SAFE_INTEGER;
+              const bi = orderIndex.has(orderKey(b.value)) ? orderIndex.get(orderKey(b.value)) : Number.MAX_SAFE_INTEGER;
+              if (ai !== bi) return ai - bi;
+              return String(a.label).localeCompare(String(b.label));
+            });
+            channelsRef.current = finalChannels;
+            setChannels(finalChannels);
+
+            // Chỉ tự động chọn nếu chưa có channel nào (kể cả từ localStorage)
+            if (!channel && finalChannels.length > 0) {
+              setChannel(finalChannels[0].value);
             }
-          })()
-            .map((name) => String(name || "").replace(/.pickle$/i, ""))
-            .map(orderKey)
-            .filter(Boolean);
-          const orderIndex = new Map(orderList.map((key, idx) => [key, idx]));
-          const finalChannels = [...normalized].sort((a, b) => {
-            const ai = orderIndex.has(orderKey(a.value)) ? orderIndex.get(orderKey(a.value)) : Number.MAX_SAFE_INTEGER;
-            const bi = orderIndex.has(orderKey(b.value)) ? orderIndex.get(orderKey(b.value)) : Number.MAX_SAFE_INTEGER;
-            if (ai !== bi) return ai - bi;
-            return String(a.label).localeCompare(String(b.label));
-          });
-          setChannels(finalChannels);
-          if (!channel && finalChannels.length > 0) {
-            setChannel(finalChannels[0].value);
           }
         }
       })
       .catch((err) => console.error("Geography API error:", err));
-  }, [range, channel, channels]);
+  }, [range, channel]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        FILTERS_STORAGE_KEY,
+        JSON.stringify({ range, channel, metric, visibleColumns })
+      );
+    } catch (e) { }
+  }, [range, channel, metric, visibleColumns]);
 
   // ===== ISO Resolver =====
   const resolvers = useMemo(() => {
@@ -448,11 +480,20 @@ const GeographyChart = ({ isDashboard = false }) => {
             );
           }}
 
-          unknownColor="#999"
+          theme={{
+            background: "transparent",
+            text: {
+              fontSize: 12,
+              fill: theme.palette.text.primary,
+              outlineWidth: 0,
+              outlineColor: "transparent",
+            },
+          }}
+          unknownColor={theme.palette.mode === "dark" ? "#2d3748" : "#f1f5f9"}
           projectionScale={isDashboard ? 80 : 120}
           projectionTranslation={[0.5, 0.67]}
-          borderWidth={1.2}
-          borderColor="#fff"
+          borderWidth={0.5}
+          borderColor={theme.palette.mode === "dark" ? "#111827" : "#cbd5e1"}
         />
       </Box>
 
