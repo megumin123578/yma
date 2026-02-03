@@ -18,7 +18,17 @@ import {
   Radio,
   Divider,
   ListSubheader,
+  Typography,
+  Chip,
+  Avatar,
+  Grid,
 } from "@mui/material";
+import { motion, AnimatePresence } from "framer-motion";
+import PublicIcon from "@mui/icons-material/Public";
+import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
+import BarChartIcon from "@mui/icons-material/BarChart";
+import YouTubeIcon from "@mui/icons-material/YouTube";
+
 import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { ResponsiveChoropleth } from "@nivo/geo";
 import { geoFeatures } from "../data/mockGeoFeatures";
@@ -40,30 +50,35 @@ const METRICS = {
   views: {
     key: "views",
     label: "Views",
+    color: "#6366f1",
     valueOf: (d) => n(d.views),
     fmt: (v) => formatNumber(v),
   },
   estimatedMinutesWatched: {
     key: "estimatedMinutesWatched",
-    label: "Estimated Minutes Watched",
+    label: "Watch Time",
+    color: "#8b5cf6",
     valueOf: (d) => n(d.estimatedMinutesWatched),
     fmt: (v) => formatNumber(v),
   },
   averageViewDuration: {
     key: "averageViewDuration",
-    label: "Avg View Duration",
+    label: "Avg Duration",
+    color: "#ec4899",
     valueOf: (d) => n(d.averageViewDuration),
     fmt: (v) => formatSeconds(v),
   },
   averageViewPercentage: {
     key: "averageViewPercentage",
-    label: "Avg View %",
+    label: "Avg %",
+    color: "#10b981",
     valueOf: (d) => n(d.averageViewPercentage),
     fmt: (v) => `${n(v).toFixed(2)}%`,
   },
   engagedViews: {
     key: "engagedViews",
     label: "Engaged Views",
+    color: "#f59e0b",
     valueOf: (d) => n(d.engagedViews),
     fmt: (v) => formatNumber(v),
   },
@@ -78,9 +93,9 @@ const METRIC_OPTIONS = Object.keys(METRICS).map((k) => ({
 const TABLE_COLUMNS = [
   { key: "views", label: "Views", width: 150 },
   { key: "engagedViews", label: "Engaged Views", width: 160 },
-  { key: "watchTimeHours", label: "Watch Time (hrs)", width: 160 },
-  { key: "averageViewDuration", label: "Avg Duration", width: 150 },
-  { key: "averageViewPercentage", label: "Avg %", width: 140 },
+  { key: "watchTimeHours", label: "Watch (hrs)", width: 160 },
+  { key: "averageViewDuration", label: "Avg Dur", width: 140 },
+  { key: "averageViewPercentage", label: "Avg %", width: 130 },
 ];
 const FILTERS_STORAGE_KEY = "geography.filters";
 
@@ -96,6 +111,7 @@ const loadStoredFilters = () => {
 
 const GeographyChart = ({ isDashboard = false }) => {
   const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
 
   // ===== State =====
   const [rawData, setRawData] = useState([]);
@@ -107,7 +123,6 @@ const GeographyChart = ({ isDashboard = false }) => {
   const [channels, setChannels] = useState([]);
   const channelsRef = useRef([]);
 
-  // hiện / ẩn cột bảng
   const [visibleColumns, setVisibleColumns] = useState(() => loadStoredFilters()?.visibleColumns || {
     views: true,
     engagedViews: true,
@@ -116,153 +131,83 @@ const GeographyChart = ({ isDashboard = false }) => {
     averageViewPercentage: true,
   });
 
-  // metric dùng cho MAP
   const [metric, setMetric] = useState(() => loadStoredFilters()?.metric || "views");
   const mconf = METRICS[metric];
 
   // ===== Fetch data =====
   useEffect(() => {
     // Backend route is mounted at `/api/geography/` (trailing slash). Using it avoids 307 redirects.
-    const url = `/api/geography/?range=${range}${channel ? `&channel=${channel}` : ""
-      }`;
-
+    const url = `/api/geography/?range=${range}${channel ? `&channel=${channel}` : ""}`;
     api.get(url)
       .then((r) => r.data)
       .then((json) => {
         setRawData(json.rows || []);
-
         if (json.availableChannels) {
-          const existingLabelMap = new Map(
-            (channelsRef.current || [])
-              .filter((c) => c && typeof c === "object" && c.value)
-              .map((c) => [c.value, c.label || c.value])
-          );
+          const existingLabelMap = new Map((channelsRef.current || []).map(c => [c.value, c.label || c.value]));
           const normalized = (Array.isArray(json.availableChannels) ? json.availableChannels : [])
             .map((item) => {
-              if (typeof item === "string") {
-                return {
-                  value: item,
-                  label: existingLabelMap.get(item) || item,
-                };
-              }
-              const value = item?.value || item?.name || "";
-              const label =
-                item?.label || item?.name || existingLabelMap.get(value) || value;
+              const value = typeof item === "string" ? item : (item?.value || item?.name || "");
+              const label = typeof item === "string" ? (existingLabelMap.get(item) || item) : (item?.label || item?.name || existingLabelMap.get(value) || value);
               return { value, label };
-            })
-            .filter((item) => item.value);
+            }).filter(i => i.value);
 
-          // Tránh infinite loop: chỉ set nếu list thực sự thay đổi
-          const currentListStr = JSON.stringify((channelsRef.current || []).map(c => c.value));
-          const newListStr = JSON.stringify(normalized.map(c => c.value));
+          const curStr = JSON.stringify((channelsRef.current || []).map(c => c.value));
+          const newStr = JSON.stringify(normalized.map(c => c.value));
 
-          if (currentListStr !== newListStr || (channelsRef.current || []).length === 0) {
-            const orderKey = (value) =>
-              String(value || "")
-                .trim()
-                .replace(/\s+/g, "_")
-                .replace(/[^A-Za-z0-9_.-]/g, "_")
-                .toLowerCase();
-            const orderList = (() => {
-              try {
-                return JSON.parse(localStorage.getItem("tokens.order") || "[]");
-              } catch {
-                return [];
-              }
-            })()
-              .map((name) => String(name || "").replace(/.pickle$/i, ""))
-              .map(orderKey)
-              .filter(Boolean);
-            const orderIndex = new Map(orderList.map((key, idx) => [key, idx]));
-            const finalChannels = [...normalized].sort((a, b) => {
-              const ai = orderIndex.has(orderKey(a.value)) ? orderIndex.get(orderKey(a.value)) : Number.MAX_SAFE_INTEGER;
-              const bi = orderIndex.has(orderKey(b.value)) ? orderIndex.get(orderKey(b.value)) : Number.MAX_SAFE_INTEGER;
-              if (ai !== bi) return ai - bi;
-              return String(a.label).localeCompare(String(b.label));
-            });
-            channelsRef.current = finalChannels;
-            setChannels(finalChannels);
-            // Prevent ~1s flicker on refresh where Select falls back to the slug until labels load.
+          if (curStr !== newStr || !channelsRef.current.length) {
+            const final = normalized.sort((a, b) => a.label.localeCompare(b.label));
+            channelsRef.current = final;
+            setChannels(final);
             if (channel) {
-              const selected = finalChannels.find((c) => c.value === channel);
-              if (selected?.label) setChannelLabelFallback(selected.label);
+              const sel = final.find(c => c.value === channel);
+              if (sel?.label) setChannelLabelFallback(sel.label);
             }
-
-            // Chỉ tự động chọn nếu chưa có channel nào (kể cả từ localStorage)
-            if (!channel && finalChannels.length > 0) {
-              setChannel(finalChannels[0].value);
-              if (finalChannels[0].label) setChannelLabelFallback(finalChannels[0].label);
+            if (!channel && final.length) {
+              setChannel(final[0].value);
+              setChannelLabelFallback(final[0].label);
             }
           }
         }
-      })
-      .catch((err) => console.error("Geography API error:", err));
+      }).catch(err => console.error(err));
   }, [range, channel]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const label =
-        (channelsRef.current || []).find((c) => c.value === channel)?.label ||
-        channelLabelFallback ||
-        "";
-      window.localStorage.setItem(
-        FILTERS_STORAGE_KEY,
-        JSON.stringify({ range, channel, channelLabel: label, metric, visibleColumns })
-      );
-    } catch (e) { }
+    const label = (channelsRef.current || []).find(c => c.value === channel)?.label || channelLabelFallback || "";
+    window.localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify({ range, channel, channelLabel: label, metric, visibleColumns }));
   }, [range, channel, metric, visibleColumns, channelLabelFallback]);
 
   // ===== ISO Resolver =====
   const resolvers = useMemo(() => {
-    const iso2ToFeatureId = new Map();
+    const iso2To3 = new Map();
     const idToName = new Map();
-
-    for (const f of geoFeatures.features) {
+    geoFeatures.features.forEach(f => {
       const id = String(f.id || f.properties?.iso_a3 || "");
       const iso2 = f.properties?.iso_a2?.toUpperCase() || "";
-      const name = f.properties?.name || id;
-
-      if (iso2) iso2ToFeatureId.set(iso2, id);
-      idToName.set(id, name);
-    }
-
+      if (iso2) iso2To3.set(iso2, id);
+      idToName.set(id, f.properties?.name || id);
+    });
     return {
       resolveId: (code) => {
         const c = String(code).toUpperCase();
-        return iso2ToFeatureId.get(c) || COUNTRY_FALLBACK[c] || c;
+        return iso2To3.get(c) || COUNTRY_FALLBACK[c] || c;
       },
       nameOf: (id) => idToName.get(id) || id,
     };
   }, []);
 
-  // ===== Normalize data =====
-  const data = useMemo(
-    () =>
-      rawData.map((d) => {
-        const id = resolvers.resolveId(d.country);
-        return { ...d, id, label: resolvers.nameOf(id) };
-      }),
-    [rawData, resolvers]
-  );
+  const data = useMemo(() => rawData.map(d => {
+    const id = resolvers.resolveId(d.country);
+    return { ...d, id, label: resolvers.nameOf(id) };
+  }), [rawData, resolvers]);
 
-  // ===== MAP DATA =====
-  const mapData = useMemo(
-    () => data.map((d) => ({ id: d.id, value: mconf.valueOf(d) })),
-    [data, mconf]
-  );
-
-  const { domainMax } = useMemo(() => {
-    const vals = mapData.map((d) => n(d.value));
-    return {
-      domainMax:
-        metric === "averageViewPercentage" ? 100 : Math.max(1, ...vals),
-    };
+  const mapData = useMemo(() => data.map(d => ({ id: d.id, value: mconf.valueOf(d) })), [data, mconf]);
+  const domainMax = useMemo(() => {
+    if (metric === "averageViewPercentage") return 100;
+    return Math.max(1, ...mapData.map(d => n(d.value)));
   }, [mapData, metric]);
 
-  // ===== TABLE rows & totals =====
   const { rows, totals } = useMemo(() => {
-    const rawRows = data.map((d) => ({
+    const rawRows = data.map(d => ({
       id: d.id,
       label: d.label,
       views: n(d.views),
@@ -272,376 +217,306 @@ const GeographyChart = ({ isDashboard = false }) => {
       averageViewPercentage: n(d.averageViewPercentage),
       sortValue: mconf.valueOf(d),
     }));
-
-    const totalViews = rawRows.reduce((s, r) => s + r.views, 0);
-    const totalEngaged = rawRows.reduce((s, r) => s + r.engagedViews, 0);
-    const totalWatch = rawRows.reduce((s, r) => s + r.watchTimeHours, 0);
-
+    const tv = rawRows.reduce((a, b) => a + b.views, 0);
+    const te = rawRows.reduce((a, b) => a + b.engagedViews, 0);
+    const tw = rawRows.reduce((a, b) => a + b.watchTimeHours, 0);
     const totals = {
-      views: totalViews,
-      engagedViews: totalEngaged,
-      watchTimeHours: totalWatch,
-      averageViewDuration:
-        rawRows.reduce((s, r) => s + r.averageViewDuration * r.views, 0) /
-        (totalViews || 1),
-      averageViewPercentage:
-        rawRows.reduce((s, r) => s + r.averageViewPercentage * r.views, 0) /
-        (totalViews || 1),
+      views: tv,
+      engagedViews: te,
+      watchTimeHours: tw,
+      averageViewDuration: rawRows.reduce((a, b) => a + (b.averageViewDuration * b.views), 0) / (tv || 1),
+      averageViewPercentage: rawRows.reduce((a, b) => a + (b.averageViewPercentage * b.views), 0) / (tv || 1),
     };
-
     return {
       totals,
-      rows: rawRows
-        .map((r) => ({
-          ...r,
-          viewsPct: totalViews ? (r.views / totalViews) * 100 : 0,
-          engagedPct: totalEngaged ? (r.engagedViews / totalEngaged) * 100 : 0,
-          watchTimePct: totalWatch ? (r.watchTimeHours / totalWatch) * 100 : 0,
-        }))
-        .sort((a, b) => b.sortValue - a.sortValue),
+      rows: rawRows.map(r => ({
+        ...r,
+        viewsPct: tv ? (r.views / tv) * 100 : 0,
+        engagedPct: te ? (r.engagedViews / te) * 100 : 0,
+        watchPct: tw ? (r.watchTimeHours / tw) * 100 : 0,
+      })).sort((a, b) => b.sortValue - a.sortValue).slice(0, 50),
     };
   }, [data, mconf]);
 
-  // ===== Value hiển thị trên Select Metrics =====
   const metricsSelectValue = useMemo(() => {
-    const colsSelected = Object.entries(visibleColumns)
-      .filter(([, v]) => v)
-      .map(([k]) => `col:${k}`);
-    return [`map:${metric}`, ...colsSelected];
+    return [`map:${metric}`, ...Object.entries(visibleColumns).filter(([, v]) => v).map(([k]) => `col:${k}`)];
   }, [metric, visibleColumns]);
 
-  const tablePaperSx = useMemo(
-    () => ({
-      mt: 2,
-      px: 2,
-      py: 1,
-      borderRadius: 3,
-      border: "1px solid",
-      borderColor:
-        theme.palette.mode === "dark"
-          ? "rgba(148,163,184,0.22)"
-          : "rgba(15,23,42,0.12)",
-      background:
-        theme.palette.mode === "dark"
-          ? "rgba(10,15,24,0.82)"
-          : "rgba(255,255,255,0.94)",
-      boxShadow:
-        theme.palette.mode === "dark"
-          ? "0 14px 28px rgba(15,23,42,0.4)"
-          : "0 14px 26px rgba(148,163,184,0.25)",
-      overflow: "hidden",
-    }),
-    [theme.palette.mode]
-  );
-
-  const tableHeadSx = useMemo(
-    () => ({
-      background:
-        theme.palette.mode === "dark"
-          ? "rgba(15,23,42,0.9)"
-          : "rgba(226,232,240,0.85)",
-      "& .MuiTableCell-root": {
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: "0.08em",
-        fontSize: "0.72rem",
-        color:
-          theme.palette.mode === "dark"
-            ? "rgba(226,232,240,0.85)"
-            : "rgba(15,23,42,0.75)",
-      },
-    }),
-    [theme.palette.mode]
-  );
+  // Styles
+  const glassSx = {
+    bgcolor: isDark ? "rgba(15, 23, 42, 0.65)" : "rgba(255, 255, 255, 0.8)",
+    backdropFilter: "blur(12px)",
+    borderRadius: 4,
+    border: "1px solid",
+    borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
+    boxShadow: isDark ? "0 8px 32px rgba(0,0,0,0.4)" : "0 8px 24px rgba(15,23,42,0.08)",
+  };
 
   return (
-    <Stack spacing={1.5}>
+    <motion.div
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+    >
+      <Stack spacing={3}>
+        {/* SELECTORS */}
+        <Stack direction={{ xs: "column", sm: "row" }} spacing={2} justifyContent="flex-start">
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <CalendarMonthIcon sx={{ fontSize: 16 }} /> Period
+            </InputLabel>
+            <Select label="Period" value={range} onChange={(e) => setRange(e.target.value)}>
+              <MenuItem value="7d">Last 7 days</MenuItem>
+              <MenuItem value="28d">Last 28 days</MenuItem>
+              <MenuItem value="90d">Last 90 days</MenuItem>
+              <MenuItem value="365d">Last 365 days</MenuItem>
+              <MenuItem value="lifetime">Lifetime</MenuItem>
+            </Select>
+          </FormControl>
 
-      {/* ===== SELECTORS ===== */}
-      <Stack direction="row" spacing={2}>
-        {/* Date Range */}
-        <FormControl size="small" sx={{ minWidth: 160 }}>
-          <InputLabel>Date Range</InputLabel>
-          <Select
-            label="Date Range"
-            value={range}
-            onChange={(e) => setRange(e.target.value)}
-          >
-            <MenuItem value="7d">Last 7 days</MenuItem>
-            <MenuItem value="28d">Last 28 days</MenuItem>
-            <MenuItem value="90d">Last 90 days</MenuItem>
-            <MenuItem value="365d">Last 365 days</MenuItem>
-            <MenuItem value="lifetime">Lifetime</MenuItem>
-          </Select>
-        </FormControl>
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <BarChartIcon sx={{ fontSize: 16 }} /> Metrics
+            </InputLabel>
+            <Select multiple label="Metrics" value={metricsSelectValue} renderValue={() => `Metrics (${Object.values(visibleColumns).filter(Boolean).length})`}>
+              <ListSubheader>Main Map Metric</ListSubheader>
+              {METRIC_OPTIONS.map(o => (
+                <MenuItem key={o.value} onClick={() => setMetric(o.value)}>
+                  <Radio size="small" checked={metric === o.value} sx={{ color: METRICS[o.value].color, '&.Mui-checked': { color: METRICS[o.value].color } }} />
+                  <Typography variant="body2">{o.label}</Typography>
+                </MenuItem>
+              ))}
+              <Divider />
+              <ListSubheader>Table Columns</ListSubheader>
+              {TABLE_COLUMNS.map(c => (
+                <MenuItem key={c.key} onClick={(e) => { e.stopPropagation(); setVisibleColumns(p => ({ ...p, [c.key]: !p[c.key] })); }}>
+                  <Checkbox size="small" checked={visibleColumns[c.key]} />
+                  <Typography variant="body2">{c.label}</Typography>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
-        {/* ⭐ Metrics = Map metric + Table columns */}
-        <FormControl size="small" sx={{ minWidth: 160 }}>
-          <InputLabel>Metrics</InputLabel>
-          <Select
-            multiple
-            label="Metrics"
-            value={metricsSelectValue}
-            renderValue={() => "Metrics"}   // 👈 luôn chỉ hiện chữ "Metrics"
-          >
-            {/* Map metric */}
-            <ListSubheader>Map metric</ListSubheader>
-            {METRIC_OPTIONS.map((opt) => (
-              <MenuItem
-                key={`map-${opt.value}`}
-                value={`map:${opt.value}`}
-                onClick={() => setMetric(opt.value)}
-              >
-                <Radio checked={metric === opt.value} sx={{
-                  mr: 1,
-                  color: "#ffffff",
-                  "&.Mui-checked": {
-                    color: "#ffffff",
-                  },
-                }} />
-                {opt.label}
-              </MenuItem>
-            ))}
+          <FormControl size="small" sx={{ minWidth: 180 }}>
+            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <YouTubeIcon sx={{ fontSize: 16 }} /> Channel
+            </InputLabel>
+            <Select
+              label="Channel"
+              value={channel}
+              onChange={(e) => {
+                const next = e.target.value;
+                setChannel(next);
+                const s = channels.find(c => c.value === next);
+                if (s) setChannelLabelFallback(s.label);
+              }}
+              renderValue={(v) => {
+                const sel = channels.find(c => c.value === v);
+                if (sel?.label) return sel.label;
+                if (channelLabelFallback) return channelLabelFallback;
+                return String(v || "").replace(/_+/g, " ").trim();
+              }}
+            >
+              {channels.map(c => (
+                <MenuItem key={c.value} value={c.value}>
+                  <Typography variant="body2" sx={{ fontSize: 13 }}>{c.label}</Typography>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Stack>
 
-            <Divider sx={{ my: 0.5 }} />
+        {/* MAP SECTION */}
+        <Box
+          sx={{
+            ...glassSx,
+            height: isDashboard ? 400 : 580,
+            overflow: "hidden",
+            position: "relative",
+            background: isDark
+              ? `radial-gradient(circle at 50% 50%, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 1) 100%)`
+              : `radial-gradient(circle at 50% 50%, #f8fafc 0%, #f1f5f9 100%)`,
+          }}
+        >
 
-            {/* Table columns */}
-            <ListSubheader>Table columns</ListSubheader>
-            {TABLE_COLUMNS.map((col) => (
-              <MenuItem
-                key={`col-${col.key}`}
-                value={`col:${col.key}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setVisibleColumns((prev) => ({
-                    ...prev,
-                    [col.key]: !prev[col.key],
-                  }));
-                }}
-              >
-                <Checkbox
-                  checked={visibleColumns[col.key]}
-                  sx={{
-                    mr: 1,
-                    color: "#ffffff",
-                    "&.Mui-checked": {
-                      color: "#ffffff",
-                    },
-                  }}
-                />
-                {col.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
 
-        {/* Channel */}
-        <FormControl size="small" sx={{ minWidth: 160 }}>
-          <InputLabel>Channel</InputLabel>
-          <Select
-            label="Channel"
-            value={channel}
-            onChange={(e) => {
-              const next = e.target.value;
-              setChannel(next);
-              const nextLabel =
-                channels.find((c) => c.value === next)?.label ||
-                (channelsRef.current || []).find((c) => c.value === next)?.label ||
-                "";
-              setChannelLabelFallback(nextLabel);
-            }}
-            renderValue={(value) => {
-              const current = channels.find((c) => c.value === value);
-              if (current?.label) return current.label;
-              if (channelLabelFallback) return channelLabelFallback;
-              return String(value || "")
-                .replace(/_+/g, " ")
-                .trim();
-            }}
-          >
-            {channels.map((c) => (
-              <MenuItem key={c.value} value={c.value}>
-                {c.label || c.value}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+          <ResponsiveChoropleth
+            debounceResize={150}
+            data={mapData}
+            features={geoFeatures.features}
+            valueFormat={mconf.fmt}
+            domain={[0, domainMax]}
+            colors={isDark ? "BuGn" : "blues"}
 
-      </Stack>
-
-      {/* ===== MAP ===== */}
-      <Box sx={{ height: isDashboard ? 360 : 520 }}>
-        <ResponsiveChoropleth
-          debounceResize={150}
-          data={mapData}
-          features={geoFeatures.features}
-          valueFormat={mconf.fmt}
-          domain={[0, domainMax]}
-          tooltip={({ feature }) => {
-            const iso3 = feature.id;
-            const fullname = resolvers.nameOf(iso3);
-            const value = feature.value || 0;
-
-            return (
-              <Box
-                sx={{
-                  px: 1.2,
-                  py: 0.75,
-                  borderRadius: 1,
+            theme={{
+              background: "transparent",
+              text: { fontSize: 12, fill: theme.palette.text.primary },
+              tooltip: {
+                container: {
+                  background: isDark ? "rgba(11, 15, 25, 0.98)" : "#ffffff",
+                  color: isDark ? "#f1f5f9" : "#1e293b",
                   fontSize: 13,
-                  fontWeight: 600,
-                  bgcolor:
-                    theme.palette.mode === "dark"
-                      ? "rgba(0,0,0,0.75)"
-                      : "rgba(255,255,255,0.95)",
-                  boxShadow: 3,
-                }}
-              >
-                <div>{fullname}</div>
-                <div>
-                  {mconf.label}: {mconf.fmt(value)}
-                </div>
-              </Box>
-            );
-          }}
+                  borderRadius: 12,
+                  boxShadow: isDark ? "0 10px 30px rgba(0,0,0,0.6)" : "0 10px 25px rgba(0,0,0,0.1)",
+                  padding: "10px 14px",
+                  border: `1px solid ${isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.08)"}`,
+                }
+              }
+            }}
+            unknownColor={isDark ? "rgba(255,255,255,0.04)" : "#e2e8f0"}
+            projectionScale={isDashboard ? 100 : 150}
+            projectionTranslation={[0.5, 0.65]}
+            borderWidth={0.5}
+            borderColor={isDark ? "rgba(255,255,255,0.1)" : "#94a3b8"}
+            tooltip={({ feature }) => {
+              if (feature.value === undefined) return null;
+              const textColor = isDark ? "#f8fafc" : "#0f172a";
+              const secondaryColor = isDark ? "#94a3b8" : "#64748b";
+              const bgColor = isDark ? "#111827" : "#ffffff";
 
-          theme={{
-            background: "transparent",
-            text: {
-              fontSize: 12,
-              fill: theme.palette.text.primary,
-              outlineWidth: 0,
-              outlineColor: "transparent",
-            },
-          }}
-          unknownColor={theme.palette.mode === "dark" ? "#2d3748" : "#f1f5f9"}
-          projectionScale={isDashboard ? 80 : 120}
-          projectionTranslation={[0.5, 0.67]}
-          borderWidth={0.5}
-          borderColor={theme.palette.mode === "dark" ? "#111827" : "#cbd5e1"}
-        />
-      </Box>
-
-      {/* ===== TABLE ===== */}
-      <Box sx={{ px: 2 }}>
-        <TableContainer component={Paper} elevation={0} sx={tablePaperSx}>
-          <Table size="small">
-            <TableHead sx={tableHeadSx}>
-              <TableRow>
-                <TableCell>Country</TableCell>
-
-                {TABLE_COLUMNS.map(col =>
-                  visibleColumns[col.key] && (
-                    <TableCell
-                      key={col.key}
-                      align="right"
-                      sx={{
-                        width: col.width,
-                        minWidth: col.width,
-                        maxWidth: col.width,
-                      }}
-                    >
-                      {col.label}
-                    </TableCell>
-                  )
-                )}
-              </TableRow>
-            </TableHead>
-
-
-            <TableBody>
-              {/* ⭐ TOTAL ROW TRÊN CÙNG ⭐ */}
-              <TableRow
-                sx={{
-                  bgcolor:
-                    theme.palette.mode === "dark"
-                      ? "rgba(30,41,59,0.55)"
-                      : "rgba(226,232,240,0.6)",
-                }}
-              >
-                <TableCell sx={{ fontWeight: 700 }}>Total</TableCell>
-                {TABLE_COLUMNS.map(
-                  (col) =>
-                    visibleColumns[col.key] && (
-                      <TableCell
-                        key={col.key}
-                        align="right"
-                        sx={{ width: col.width }}
-                      >
-                        {col.key === "averageViewDuration"
-                          ? formatSeconds(totals[col.key])
-                          : col.key === "averageViewPercentage"
-                            ? percentStr(totals[col.key])
-                            : formatNumber(totals[col.key])}
-                      </TableCell>
-                    )
-                )}
-              </TableRow>
-
-              {/* DATA ROWS */}
-              {rows.map((r) => (
-                <TableRow
-                  key={r.id}
+              return (
+                <Box
                   sx={{
-                    transition: "transform 0.2s ease, background-color 0.2s ease",
-                    "&:hover": {
-                      backgroundColor:
-                        theme.palette.mode === "dark"
-                          ? "rgba(51,65,85,0.55)"
-                          : "rgba(226,232,240,0.6)",
-                      transform: "translateY(-1px)",
-                    },
+                    bgcolor: bgColor,
+                    p: 1.5,
+                    borderRadius: 2.5,
+                    border: "1px solid",
+                    borderColor: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)",
+                    boxShadow: isDark ? "0 12px 36px rgba(0,0,0,0.5)" : "0 8px 24px rgba(15,23,42,0.15)",
+                    minWidth: 160
                   }}
                 >
-                  <TableCell sx={{ width: 160 }}>{r.label}</TableCell>
+                  <Stack spacing={0.75}>
+                    <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2 }}>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{
+                          fontWeight: 800,
+                          color: textColor,
+                          fontSize: "0.875rem",
+                          letterSpacing: "-0.01em"
+                        }}
+                      >
+                        {resolvers.nameOf(feature.id)}
+                      </Typography>
+                      <Box
+                        sx={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: "50%",
+                          bgcolor: mconf.color,
+                          boxShadow: `0 0 10px ${mconf.color}`
+                        }}
+                      />
+                    </Box>
+                    <Divider sx={{ opacity: 0.1, my: 0.5 }} />
+                    <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: secondaryColor,
+                          fontWeight: 500,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          fontSize: "0.65rem"
+                        }}
+                      >
+                        {mconf.label}
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 700,
+                          color: textColor,
+                          fontSize: "0.9rem"
+                        }}
+                      >
+                        {mconf.fmt(feature.value)}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                </Box>
+              );
+            }}
+          />
+        </Box>
 
-                  {TABLE_COLUMNS.map(
-                    (col) =>
-                      visibleColumns[col.key] && (
-                        <TableCell
-                          key={col.key}
-                          align="right"
-                          sx={{ width: col.width }}
-                        >
-                          {col.key === "views" ? (
-                            <>
-                              {formatNumber(r.views)}{" "}
-                              <span style={{ opacity: 0.6 }}>
-                                ({percentStr(r.viewsPct)})
-                              </span>
-                            </>
-                          ) : col.key === "engagedViews" ? (
-                            <>
-                              {formatNumber(r.engagedViews)}{" "}
-                              <span style={{ opacity: 0.6 }}>
-                                ({percentStr(r.engagedPct)})
-                              </span>
-                            </>
-                          ) : col.key === "watchTimeHours" ? (
-                            <>
-                              {formatNumber(r.watchTimeHours)}{" "}
-                              <span style={{ opacity: 0.6 }}>
-                                ({percentStr(r.watchTimePct)})
-                              </span>
-                            </>
-                          ) : col.key === "averageViewDuration" ? (
-                            formatSeconds(r.averageViewDuration)
-                          ) : col.key === "averageViewPercentage" ? (
-                            percentStr(r.averageViewPercentage)
-                          ) : (
-                            formatNumber(r[col.key])
-                          )}
-                        </TableCell>
-                      )
-                  )}
+        {/* TABLE SECTION */}
+        <Box sx={{ ...glassSx, p: 1, overflow: "hidden" }}>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ "& .MuiTableCell-head": { py: 2, fontWeight: 800, textTransform: "uppercase", fontSize: 11, letterSpacing: 1, opacity: 0.7 } }}>
+                  <TableCell>Country</TableCell>
+                  {TABLE_COLUMNS.map(c => visibleColumns[c.key] && (
+                    <TableCell key={c.key} align="right">{c.label}</TableCell>
+                  ))}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Box>
-    </Stack>
+              </TableHead>
+              <TableBody>
+                {/* TOTAL ROW */}
+                <TableRow sx={{ bgcolor: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)" }}>
+                  <TableCell sx={{ fontWeight: 900, fontSize: 13 }}>Total</TableCell>
+                  {TABLE_COLUMNS.map(c => visibleColumns[c.key] && (
+                    <TableCell key={c.key} align="right" sx={{ fontWeight: 900, color: mconf.key === c.key ? mconf.color : "inherit" }}>
+                      {c.key === "averageViewDuration" ? formatSeconds(totals[c.key]) : c.key === "averageViewPercentage" ? percentStr(totals[c.key]) : formatNumber(totals[c.key])}
+                    </TableCell>
+                  ))}
+                </TableRow>
+
+                {/* DATA ROWS */}
+                <AnimatePresence mode="popLayout">
+                  {rows.map((r, idx) => (
+                    <TableRow
+                      component={motion.tr}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.03 }}
+                      key={r.id}
+                      hover
+                      sx={{ "&:hover": { bgcolor: isDark ? "rgba(255,255,255,0.02) !important" : "rgba(0,0,0,0.01) !important" } }}
+                    >
+                      <TableCell sx={{ fontWeight: 600, fontSize: 13, borderLeft: idx < 3 ? `3px solid ${mconf.color}` : "none" }}>
+                        {r.label}
+                      </TableCell>
+
+                      {TABLE_COLUMNS.map(c => {
+                        if (!visibleColumns[c.key]) return null;
+                        const isPrimary = mconf.key === c.key;
+                        const pctValue = c.key === "views" ? r.viewsPct : c.key === "engagedViews" ? r.engagedPct : c.key === "watchTimeHours" ? r.watchPct : 0;
+
+                        return (
+                          <TableCell key={c.key} align="right">
+                            <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                              <Typography variant="body2" sx={{ fontWeight: isPrimary ? 800 : 500, color: isPrimary ? mconf.color : "inherit" }}>
+                                {c.key === "averageViewDuration" ? formatSeconds(r[c.key]) : c.key === "averageViewPercentage" ? percentStr(r[c.key]) : formatNumber(r[c.key])}
+                              </Typography>
+                              {pctValue > 0 && (
+                                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.5, width: 80 }}>
+                                  <Box sx={{ flex: 1, height: 4, bgcolor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)", borderRadius: 2, overflow: "hidden" }}>
+                                    <motion.div
+                                      initial={{ width: 0 }}
+                                      animate={{ width: `${pctValue}%` }}
+                                      transition={{ duration: 1, delay: idx * 0.05 }}
+                                      style={{ height: "100%", background: isPrimary ? mconf.color : "#94a3b8", borderRadius: 2 }}
+                                    />
+                                  </Box>
+                                  <Typography sx={{ fontSize: 9, opacity: 0.6, width: 30, textAlign: "right" }}>{Math.round(pctValue)}%</Typography>
+                                </Box>
+                              )}
+                            </Box>
+                          </TableCell>
+                        );
+                      })}
+                    </TableRow>
+                  ))}
+                </AnimatePresence>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      </Stack>
+    </motion.div>
   );
 };
 

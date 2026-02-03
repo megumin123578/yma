@@ -14,7 +14,7 @@ import RivalsData from "./scenes/rivals";
 
 import { Box, IconButton, useTheme } from "@mui/material";
 import { ColorModeContext } from "./theme";
-import GeographyChart from "./components/Geography";
+import GeographyScene from "./scenes/geography";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import { UserContext } from "./context/UserContext";
@@ -106,7 +106,7 @@ function App() {
             path="/geography"
             element={
               <ProtectedRoute>
-                <GeographyChart />
+                <GeographyScene />
               </ProtectedRoute>
             }
           />
@@ -136,12 +136,12 @@ function App() {
             }
           />
           <Route
-          path="smmstore_analytics"
-          element={
-            <ProtectedRoute>
-              <SmmstoreAnalyticsScene/>
-            </ProtectedRoute>
-          }
+            path="smmstore_analytics"
+            element={
+              <ProtectedRoute>
+                <SmmstoreAnalyticsScene />
+              </ProtectedRoute>
+            }
           />
           <Route
             path="/audience_analytics"
