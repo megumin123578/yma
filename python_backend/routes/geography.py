@@ -179,5 +179,10 @@ def api_geography(
         "end": e.isoformat(),
         "channel": channel,
         "rows": rows,
-        "availableChannels": list(CHANNEL_CREDENTIALS.keys()),
+        # Keep API shape consistent with other pages: always return {value,label},
+        # otherwise the frontend may fall back to the slug/account_tag.
+        "availableChannels": [
+            {"value": tag, "label": CHANNEL_LABELS.get(tag, tag)}
+            for tag in list(CHANNEL_CREDENTIALS.keys())
+        ],
     }

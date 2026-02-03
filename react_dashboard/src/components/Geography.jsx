@@ -101,6 +101,9 @@ const GeographyChart = ({ isDashboard = false }) => {
   const [rawData, setRawData] = useState([]);
   const [range, setRange] = useState(() => loadStoredFilters()?.range || "28d");
   const [channel, setChannel] = useState(() => loadStoredFilters()?.channel || "");
+  const [channelLabelFallback, setChannelLabelFallback] = useState(
+    () => loadStoredFilters()?.channelLabel || ""
+  );
   const [channels, setChannels] = useState([]);
   const channelsRef = useRef([]);
 
@@ -119,7 +122,8 @@ const GeographyChart = ({ isDashboard = false }) => {
 
   // ===== Fetch data =====
   useEffect(() => {
-    const url = `/api/geography?range=${range}${channel ? `&channel=${channel}` : ""
+    // Backend route is mounted at `/api/geography/` (trailing slash). Using it avoids 307 redirects.
+    const url = `/api/geography/?range=${range}${channel ? `&channel=${channel}` : ""
       }`;
 
     api.get(url)
@@ -178,10 +182,16 @@ const GeographyChart = ({ isDashboard = false }) => {
             });
             channelsRef.current = finalChannels;
             setChannels(finalChannels);
+            // Prevent ~1s flicker on refresh where Select falls back to the slug until labels load.
+            if (channel) {
+              const selected = finalChannels.find((c) => c.value === channel);
+              if (selected?.label) setChannelLabelFallback(selected.label);
+            }
 
             // Chỉ tự động chọn nếu chưa có channel nào (kể cả từ localStorage)
             if (!channel && finalChannels.length > 0) {
               setChannel(finalChannels[0].value);
+              if (finalChannels[0].label) setChannelLabelFallback(finalChannels[0].label);
             }
           }
         }
@@ -192,12 +202,16 @@ const GeographyChart = ({ isDashboard = false }) => {
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
+      const label =
+        (channelsRef.current || []).find((c) => c.value === channel)?.label ||
+        channelLabelFallback ||
+        "";
       window.localStorage.setItem(
         FILTERS_STORAGE_KEY,
-        JSON.stringify({ range, channel, metric, visibleColumns })
+        JSON.stringify({ range, channel, channelLabel: label, metric, visibleColumns })
       );
     } catch (e) { }
-  }, [range, channel, metric, visibleColumns]);
+  }, [range, channel, metric, visibleColumns, channelLabelFallback]);
 
   // ===== ISO Resolver =====
   const resolvers = useMemo(() => {
@@ -428,10 +442,22 @@ const GeographyChart = ({ isDashboard = false }) => {
           <Select
             label="Channel"
             value={channel}
-            onChange={(e) => setChannel(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setChannel(next);
+              const nextLabel =
+                channels.find((c) => c.value === next)?.label ||
+                (channelsRef.current || []).find((c) => c.value === next)?.label ||
+                "";
+              setChannelLabelFallback(nextLabel);
+            }}
             renderValue={(value) => {
               const current = channels.find((c) => c.value === value);
-              return current?.label || value || "";
+              if (current?.label) return current.label;
+              if (channelLabelFallback) return channelLabelFallback;
+              return String(value || "")
+                .replace(/_+/g, " ")
+                .trim();
             }}
           >
             {channels.map((c) => (
