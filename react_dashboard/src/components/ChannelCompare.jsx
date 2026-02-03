@@ -190,16 +190,26 @@ const ChannelCompare = () => {
     return rows.filter((r) => selectedChannels.includes(r.accountTag));
   }, [rows, manualPick, selectedChannels]);
 
+  const channelLabelMap = useMemo(() => {
+    return new Map(
+      (channels || []).map((c) => [String(c.value), c.label || c.value])
+    );
+  }, [channels]);
+
+  const getChannelLabel = (value) =>
+    channelLabelMap.get(String(value)) || value;
+
   const barData = useMemo(
     () =>
       visibleRows.map((r) => ({
         channel: r.accountTag,
+        channelLabel: getChannelLabel(r.accountTag),
         value: r.currentValue,
         deltaPct: r.deltaPct,
         trend: r.trend,
         isAnomaly: r.isAnomaly,
       })),
-    [visibleRows]
+    [visibleRows, channelLabelMap]
   );
 
   const barHeight = Math.max(320, visibleRows.length * 28);
@@ -559,6 +569,7 @@ const ChannelCompare = () => {
                 axisLeft={{
                   tickSize: 0,
                   tickPadding: 8,
+                  format: (v) => getChannelLabel(v),
                 }}
                 labelSkipWidth={120}
                 labelTextColor={isDark ? "#f8fafc" : "#ffffff"}
@@ -576,7 +587,7 @@ const ChannelCompare = () => {
                       fontSize: 13,
                     }}
                   >
-                    <div style={{ fontWeight: 700 }}>{data.channel}</div>
+                    <div style={{ fontWeight: 700 }}>{data.channelLabel || data.channel}</div>
                     <div>Value: {formatNumber(data.value)}</div>
                     {Number.isFinite(data.deltaPct) && (
                       <div>Change: {data.deltaPct.toFixed(1)}%</div>
@@ -623,7 +634,7 @@ const ChannelCompare = () => {
                 }}
               >
                 <TableCell>{row.rank}</TableCell>
-                <TableCell>{row.accountTag}</TableCell>
+                <TableCell>{getChannelLabel(row.accountTag)}</TableCell>
                 <TableCell align="right">{formatNumber(row.currentValue)}</TableCell>
                 <TableCell align="right">{formatNumber(row.previousValue)}</TableCell>
                 <TableCell align="right">
