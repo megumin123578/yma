@@ -484,17 +484,22 @@ const TrafficSourceChart = () => {
 
       <Box sx={{ height: 420 }}>
         {chartType === "pie" && (
-          <ResponsivePie
-            data={rows.filter(r => includeSourceForCharts(r.id)).map(r => ({ id: String(r.id), label: r.label, value: r.sortValue }))}
-            colors={d => colorMap[d.id] || "#888"}
-            margin={{ top: 40, right: 80, bottom: 80, left: 80 }}
-            innerRadius={0.5} padAngle={1} cornerRadius={3}
-            activeOuterRadiusOffset={8}
-            enableArcLinkLabels arcLinkLabelsSkipAngle={10} arcLinkLabelsTextColor={theme.palette.text.primary}
-            layers={["arcs", "arcLabels", "arcLinkLabels", "legends", CenterLabel]}
-            tooltip={({ datum }) => (
-              <Box sx={{ p: 1, bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
-                <Typography variant="body2" fontWeight={700}>{datum.label}</Typography>
+            <ResponsivePie
+              data={rows.filter(r => includeSourceForCharts(r.id)).map(r => ({ id: String(r.id), label: r.label, value: r.sortValue }))}
+              colors={d => colorMap[d.id] || "#888"}
+              margin={{ top: 40, right: 80, bottom: 80, left: 80 }}
+              innerRadius={0.5} padAngle={0} cornerRadius={2}
+              activeOuterRadiusOffset={8}
+              enableArcLabels
+              arcLabelsSkipAngle={12}
+              arcLabelsTextColor={theme.palette.text.primary}
+              enableArcLinkLabels
+              arcLinkLabelsSkipAngle={12}
+              arcLinkLabelsTextColor={theme.palette.text.primary}
+              layers={["arcs", "arcLabels", "arcLinkLabels", "legends", CenterLabel]}
+              tooltip={({ datum }) => (
+                <Box sx={{ p: 1, bgcolor: "background.paper", border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                  <Typography variant="body2" fontWeight={700}>{datum.label}</Typography>
                 <Typography variant="caption">{mconf.label}: {metric === "averageViewDuration" ? formatSeconds(datum.value) : formatNumber(datum.value)}</Typography>
               </Box>
             )}
