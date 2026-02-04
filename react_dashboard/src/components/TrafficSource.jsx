@@ -25,7 +25,7 @@ import PieChartIcon from "@mui/icons-material/PieChart";
 import TimelineIcon from "@mui/icons-material/Timeline";
 
 import { ResponsivePie } from "@nivo/pie";
-import { ResponsiveLine, ResponsiveLineCanvas } from "@nivo/line";
+import { ResponsiveLine } from "@nivo/line";
 import { ResponsiveBar } from "@nivo/bar";
 
 import {
@@ -529,8 +529,9 @@ const TrafficSourceChart = () => {
             height: 560,
             p: 0.5,
             position: "relative",
-            background: isDark ? "#0f172a" : "#f8fafc",
-            overflow: "hidden"
+            background: isDark
+              ? `radial-gradient(circle at 50% 50%, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 1) 100%)`
+              : `radial-gradient(circle at 50% 50%, #f8fafc 0%, #f1f5f9 100%)`,
           }}
         >
           {chartType === "pie" && (
@@ -571,9 +572,9 @@ const TrafficSourceChart = () => {
 
           {chartType === "line" && (
             <Box ref={chartRef} sx={{ height: "100%" }}>
-              <ResponsiveLineCanvas
+              <ResponsiveLine
                 data={lineSeries}
-                colors={d => d.color || colorMap[d.id] || "#888"}
+                colors={d => colorMap[d.id] || "#888"}
                 margin={{ top: 20, right: 20, bottom: 60, left: 60 }}
                 xScale={{ type: "time", format: "native", useUTC: true, precision: "day", min: lineDateExtent.min, max: lineDateExtent.max }}
                 yScale={{ type: "linear", min: 0, max: "auto" }}
@@ -588,6 +589,7 @@ const TrafficSourceChart = () => {
                 pointColor="#fff"
                 pointBorderWidth={2}
                 pointBorderColor={{ from: "serieColor" }}
+                useMesh
                 enableSlices="x"
                 sliceTooltip={({ slice }) => {
                   const isRight = chartRef.current && slice.x > chartRef.current.offsetWidth / 2;
@@ -598,8 +600,9 @@ const TrafficSourceChart = () => {
                       border: "1px solid",
                       borderColor: isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.08)",
                       boxShadow: isDark ? "0 12px 36px rgba(0,0,0,0.6)" : "0 8px 24px rgba(15,23,42,0.15)",
+                      backdropFilter: "blur(12px)",
                       transform: isRight ? "translateX(-110%)" : "translateX(10%)",
-                      pointerEvents: "none"
+                      transition: "transform 0.1s"
                     }}>
                       <Box sx={{ mb: 1, pb: 1, borderBottom: `1px solid ${isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.06)"}` }}>
                         <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em" }}>
@@ -719,7 +722,7 @@ const TrafficSourceChart = () => {
                     border: "1px solid",
                     borderColor: isDark ? "rgba(255, 255, 255, 0.15)" : "rgba(0, 0, 0, 0.08)",
                     boxShadow: isDark ? "0 12px 36px rgba(0,0,0,0.6)" : "0 8px 24px rgba(15,23,42,0.15)",
-                    pointerEvents: "none"
+                    backdropFilter: "blur(12px)",
                   }}
                 >
                   <Box sx={{ mb: 1, pb: 1, borderBottom: `1px solid ${isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.06)"}` }}>
@@ -796,46 +799,52 @@ const TrafficSourceChart = () => {
                   <TableCell align="right" sx={{ fontWeight: 900 }}>{totals.averageViewPercentage.toFixed(2)}%</TableCell>
                 </TableRow>
 
-                {rows.map((r, idx) => (
-                  <TableRow
-                    key={r.id}
-                    hover
-                    sx={{ "&:hover": { bgcolor: isDark ? "rgba(255,255,255,0.02) !important" : "rgba(0,0,0,0.01) !important" } }}
-                  >
-                    <TableCell sx={{ fontWeight: 600, fontSize: 13, borderLeft: idx < 3 ? `3px solid ${colorMap[r.id]}` : "none" }}>
-                      <Box display="flex" alignItems="center" gap={1.5}>
-                        <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: colorMap[r.id] }} />
-                        {r.label}
-                      </Box>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                          {formatNumber(r.views)}
-                        </Typography>
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.5, width: 80 }}>
-                          <Box sx={{ flex: 1, height: 4, bgcolor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)", borderRadius: 2, overflow: "hidden" }}>
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${r.viewsPct}%` }}
-                              transition={{ duration: 1, delay: idx * 0.05 }}
-                              style={{ height: "100%", background: colorMap[r.id], borderRadius: 2 }}
-                            />
-                          </Box>
-                          <Typography sx={{ fontSize: 9, opacity: 0.6, width: 30, textAlign: "right" }}>{Math.round(r.viewsPct)}%</Typography>
+                <AnimatePresence mode="popLayout">
+                  {rows.map((r, idx) => (
+                    <TableRow
+                      key={r.id}
+                      hover
+                      component={motion.tr}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: idx * 0.03 }}
+                      sx={{ "&:hover": { bgcolor: isDark ? "rgba(255,255,255,0.02) !important" : "rgba(0,0,0,0.01) !important" } }}
+                    >
+                      <TableCell sx={{ fontWeight: 600, fontSize: 13, borderLeft: idx < 3 ? `3px solid ${colorMap[r.id]}` : "none" }}>
+                        <Box display="flex" alignItems="center" gap={1.5}>
+                          <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: colorMap[r.id] }} />
+                          {r.label}
                         </Box>
-                      </Box>
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontSize: 13 }}>{formatSeconds(r.averageViewDuration)}</TableCell>
-                    <TableCell align="right" sx={{ fontSize: 13 }}>{r.averageViewPercentage.toFixed(2)}%</TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell align="right">
+                        <Box sx={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                            {formatNumber(r.views)}
+                          </Typography>
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.5, width: 80 }}>
+                            <Box sx={{ flex: 1, height: 4, bgcolor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)", borderRadius: 2, overflow: "hidden" }}>
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${r.viewsPct}%` }}
+                                transition={{ duration: 1, delay: idx * 0.05 }}
+                                style={{ height: "100%", background: colorMap[r.id], borderRadius: 2 }}
+                              />
+                            </Box>
+                            <Typography sx={{ fontSize: 9, opacity: 0.6, width: 30, textAlign: "right" }}>{Math.round(r.viewsPct)}%</Typography>
+                          </Box>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontSize: 13 }}>{formatSeconds(r.averageViewDuration)}</TableCell>
+                      <TableCell align="right" sx={{ fontSize: 13 }}>{r.averageViewPercentage.toFixed(2)}%</TableCell>
+                    </TableRow>
+                  ))}
+                </AnimatePresence>
               </TableBody>
             </Table>
           </TableContainer>
         </Box>
       </Stack>
-    </motion.div >
+    </motion.div>
   );
 };
 
