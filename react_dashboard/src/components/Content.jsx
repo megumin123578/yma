@@ -9,6 +9,7 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TablePagination,
   Paper,
   FormControl,
   InputLabel,
@@ -146,6 +147,8 @@ const ContentAnalytics = () => {
   const [chartType, setChartType] = useState("line");
   const [metric, setMetric] = useState("views");
   const [period, setPeriod] = useState("last28");
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
 
   const [channelId, setChannelId] = useState(() => {
     try {
@@ -340,6 +343,12 @@ const ContentAnalytics = () => {
     }),
     [rows]
   );
+
+  const pagedRows = useMemo(() => {
+    const start = page * rowsPerPage;
+    const end = start + rowsPerPage;
+    return rows.slice(start, end);
+  }, [rows, page, rowsPerPage]);
 
   /* ================================
      CHART DATA
@@ -890,7 +899,7 @@ const ContentAnalytics = () => {
           </TableHead>
 
           <TableBody>
-            {rows.map((r) => (
+            {pagedRows.map((r) => (
               <TableRow
                 key={r.id}
                 sx={{
@@ -987,6 +996,18 @@ const ContentAnalytics = () => {
             </TableRow>
           </TableBody>
         </Table>
+        <TablePagination
+          component="div"
+          count={rows.length}
+          page={page}
+          onPageChange={(_, nextPage) => setPage(nextPage)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => {
+            setRowsPerPage(Number(e.target.value) || 10);
+            setPage(0);
+          }}
+          rowsPerPageOptions={[25, 50, 100, 200]}
+        />
       </TableContainer>
     </Stack>
   );
