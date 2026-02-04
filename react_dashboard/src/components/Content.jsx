@@ -3,6 +3,7 @@ import { useTheme } from "@mui/material/styles";
 import {
   Box,
   Stack,
+  Typography,
   Table,
   TableBody,
   TableCell,
@@ -138,11 +139,16 @@ const VideoThumbnail = ({ src, videoId, alt, duration }) => {
 
 const ContentAnalytics = () => {
   const theme = useTheme();
+  const LINE_MARGIN = useMemo(
+    () => ({ top: 32, right: 8, bottom: 64, left: 56 }),
+    []
+  );
 
   const [videos, setVideos] = useState([]);
   const [timeseries, setTimeseries] = useState([]);
   const [channelList, setChannelList] = useState([]);
   const chartRef = useRef(null);
+  const [hoverSlice, setHoverSlice] = useState(null);
 
   const [chartType, setChartType] = useState("line");
   const [metric, setMetric] = useState("views");
@@ -159,6 +165,7 @@ const ContentAnalytics = () => {
   });
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [loadingContent, setLoadingContent] = useState(false);
   /* ================================
      LOAD CHANNELS
   ================================= */
@@ -219,6 +226,7 @@ const ContentAnalytics = () => {
   const fetchVideos = useCallback(
     async (start, end) => {
       if (!channelId) return;
+      setLoadingContent(true);
       try {
         const resp = await api.post("/api/content/list", {
           start,
@@ -231,6 +239,8 @@ const ContentAnalytics = () => {
       } catch (err) {
         console.error("Fetch videos failed:", err);
         setVideos([]);
+      } finally {
+        setLoadingContent(false);
       }
     },
     [channelId]
@@ -239,6 +249,7 @@ const ContentAnalytics = () => {
   const fetchTimeseries = useCallback(
     async (start, end) => {
       if (!channelId) return;
+      setLoadingContent(true);
       try {
         const resp = await api.post("/api/content/timeseries", {
           start,
@@ -251,6 +262,8 @@ const ContentAnalytics = () => {
       } catch (err) {
         console.error("Fetch timeseries failed:", err);
         setTimeseries([]);
+      } finally {
+        setLoadingContent(false);
       }
     },
     [channelId]
@@ -315,20 +328,22 @@ const ContentAnalytics = () => {
   ================================= */
   const rows = useMemo(
     () =>
-      videos.map((v) => ({
-        id: v.videoId,
-        title: v.title,
-        thumbnail: v.thumbnail,
-        published: v.publishedAt,
-        duration: v.duration,
+      videos
+        .map((v) => ({
+          id: v.videoId,
+          title: v.title,
+          thumbnail: v.thumbnail,
+          published: v.publishedAt,
+          duration: v.duration,
 
-        views: n(v.views),
-        watchHours: n(v.watchTimeHours), // có thể là số thập phân
-        likes: n(v.likes),
-        cardImpressions: n(v.cardImpressions),
-        adImpressions: n(v.adImpressions),
-        annotationImpressions: n(v.annotationImpressions),
-      })),
+          views: n(v.views),
+          watchHours: n(v.watchTimeHours), // có thể là số thập phân
+          likes: n(v.likes),
+          cardImpressions: n(v.cardImpressions),
+          adImpressions: n(v.adImpressions),
+          annotationImpressions: n(v.annotationImpressions),
+        }))
+        .sort((a, b) => b.views - a.views), // 🔴 Sort table by views
     [videos]
   );
 
@@ -356,7 +371,22 @@ const ContentAnalytics = () => {
   const lineData = useMemo(() => {
     if (chartType !== "line") return [];
 
-    // 1. Identify all unique dates in the timeseries
+    // 🔴 1. Get Top 5 IDs based on the current metric to avoid rendering 100s of lines
+    const metricToSort = {
+      views: "views",
+      estimatedMinutesWatched: "watchHours",
+      likes: "likes"
+    }[metric] || "views";
+
+    const topIds = rows
+      .slice()
+      .sort((a, b) => (b[metricToSort] || 0) - (a[metricToSort] || 0))
+      .slice(0, 5)
+      .map(r => r.id);
+
+    const topIdsSet = new Set(topIds);
+
+    // 2. Identify all unique dates in the timeseries
     const allDatesSet = new Set();
     timeseries.forEach(t => {
       const d = dayjs(t.bucket).startOf('day').toDate().getTime();
@@ -367,7 +397,8 @@ const ContentAnalytics = () => {
     const map = new Map();
     timeseries.forEach((t) => {
       const id = t.videoId;
-      if (!id) return;
+      if (!id || !topIdsSet.has(id)) return; // 🔴 Only process top videos
+
       const title = t.title || id;
       if (!map.has(id)) {
         map.set(id, new Map());
@@ -382,19 +413,22 @@ const ContentAnalytics = () => {
       map.get(id).set(d, { y: n(t[metricKey]), title });
     });
 
+    const titleMap = new Map(rows.map(r => [r.id, r.title]));
+
     return Array.from(map.entries()).map(([id, dataMap]) => {
+      const videoTitle = titleMap.get(id) || id;
       const data = allDatesSorted.map(d => {
         const entry = dataMap.get(d.getTime());
         return {
           x: d,
           y: entry ? entry.y : 0,
           videoId: id,
-          title: entry ? entry.title : id
+          title: videoTitle
         };
       });
       return { id, data };
     });
-  }, [timeseries, chartType, metric]);
+  }, [timeseries, chartType, metric, rows]);
 
   const lineDateExtent = useMemo(() => {
     if (!lineData.length || !lineData[0].data.length) return { min: "auto", max: "auto" };
@@ -416,11 +450,18 @@ const ContentAnalytics = () => {
     const metricKey =
       {
         views: "views",
+        estimatedMinutesWatched: "watchHours",
       }[metric] ?? "views";
 
+    // 🔴 Limit to Top 5 for Bar chart too
+    const topRows = rows
+      .slice()
+      .sort((a, b) => (b[metricKey] || 0) - (a[metricKey] || 0))
+      .slice(0, 5);
+
     return {
-      keys: rows.map((r) => r.id),
-      data: rows.map((r) => ({
+      keys: topRows.map((r) => r.id),
+      data: topRows.map((r) => ({
         video: r.title,
         [r.id]: r[metricKey],
       })),
@@ -445,15 +486,6 @@ const ContentAnalytics = () => {
     });
     return map;
   }, [lineData]);
-
-  const latestVideoIds = useMemo(() => {
-    return rows
-      .filter((r) => r.published)
-      .slice()
-      .sort((a, b) => new Date(b.published) - new Date(a.published))
-      .map((r) => r.id)
-      .slice(0, 5);
-  }, [rows]);
 
   const hasBarData =
     barPrep.data && barPrep.data.length > 0 && barPrep.keys && barPrep.keys.length > 0;
@@ -603,13 +635,31 @@ const ContentAnalytics = () => {
             : "rgba(0,0,0,0.06)"
             }`,
           p: 1,
+          position: "relative",
         }}
       >
+        {loadingContent && (
+          <Box
+            sx={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              bgcolor: "rgba(0,0,0,0.05)",
+              zIndex: 10,
+              borderRadius: 2,
+              backdropFilter: "blur(2px)",
+            }}
+          >
+            Loading...
+          </Box>
+        )}
         {chartType === "line" && lineData.length > 0 && (
           <ResponsiveLine
             debounceResize={150}
             data={lineData}
-            margin={{ top: 32, right: 8, bottom: 64, left: 56 }}
+            margin={LINE_MARGIN}
             xScale={{
               type: "time",
               format: "native",
@@ -623,10 +673,16 @@ const ContentAnalytics = () => {
             enablePoints={true}
             pointSize={6}
             colors={(serie) => seriesColors[serie.id] || "#60a5fa"}
-            useMesh
             enableSlices="x"
             enableCrosshair
             crosshairType="cross"
+            tooltip={() => null}
+            sliceTooltip={() => null}
+            onMouseMove={(datum) => {
+              if (!datum || !Array.isArray(datum.points)) return;
+              setHoverSlice((prev) => (prev?.id === datum.id ? prev : datum));
+            }}
+            onMouseLeave={() => setHoverSlice(null)}
             axisBottom={{
               tickValues: xTickValues,
               tickSize: 0,
@@ -705,77 +761,123 @@ const ContentAnalytics = () => {
                   strokeDasharray: "3 3",
                 },
               },
-            }}
-            sliceTooltip={({ slice }) => {
-              const p0 = slice.points[0];
-              const dateLabel =
-                p0?.data?.x instanceof Date
-                  ? dayjs(p0.data.x).format("DD/MM/YYYY")
-                  : String(p0?.data?.x ?? "");
-
-              const isRightSide = chartRef.current && slice.x > chartRef.current.offsetWidth / 2;
-
-              return (
-                <Box
-                  sx={{
-                    px: 1.25,
-                    py: 1,
-                    borderRadius: 1,
-                    bgcolor:
-                      theme.palette.mode === "dark"
-                        ? "rgba(15,23,42,0.95)"
-                        : "rgba(255,255,255,0.98)",
-                    border: `1px solid ${theme.palette.divider}`,
-                    boxShadow: 3,
-                    fontSize: 13,
-                    transform: isRightSide ? "translateX(-110%)" : "translateX(10%)",
-                    transition: "transform 0.1s ease-out",
-                  }}
-                >
-                  <Box sx={{ mb: 0.75, color: "text.secondary" }}>{dateLabel}</Box>
-
-                  {slice.points
-                    .slice()
-                    .sort((a, b) => (b.data.y ?? 0) - (a.data.y ?? 0))
-                    .slice(0, 5)
-                    .map((p) => {
-                      const value = formatMetricValue(metric, p.data.y);
-                      const name = p.data.title || p.serieId;
-                      const label =
-                        name && name.length > 28 ? `${name.slice(0, 28)}...` : name;
-
-                      return (
-                        <Box
-                          key={p.id}
-                          sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            gap: 1,
-                          }}
-                        >
-                          <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-                            <span
-                              style={{
-                                width: 10,
-                                height: 10,
-                                borderRadius: 2,
-                                background: seriesColors[p.serieId] || p.color,
-                                display: "inline-block",
-                              }}
-                            />
-                            <span style={{ fontSize: 12, fontWeight: 600 }}>
-                              {label}
-                            </span>
-                          </Box>
-                          <span>{value}</span>
-                        </Box>
-                      );
-                    })}
-                </Box>
-              );
+              tooltip: {
+                container: {
+                  background: 'transparent',
+                  padding: 0,
+                  boxShadow: 'none',
+                  border: 'none',
+                  borderRadius: 0,
+                }
+              }
             }}
           />
+        )}
+
+        {chartType === "line" && hoverSlice && (
+          <Box
+            sx={{
+              position: "absolute",
+              top: 10,
+              left: LINE_MARGIN.left + hoverSlice.x,
+              transform: "translateX(-50%)",
+              pointerEvents: "none",
+              zIndex: 20,
+              maxWidth: "min(680px, 92%)",
+              width: "max-content",
+            }}
+          >
+            <Box
+              sx={{
+                px: 2,
+                py: 1.25,
+                borderRadius: 2,
+                bgcolor: theme.palette.mode === "dark" ? "#0b1020" : "#ffffff",
+                border: `1px solid ${theme.palette.mode === "dark"
+                  ? "rgba(148,163,184,0.24)"
+                  : "rgba(15,23,42,0.14)"
+                  }`,
+                boxShadow: theme.palette.mode === "dark"
+                  ? "0 18px 40px rgba(0,0,0,0.55)"
+                  : "0 18px 34px rgba(15,23,42,0.18)",
+              }}
+            >
+              <Typography
+                variant="subtitle2"
+                sx={{
+                  fontWeight: 800,
+                  mb: 1,
+                  color: theme.palette.mode === "dark" ? "#e5e7eb" : "#111827",
+                }}
+              >
+                {(() => {
+                  const p0 = hoverSlice.points?.[0];
+                  const x = p0?.data?.x;
+                  if (x instanceof Date) return dayjs(x).format("MMM D, YYYY");
+                  return String(x ?? "");
+                })()}
+              </Typography>
+
+              <Box sx={{ display: "grid", gap: 0.75 }}>
+                {hoverSlice.points
+                  .slice()
+                  .sort((a, b) => (b.data.y ?? 0) - (a.data.y ?? 0))
+                  .slice(0, 5)
+                  .map((p) => (
+                    <Box
+                      key={p.id}
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 2,
+                        minWidth: 320,
+                        maxWidth: 660,
+                      }}
+                    >
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, flex: 1 }}>
+                        <Box
+                          component="span"
+                          sx={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: "50%",
+                            backgroundColor: seriesColors[p.serieId] || p.color,
+                            flexShrink: 0,
+                          }}
+                        />
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            lineHeight: 1.25,
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            color: theme.palette.mode === "dark" ? "#e5e7eb" : "#111827",
+                          }}
+                        >
+                          {p.data.title || p.serieId}
+                        </Typography>
+                      </Box>
+
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: theme.palette.mode === "dark" ? "#e5e7eb" : "#111827",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {formatMetricValue(metric, p.data.y)}
+                      </Typography>
+                    </Box>
+                  ))}
+              </Box>
+            </Box>
+          </Box>
         )}
 
         {chartType === "line" && lineData.length === 0 && (
@@ -832,7 +934,7 @@ const ContentAnalytics = () => {
             axisLeft={{
               tickSize: 0,
               tickPadding: 8,
-              format: (v) => formatNumber(v),
+              format: (v) => formatMetricValue(metric, v),
             }}
             labelSkipWidth={12}
             labelSkipHeight={12}
@@ -840,27 +942,114 @@ const ContentAnalytics = () => {
               from: "color",
               modifiers: [["darker", 2.5]],
             }}
-            tooltip={({ id, value, indexValue }) => (
-              <Box
-                sx={{
-                  px: 1,
-                  py: 0.75,
-                  borderRadius: 1,
-                  bgcolor:
-                    theme.palette.mode === "dark"
-                      ? "rgba(15,23,42,0.95)"
-                      : "rgba(255,255,255,0.98)",
-                  border: `1px solid ${theme.palette.divider}`,
-                  boxShadow: 3,
-                  fontSize: 13,
-                }}
-              >
-                <div style={{ fontWeight: 600, marginBottom: 2 }}>
-                  {String(indexValue)}
-                </div>
-                <div>{formatNumber(value)}</div>
-              </Box>
-            )}
+            tooltip={({ id, indexValue }) => {
+              // Get Top 5 data from rows (since barPrep is limited to 5)
+              const top5 = barPrep.data.slice(0, 5);
+
+              return (
+                <Box
+                  sx={{
+                    px: 2,
+                    py: 1.5,
+                    borderRadius: 2,
+                    minWidth: 280,
+                    bgcolor:
+                      theme.palette.mode === "dark"
+                        ? "rgba(15,23,42,0.92)"
+                        : "rgba(255,255,255,0.95)",
+                    backdropFilter: "blur(8px)",
+                    border: `1px solid ${theme.palette.divider}`,
+                    boxShadow: "0 15px 35px rgba(0,0,0,0.25)",
+                    transform: "translate(-50%, -100%)",
+                    mb: 1.5,
+                    pointerEvents: "none",
+                    position: "relative",
+                    zIndex: 100,
+                  }}
+                >
+                  {/* Arrow pointing down */}
+                  <Box
+                    sx={{
+                      position: "absolute",
+                      bottom: -8,
+                      left: "50%",
+                      width: 0,
+                      height: 0,
+                      borderLeft: "8px solid transparent",
+                      borderRight: "8px solid transparent",
+                      borderTop: `8px solid ${theme.palette.divider}`,
+                      transform: "translateX(-50%)",
+                    }}
+                  />
+                  <Box sx={{ mb: 0.75, color: "text.secondary", fontWeight: 700 }}>TOP 5 {metric.toUpperCase()}</Box>
+                  {top5.map((entry) => {
+                    const videoId = Object.keys(entry).find(k => k !== "video");
+                    const val = entry[videoId];
+                    const isCurrent = videoId === id;
+
+                    return (
+                      <Box
+                        key={videoId}
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 1,
+                          bgcolor: isCurrent ? (theme.palette.mode === "dark" ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)") : "transparent",
+                          px: 0.5,
+                          borderRadius: 0.5,
+                          minWidth: 0,
+                        }}
+                      >
+                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0, flex: 1 }}>
+                          <span
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: 2,
+                              background: seriesColors[videoId] || "#ccc",
+                              display: "inline-block",
+                              flexShrink: 0,
+                            }}
+                          />
+                          <span style={{
+                            fontSize: 12,
+                            fontWeight: isCurrent ? 700 : 400,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            flex: 1,
+                          }}>
+                            {entry.video}
+                          </span>
+                        </Box>
+                        <span style={{ fontWeight: isCurrent ? 700 : 400, flexShrink: 0 }}>{formatMetricValue(metric, val)}</span>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              );
+            }}
+            theme={{
+              axis: {
+                ticks: {
+                  text: {
+                    fill: theme.palette.mode === "dark" ? "#e5e7eb" : "#374151",
+                    fontSize: 11,
+                    fontWeight: 600,
+                  },
+                },
+              },
+              tooltip: {
+                container: {
+                  background: 'transparent',
+                  padding: 0,
+                  boxShadow: 'none',
+                  border: 'none',
+                  borderRadius: 0,
+                }
+              }
+            }}
             legends={[]}
           />
         )}
@@ -880,6 +1069,11 @@ const ContentAnalytics = () => {
             No data to display.
           </Box>
         )}
+
+        {/* 🔴 Performance Tip */}
+        <Box sx={{ mt: 1, textAlign: "center", fontSize: "0.75rem", color: "text.secondary", opacity: 0.8 }}>
+          Showing top 5 videos by {metric} for better performance.
+        </Box>
       </Box>
 
       {/* TABLE */}
@@ -915,8 +1109,8 @@ const ContentAnalytics = () => {
               >
                 <TableCell
                   sx={{
-                    borderLeft: latestVideoIds.includes(r.id)
-                      ? `4px solid ${seriesColors[r.id] || "transparent"}`
+                    borderLeft: seriesColors[r.id]
+                      ? `4px solid ${seriesColors[r.id]}`
                       : "4px solid transparent",
                     pl: 1.5,
                   }}
@@ -1009,7 +1203,7 @@ const ContentAnalytics = () => {
           rowsPerPageOptions={[25, 50, 100, 200]}
         />
       </TableContainer>
-    </Stack>
+    </Stack >
   );
 };
 
