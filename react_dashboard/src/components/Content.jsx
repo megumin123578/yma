@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
 import { useTheme } from "@mui/material/styles";
 import {
   Box,
@@ -137,12 +137,166 @@ const VideoThumbnail = ({ src, videoId, alt, duration }) => {
   );
 };
 
+const LineChart = memo(function LineChart({
+  data,
+  margin,
+  lineDateExtent,
+  xTickValues,
+  metric,
+  themeMode,
+  seriesColors,
+  onSliceMove,
+  onSliceLeave,
+}) {
+  const isDark = themeMode === "dark";
+  const axisTextColor = isDark ? "#e5e7eb" : "#374151";
+
+  const colorFn = useCallback(
+    (serie) => seriesColors[serie.id] || "#60a5fa",
+    [seriesColors]
+  );
+
+  const renderBottomTick = useCallback(
+    (tick) => {
+      const d = tick.value instanceof Date ? tick.value : new Date(tick.value);
+      const label = dayjs(d).format("DD/MM");
+
+      return (
+        <g
+          transform={`translate(${tick.x},${tick.y})`}
+          style={{ pointerEvents: "none" }}
+        >
+          <text
+            y={6}
+            textAnchor="middle"
+            dominantBaseline="hanging"
+            style={{
+              fill: axisTextColor,
+              fontSize: 11,
+              fontWeight: 600,
+            }}
+          >
+            {label}
+          </text>
+        </g>
+      );
+    },
+    [axisTextColor]
+  );
+
+  const axisBottom = useMemo(
+    () => ({
+      tickValues: xTickValues,
+      tickSize: 0,
+      tickPadding: 10,
+      renderTick: renderBottomTick,
+    }),
+    [xTickValues, renderBottomTick]
+  );
+
+  const axisLeft = useMemo(
+    () => ({
+      tickSize: 0,
+      tickPadding: 8,
+      format: (v) => formatMetricValue(metric, v),
+    }),
+    [metric]
+  );
+
+  const nivoTheme = useMemo(
+    () => ({
+      axis: {
+        ticks: {
+          text: {
+            fill: axisTextColor,
+            fontSize: 11,
+            fontWeight: 600,
+          },
+          line: {
+            stroke: isDark
+              ? "rgba(148,163,184,0.4)"
+              : "rgba(148,163,184,0.6)",
+          },
+        },
+        legend: {
+          text: { fill: axisTextColor },
+        },
+      },
+      grid: {
+        line: {
+          stroke: isDark
+            ? "rgba(148,163,184,0.18)"
+            : "rgba(148,163,184,0.25)",
+          strokeWidth: 1,
+          strokeDasharray: "4 4",
+        },
+      },
+      crosshair: {
+        line: {
+          stroke: isDark
+            ? "rgba(226,232,240,0.45)"
+            : "rgba(15,23,42,0.35)",
+          strokeWidth: 1,
+          strokeDasharray: "3 3",
+        },
+      },
+      tooltip: {
+        container: {
+          background: "transparent",
+          padding: 0,
+          boxShadow: "none",
+          border: "none",
+          borderRadius: 0,
+        },
+      },
+    }),
+    [axisTextColor, isDark]
+  );
+
+  return (
+    <ResponsiveLine
+      debounceResize={150}
+      data={data}
+      margin={margin}
+      xScale={{
+        type: "time",
+        format: "native",
+        useUTC: false,
+        precision: "day",
+        min: lineDateExtent.min,
+        max: lineDateExtent.max,
+      }}
+      yScale={{ type: "linear", min: 0, stacked: false }}
+      curve="linear"
+      enablePoints={true}
+      pointSize={6}
+      colors={colorFn}
+      enableSlices="x"
+      enableCrosshair
+      crosshairType="cross"
+      tooltip={() => null}
+      sliceTooltip={() => null}
+      onMouseMove={onSliceMove}
+      onMouseLeave={onSliceLeave}
+      axisBottom={axisBottom}
+      axisLeft={axisLeft}
+      theme={nivoTheme}
+    />
+  );
+});
+
+LineChart.displayName = "LineChart";
+
 const ContentAnalytics = () => {
   const theme = useTheme();
   const LINE_MARGIN = useMemo(
     () => ({ top: 32, right: 8, bottom: 64, left: 56 }),
     []
   );
+  const chartPaddingPx = useMemo(() => {
+    const n = Number.parseFloat(theme.spacing(1));
+    return Number.isFinite(n) ? n : 0;
+  }, [theme]);
 
   const [videos, setVideos] = useState([]);
   const [timeseries, setTimeseries] = useState([]);
@@ -531,6 +685,15 @@ const ContentAnalytics = () => {
     [theme.palette.mode]
   );
 
+  const handleSliceMove = useCallback((datum) => {
+    if (!datum || !Array.isArray(datum.points)) return;
+    setHoverSlice((prev) => (prev?.id === datum.id ? prev : datum));
+  }, []);
+
+  const handleSliceLeave = useCallback(() => {
+    setHoverSlice(null);
+  }, []);
+
   /* ================================
      UI
   ================================= */
@@ -656,121 +819,16 @@ const ContentAnalytics = () => {
           </Box>
         )}
         {chartType === "line" && lineData.length > 0 && (
-          <ResponsiveLine
-            debounceResize={150}
+          <LineChart
             data={lineData}
             margin={LINE_MARGIN}
-            xScale={{
-              type: "time",
-              format: "native",
-              useUTC: false,
-              precision: "day",
-              min: lineDateExtent.min,
-              max: lineDateExtent.max
-            }}
-            yScale={{ type: "linear", min: 0, stacked: false }}
-            curve="linear"
-            enablePoints={true}
-            pointSize={6}
-            colors={(serie) => seriesColors[serie.id] || "#60a5fa"}
-            enableSlices="x"
-            enableCrosshair
-            crosshairType="cross"
-            tooltip={() => null}
-            sliceTooltip={() => null}
-            onMouseMove={(datum) => {
-              if (!datum || !Array.isArray(datum.points)) return;
-              setHoverSlice((prev) => (prev?.id === datum.id ? prev : datum));
-            }}
-            onMouseLeave={() => setHoverSlice(null)}
-            axisBottom={{
-              tickValues: xTickValues,
-              tickSize: 0,
-              tickPadding: 10,
-              renderTick: (tick) => {
-                const d =
-                  tick.value instanceof Date ? tick.value : new Date(tick.value);
-                const label = dayjs(d).format("DD/MM");
-                const color =
-                  theme.palette.mode === "dark" ? "#e5e7eb" : "#374151";
-
-                return (
-                  <g
-                    transform={`translate(${tick.x},${tick.y})`}
-                    style={{ pointerEvents: "none" }}
-                  >
-                    <text
-                      y={6}
-                      textAnchor="middle"
-                      dominantBaseline="hanging"
-                      style={{
-                        fill: color,
-                        fontSize: 11,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {label}
-                    </text>
-                  </g>
-                );
-              },
-            }}
-            axisLeft={{
-              tickSize: 0,
-              tickPadding: 8,
-              format: (v) => formatMetricValue(metric, v),
-            }}
-            theme={{
-              axis: {
-                ticks: {
-                  text: {
-                    fill: theme.palette.mode === "dark" ? "#e5e7eb" : "#374151",
-                    fontSize: 11,
-                    fontWeight: 600,
-                  },
-                  line: {
-                    stroke:
-                      theme.palette.mode === "dark"
-                        ? "rgba(148,163,184,0.4)"
-                        : "rgba(148,163,184,0.6)",
-                  },
-                },
-                legend: {
-                  text: {
-                    fill: theme.palette.mode === "dark" ? "#e5e7eb" : "#374151",
-                  },
-                },
-              },
-              grid: {
-                line: {
-                  stroke:
-                    theme.palette.mode === "dark"
-                      ? "rgba(148,163,184,0.18)"
-                      : "rgba(148,163,184,0.25)",
-                  strokeWidth: 1,
-                  strokeDasharray: "4 4",
-                },
-              },
-              crosshair: {
-                line: {
-                  stroke:
-                    theme.palette.mode === "dark"
-                      ? "rgba(226,232,240,0.45)"
-                      : "rgba(15,23,42,0.35)",
-                  strokeWidth: 1,
-                  strokeDasharray: "3 3",
-                },
-              },
-              tooltip: {
-                container: {
-                  background: 'transparent',
-                  padding: 0,
-                  boxShadow: 'none',
-                  border: 'none',
-                  borderRadius: 0,
-                }
-              }
-            }}
+            lineDateExtent={lineDateExtent}
+            xTickValues={xTickValues}
+            metric={metric}
+            themeMode={theme.palette.mode}
+            seriesColors={seriesColors}
+            onSliceMove={handleSliceMove}
+            onSliceLeave={handleSliceLeave}
           />
         )}
 
@@ -779,12 +837,13 @@ const ContentAnalytics = () => {
             sx={{
               position: "absolute",
               top: 10,
-              left: LINE_MARGIN.left + hoverSlice.x,
-              transform: "translateX(-50%)",
+              left: 0,
+              transform: `translate3d(${chartPaddingPx + LINE_MARGIN.left + hoverSlice.x}px, 0, 0) translateX(-50%)`,
+              transition: "transform 140ms cubic-bezier(0.2, 0.9, 0.2, 1)",
+              willChange: "transform",
               pointerEvents: "none",
               zIndex: 20,
-              maxWidth: "min(680px, 92%)",
-              width: "max-content",
+              width: "min(560px, 92%)",
             }}
           >
             <Box
@@ -827,15 +886,15 @@ const ContentAnalytics = () => {
                     <Box
                       key={p.id}
                       sx={{
-                        display: "flex",
+                        display: "grid",
+                        gridTemplateColumns: "minmax(0, 1fr) auto",
                         alignItems: "center",
-                        justifyContent: "space-between",
                         gap: 2,
-                        minWidth: 320,
-                        maxWidth: 660,
+                        width: "100%",
+                        minWidth: 0,
                       }}
                     >
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, flex: 1 }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, overflow: "hidden" }}>
                         <Box
                           component="span"
                           sx={{
@@ -848,13 +907,16 @@ const ContentAnalytics = () => {
                         />
                         <Typography
                           variant="body2"
+                          title={p.data.title || p.serieId}
+                          noWrap
                           sx={{
                             fontSize: 12,
                             fontWeight: 600,
                             lineHeight: 1.25,
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
+                            display: "block",
+                            width: "100%",
+                            minWidth: 0,
+                            maxWidth: "100%",
                             color: theme.palette.mode === "dark" ? "#e5e7eb" : "#111827",
                           }}
                         >
