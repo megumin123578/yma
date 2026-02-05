@@ -21,6 +21,7 @@ import {
   FormControlLabel,
   Checkbox,
   ListItemText,
+  Avatar,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import { ResponsiveBar } from "@nivo/bar";
@@ -28,7 +29,7 @@ import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import dayjs from "dayjs";
 import { API_BASE } from "../config";
-import { METRIC_OPTIONS, getRangeForPeriod, formatNumber } from "./Module";
+import { METRIC_OPTIONS, getRangeForPeriod, formatNumber, getChannelAvatarMap } from "./Module";
 
 const PERIOD_OPTIONS = [
   { value: "last7", label: "Last 7 days" },
@@ -63,6 +64,7 @@ const ChannelCompare = () => {
   const [limit, setLimit] = useState(20);
   const [manualPick, setManualPick] = useState(() => stored.manualPick ?? false);
   const [channels, setChannels] = useState([]);
+  const [channelAvatarMap, setChannelAvatarMap] = useState({});
   const [selectedChannels, setSelectedChannels] = useState(
     () => stored.selectedChannels || []
   );
@@ -163,6 +165,16 @@ const ChannelCompare = () => {
       stop = true;
     };
   }, [authHeaders]);
+
+  useEffect(() => {
+    let active = true;
+    getChannelAvatarMap().then((map) => {
+      if (active) setChannelAvatarMap(map || {});
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const rows = useMemo(() => {
     return items.map((it, idx) => {
@@ -477,6 +489,11 @@ const ChannelCompare = () => {
                       <Checkbox
                         size="small"
                         checked={selectedChannels.indexOf(opt.value) > -1}
+                      />
+                      <Avatar
+                        src={channelAvatarMap[opt.value] || ""}
+                        alt={opt.label || opt.value}
+                        sx={{ width: 20, height: 20, mr: 1 }}
                       />
                       <ListItemText primary={opt.label || opt.value} />
                     </MenuItem>

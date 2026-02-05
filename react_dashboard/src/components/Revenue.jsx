@@ -3,6 +3,7 @@ import {
   Box,
   Stack,
   Typography,
+  Avatar,
   Paper,
   FormControl,
   InputLabel,
@@ -23,6 +24,7 @@ import {
 import dayjs from "dayjs";
 import api from "../services/api";
 import { tokens } from "../theme";
+import { getChannelAvatarMap } from "./Module";
 
 const RANGE_OPTIONS = [
   { value: "7d", label: "Last 7 days" },
@@ -53,6 +55,7 @@ const RevenueAnalytics = () => {
   const colors = tokens(theme.palette.mode);
 
   const [channels, setChannels] = useState([]);
+  const [channelAvatarMap, setChannelAvatarMap] = useState({});
   const [channel, setChannel] = useState("");
   const [range, setRange] = useState("28d");
   const [rows, setRows] = useState([]);
@@ -94,6 +97,16 @@ const RevenueAnalytics = () => {
       stop = true;
     };
   }, [channel]);
+
+  useEffect(() => {
+    let active = true;
+    getChannelAvatarMap().then((map) => {
+      if (active) setChannelAvatarMap(map || {});
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!channel) {
@@ -217,10 +230,32 @@ const RevenueAnalytics = () => {
             value={channel}
             label="Channel"
             onChange={(event) => setChannel(event.target.value)}
+            renderValue={(value) => {
+              const sel = channels.find((c) => c.value === value);
+              const label = sel?.label || value;
+              const avatar = channelAvatarMap[value] || "";
+              return (
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Avatar src={avatar} alt={label} sx={{ width: 22, height: 22 }} />
+                  <Typography variant="body2" noWrap>
+                    {label}
+                  </Typography>
+                </Stack>
+              );
+            }}
           >
             {channels.map((opt) => (
               <MenuItem key={opt.value} value={opt.value}>
-                {opt.label}
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Avatar
+                    src={channelAvatarMap[opt.value] || ""}
+                    alt={opt.label || opt.value}
+                    sx={{ width: 24, height: 24 }}
+                  />
+                  <Typography variant="body2" noWrap>
+                    {opt.label}
+                  </Typography>
+                </Stack>
               </MenuItem>
             ))}
           </Select>

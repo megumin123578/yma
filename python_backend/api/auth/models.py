@@ -116,5 +116,6 @@ class UserCredential(Base):
     token_name = Column(String, nullable=True)
     selected_channel_id = Column(String, nullable=True)
     selected_channel_title = Column(String, nullable=True)
+    selected_channel_avatar = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)

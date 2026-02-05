@@ -12,6 +12,7 @@ import {
     MenuItem,
     CircularProgress,
     useTheme,
+    Avatar,
 } from "@mui/material";
 import { motion } from "framer-motion";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
@@ -24,6 +25,7 @@ import Header from "./Header";
 import api from "../services/api";
 import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { geoFeatures } from "../data/mockGeoFeatures";
+import { getChannelAvatarMap } from "./Module";
 import {
     ResponsiveContainer,
     BarChart,
@@ -73,6 +75,7 @@ const VideoList = () => {
     const colors = tokens(theme.palette.mode);
 
     const [channels, setChannels] = useState([]);
+    const [channelAvatarMap, setChannelAvatarMap] = useState({});
     const [selectedChannel, setSelectedChannel] = useState(() => {
         try {
             return localStorage.getItem("overview.selectedChannelId") || "";
@@ -314,6 +317,16 @@ const VideoList = () => {
             // ignore storage errors
         }
     }, [selectedChannel]);
+
+    useEffect(() => {
+        let active = true;
+        getChannelAvatarMap().then((map) => {
+            if (active) setChannelAvatarMap(map || {});
+        });
+        return () => {
+            active = false;
+        };
+    }, []);
 
     useEffect(() => {
         try {
@@ -705,10 +718,38 @@ const VideoList = () => {
                             value={selectedChannel}
                             onChange={(e) => setSelectedChannel(e.target.value)}
                             sx={{ minWidth: 220 }}
+                            SelectProps={{
+                                renderValue: (value) => {
+                                    const sel = channels.find((c) => c.value === value);
+                                    const label = sel?.label || value;
+                                    const avatar = channelAvatarMap[value] || "";
+                                    return (
+                                        <Stack direction="row" spacing={1} alignItems="center">
+                                            <Avatar
+                                                src={avatar}
+                                                alt={label}
+                                                sx={{ width: 22, height: 22 }}
+                                            />
+                                            <Typography variant="body2" noWrap>
+                                                {label}
+                                            </Typography>
+                                        </Stack>
+                                    );
+                                },
+                            }}
                         >
                             {channels.map((c) => (
                                 <MenuItem key={c.value} value={c.value}>
-                                    {c.label}
+                                    <Stack direction="row" spacing={1} alignItems="center">
+                                        <Avatar
+                                            src={channelAvatarMap[c.value] || ""}
+                                            alt={c.label || c.value}
+                                            sx={{ width: 24, height: 24 }}
+                                        />
+                                        <Typography variant="body2" noWrap>
+                                            {c.label}
+                                        </Typography>
+                                    </Stack>
                                 </MenuItem>
                             ))}
                         </TextField>

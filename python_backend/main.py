@@ -247,6 +247,18 @@ def ensure_user_credentials_selected_channel():
 
 ensure_user_credentials_selected_channel()
 
+def ensure_user_credentials_avatar():
+    with engine.begin() as conn:
+        cols = conn.exec_driver_sql("PRAGMA table_info(user_credentials)").fetchall()
+        has_avatar = any(row[1] == "selected_channel_avatar" for row in cols)
+        if not has_avatar:
+            conn.exec_driver_sql(
+                "ALTER TABLE user_credentials ADD COLUMN selected_channel_avatar VARCHAR"
+            )
+
+
+ensure_user_credentials_avatar()
+
 # CORS middleware moved to top
 
 app.include_router(ts_router)

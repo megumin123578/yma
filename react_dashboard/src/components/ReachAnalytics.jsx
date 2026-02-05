@@ -15,7 +15,7 @@ import {
   TableRow,
   Typography,
   useTheme,
-  Divider,
+  Avatar,
 } from "@mui/material";
 import { motion } from "framer-motion";
 import YouTubeIcon from "@mui/icons-material/YouTube";
@@ -25,6 +25,7 @@ import ExploreIcon from "@mui/icons-material/Explore";
 
 import api from "../services/api";
 import { formatNumber } from "./Module";
+import { getChannelAvatarMap } from "./Module";
 
 const formatPct = (value) => {
   if (value === null || value === undefined) return "-";
@@ -68,6 +69,7 @@ const ReachAnalytics = () => {
 
   // === State ===
   const [accounts, setAccounts] = useState([]);
+  const [channelAvatarMap, setChannelAvatarMap] = useState({});
   const [accountTag, setAccountTag] = useState(() => {
     try {
       return localStorage.getItem("reach.selectedChannelId") || "";
@@ -138,6 +140,16 @@ const ReachAnalytics = () => {
     };
     loadChannels();
   }, [accountTag, authHeaders]);
+
+  useEffect(() => {
+    let active = true;
+    getChannelAvatarMap().then((map) => {
+      if (active) setChannelAvatarMap(map || {});
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!accountTag) return;
@@ -233,10 +245,32 @@ const ReachAnalytics = () => {
               label="Channel"
               value={accounts.some((acct) => acct.value === accountTag) ? accountTag : ""}
               onChange={(event) => setAccountTag(event.target.value)}
+              renderValue={(value) => {
+                const sel = accounts.find((acct) => acct.value === value);
+                const label = sel?.label || value;
+                const avatar = channelAvatarMap[value] || "";
+                return (
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Avatar src={avatar} alt={label} sx={{ width: 22, height: 22 }} />
+                    <Typography variant="body2" noWrap>
+                      {label}
+                    </Typography>
+                  </Stack>
+                );
+              }}
             >
               {accounts.map((acct) => (
                 <MenuItem key={acct.value} value={acct.value}>
-                  {acct.label || acct.value}
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Avatar
+                      src={channelAvatarMap[acct.value] || ""}
+                      alt={acct.label || acct.value}
+                      sx={{ width: 24, height: 24 }}
+                    />
+                    <Typography variant="body2" noWrap>
+                      {acct.label || acct.value}
+                    </Typography>
+                  </Stack>
                 </MenuItem>
               ))}
             </Select>

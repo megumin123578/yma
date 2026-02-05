@@ -3,6 +3,7 @@ import { useTheme } from "@mui/material/styles";
 import {
   Box,
   Stack,
+  Avatar,
   FormControl,
   InputLabel,
   Select,
@@ -28,6 +29,7 @@ import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { ResponsiveChoropleth } from "@nivo/geo";
 import { geoFeatures } from "../data/mockGeoFeatures";
 import api from "../services/api";
+import { getChannelAvatarMap } from "./Module";
 
 // ===== Helpers =====
 const n = (v) => Number(v) || 0;
@@ -116,6 +118,7 @@ const GeographyChart = ({ isDashboard = false }) => {
     () => loadStoredFilters()?.channelLabel || ""
   );
   const [channels, setChannels] = useState([]);
+  const [channelAvatarMap, setChannelAvatarMap] = useState({});
   const channelsRef = useRef([]);
 
   const [visibleColumns, setVisibleColumns] = useState(() => loadStoredFilters()?.visibleColumns || {
@@ -165,6 +168,16 @@ const GeographyChart = ({ isDashboard = false }) => {
         }
       }).catch(err => console.error(err));
   }, [range, channel]);
+
+  useEffect(() => {
+    let active = true;
+    getChannelAvatarMap().then((map) => {
+      if (active) setChannelAvatarMap(map || {});
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const label = (channelsRef.current || []).find(c => c.value === channel)?.label || channelLabelFallback || "";
@@ -307,14 +320,28 @@ const GeographyChart = ({ isDashboard = false }) => {
               }}
               renderValue={(v) => {
                 const sel = channels.find(c => c.value === v);
-                if (sel?.label) return sel.label;
-                if (channelLabelFallback) return channelLabelFallback;
-                return String(v || "").replace(/_+/g, " ").trim();
+                const label = sel?.label
+                  ? sel.label
+                  : channelLabelFallback || String(v || "").replace(/_+/g, " ").trim();
+                const avatar = channelAvatarMap[v] || "";
+                return (
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Avatar src={avatar} alt={label} sx={{ width: 22, height: 22 }} />
+                    <Typography variant="body2" noWrap>
+                      {label}
+                    </Typography>
+                  </Stack>
+                );
               }}
             >
               {channels.map(c => (
                 <MenuItem key={c.value} value={c.value}>
-                  <Typography variant="body2" sx={{ fontSize: 13 }}>{c.label}</Typography>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Avatar src={channelAvatarMap[c.value] || ""} alt={c.label || c.value} sx={{ width: 24, height: 24 }} />
+                    <Typography variant="body2" sx={{ fontSize: 13 }} noWrap>
+                      {c.label}
+                    </Typography>
+                  </Stack>
                 </MenuItem>
               ))}
             </Select>

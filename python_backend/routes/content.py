@@ -2,6 +2,7 @@
 import json
 import os
 import pickle
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from datetime import date
@@ -138,6 +139,8 @@ def list_channels(
             .all()
         )
         seen = set()
+        now = datetime.utcnow()
+        avatar_ttl = timedelta(days=30)
         for row in rows:
             value = sanitize_filename(row.account_tag or "")
             if not value or value in seen:
@@ -148,7 +151,40 @@ def list_channels(
                 continue
             seen.add(value)
             label = row.selected_channel_title or row.account_tag or value
-            items.append({"value": value, "label": label})
+            avatar = row.selected_channel_avatar or None
+            is_stale = not row.updated_at or (row.updated_at < (now - avatar_ttl))
+            if (not avatar or is_stale) and row.token_name:
+                try:
+                    creds = _load_token_credentials(row.token_name)
+                    if creds:
+                        youtube = build("youtube", "v3", credentials=creds)
+                        query = {"part": "snippet", "maxResults": 1}
+                        if row.selected_channel_id:
+                            query["id"] = row.selected_channel_id
+                        else:
+                            query["mine"] = True
+                        resp = youtube.channels().list(**query).execute() or {}
+                        it = (resp.get("items") or [])
+                        if it:
+                            snippet = it[0].get("snippet", {})
+                            thumbs = snippet.get("thumbnails", {}) or {}
+                            avatar = (
+                                (thumbs.get("high") or {}).get("url")
+                                or (thumbs.get("medium") or {}).get("url")
+                                or (thumbs.get("default") or {}).get("url")
+                            )
+                            if avatar:
+                                row.selected_channel_avatar = avatar
+                                if not row.selected_channel_title and snippet.get("title"):
+                                    row.selected_channel_title = snippet.get("title")
+                                row.updated_at = now
+                                db.add(row)
+                                db.commit()
+                except HttpError as e:
+                    print("[content.channels] avatar fetch failed:", e)
+                except Exception as e:
+                    print("[content.channels] avatar fetch error:", e)
+            items.append({"value": value, "label": label, "avatar": avatar})
     except Exception as e:
         print("[content.channels] ERROR:", e)
 

@@ -15,6 +15,7 @@ import {
 } from "@mui/material";
 import { ResponsiveLine } from "@nivo/line";
 import api from "../services/api";
+import { getChannelAvatarMap } from "./Module";
 
 const formatRangeLabel = (range) => {
   if (!range?.start || !range?.end) return "No data";
@@ -30,6 +31,7 @@ const AudienceAnalytics = () => {
   const isDark = theme.palette.mode === "dark";
   const [accountTag, setAccountTag] = useState("");
   const [accounts, setAccounts] = useState([]);
+  const [channelAvatarMap, setChannelAvatarMap] = useState({});
   const [demoRows, setDemoRows] = useState([]);
   const [demoRange, setDemoRange] = useState({ start: "", end: "" });
   const [deviceRows, setDeviceRows] = useState([]);
@@ -87,6 +89,16 @@ const AudienceAnalytics = () => {
     };
     loadAccounts();
   }, [accountTag]);
+
+  useEffect(() => {
+    let active = true;
+    getChannelAvatarMap().then((map) => {
+      if (active) setChannelAvatarMap(map || {});
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!accountTag) return;
@@ -321,10 +333,32 @@ const AudienceAnalytics = () => {
             label="Channel"
             value={accountTag}
             onChange={(event) => setAccountTag(event.target.value)}
+            renderValue={(value) => {
+              const sel = accounts.find((acct) => acct.value === value);
+              const label = sel?.label || value;
+              const avatar = channelAvatarMap[value] || "";
+              return (
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Avatar src={avatar} alt={label} sx={{ width: 22, height: 22 }} />
+                  <Typography variant="body2" noWrap>
+                    {label}
+                  </Typography>
+                </Stack>
+              );
+            }}
           >
             {accounts.map((acct) => (
               <MenuItem key={acct.value} value={acct.value}>
-                {acct.label || acct.value}
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Avatar
+                    src={channelAvatarMap[acct.value] || ""}
+                    alt={acct.label || acct.value}
+                    sx={{ width: 24, height: 24 }}
+                  />
+                  <Typography variant="body2" noWrap>
+                    {acct.label || acct.value}
+                  </Typography>
+                </Stack>
               </MenuItem>
             ))}
           </Select>

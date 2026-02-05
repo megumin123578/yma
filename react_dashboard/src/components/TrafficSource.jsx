@@ -5,6 +5,7 @@ import {
   Box,
   Stack,
   Typography,
+  Avatar,
   Table,
   TableBody,
   TableCell,
@@ -39,6 +40,7 @@ import {
   makeDistinctPalette,
   toUTCDate,
   getMonthRange,
+  getChannelAvatarMap,
 } from "./Module";
 
 import dayjs from "dayjs";
@@ -105,6 +107,7 @@ const TrafficSourceChart = () => {
   const [interval, setInterval] = useState(() => loadStoredFilters()?.interval || "daily");
 
   const [channels, setChannels] = useState([]);
+  const [channelAvatarMap, setChannelAvatarMap] = useState({});
   const [channel, setChannel] = useState(() => loadStoredFilters()?.channel || "");
 
   const authHeaders = useMemo(() => {
@@ -158,6 +161,16 @@ const TrafficSourceChart = () => {
     })();
     return () => { stop = true; };
   }, [channel, authHeaders]);
+
+  useEffect(() => {
+    let active = true;
+    getChannelAvatarMap().then((map) => {
+      if (active) setChannelAvatarMap(map || {});
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [startDate, setStartDate] = useState(() => loadStoredFilters()?.startDate || "");
   const [endDate, setEndDate] = useState(() => loadStoredFilters()?.endDate || "");
@@ -512,10 +525,26 @@ const TrafficSourceChart = () => {
               onChange={e => setChannel(e.target.value)}
               renderValue={(v) => {
                 const sel = channels.find(c => c.value === v);
-                return sel ? sel.label : v;
+                const label = sel ? sel.label : v;
+                const avatar = channelAvatarMap[v] || "";
+                return (
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Avatar src={avatar} alt={label} sx={{ width: 22, height: 22 }} />
+                    <Typography variant="body2" noWrap>
+                      {label}
+                    </Typography>
+                  </Stack>
+                );
               }}
             >
-              {channels.map(c => <MenuItem key={c.value} value={c.value}>{c.label}</MenuItem>)}
+              {channels.map(c => (
+                <MenuItem key={c.value} value={c.value}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Avatar src={channelAvatarMap[c.value] || ""} alt={c.label || c.value} sx={{ width: 24, height: 24 }} />
+                    <Typography variant="body2" noWrap>{c.label}</Typography>
+                  </Stack>
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
         </Stack>

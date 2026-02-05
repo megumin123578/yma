@@ -178,6 +178,34 @@ export const pickTicks = (values, maxTicks = 7) => {
   return Array.from(new Set(picks)).map((t) => new Date(t));
 };
 
+let channelAvatarCache = null;
+let channelAvatarPromise = null;
+
+export async function getChannelAvatarMap() {
+  if (channelAvatarCache) return channelAvatarCache;
+  if (channelAvatarPromise) return channelAvatarPromise;
+
+  channelAvatarPromise = api
+    .get("/api/content/channels")
+    .then((resp) => {
+      const items = resp?.data?.items || [];
+      const map = {};
+      items.forEach((item) => {
+        const value = item?.value || item?.id || "";
+        if (!value) return;
+        map[value] = item?.avatar || null;
+      });
+      channelAvatarCache = map;
+      return map;
+    })
+    .catch(() => {
+      channelAvatarCache = {};
+      return channelAvatarCache;
+    });
+
+  return channelAvatarPromise;
+}
+
 
 const hashStr = (s) => {
   let h = 53752757 >>> 0;
