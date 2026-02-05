@@ -388,11 +388,12 @@ const ContentAnalytics = () => {
         const resp = await api.get("/api/content/channels");
         const data = resp.data;
 
-        const items =
-          data.items?.map((c) => ({
-            id: c.value,
-            title: c.label,
-          })) ?? [];
+        const items =
+          data.items?.map((c) => ({
+            id: c.value,
+            title: c.label,
+            avatar: c.avatar,
+          })) ?? [];
 
         const order = (() => {
           try {
@@ -962,20 +963,20 @@ const ContentAnalytics = () => {
           />
         )}
 
-        {chartType === "line" && hoverSlice && (
-          <Box
-            sx={{
-              position: "absolute",
-              top: 10,
-              left: 0,
-              transform: `translate3d(${chartPaddingPx + LINE_MARGIN.left + hoverSlice.x}px, 0, 0) translateX(-50%)`,
-              transition: "transform 140ms cubic-bezier(0.2, 0.9, 0.2, 1)",
-              willChange: "transform",
-              pointerEvents: "none",
-              zIndex: 20,
-              width: "min(560px, 92%)",
-            }}
-          >
+        {chartType === "line" && hoverSlice && (
+          <Box
+            sx={{
+              position: "absolute",
+              top: 10,
+              left: 0,
+              transform: `translate3d(${chartPaddingPx + LINE_MARGIN.left + hoverSlice.x}px, 0, 0) translateX(-50%)`,
+              transition: "transform 140ms cubic-bezier(0.2, 0.9, 0.2, 1)",
+              willChange: "transform",
+              pointerEvents: "none",
+              zIndex: 20,
+              width: "min(360px, 92%)",
+            }}
+          >
             <Box
               sx={{
                 px: 2,
