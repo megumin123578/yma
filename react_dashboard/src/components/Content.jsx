@@ -696,6 +696,8 @@ const ContentAnalytics = () => {
 
   const [channelList, setChannelList] = useState([]);
 
+  const [channelMetrics, setChannelMetrics] = useState(null);
+
   const chartRef = useRef(null);
 
   const [hoverSlice, setHoverSlice] = useState(null);
@@ -871,12 +873,14 @@ const ContentAnalytics = () => {
         const raw = resp.data;
 
         setVideos(raw.items ?? []);
+        setChannelMetrics(raw.channelMetrics ?? null);
 
       } catch (err) {
 
         console.error("Fetch videos failed:", err);
 
         setVideos([]);
+        setChannelMetrics(null);
 
       } finally {
 
@@ -1103,26 +1107,36 @@ const ContentAnalytics = () => {
 
   );
 
-  const totals = useMemo(
-    () =>
-      TABLE_METRIC_OPTIONS.reduce((acc, item) => {
-        if (NON_SUM_METRICS.has(item.value)) {
-          acc[item.value] = null;
-          return acc;
-        }
-        let sum = 0;
-        let hasValue = false;
-        rows.forEach((row) => {
-          const value = toNullableNumber(row[item.value]);
-          if (value === null) return;
-          hasValue = true;
-          sum += value;
-        });
-        acc[item.value] = hasValue ? sum : null;
-        return acc;
-      }, {}),
-    [rows]
-  );
+  const totals = useMemo(() => {
+    const acc = TABLE_METRIC_OPTIONS.reduce((out, item) => {
+      if (NON_SUM_METRICS.has(item.value)) {
+        out[item.value] = null;
+        return out;
+      }
+      let sum = 0;
+      let hasValue = false;
+      rows.forEach((row) => {
+        const value = toNullableNumber(row[item.value]);
+        if (value === null) return;
+        hasValue = true;
+        sum += value;
+      });
+      out[item.value] = hasValue ? sum : null;
+      return out;
+    }, {});
+
+    // Impressions/CTR are channel-level only (TOTAL row)
+    if (channelMetrics?.supported) {
+      if (typeof channelMetrics.impressions === "number") {
+        acc.impressions = channelMetrics.impressions;
+      }
+      if (typeof channelMetrics.ctr === "number") {
+        acc.impressionsClickThroughRate = channelMetrics.ctr;
+      }
+    }
+
+    return acc;
+  }, [rows, channelMetrics]);
 
 
   const pagedRows = useMemo(() => {
@@ -2375,6 +2389,16 @@ const ContentAnalytics = () => {
 
       {/* TABLE */}
 
+      {(selectedTableMetrics.includes("impressions") ||
+        selectedTableMetrics.includes("impressionsClickThroughRate")) && (
+        <Typography
+          variant="caption"
+          sx={{ color: "text.secondary", ml: 0.5 }}
+        >
+          Impressions/CTR are shown at channel level in the TOTAL row.
+        </Typography>
+      )}
+
       <TableContainer component={Paper} elevation={0} sx={tablePaperSx}>
 
         <Table size="small">
@@ -2412,6 +2436,19 @@ const ContentAnalytics = () => {
 
 
           <TableBody>
+
+            {/* TOTAL row at top */}
+            <TableRow>
+              <TableCell sx={{ fontWeight: 700 }}>TOTAL</TableCell>
+              <TableCell />
+              {selectedTableMetrics.map((metricKey) => (
+                <TableCell key={metricKey} align="right">
+                  {totals[metricKey] == null
+                    ? "-"
+                    : formatTableMetricValue(metricKey, totals[metricKey])}
+                </TableCell>
+              ))}
+            </TableRow>
 
             {pagedRows.map((r) => (
 
@@ -2522,30 +2559,6 @@ const ContentAnalytics = () => {
             ))}
 
 
-
-            {/* Total */}
-
-            <TableRow>
-
-              <TableCell sx={{ fontWeight: 700 }}>TOTAL</TableCell>
-
-              <TableCell />
-
-              {selectedTableMetrics.map((metricKey) => (
-
-                <TableCell key={metricKey} align="right">
-
-                  {totals[metricKey] == null
-
-                    ? "-"
-
-                    : formatTableMetricValue(metricKey, totals[metricKey])}
-
-                </TableCell>
-
-              ))}
-
-            </TableRow>
 
           </TableBody>
 

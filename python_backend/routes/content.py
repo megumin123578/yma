@@ -24,6 +24,152 @@ router = APIRouter(prefix="/api/content", tags=["content"])
 
 TOKEN_DIR = "./python_backend/token"
 
+# cache table for per-video analytics (not daily)
+def _ensure_video_metrics_cache_table() -> None:
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS content_video_metrics_cache (
+                    account_tag TEXT NOT NULL,
+                    start_date DATE NOT NULL,
+                    end_date DATE NOT NULL,
+                    payload JSONB NOT NULL,
+                    updated_at TIMESTAMP DEFAULT NOW(),
+                    PRIMARY KEY (account_tag, start_date, end_date)
+                );
+            """))
+    except Exception as e:
+        print("[content.metrics_cache] create table failed:", e)
+
+
+def _load_video_metrics_cache(account_tag: str, start_date, end_date):
+    _ensure_video_metrics_cache_table()
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT payload
+                    FROM content_video_metrics_cache
+                    WHERE account_tag = :tag
+                      AND start_date = :start_date
+                      AND end_date = :end_date
+                    LIMIT 1;
+                """),
+                {"tag": account_tag, "start_date": start_date, "end_date": end_date},
+            ).mappings().first()
+        if not row:
+            return None
+        payload = row.get("payload")
+        if isinstance(payload, str):
+            return json.loads(payload)
+        return payload
+    except Exception as e:
+        print("[content.metrics_cache] load failed:", e)
+        return None
+
+
+def _save_video_metrics_cache(account_tag: str, start_date, end_date, payload: dict):
+    _ensure_video_metrics_cache_table()
+    try:
+        payload_json = json.dumps(payload, default=str)
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO content_video_metrics_cache (
+                        account_tag,
+                        start_date,
+                        end_date,
+                        payload,
+                        updated_at
+                    )
+                    VALUES (
+                        :tag,
+                        :start_date,
+                        :end_date,
+                        :payload,
+                        NOW()
+                    )
+                    ON CONFLICT (account_tag, start_date, end_date) DO UPDATE SET
+                        payload = EXCLUDED.payload,
+                        updated_at = NOW();
+                """),
+                {
+                    "tag": account_tag,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "payload": payload_json,
+                },
+            )
+        print("[content.metrics_cache] save ok")
+    except Exception as e:
+        print("[content.metrics_cache] save failed:", e)
+
+
+def _chunked(ids, size=50):
+    return [ids[i:i + size] for i in range(0, len(ids), size)]
+
+
+def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start_date, end_date):
+    """
+    Fetch per-video aggregated metrics (no day dimension).
+    Returns dict: {video_id: {estimatedRevenue, subscribers}}
+    """
+    if not video_ids:
+        return {}
+
+    yta = build("youtubeAnalytics", "v2", credentials=creds)
+    ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
+    out = {}
+
+    metrics_full = [
+        "estimatedRevenue",
+        "subscribersGained",
+    ]
+
+    for chunk in _chunked(video_ids, 50):
+        query = {
+            "ids": ids,
+            "startDate": start_date,
+            "endDate": end_date,
+            "dimensions": "video",
+            "filters": f"video=={','.join(chunk)}",
+            "metrics": ",".join(metrics_full),
+        }
+        try:
+            resp = yta.reports().query(**query).execute() or {}
+        except HttpError as e:
+            print(f"[WARN] Video metrics (revenue/subs) failed for chunk: {e}")
+            continue
+
+        rows = resp.get("rows") or []
+        headers = resp.get("columnHeaders", []) or []
+        if not rows or not headers:
+            continue
+
+        idx = {h["name"]: i for i, h in enumerate(headers)}
+        i_video = idx.get("video")
+        i_rev = idx.get("estimatedRevenue")
+        i_subs = idx.get("subscribersGained")
+        if i_video is None:
+            continue
+
+        for row in rows:
+            vid = row[i_video]
+            try:
+                revenue = float(row[i_rev] or 0.0) if i_rev is not None else None
+            except Exception:
+                revenue = None
+            try:
+                subs = int(row[i_subs] or 0) if i_subs is not None else None
+            except Exception:
+                subs = None
+            out[vid] = {
+                "estimated_revenue": revenue,
+                "subscribers": subs,
+            }
+
+    return out
+
 
 # ==============================
 # Helper query
@@ -240,7 +386,7 @@ def content_list(
         NULL::bigint AS "subscribers",
         NULL::numeric AS "estimatedRevenue",
         NULL::bigint AS impressions,
-        NULLIF(v.ctr, 0)::numeric AS "impressionsClickThroughRate",
+        NULL::numeric AS "impressionsClickThroughRate",
         COALESCE(v.card_impressions, 0) AS "cardImpressions",
         COALESCE(v.ad_impressions, 0) AS "adImpressions",
         COALESCE(v.annotation_impressions, 0) AS "annotationImpressions"
@@ -271,8 +417,50 @@ def content_list(
     }
 
     rows = query_all_safe(sql, params)
+
+    # enrich per-video metrics (impressions, ctr, revenue, subscribers)
+    try:
+        cred_row = _find_credential_row(db, req.channelId)
+        metrics_map = None
+        if cred_row and cred_row.token_name:
+            cached = _load_video_metrics_cache(req.channelId, req.start, req.end)
+            if cached is not None:
+                metrics_map = cached
+            else:
+                creds = _load_token_credentials(cred_row.token_name)
+                if creds:
+                    video_ids = [r.get("videoId") for r in rows if r.get("videoId")]
+                    metrics_map = _fetch_video_metrics_bulk(
+                        creds,
+                        cred_row.selected_channel_id,
+                        video_ids,
+                        req.start.isoformat(),
+                        req.end.isoformat(),
+                    )
+                    _save_video_metrics_cache(req.channelId, req.start, req.end, metrics_map)
+        if metrics_map:
+            for r in rows:
+                vid = r.get("videoId")
+                m = metrics_map.get(vid)
+                if not m:
+                    continue
+                r["estimatedRevenue"] = m.get("estimated_revenue")
+                r["subscribers"] = m.get("subscribers")
+    except Exception as e:
+        print("[content.list] metrics enrich failed:", e)
+
+    channel_metrics_data = None
+    try:
+        channel_metrics_data = channel_metrics(
+            ChannelMetricsRequest(start=req.start, end=req.end, channelId=req.channelId),
+            db,
+            current_user,
+        )
+    except Exception as e:
+        print("[content.list] channel metrics failed:", e)
+
     # print("[content.list] rows =", rows[:3])  # debug 
-    return {"items": rows}
+    return {"items": rows, "channelMetrics": channel_metrics_data}
 
 
 class TimeSeriesRequest(BaseModel):
