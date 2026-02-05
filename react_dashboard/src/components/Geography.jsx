@@ -269,42 +269,6 @@ const GeographyChart = ({ isDashboard = false }) => {
       <Stack spacing={3}>
         {/* SELECTORS */}
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} justifyContent="flex-start">
-          <FormControl size="small" sx={{ minWidth: 150 }}>
-            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <CalendarMonthIcon sx={{ fontSize: 16 }} /> Period
-            </InputLabel>
-            <Select label="Period" value={range} onChange={(e) => setRange(e.target.value)}>
-              <MenuItem value="7d">Last 7 days</MenuItem>
-              <MenuItem value="28d">Last 28 days</MenuItem>
-              <MenuItem value="90d">Last 90 days</MenuItem>
-              <MenuItem value="365d">Last 365 days</MenuItem>
-              <MenuItem value="lifetime">Lifetime</MenuItem>
-            </Select>
-          </FormControl>
-
-          <FormControl size="small" sx={{ minWidth: 150 }}>
-            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <BarChartIcon sx={{ fontSize: 16 }} /> Metrics
-            </InputLabel>
-            <Select multiple label="Metrics" value={metricsSelectValue} renderValue={() => `Metrics (${Object.values(visibleColumns).filter(Boolean).length})`}>
-              <ListSubheader>Main Map Metric</ListSubheader>
-              {METRIC_OPTIONS.map(o => (
-                <MenuItem key={o.value} onClick={() => setMetric(o.value)}>
-                  <Radio size="small" checked={metric === o.value} sx={{ color: METRICS[o.value].color, '&.Mui-checked': { color: METRICS[o.value].color } }} />
-                  <Typography variant="body2">{o.label}</Typography>
-                </MenuItem>
-              ))}
-              <Divider />
-              <ListSubheader>Table Columns</ListSubheader>
-              {TABLE_COLUMNS.map(c => (
-                <MenuItem key={c.key} onClick={(e) => { e.stopPropagation(); setVisibleColumns(p => ({ ...p, [c.key]: !p[c.key] })); }}>
-                  <Checkbox size="small" checked={visibleColumns[c.key]} />
-                  <Typography variant="body2">{c.label}</Typography>
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
           <FormControl size="small" sx={{ minWidth: 180 }}>
             <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
               <YouTubeIcon sx={{ fontSize: 16 }} /> Channel
@@ -346,6 +310,43 @@ const GeographyChart = ({ isDashboard = false }) => {
               ))}
             </Select>
           </FormControl>
+
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <CalendarMonthIcon sx={{ fontSize: 16 }} /> Period
+            </InputLabel>
+            <Select label="Period" value={range} onChange={(e) => setRange(e.target.value)}>
+              <MenuItem value="7d">Last 7 days</MenuItem>
+              <MenuItem value="28d">Last 28 days</MenuItem>
+              <MenuItem value="90d">Last 90 days</MenuItem>
+              <MenuItem value="365d">Last 365 days</MenuItem>
+              <MenuItem value="lifetime">Lifetime</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" sx={{ minWidth: 150 }}>
+            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <BarChartIcon sx={{ fontSize: 16 }} /> Metrics
+            </InputLabel>
+            <Select multiple label="Metrics" value={metricsSelectValue} renderValue={() => `Metrics (${Object.values(visibleColumns).filter(Boolean).length})`}>
+              <ListSubheader>Main Map Metric</ListSubheader>
+              {METRIC_OPTIONS.map(o => (
+                <MenuItem key={o.value} onClick={() => setMetric(o.value)}>
+                  <Radio size="small" checked={metric === o.value} sx={{ color: METRICS[o.value].color, '&.Mui-checked': { color: METRICS[o.value].color } }} />
+                  <Typography variant="body2">{o.label}</Typography>
+                </MenuItem>
+              ))}
+              <Divider />
+              <ListSubheader>Table Columns</ListSubheader>
+              {TABLE_COLUMNS.map(c => (
+                <MenuItem key={c.key} onClick={(e) => { e.stopPropagation(); setVisibleColumns(p => ({ ...p, [c.key]: !p[c.key] })); }}>
+                  <Checkbox size="small" checked={visibleColumns[c.key]} />
+                  <Typography variant="body2">{c.label}</Typography>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
         </Stack>
 
         {/* MAP SECTION */}

@@ -466,55 +466,6 @@ const TrafficSourceChart = () => {
       <Stack spacing={2}>
         {/* SELECTORS */}
         <Stack direction="row" alignItems="center" spacing={2} sx={{ flexWrap: "wrap", rowGap: 2 }}>
-          <FormControl size="small" sx={{ minWidth: 140 }}>
-            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <PieChartIcon sx={{ fontSize: 16 }} /> Chart
-            </InputLabel>
-            <Select value={chartType} label="Chart" onChange={(e) => setChartType(e.target.value)}>
-              <MenuItem value="pie">Pie</MenuItem>
-              <MenuItem value="line">Line</MenuItem>
-              <MenuItem value="bar">Bar</MenuItem>
-            </Select>
-          </FormControl>
-
-          {chartType !== "pie" && (
-            <FormControl size="small" sx={{ minWidth: 140 }}>
-              <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <TimelineIcon sx={{ fontSize: 16 }} /> Interval
-              </InputLabel>
-              <Select value={interval} label="Interval" onChange={(e) => setInterval(e.target.value)}>
-                <MenuItem value="daily">Daily</MenuItem>
-                <MenuItem value="weekly">Weekly</MenuItem>
-                <MenuItem value="monthly">Monthly</MenuItem>
-              </Select>
-            </FormControl>
-          )}
-
-          <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <BarChartIcon sx={{ fontSize: 16 }} /> Metric
-            </InputLabel>
-            <Select value={metric} label="Metric" onChange={(e) => setMetric(e.target.value)}>
-              {METRIC_OPTIONS.map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
-            </Select>
-          </FormControl>
-
-          <FormControl size="small" sx={{ minWidth: 160 }}>
-            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <CalendarMonthIcon sx={{ fontSize: 16 }} /> Period
-            </InputLabel>
-            <Select value={period} label="Period" onChange={(e) => setPeriod(e.target.value)}>
-              {[...PERIOD_OPTIONS, ...EXTRA_PERIODS].map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
-            </Select>
-          </FormControl>
-
-          {period === "custom" && (
-            <LocalizationProvider dateAdapter={AdapterDayjs}>
-              <DatePicker label="Start" value={startDate ? dayjs(startDate) : null} onChange={v => setStartDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={{ textField: { size: "small" } }} />
-              <DatePicker label="End" value={endDate ? dayjs(endDate) : null} onChange={v => setEndDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={{ textField: { size: "small" } }} />
-            </LocalizationProvider>
-          )}
-
           <FormControl size="small" sx={{ minWidth: 240 }}>
             <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
               <YouTubeIcon sx={{ fontSize: 16 }} /> Channel
@@ -547,6 +498,56 @@ const TrafficSourceChart = () => {
               ))}
             </Select>
           </FormControl>
+
+          <FormControl size="small" sx={{ minWidth: 140 }}>
+            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <PieChartIcon sx={{ fontSize: 16 }} /> Chart
+            </InputLabel>
+            <Select value={chartType} label="Chart" onChange={(e) => setChartType(e.target.value)}>
+              <MenuItem value="pie">Pie</MenuItem>
+              <MenuItem value="line">Line</MenuItem>
+              <MenuItem value="bar">Bar</MenuItem>
+            </Select>
+          </FormControl>
+
+          {chartType !== "pie" && (
+            <FormControl size="small" sx={{ minWidth: 140 }}>
+              <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                <TimelineIcon sx={{ fontSize: 16 }} /> Interval
+              </InputLabel>
+              <Select value={interval} label="Interval" onChange={(e) => setInterval(e.target.value)}>
+                <MenuItem value="daily">Daily</MenuItem>
+                <MenuItem value="weekly">Weekly</MenuItem>
+                <MenuItem value="monthly">Monthly</MenuItem>
+              </Select>
+            </FormControl>
+          )}
+
+
+          <FormControl size="small" sx={{ minWidth: 180 }}>
+            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <BarChartIcon sx={{ fontSize: 16 }} /> Metric
+            </InputLabel>
+            <Select value={metric} label="Metric" onChange={(e) => setMetric(e.target.value)}>
+              {METRIC_OPTIONS.map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" sx={{ minWidth: 160 }}>
+            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <CalendarMonthIcon sx={{ fontSize: 16 }} /> Period
+            </InputLabel>
+            <Select value={period} label="Period" onChange={(e) => setPeriod(e.target.value)}>
+              {[...PERIOD_OPTIONS, ...EXTRA_PERIODS].map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+            </Select>
+          </FormControl>
+
+          {period === "custom" && (
+            <LocalizationProvider dateAdapter={AdapterDayjs}>
+              <DatePicker label="Start" value={startDate ? dayjs(startDate) : null} onChange={v => setStartDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={{ textField: { size: "small" } }} />
+              <DatePicker label="End" value={endDate ? dayjs(endDate) : null} onChange={v => setEndDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={{ textField: { size: "small" } }} />
+            </LocalizationProvider>
+          )}
         </Stack>
 
         {errorMsg && <Typography color="error" variant="body2" sx={{ px: 1 }}>{errorMsg}</Typography>}
