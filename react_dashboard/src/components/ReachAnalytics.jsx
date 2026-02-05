@@ -15,7 +15,14 @@ import {
   TableRow,
   Typography,
   useTheme,
+  Divider,
 } from "@mui/material";
+import { motion } from "framer-motion";
+import YouTubeIcon from "@mui/icons-material/YouTube";
+import InsertLinkIcon from "@mui/icons-material/InsertLink";
+import PlaylistPlayIcon from "@mui/icons-material/PlaylistPlay";
+import ExploreIcon from "@mui/icons-material/Explore";
+
 import api from "../services/api";
 import { formatNumber } from "./Module";
 
@@ -29,10 +36,37 @@ const formatPct = (value) => {
 const ReachAnalytics = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
+
+  // === Styles ===
+  const glassSx = useMemo(() => ({
+    bgcolor: isDark ? "rgba(15, 23, 42, 0.65)" : "rgba(255, 255, 255, 0.8)",
+    backdropFilter: "blur(12px)",
+    borderRadius: 4,
+    border: "1px solid",
+    borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
+    boxShadow: isDark ? "0 8px 32px rgba(0,0,0,0.4)" : "0 8px 24px rgba(15,23,42,0.08)",
+  }), [isDark]);
+
+  const headerSx = {
+    background: isDark ? "#0f172a" : "#f1f5f9",
+    "& .MuiTableCell-root": {
+      fontWeight: 800,
+      textTransform: "uppercase",
+      letterSpacing: "0.05em",
+      fontSize: "0.7rem",
+      color: isDark ? "#e2e8f0" : "#0f172a",
+      whiteSpace: "nowrap",
+      py: 2,
+      borderBottom: isDark ? "1px solid rgba(255,255,255,0.1)" : "1px solid rgba(0,0,0,0.1)",
+    },
+  };
+
   const authHeaders = useMemo(() => {
     const token = localStorage.getItem("access_token");
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, []);
+
+  // === State ===
   const [accounts, setAccounts] = useState([]);
   const [accountTag, setAccountTag] = useState(() => {
     try {
@@ -52,6 +86,7 @@ const ReachAnalytics = () => {
   });
   const [loading, setLoading] = useState(false);
 
+  // === Data Fetching ===
   useEffect(() => {
     const loadChannels = async () => {
       try {
@@ -69,6 +104,8 @@ const ReachAnalytics = () => {
             };
           })
           .filter((item) => item.value);
+
+        // Sorting logic
         const order = (() => {
           try {
             return JSON.parse(localStorage.getItem("tokens.order") || "[]");
@@ -88,6 +125,7 @@ const ReachAnalytics = () => {
           (acct) => !orderKeys.has(orderKey(acct.value))
         );
         const finalAccounts = [...ordered, ...remaining];
+
         setAccounts(finalAccounts);
         if (!finalAccounts.length) {
           setAccountTag("");
@@ -108,7 +146,7 @@ const ReachAnalytics = () => {
     } catch {
       // ignore storage errors
     }
-  }, [accountTag, authHeaders]);
+  }, [accountTag]);
 
   useEffect(() => {
     if (!accountTag) return;
@@ -163,19 +201,7 @@ const ReachAnalytics = () => {
     loadBreakdown();
   }, [accountTag, authHeaders]);
 
-  const headerSx = {
-    background: isDark ? "rgba(15,23,42,0.9)" : "rgba(226,232,240,0.85)",
-    "& .MuiTableCell-root": {
-      fontWeight: 700,
-      textTransform: "uppercase",
-      letterSpacing: "0.08em",
-      fontSize: "0.7rem",
-      color: isDark ? "rgba(226,232,240,0.85)" : "rgba(15,23,42,0.75)",
-      whiteSpace: "nowrap",
-    },
-  };
-
-  const displayRows = useMemo(() => rows.slice(0, 20), [rows]);
+  const displayRows = useMemo(() => rows.slice(0, 50), [rows]); // Increased limit slightly
   const maxExternal = useMemo(
     () => Math.max(1, ...breakdown.external.map((row) => Number(row.views || 0))),
     [breakdown.external]
@@ -186,104 +212,248 @@ const ReachAnalytics = () => {
   );
 
   return (
-    <Stack spacing={2}>
-      <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-        <FormControl size="small" sx={{ minWidth: 220 }}>
-          <InputLabel>Channel</InputLabel>
-          <Select
-            label="Channel"
-            value={accounts.some((acct) => acct.value === accountTag) ? accountTag : ""}
-            onChange={(event) => setAccountTag(event.target.value)}
-          >
-            {accounts.map((acct) => (
-              <MenuItem key={acct.value} value={acct.value}>
-                {acct.label || acct.value}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-        <Typography variant="caption" color="text.secondary">
-          {range.start && range.end ? "" : "No data"}
-        </Typography>
-      </Stack>
-
-      {loading && (
-        <Box display="flex" alignItems="center" gap={1}>
-          <CircularProgress size={18} />
-          <Typography variant="body2" color="text.secondary">
-            Loading reach data...
-          </Typography>
-        </Box>
-      )}
-
-      <Box
-        display="grid"
-        gridTemplateColumns={{ xs: "1fr", md: "repeat(3, minmax(0, 1fr))" }}
-        gap={2}
-      >
-        <Box
-          sx={{
-            p: 2,
-            borderRadius: 3,
-            border: "1px solid",
-            borderColor: theme.palette.divider,
-            background:
-              theme.palette.mode === "dark"
-                ? "rgba(10,15,24,0.8)"
-                : "rgba(255,255,255,0.94)",
-            boxShadow:
-              theme.palette.mode === "dark"
-                ? "0 14px 28px rgba(15,23,42,0.4)"
-                : "0 14px 26px rgba(148,163,184,0.25)",
-          }}
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+    >
+      <Stack spacing={3}>
+        {/* Controls */}
+        <Stack
+          direction="row"
+          spacing={2}
+          alignItems="center"
+          sx={{ flexWrap: "wrap", rowGap: 2 }}
         >
-          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
-            <Box>
+          <FormControl size="small" sx={{ minWidth: 240 }}>
+            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <YouTubeIcon sx={{ fontSize: 16 }} /> Channel
+            </InputLabel>
+            <Select
+              label="Channel"
+              value={accounts.some((acct) => acct.value === accountTag) ? accountTag : ""}
+              onChange={(event) => setAccountTag(event.target.value)}
+            >
+              {accounts.map((acct) => (
+                <MenuItem key={acct.value} value={acct.value}>
+                  {acct.label || acct.value}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          {loading && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <Box display="flex" alignItems="center" gap={1} sx={{ color: "text.secondary" }}>
+                <CircularProgress size={16} color="inherit" />
+                <Typography variant="body2" sx={{ fontStyle: "italic" }}>
+                  Refreshing data...
+                </Typography>
+              </Box>
+            </motion.div>
+          )}
+
+          <Box sx={{ flexGrow: 1 }} />
+
+          <Box sx={{
+            px: 2, py: 0.5,
+            borderRadius: 99,
+            bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.04)",
+            border: "1px solid",
+            borderColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)"
+          }}>
+            <Typography variant="caption" color="text.secondary" fontWeight={500}>
+              {range.start && range.end
+                ? `Range: ${range.start} ~ ${range.end}`
+                : "No Date Range"}
+            </Typography>
+          </Box>
+        </Stack>
+
+        {/* Breakdown Cards */}
+        <Box
+          display="grid"
+          gridTemplateColumns={{ xs: "1fr", md: "repeat(3, minmax(0, 1fr))" }}
+          gap={3}
+        >
+          {/* External Traffic Card */}
+          <Box sx={{ ...glassSx, p: 3, display: "flex", flexDirection: "column" }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Box
+                  sx={{
+                    p: 0.8,
+                    borderRadius: 1.5,
+                    bgcolor: isDark ? "rgba(56, 189, 248, 0.15)" : "rgba(14, 165, 233, 0.1)",
+                    color: isDark ? "#38bdf8" : "#0ea5e9",
+                    display: "flex"
+                  }}
+                >
+                  <InsertLinkIcon fontSize="small" />
+                </Box>
+                <Typography variant="subtitle1" fontWeight={700}>
+                  External
+                </Typography>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" fontWeight={600} textTransform="uppercase">
+                Top Sources
+              </Typography>
+            </Stack>
+
+            {breakdown.external.length === 0 ? (
+              <Box flex={1} display="flex" alignItems="center" justifyContent="center">
+                <Typography variant="body2" color="text.secondary">
+                  No external traffic data.
+                </Typography>
+              </Box>
+            ) : (
+              <Stack spacing={2} sx={{ mt: 1 }}>
+                {breakdown.external.map((row) => {
+                  const pct = Math.max(
+                    6,
+                    Math.round((row.views / maxExternal) * 100)
+                  );
+                  return (
+                    <Box key={row.source}>
+                      <Box display="flex" justifyContent="space-between" mb={0.5}>
+                        <Typography variant="body2" fontWeight={600} sx={{ fontSize: "0.85rem" }}>
+                          {row.source}
+                        </Typography>
+                        <Typography variant="body2" fontWeight={700}>
+                          {formatNumber(row.views)}
+                        </Typography>
+                      </Box>
+                      <Box
+                        sx={{
+                          height: 6,
+                          borderRadius: 999,
+                          bgcolor: isDark
+                            ? "rgba(148,163,184,0.15)"
+                            : "rgba(15,23,42,0.06)",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${pct}%` }}
+                          transition={{ duration: 0.8, ease: "easeOut" }}
+                          style={{
+                            height: "100%",
+                            borderRadius: 999,
+                            background: isDark
+                              ? "linear-gradient(90deg, #38bdf8, #22d3ee)"
+                              : "linear-gradient(90deg, #0ea5e9, #06b6d4)",
+                          }}
+                        />
+                      </Box>
+                    </Box>
+                  );
+                })}
+              </Stack>
+            )}
+          </Box>
+
+          {/* Playlist Traffic Card */}
+          <Box sx={{ ...glassSx, p: 3, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+            <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+              <Box
+                sx={{
+                  p: 0.8,
+                  borderRadius: 1.5,
+                  bgcolor: isDark ? "rgba(244, 114, 182, 0.15)" : "rgba(236, 72, 153, 0.1)",
+                  color: isDark ? "#f472b6" : "#ec4899",
+                  display: "flex"
+                }}
+              >
+                <PlaylistPlayIcon fontSize="small" />
+              </Box>
               <Typography variant="subtitle1" fontWeight={700}>
-                External traffic
+                Playlist
+              </Typography>
+            </Stack>
+
+            <Box mt={2} mb={1}>
+              <Typography variant="h3" fontWeight={800} sx={{ letterSpacing: "-0.02em" }}>
+                {formatNumber(breakdown.playlist)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" mt={0.5}>
+                Total views from playlist sources within the selected range.
               </Typography>
             </Box>
-            <Typography variant="caption" color="text.secondary">
-              views
-            </Typography>
-          </Stack>
-          {breakdown.external.length === 0 ? (
-            <Typography variant="body2" color="text.secondary" mt={2}>
-              No external traffic data.
-            </Typography>
-          ) : (
-            <Stack spacing={1} mt={2}>
-              {breakdown.external.map((row) => {
+
+            <Box sx={{
+              mt: "auto",
+              pt: 2,
+              borderTop: "1px dashed",
+              borderColor: theme.palette.divider
+            }}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: isDark ? "#f472b6" : "#ec4899" }} />
+                <Typography variant="caption" fontWeight={600} color="text.secondary">
+                  PLAYLIST TRAFFIC SOURCE
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+
+          {/* Suggested vs Browse Card */}
+          <Box sx={{ ...glassSx, p: 3, display: "flex", flexDirection: "column" }}>
+            <Stack direction="row" spacing={1} alignItems="center" mb={2}>
+              <Box
+                sx={{
+                  p: 0.8,
+                  borderRadius: 1.5,
+                  bgcolor: isDark ? "rgba(168, 85, 247, 0.15)" : "rgba(147, 51, 234, 0.1)",
+                  color: isDark ? "#a855f7" : "#9333ea",
+                  display: "flex"
+                }}
+              >
+                <ExploreIcon fontSize="small" />
+              </Box>
+              <Typography variant="subtitle1" fontWeight={700}>
+                Discovery
+              </Typography>
+            </Stack>
+
+            <Stack spacing={3} sx={{ mt: 1 }}>
+              {[
+                { label: "Suggested Videos", value: breakdown.suggested, color: "#22c55e", bg: "rgba(34, 197, 94, 0.15)" },
+                { label: "Browse Features", value: breakdown.browse, color: "#8b5cf6", bg: "rgba(139, 92, 246, 0.15)" },
+              ].map((item) => {
                 const pct = Math.max(
                   6,
-                  Math.round((row.views / maxExternal) * 100)
+                  Math.round((Number(item.value || 0) / maxSuggestedBrowse) * 100)
                 );
                 return (
-                  <Box key={row.source}>
-                    <Box display="flex" justifyContent="space-between" mb={0.5}>
-                      <Typography variant="body2">{row.source}</Typography>
-                      <Typography variant="body2" fontWeight={600}>
-                        {formatNumber(row.views)}
+                  <Box key={item.label}>
+                    <Box display="flex" justifyContent="space-between" mb={1}>
+                      <Typography variant="body2" fontWeight={600}>{item.label}</Typography>
+                      <Typography variant="body2" fontWeight={800} sx={{ color: item.color }}>
+                        {formatNumber(item.value)}
                       </Typography>
                     </Box>
                     <Box
                       sx={{
-                        height: 8,
+                        height: 10,
                         borderRadius: 999,
-                        bgcolor: isDark
-                          ? "rgba(148,163,184,0.2)"
-                          : "rgba(15,23,42,0.12)",
+                        bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)",
                         overflow: "hidden",
+                        position: "relative"
                       }}
                     >
-                      <Box
-                        sx={{
-                          width: `${pct}%`,
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ duration: 1.2, ease: "easeOut" }}
+                        style={{
                           height: "100%",
                           borderRadius: 999,
-                          background: isDark
-                            ? "linear-gradient(90deg, #38bdf8, #22d3ee)"
-                            : "linear-gradient(90deg, #0ea5e9, #22d3ee)",
+                          background: item.color,
+                          boxShadow: `0 0 10px ${item.color}66` // Glow effect
                         }}
                       />
                     </Box>
@@ -291,240 +461,133 @@ const ReachAnalytics = () => {
                 );
               })}
             </Stack>
-          )}
+          </Box>
         </Box>
 
-        <Box
-          sx={{
-            p: 2,
-            borderRadius: 3,
-            border: "1px solid",
-            borderColor: theme.palette.divider,
-            background:
-              theme.palette.mode === "dark"
-                ? "rgba(10,15,24,0.8)"
-                : "rgba(255,255,255,0.94)",
-            boxShadow:
-              theme.palette.mode === "dark"
-                ? "0 14px 28px rgba(15,23,42,0.4)"
-                : "0 14px 26px rgba(148,163,184,0.25)",
-          }}
-        >
-          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
-            <Box>
-              <Typography variant="subtitle1" fontWeight={700}>
-                Playlist traffic
-              </Typography>
-            </Box>
-            <Typography variant="caption" color="text.secondary">
-              views
-            </Typography>
-          </Stack>
-          <Typography variant="h5" fontWeight={700} mt={2}>
-            {formatNumber(breakdown.playlist)}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Views from playlist sources
-          </Typography>
-        </Box>
-
-        <Box
-          sx={{
-            p: 2,
-            borderRadius: 3,
-            border: "1px solid",
-            borderColor: theme.palette.divider,
-            background:
-              theme.palette.mode === "dark"
-                ? "rgba(10,15,24,0.8)"
-                : "rgba(255,255,255,0.94)",
-            boxShadow:
-              theme.palette.mode === "dark"
-                ? "0 14px 28px rgba(15,23,42,0.4)"
-                : "0 14px 26px rgba(148,163,184,0.25)",
-          }}
-        >
-          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
-            <Box>
-              <Typography variant="subtitle1" fontWeight={700}>
-                Suggested vs Browse
-              </Typography>
-            </Box>
-            <Typography variant="caption" color="text.secondary">
-              views
-            </Typography>
-          </Stack>
-          <Stack spacing={1} mt={2}>
-            {[
-              { label: "Suggested", value: breakdown.suggested, color: "#22c55e" },
-              { label: "Browse", value: breakdown.browse, color: "#a855f7" },
-            ].map((item) => {
-              const pct = Math.max(
-                6,
-                Math.round((Number(item.value || 0) / maxSuggestedBrowse) * 100)
-              );
-              return (
-                <Box key={item.label}>
-                  <Box display="flex" justifyContent="space-between" mb={0.5}>
-                    <Typography variant="body2">{item.label}</Typography>
-                    <Typography variant="body2" fontWeight={600}>
-                      {formatNumber(item.value)}
-                    </Typography>
-                  </Box>
-                  <Box
+        {/* Detailed Table */}
+        <Box sx={{ ...glassSx, p: 1, overflow: "hidden" }}>
+          <TableContainer sx={{ maxHeight: 800 }}>
+            <Table size="small" stickyHeader>
+              <TableHead sx={headerSx}>
+                <TableRow>
+                  <TableCell>Video</TableCell>
+                  <TableCell align="right">Views</TableCell>
+                  <TableCell align="right">Est. Minutes</TableCell>
+                  <TableCell align="right">Card Imp.</TableCell>
+                  <TableCell align="right">Teaser Imp.</TableCell>
+                  <TableCell align="right">Total Imp.</TableCell>
+                  <TableCell align="right">Card Clicks</TableCell>
+                  <TableCell align="right">Teaser Clicks</TableCell>
+                  <TableCell align="right">Total Clicks</TableCell>
+                  <TableCell align="right">Card CTR</TableCell>
+                  <TableCell align="right">Teaser CTR</TableCell>
+                  <TableCell align="right">Total CTR</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {displayRows.map((row) => (
+                  <TableRow
+                    key={row.video_id}
                     sx={{
-                      height: 8,
-                      borderRadius: 999,
-                      bgcolor: isDark
-                        ? "rgba(148,163,184,0.2)"
-                        : "rgba(15,23,42,0.12)",
-                      overflow: "hidden",
+                      "&:hover": {
+                        backgroundColor: isDark
+                          ? "rgba(255,255,255,0.05)"
+                          : "rgba(0,0,0,0.04)",
+                      },
+                      transition: "background-color 0.2s"
                     }}
                   >
-                    <Box
-                      sx={{
-                        width: `${pct}%`,
-                        height: "100%",
-                        borderRadius: 999,
-                        background: isDark
-                          ? `linear-gradient(90deg, ${item.color}, ${item.color}AA)`
-                          : `linear-gradient(90deg, ${item.color}, ${item.color}AA)`,
-                      }}
-                    />
-                  </Box>
-                </Box>
-              );
-            })}
-          </Stack>
+                    <TableCell sx={{ minWidth: 360, py: 2 }}>
+                      <Stack direction="row" spacing={2} alignItems="flex-start">
+                        {row.thumbnail ? (
+                          <a
+                            href={`https://www.youtube.com/watch?v=${row.video_id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{ display: "inline-block", position: "relative", borderRadius: 8, overflow: "hidden", boxShadow: "0 4px 12px rgba(0,0,0,0.2)" }}
+                          >
+                            <Box
+                              component="img"
+                              src={row.thumbnail}
+                              alt={row.title || row.video_id}
+                              sx={{
+                                width: 120,
+                                height: 68,
+                                objectFit: "cover",
+                                display: "block"
+                              }}
+                            />
+                            <Box sx={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", bgcolor: "rgba(0,0,0,0.1)", opacity: 0, "&:hover": { opacity: 1 }, transition: "opacity 0.2s" }} />
+                          </a>
+                        ) : (
+                          <Box
+                            sx={{
+                              width: 120,
+                              height: 68,
+                              borderRadius: 1,
+                              bgcolor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)",
+                              flexShrink: 0,
+                            }}
+                          />
+                        )}
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography
+                            variant="body2"
+                            fontWeight={600}
+                            sx={{
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
+                              overflow: "hidden",
+                              lineHeight: 1.2,
+                              mb: 0.5
+                            }}
+                          >
+                            <a
+                              href={`https://www.youtube.com/watch?v=${row.video_id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: "inherit", textDecoration: "none" }}
+                            >
+                              {row.title || row.video_id}
+                            </a>
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "monospace", bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)", px: 0.5, borderRadius: 0.5 }}>
+                            {row.video_id}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>{formatNumber(row.views)}</TableCell>
+                    <TableCell align="right">{formatNumber(row.estimated_minutes_watched)}</TableCell>
+                    <TableCell align="right">{formatNumber(row.card_impressions)}</TableCell>
+                    <TableCell align="right">{formatNumber(row.teaser_impressions)}</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>{formatNumber(row.total_impressions)}</TableCell>
+                    <TableCell align="right">{formatNumber(row.card_clicks)}</TableCell>
+                    <TableCell align="right">{formatNumber(row.teaser_clicks)}</TableCell>
+                    <TableCell align="right">{formatNumber(row.total_clicks)}</TableCell>
+                    <TableCell align="right">{formatPct(row.card_ctr)}</TableCell>
+                    <TableCell align="right">{formatPct(row.teaser_ctr)}</TableCell>
+                    <TableCell align="right" sx={{ color: isDark ? "#4ade80" : "#16a34a", fontWeight: 700 }}>
+                      {formatPct(row.total_ctr)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {!displayRows.length && !loading && (
+                  <TableRow>
+                    <TableCell colSpan={12} align="center" sx={{ py: 8 }}>
+                      <Typography variant="body1" color="text.secondary">
+                        No data available for the selected channel.
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
         </Box>
-      </Box>
-
-      <TableContainer
-        sx={{
-          borderRadius: 3,
-          border: "1px solid",
-          borderColor: theme.palette.divider,
-          background:
-            theme.palette.mode === "dark"
-              ? "rgba(10,15,24,0.8)"
-              : "rgba(255,255,255,0.94)",
-          boxShadow:
-            theme.palette.mode === "dark"
-              ? "0 14px 28px rgba(15,23,42,0.4)"
-              : "0 14px 26px rgba(148,163,184,0.25)",
-          overflowX: "auto",
-          overflowY: "hidden",
-          "& .MuiTableCell-root": {
-            px: 1,
-            py: 0.6,
-          },
-        }}
-      >
-        <Table size="small" stickyHeader sx={{ minWidth: 1600 }}>
-          <TableHead sx={headerSx}>
-            <TableRow>
-              <TableCell>Video</TableCell>
-              <TableCell align="right">Views</TableCell>
-              <TableCell align="right">Estimated minutes watched</TableCell>
-              <TableCell align="right">Cards impressions</TableCell>
-              <TableCell align="right">Teaser impressions</TableCell>
-              <TableCell align="right">Total impressions</TableCell>
-              <TableCell align="right">Cards clicks</TableCell>
-              <TableCell align="right">Teaser clicks</TableCell>
-              <TableCell align="right">Total clicks</TableCell>
-              <TableCell align="right">Cards CTR</TableCell>
-              <TableCell align="right">Teaser CTR</TableCell>
-              <TableCell align="right">Total CTR</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {displayRows.map((row) => (
-              <TableRow
-                key={row.video_id}
-                sx={{
-                  "&:hover": {
-                    backgroundColor: isDark
-                      ? "rgba(51,65,85,0.55)"
-                      : "rgba(226,232,240,0.6)",
-                  },
-                }}
-              >
-                <TableCell sx={{ minWidth: 260 }}>
-                  <Stack direction="row" spacing={1.2} alignItems="flex-start">
-                    {row.thumbnail ? (
-                      <a
-                        href={`https://www.youtube.com/watch?v=${row.video_id}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ display: "inline-flex" }}
-                      >
-                        <Box
-                          component="img"
-                          src={row.thumbnail}
-                          alt={row.title || row.video_id}
-                          sx={{
-                            width: 72,
-                            height: 42,
-                            borderRadius: 1,
-                            objectFit: "cover",
-                            flexShrink: 0,
-                          }}
-                        />
-                      </a>
-                    ) : (
-                      <Box
-                        sx={{
-                          width: 72,
-                          height: 42,
-                          borderRadius: 1,
-                          bgcolor: isDark ? "rgba(148,163,184,0.2)" : "rgba(15,23,42,0.1)",
-                          flexShrink: 0,
-                        }}
-                      />
-                    )}
-                    <Box>
-                      <Typography variant="body2" fontWeight={600}>
-                        <a
-                          href={`https://www.youtube.com/watch?v=${row.video_id}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: "inherit", textDecoration: "none" }}
-                        >
-                          {row.title || row.video_id}
-                        </a>
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {row.video_id}
-                      </Typography>
-                    </Box>
-                  </Stack>
-                </TableCell>
-                <TableCell align="right">{formatNumber(row.views)}</TableCell>
-                <TableCell align="right">{formatNumber(row.estimated_minutes_watched)}</TableCell>
-                <TableCell align="right">{formatNumber(row.card_impressions)}</TableCell>
-                <TableCell align="right">{formatNumber(row.teaser_impressions)}</TableCell>
-                <TableCell align="right">{formatNumber(row.total_impressions)}</TableCell>
-                <TableCell align="right">{formatNumber(row.card_clicks)}</TableCell>
-                <TableCell align="right">{formatNumber(row.teaser_clicks)}</TableCell>
-                <TableCell align="right">{formatNumber(row.total_clicks)}</TableCell>
-                <TableCell align="right">{formatPct(row.card_ctr)}</TableCell>
-                <TableCell align="right">{formatPct(row.teaser_ctr)}</TableCell>
-                <TableCell align="right">{formatPct(row.total_ctr)}</TableCell>
-              </TableRow>
-            ))}
-            {!displayRows.length && !loading && (
-              <TableRow>
-                <TableCell colSpan={12}>
-                  <Typography variant="body2" color="text.secondary">
-                    No reach data available.
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </Stack>
+      </Stack>
+    </motion.div>
   );
 };
 
