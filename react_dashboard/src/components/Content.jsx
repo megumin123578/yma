@@ -4,6 +4,8 @@ import {
   Box,
   Stack,
   Typography,
+  Checkbox,
+  ListItemText,
   Table,
   TableBody,
   TableCell,
@@ -49,6 +51,42 @@ const EXTRA_PERIODS = [
   { value: "last180", label: "Last 180 days" },
 ];
 
+const TABLE_METRIC_OPTIONS = [
+  { value: "averageViewDuration", label: "Average view duration", type: "duration" },
+  { value: "averagePercentageViewed", label: "Average percentage viewed", type: "percent" },
+  { value: "engagedViews", label: "Engaged views", type: "number" },
+  { value: "stayedToWatch", label: "Stayed to watch", type: "percent" },
+  { value: "uniqueViewers", label: "Unique viewers", type: "number" },
+  { value: "averageViewsPerViewer", label: "Average views per viewer", type: "decimal" },
+  { value: "newViewers", label: "New viewers", type: "number" },
+  { value: "returningViewers", label: "Returning viewers", type: "number" },
+  { value: "casualViewers", label: "Casual viewers", type: "number" },
+  { value: "regularViewers", label: "Regular viewers", type: "number" },
+  { value: "views", label: "Views", type: "number" },
+  { value: "watchTimeHours", label: "Watch time (hours)", type: "hours" },
+  { value: "subscribers", label: "Subscribers", type: "number" },
+  { value: "estimatedRevenue", label: "Estimated revenue", type: "currency" },
+  { value: "impressions", label: "Impressions", type: "number" },
+  { value: "impressionsClickThroughRate", label: "Impressions click-through rate", type: "percent" },
+];
+
+const DEFAULT_TABLE_METRICS = [
+  "views",
+  "watchTimeHours",
+  "subscribers",
+  "estimatedRevenue",
+  "impressions",
+  "impressionsClickThroughRate",
+];
+
+const NON_SUM_METRICS = new Set([
+  "averageViewDuration",
+  "averagePercentageViewed",
+  "stayedToWatch",
+  "averageViewsPerViewer",
+  "impressionsClickThroughRate",
+]);
+
 // 🟣 helper riêng cho watch hours (hiển thị thập phân)
 const formatWatchHours = (v, digits = 1) =>
   n(v).toLocaleString(undefined, {
@@ -63,6 +101,25 @@ const formatMetricValue = (metric, v) => {
     return formatWatchHours(v);
   }
   return formatNumber(v);
+};
+
+const toNullableNumber = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const formatTableMetricValue = (metricKey, value) => {
+  if (value === null || value === undefined) return "-";
+  const meta = TABLE_METRIC_OPTIONS.find((m) => m.value === metricKey);
+  const safe = n(value);
+  if (!meta) return formatNumber(safe);
+  if (meta.type === "duration") return formatDuration(safe);
+  if (meta.type === "hours") return formatWatchHours(safe);
+  if (meta.type === "currency") return `$${formatNumber(safe)}`;
+  if (meta.type === "percent") return `${safe.toFixed(2)}%`;
+  if (meta.type === "decimal") return safe.toFixed(2);
+  return formatNumber(safe);
 };
 
 const VideoThumbnail = ({ src, videoId, alt, duration }) => {
@@ -307,6 +364,7 @@ const ContentAnalytics = () => {
   const [chartType, setChartType] = useState("line");
   const [metric, setMetric] = useState("views");
   const [period, setPeriod] = useState("last28");
+  const [selectedTableMetrics, setSelectedTableMetrics] = useState(DEFAULT_TABLE_METRICS);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(50);
 
@@ -489,9 +547,23 @@ const ContentAnalytics = () => {
           thumbnail: v.thumbnail,
           published: v.publishedAt,
           duration: v.duration,
-
           views: n(v.views),
-          watchHours: n(v.watchTimeHours), // có thể là số thập phân
+          watchHours: n(v.watchTimeHours),
+          watchTimeHours: n(v.watchTimeHours),
+          averageViewDuration: toNullableNumber(v.averageViewDuration ?? v.average_view_duration),
+          averagePercentageViewed: toNullableNumber(v.averagePercentageViewed ?? v.average_view_percentage),
+          engagedViews: toNullableNumber(v.engagedViews ?? v.engaged_views),
+          stayedToWatch: toNullableNumber(v.stayedToWatch ?? v.stayed_to_watch),
+          uniqueViewers: toNullableNumber(v.uniqueViewers ?? v.unique_viewers),
+          averageViewsPerViewer: toNullableNumber(v.averageViewsPerViewer ?? v.average_views_per_viewer),
+          newViewers: toNullableNumber(v.newViewers ?? v.new_viewers),
+          returningViewers: toNullableNumber(v.returningViewers ?? v.returning_viewers),
+          casualViewers: toNullableNumber(v.casualViewers ?? v.casual_viewers),
+          regularViewers: toNullableNumber(v.regularViewers ?? v.regular_viewers),
+          subscribers: toNullableNumber(v.subscribers),
+          estimatedRevenue: toNullableNumber(v.estimatedRevenue ?? v.estimated_revenue),
+          impressions: toNullableNumber(v.impressions),
+          impressionsClickThroughRate: toNullableNumber(v.impressionsClickThroughRate ?? v.impressions_click_through_rate),
           likes: n(v.likes),
           cardImpressions: n(v.cardImpressions),
           adImpressions: n(v.adImpressions),
@@ -500,16 +572,24 @@ const ContentAnalytics = () => {
         .sort((a, b) => b.views - a.views), // 🔴 Sort table by views
     [videos]
   );
-
   const totals = useMemo(
-    () => ({
-      views: rows.reduce((s, r) => s + r.views, 0),
-      watchHours: rows.reduce((s, r) => s + r.watchHours, 0),
-      likes: rows.reduce((s, r) => s + r.likes, 0),
-      cardImpressions: rows.reduce((s, r) => s + r.cardImpressions, 0),
-      adImpressions: rows.reduce((s, r) => s + r.adImpressions, 0),
-      annotationImpressions: rows.reduce((s, r) => s + r.annotationImpressions, 0),
-    }),
+    () =>
+      TABLE_METRIC_OPTIONS.reduce((acc, item) => {
+        if (NON_SUM_METRICS.has(item.value)) {
+          acc[item.value] = null;
+          return acc;
+        }
+        let sum = 0;
+        let hasValue = false;
+        rows.forEach((row) => {
+          const value = toNullableNumber(row[item.value]);
+          if (value === null) return;
+          hasValue = true;
+          sum += value;
+        });
+        acc[item.value] = hasValue ? sum : null;
+        return acc;
+      }, {}),
     [rows]
   );
 
@@ -758,6 +838,30 @@ const ContentAnalytics = () => {
             {channelList.map((c) => (
               <MenuItem key={c.id} value={c.id}>
                 {c.title}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl size="small" sx={{ minWidth: 320 }}>
+          <InputLabel>Table Metrics</InputLabel>
+          <Select
+            multiple
+            value={selectedTableMetrics}
+            label="Table Metrics"
+            onChange={(e) =>
+              setSelectedTableMetrics(
+                typeof e.target.value === "string"
+                  ? e.target.value.split(",")
+                  : e.target.value
+              )
+            }
+            renderValue={(selected) => `Metrics (${selected.length})`}
+          >
+            {TABLE_METRIC_OPTIONS.map((m) => (
+              <MenuItem key={m.value} value={m.value}>
+                <Checkbox size="small" checked={selectedTableMetrics.includes(m.value)} />
+                <ListItemText primary={m.label} />
               </MenuItem>
             ))}
           </Select>
@@ -1145,12 +1249,15 @@ const ContentAnalytics = () => {
             <TableRow>
               <TableCell>Video</TableCell>
               <TableCell>Publish Date</TableCell>
-              <TableCell align="right">Views</TableCell>
-              <TableCell align="right">Watch Hours</TableCell>
-              <TableCell align="right">Likes</TableCell>
-              <TableCell align="right">Cards impressions</TableCell>
-              <TableCell align="right">Ad impressions</TableCell>
-              <TableCell align="right">Annotation impressions</TableCell>
+              {selectedTableMetrics.map((metricKey) => {
+                const label =
+                  TABLE_METRIC_OPTIONS.find((m) => m.value === metricKey)?.label || metricKey;
+                return (
+                  <TableCell key={metricKey} align="right">
+                    {label}
+                  </TableCell>
+                );
+              })}
             </TableRow>
           </TableHead>
 
@@ -1202,28 +1309,11 @@ const ContentAnalytics = () => {
                     ? dayjs(r.published).format("DD-MM-YYYY")
                     : ""}
                 </TableCell>
-
-                <TableCell align="right">
-                  {formatNumber(r.views)}
-                </TableCell>
-
-                {/* 🟣 dùng formatWatchHours → số thập phân */}
-                <TableCell align="right">
-                  {formatWatchHours(r.watchHours)}
-                </TableCell>
-
-                <TableCell align="right">
-                  {formatNumber(r.likes)}
-                </TableCell>
-                <TableCell align="right">
-                  {formatNumber(r.cardImpressions)}
-                </TableCell>
-                <TableCell align="right">
-                  {formatNumber(r.adImpressions)}
-                </TableCell>
-                <TableCell align="right">
-                  {formatNumber(r.annotationImpressions)}
-                </TableCell>
+                {selectedTableMetrics.map((metricKey) => (
+                  <TableCell key={metricKey} align="right">
+                    {formatTableMetricValue(metricKey, r[metricKey])}
+                  </TableCell>
+                ))}
               </TableRow>
             ))}
 
@@ -1231,24 +1321,13 @@ const ContentAnalytics = () => {
             <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>TOTAL</TableCell>
               <TableCell />
-              <TableCell align="right">
-                {formatNumber(totals.views)}
-              </TableCell>
-              <TableCell align="right">
-                {formatWatchHours(totals.watchHours)}
-              </TableCell>
-              <TableCell align="right">
-                {formatNumber(totals.subs)}
-              </TableCell>
-              <TableCell align="right">
-                {formatNumber(totals.cardImpressions)}
-              </TableCell>
-              <TableCell align="right">
-                {formatNumber(totals.adImpressions)}
-              </TableCell>
-              <TableCell align="right">
-                {formatNumber(totals.annotationImpressions)}
-              </TableCell>
+              {selectedTableMetrics.map((metricKey) => (
+                <TableCell key={metricKey} align="right">
+                  {totals[metricKey] == null
+                    ? "-"
+                    : formatTableMetricValue(metricKey, totals[metricKey])}
+                </TableCell>
+              ))}
             </TableRow>
           </TableBody>
         </Table>

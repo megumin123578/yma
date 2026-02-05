@@ -185,9 +185,26 @@ def content_list(
 
         COALESCE(SUM(s.views), 0) AS views,
         COALESCE(SUM(s.estimated_minutes) / 60.0, 0) AS "watchTimeHours",
+        CASE
+            WHEN COALESCE(SUM(s.views), 0) > 0
+                THEN ROUND(SUM(COALESCE(s.average_view_duration, 0) * COALESCE(s.views, 0))::numeric / NULLIF(SUM(s.views), 0), 2)
+            ELSE NULL
+        END AS "averageViewDuration",
 
         COALESCE(SUM(s.likes), 0) AS likes,
-        0::numeric AS "estimatedRevenue",
+        NULL::numeric AS "averagePercentageViewed",
+        NULL::bigint AS "engagedViews",
+        NULL::numeric AS "stayedToWatch",
+        NULL::bigint AS "uniqueViewers",
+        NULL::numeric AS "averageViewsPerViewer",
+        NULL::bigint AS "newViewers",
+        NULL::bigint AS "returningViewers",
+        NULL::bigint AS "casualViewers",
+        NULL::bigint AS "regularViewers",
+        NULL::bigint AS "subscribers",
+        NULL::numeric AS "estimatedRevenue",
+        NULL::bigint AS impressions,
+        NULLIF(v.ctr, 0)::numeric AS "impressionsClickThroughRate",
         COALESCE(v.card_impressions, 0) AS "cardImpressions",
         COALESCE(v.ad_impressions, 0) AS "adImpressions",
         COALESCE(v.annotation_impressions, 0) AS "annotationImpressions"
@@ -202,6 +219,7 @@ def content_list(
         v.thumbnail,
         v.published_at,
         v.duration,
+        v.ctr,
         v.card_impressions,
         v.ad_impressions,
         v.annotation_impressions
