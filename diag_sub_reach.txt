@@ -1,0 +1,3 @@
+SUCCESS: Subscribers Total -> Rows: 1 | Sample: [1]
+SUCCESS: Views Total -> Rows: 1 | Sample: [6]
+FAILED : Impressions Total (No Dim) -> 400: The query is not supported. Check the documentation at https://developers.google.com/youtube/analytics/v2/available_reports for a list of supported queries.

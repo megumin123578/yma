@@ -115,7 +115,7 @@ def get_video_impressions(
             startDate=start_date,
             endDate=end_date,
             filters=f"video=={video_id}",
-            metrics="impressionsClickThroughRate",
+            metrics="videoThumbnailImpressionsClickRate",
         ).execute() or {}
     except HttpError as e:
         print(f"[WARN] Failed impressionsClickThroughRate for {video_id}: {e}")
@@ -258,7 +258,7 @@ def get_video_impressions_bulk(
             "endDate": end_date,
             "dimensions": "video",
             "filters": f"video=={','.join(chunk)}",
-            "metrics": "impressionsClickThroughRate",
+            "metrics": "videoThumbnailImpressionsClickRate",
         }
         try:
             resp = yta.reports().query(**query).execute() or {}
@@ -273,7 +273,7 @@ def get_video_impressions_bulk(
 
         idx = {h["name"]: i for i, h in enumerate(headers)}
         i_video = idx.get("video")
-        i_ctr = idx.get("impressionsClickThroughRate")
+        i_ctr = idx.get("videoThumbnailImpressionsClickRate")
         if i_video is None or i_ctr is None:
             continue
 
@@ -318,6 +318,12 @@ def get_video_daily_analytics(
             "estimatedMinutesWatched",
             "averageViewDuration",
             "likes",
+            "subscribersGained",
+            "estimatedRevenue",
+            "cardImpressions",
+            "cardClicks",
+            "annotationImpressions",
+            "annotationClicks",
         ]),
         "sort": "day"
     }
@@ -339,6 +345,12 @@ def get_video_daily_analytics(
     i_emw = col["estimatedMinutesWatched"]
     i_avd = col["averageViewDuration"]
     i_likes = col["likes"]
+    i_subs = col["subscribersGained"]
+    i_rev = col["estimatedRevenue"]
+    i_card_imp = col.get("cardImpressions")
+    i_card_clk = col.get("cardClicks")
+    i_anno_imp = col.get("annotationImpressions")
+    i_anno_clk = col.get("annotationClicks")
 
     results = []
     for r in rows:
@@ -349,6 +361,12 @@ def get_video_daily_analytics(
             "estimated_minutes": int(r[i_emw] or 0),
             "average_view_duration": int(r[i_avd] or 0),
             "likes": int(r[i_likes] or 0),
+            "subscribers_gained": int(r[i_subs] or 0),
+            "estimated_revenue": float(r[i_rev] or 0.0),
+            "card_impressions": int(r[i_card_imp] or 0) if i_card_imp is not None else 0,
+            "card_clicks": int(r[i_card_clk] or 0) if i_card_clk is not None else 0,
+            "annotation_impressions": int(r[i_anno_imp] or 0) if i_anno_imp is not None else 0,
+            "annotation_clicks": int(r[i_anno_clk] or 0) if i_anno_clk is not None else 0,
         })
 
     return results
@@ -432,24 +450,48 @@ def save_daily_stats(daily_rows, pg_url: str):
                 estimated_minutes INTEGER,
                 average_view_duration INTEGER,
                 likes INTEGER,
+                subscribers_gained INTEGER DEFAULT 0,
+                estimated_revenue NUMERIC DEFAULT 0,
+                card_impressions INTEGER DEFAULT 0,
+                card_clicks INTEGER DEFAULT 0,
+                annotation_impressions INTEGER DEFAULT 0,
+                annotation_clicks INTEGER DEFAULT 0,
                 PRIMARY KEY (video_id, day)
             );
         """))
+        # Migration for existing tables
+        try:
+            conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS subscribers_gained INTEGER DEFAULT 0;"))
+            conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS estimated_revenue NUMERIC DEFAULT 0;"))
+            conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS card_impressions INTEGER DEFAULT 0;"))
+            conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS card_clicks INTEGER DEFAULT 0;"))
+            conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS annotation_impressions INTEGER DEFAULT 0;"))
+            conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS annotation_clicks INTEGER DEFAULT 0;"))
+        except Exception:
+            pass
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vds_day ON video_daily_stats(day);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vds_day_video ON video_daily_stats(day, video_id);"))
 
         for r in daily_rows:
             conn.execute(text("""
                 INSERT INTO video_daily_stats
-                    (video_id, day, views, estimated_minutes, average_view_duration, likes)
+                    (video_id, day, views, estimated_minutes, average_view_duration, likes, 
+                     subscribers_gained, estimated_revenue,
+                     card_impressions, card_clicks, annotation_impressions, annotation_clicks)
                 VALUES
-                    (:id, :day, :views, :emw, :avd, :likes)
+                    (:id, :day, :views, :emw, :avd, :likes, :subs, :rev, :ci, :cc, :ai, :ac)
                 ON CONFLICT (video_id, day)
                 DO UPDATE SET
                     views = EXCLUDED.views,
                     estimated_minutes = EXCLUDED.estimated_minutes,
                     average_view_duration = EXCLUDED.average_view_duration,
-                    likes = EXCLUDED.likes;
+                    likes = EXCLUDED.likes,
+                    subscribers_gained = EXCLUDED.subscribers_gained,
+                    estimated_revenue = EXCLUDED.estimated_revenue,
+                    card_impressions = EXCLUDED.card_impressions,
+                    card_clicks = EXCLUDED.card_clicks,
+                    annotation_impressions = EXCLUDED.annotation_impressions,
+                    annotation_clicks = EXCLUDED.annotation_clicks;
             """), {
                 "id": r["video_id"],
                 "day": r["day"],
@@ -457,6 +499,12 @@ def save_daily_stats(daily_rows, pg_url: str):
                 "emw": r["estimated_minutes"],
                 "avd": r["average_view_duration"],
                 "likes": r["likes"],
+                "subs": r["subscribers_gained"],
+                "rev": r["estimated_revenue"],
+                "ci": r["card_impressions"],
+                "cc": r["card_clicks"],
+                "ai": r["annotation_impressions"],
+                "ac": r["annotation_clicks"],
             })
 
 

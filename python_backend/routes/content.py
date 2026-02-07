@@ -112,7 +112,7 @@ def _chunked(ids, size=50):
 def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start_date, end_date):
     """
     Fetch per-video aggregated metrics (no day dimension).
-    Returns dict: {video_id: {estimatedRevenue, subscribers}}
+    Returns dict: {video_id: {estimatedRevenue, subscribers, impressions, impressionsClickThroughRate}}
     """
     if not video_ids:
         return {}
@@ -120,56 +120,84 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
     yta = build("youtubeAnalytics", "v2", credentials=creds)
     ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
     out = {}
+    
+    # Track if Reach metrics are supported to avoid repeated 400 errors
+    reach_supported = True
 
-    metrics_full = [
-        "estimatedRevenue",
-        "subscribersGained",
-    ]
-
-    for chunk in _chunked(video_ids, 50):
-        query = {
-            "ids": ids,
-            "startDate": start_date,
-            "endDate": end_date,
-            "dimensions": "video",
-            "filters": f"video=={','.join(chunk)}",
-            "metrics": ",".join(metrics_full),
-        }
+    for chunk in _chunked(video_ids, 100):
+        chunk_filter = f"video=={','.join(chunk)}"
+        
+        # 1. Core Metrics (Subscribers + Revenue) - Combined for speed
         try:
-            resp = yta.reports().query(**query).execute() or {}
+            resp = yta.reports().query(
+                ids=ids,
+                startDate=start_date,
+                endDate=end_date,
+                dimensions="video",
+                filters=chunk_filter,
+                metrics="subscribersGained,estimatedRevenue"
+            ).execute() or {}
+            
+            rows = resp.get("rows") or []
+            headers = resp.get("columnHeaders", []) or []
+            if rows and headers:
+                idx = {h["name"]: i for i, h in enumerate(headers)}
+                for r in rows:
+                    vid = r[idx["video"]]
+                    if vid not in out: out[vid] = {}
+                    out[vid]["subscribers"] = int(r[idx["subscribersGained"]] or 0) if "subscribersGained" in idx else 0
+                    out[vid]["estimated_revenue"] = float(r[idx["estimatedRevenue"]] or 0.0) if "estimatedRevenue" in idx else 0.0
         except HttpError as e:
-            print(f"[WARN] Video metrics (revenue/subs) failed for chunk: {e}")
-            continue
+            if e.resp.status != 403: # Only log if not a permission issue
+                print(f"[content.video-metrics] Core metrics failed for chunk: {e}")
+        except Exception:
+            pass
 
-        rows = resp.get("rows") or []
-        headers = resp.get("columnHeaders", []) or []
-        if not rows or not headers:
-            continue
-
-        idx = {h["name"]: i for i, h in enumerate(headers)}
-        i_video = idx.get("video")
-        i_rev = idx.get("estimatedRevenue")
-        i_subs = idx.get("subscribersGained")
-        if i_video is None:
-            continue
-
-        for row in rows:
-            vid = row[i_video]
+        # 2. Reach (Impressions) - Circuit breaker: stop trying if first chunk fails with 400
+        if reach_supported:
             try:
-                revenue = float(row[i_rev] or 0.0) if i_rev is not None else None
+                resp = yta.reports().query(
+                    ids=ids,
+                    startDate=start_date,
+                    endDate=end_date,
+                    dimensions="video",
+                    filters=chunk_filter,
+                    metrics="videoThumbnailImpressions,videoThumbnailImpressionsClickRate"
+                ).execute() or {}
+                
+                rows = resp.get("rows") or []
+                headers = resp.get("columnHeaders", []) or []
+                if rows and headers:
+                    idx = {h["name"]: i for i, h in enumerate(headers)}
+                    for r in rows:
+                        vid = r[idx["video"]]
+                        if vid not in out: out[vid] = {}
+                        out[vid]["impressions"] = int(r[idx["videoThumbnailImpressions"]] or 0)
+                        ctr = float(r[idx["videoThumbnailImpressionsClickRate"]] or 0.0) * 100.0
+                        out[vid]["impressions_click_through_rate"] = ctr
+            except HttpError as e:
+                if e.resp.status == 400:
+                    reach_supported = False # Disable for future chunks to save time
+                elif e.resp.status != 403:
+                    print(f"[content.video-metrics] Reach metrics failed: {e}")
             except Exception:
-                revenue = None
-            try:
-                subs = int(row[i_subs] or 0) if i_subs is not None else None
-            except Exception:
-                subs = None
+                reach_supported = False
+
+    # Ensure all requested IDs are in out with defaults if missing
+    for vid in video_ids:
+        if vid not in out:
             out[vid] = {
-                "estimated_revenue": revenue,
-                "subscribers": subs,
+                "subscribers": None,
+                "estimated_revenue": None,
+                "impressions": None,
+                "impressions_click_through_rate": None,
             }
+        else:
+            for key in ["subscribers", "estimated_revenue", "impressions", "impressions_click_through_rate"]:
+                if key not in out[vid]:
+                    out[vid][key] = None
 
     return out
-
 
 # ==============================
 # Helper query
@@ -383,17 +411,36 @@ def content_list(
         NULL::bigint AS "returningViewers",
         NULL::bigint AS "casualViewers",
         NULL::bigint AS "regularViewers",
-        NULL::bigint AS "subscribers",
-        NULL::numeric AS "estimatedRevenue",
-        NULL::bigint AS impressions,
-        NULL::numeric AS "impressionsClickThroughRate",
+        
+        -- Sum daily stats for engagement and reach metrics
+        COALESCE(SUM(s.subscribers_gained), 0) AS "subscribers",
+        COALESCE(SUM(s.estimated_revenue), 0) AS "estimatedRevenue",
+        
+        -- Unified Impressions logic: Prefer daily stats sum (card+anno), fallback to reach table
+        COALESCE(
+            NULLIF(SUM(COALESCE(s.card_impressions, 0) + COALESCE(s.annotation_impressions, 0)), 0),
+            MAX(r.total_impressions), 
+            0
+        ) AS impressions,
+
+        -- Unified CTR logic: Weighted calculation based on the same source as impressions
+        CASE 
+            WHEN SUM(COALESCE(s.card_impressions, 0) + COALESCE(s.annotation_impressions, 0)) > 0
+                THEN (SUM(COALESCE(s.card_clicks, 0) + COALESCE(s.annotation_clicks, 0))::numeric / 
+                      SUM(COALESCE(s.card_impressions, 0) + COALESCE(s.annotation_impressions, 0))) * 100.0
+            ELSE COALESCE(MAX(r.total_ctr), 0) * 100.0
+        END AS "impressionsClickThroughRate",
+        
         COALESCE(v.card_impressions, 0) AS "cardImpressions",
         COALESCE(v.ad_impressions, 0) AS "adImpressions",
         COALESCE(v.annotation_impressions, 0) AS "annotationImpressions"
     FROM videos v
-    JOIN video_daily_stats s
+    LEFT JOIN video_daily_stats s
       ON s.video_id = v.video_id
      AND s.day BETWEEN :start AND :end
+    LEFT JOIN reach_video_metrics r
+      ON r.video_id = v.video_id
+     AND r.account_tag = :account_tag
     WHERE v.account_tag = :account_tag
     GROUP BY
         v.video_id,
@@ -405,7 +452,7 @@ def content_list(
         v.card_impressions,
         v.ad_impressions,
         v.annotation_impressions
-    HAVING SUM(s.views) > 0 
+    HAVING SUM(s.views) > 0 OR MAX(v.views) > 0
     ORDER BY v.published_at DESC;
 """
 
@@ -416,7 +463,7 @@ def content_list(
         "account_tag": req.channelId,
     }
 
-    rows = query_all_safe(sql, params)
+    rows_mutable = [dict(r) for r in query_all_safe(sql, params)]
 
     # enrich per-video metrics (impressions, ctr, revenue, subscribers)
     try:
@@ -429,7 +476,9 @@ def content_list(
             else:
                 creds = _load_token_credentials(cred_row.token_name)
                 if creds:
-                    video_ids = [r.get("videoId") for r in rows if r.get("videoId")]
+                    # Limit real-time enrichment to top 200 videos by views/priority for speed
+                    # The rest will stay with DB fallback values.
+                    video_ids = [r.get("videoId") for r in rows_mutable if r.get("videoId")][:200]
                     metrics_map = _fetch_video_metrics_bulk(
                         creds,
                         cred_row.selected_channel_id,
@@ -439,13 +488,24 @@ def content_list(
                     )
                     _save_video_metrics_cache(req.channelId, req.start, req.end, metrics_map)
         if metrics_map:
-            for r in rows:
+            for r in rows_mutable:
                 vid = r.get("videoId")
                 m = metrics_map.get(vid)
                 if not m:
                     continue
-                r["estimatedRevenue"] = m.get("estimated_revenue")
-                r["subscribers"] = m.get("subscribers")
+                
+                # Core engagement usually always available
+                if m.get("subscribers") is not None:
+                    r["subscribers"] = m.get("subscribers")
+                if m.get("estimated_revenue") is not None:
+                    r["estimatedRevenue"] = m.get("estimated_revenue")
+                
+                # Only overwrite Reach metrics if API actually returned them.
+                # Since many channels return 400 for these, we keep the DB fallback otherwise.
+                if m.get("impressions") is not None:
+                    r["impressions"] = m.get("impressions")
+                if m.get("impressions_click_through_rate") is not None:
+                    r["impressionsClickThroughRate"] = m.get("impressions_click_through_rate")
     except Exception as e:
         print("[content.list] metrics enrich failed:", e)
 
@@ -457,11 +517,12 @@ def content_list(
             current_user,
         )
     except Exception as e:
-        print("[content.list] channel metrics failed:", e)
+        print("[content.list] channel metrics enrichment failed:", e)
 
-    # print("[content.list] rows =", rows[:3])  # debug 
-    return {"items": rows, "channelMetrics": channel_metrics_data}
-
+    return {
+        "items": rows_mutable,
+        "channelMetrics": channel_metrics_data,
+    }
 
 class TimeSeriesRequest(BaseModel):
     start: date
@@ -599,27 +660,84 @@ def channel_metrics(
         if cred_row.selected_channel_id
         else "channel==MINE"
     )
+
+    # Attempt channel-level reach metrics first. If unsupported, fall back
+    # to aggregating per-video metrics (dimension=video).
     query = {
         "ids": ids,
         "startDate": req.start.isoformat(),
         "endDate": req.end.isoformat(),
-        "metrics": "impressions,impressionsClickThroughRate",
+        "metrics": "videoThumbnailImpressions,videoThumbnailImpressionsClickRate",
     }
+    # Note: 'dimensions': 'day' is removed because Reach metrics 
+    # (impressions, CTR) are not supported with daily granularity 
+    # at the channel level in YT Analytics API v2.
     try:
         resp = yta.reports().query(**query).execute() or {}
-    except HttpError as e:
-        print(f"[content.channel-metrics] WARN: {e}")
-        return {"impressions": 0, "ctr": None, "supported": False}
+        rows = resp.get("rows") or []
+        if rows:
+            headers = resp.get("columnHeaders", []) or []
+            idx = {h["name"]: i for i, h in enumerate(headers)}
+            i_impr = idx.get("videoThumbnailImpressions")
+            i_ctr = idx.get("videoThumbnailImpressionsClickRate")
+            if i_impr is not None and i_ctr is not None:
+                total_impressions = 0
+                weighted_ctr_sum = 0.0
+                for row in rows:
+                    try:
+                        impr = int(row[i_impr] or 0)
+                    except Exception:
+                        impr = 0
+                    try:
+                        ctr_val = float(row[i_ctr] or 0.0)
+                    except Exception:
+                        ctr_val = 0.0
+                    total_impressions += impr
+                    weighted_ctr_sum += ctr_val * impr
 
-    rows = resp.get("rows") or []
-    if not rows:
-        return {"impressions": 0, "ctr": None, "supported": True}
+                ctr = (weighted_ctr_sum / total_impressions) * 100.0 if total_impressions > 0 else None
+                return {"impressions": total_impressions, "ctr": ctr, "supported": True}
+    except HttpError as e:
+        # We silence 400 errors here because videoThumbnailImpressions 
+        # is often not supported for standard channels at the channel level.
+        if e.resp.status != 400:
+            print(f"[content.channel-metrics] HttpError: {e}")
+    except Exception as e:
+        print(f"[content.channel-metrics] ERROR: {e}")
+
+    # Fallback: aggregate per-video metrics
     try:
-        impressions = int(rows[0][0] or 0)
-    except Exception:
-        impressions = 0
-    try:
-        ctr = float(rows[0][1] or 0.0) * 100.0
-    except Exception:
-        ctr = None
-    return {"impressions": impressions, "ctr": ctr, "supported": True}
+        rows = query_all_safe(
+            "SELECT video_id FROM videos WHERE account_tag = :tag",
+            {"tag": req.channelId},
+        )
+        video_ids = [r.get("video_id") for r in rows if r.get("video_id")]
+        metrics_map = _fetch_video_metrics_bulk(
+            creds,
+            cred_row.selected_channel_id,
+            video_ids,
+            req.start.isoformat(),
+            req.end.isoformat(),
+        )
+        if not metrics_map:
+            return {"impressions": 0, "ctr": None, "supported": False}
+
+        total_impressions = 0
+        weighted_ctr_sum = 0.0
+        for m in metrics_map.values():
+            try:
+                impr = int(m.get("impressions") or 0)
+            except Exception:
+                impr = 0
+            try:
+                ctr_val = float(m.get("impressions_click_through_rate") or 0.0)
+            except Exception:
+                ctr_val = 0.0
+            total_impressions += impr
+            weighted_ctr_sum += ctr_val * impr
+
+        ctr = (weighted_ctr_sum / total_impressions) if total_impressions > 0 else None
+        return {"impressions": total_impressions, "ctr": ctr, "supported": True}
+    except Exception as e:
+        print(f"[content.channel-metrics] fallback failed: {e}")
+        return {"impressions": 0, "ctr": None, "supported": False}
