@@ -127,7 +127,7 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
     for chunk in _chunked(video_ids, 100):
         chunk_filter = f"video=={','.join(chunk)}"
         
-        # 1. Core Metrics (Subscribers + Revenue) - Combined for speed
+        # 1. Core Metrics (Views + Watch Time + Subscribers + Revenue) - Combined for speed
         try:
             resp = yta.reports().query(
                 ids=ids,
@@ -135,7 +135,7 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
                 endDate=end_date,
                 dimensions="video",
                 filters=chunk_filter,
-                metrics="subscribersGained,estimatedRevenue"
+                metrics="views,estimatedMinutesWatched,subscribersGained,estimatedRevenue"
             ).execute() or {}
             
             rows = resp.get("rows") or []
@@ -145,6 +145,8 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
                 for r in rows:
                     vid = r[idx["video"]]
                     if vid not in out: out[vid] = {}
+                    out[vid]["views"] = int(r[idx["views"]] or 0) if "views" in idx else 0
+                    out[vid]["watch_time_hours"] = round(float(r[idx["estimatedMinutesWatched"]] or 0) / 60.0, 2) if "estimatedMinutesWatched" in idx else 0.0
                     out[vid]["subscribers"] = int(r[idx["subscribersGained"]] or 0) if "subscribersGained" in idx else 0
                     out[vid]["estimated_revenue"] = float(r[idx["estimatedRevenue"]] or 0.0) if "estimatedRevenue" in idx else 0.0
         except HttpError as e:
@@ -187,13 +189,15 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
     for vid in video_ids:
         if vid not in out:
             out[vid] = {
+                "views": None,
+                "watch_time_hours": None,
                 "subscribers": None,
                 "estimated_revenue": None,
                 "impressions": None,
                 "impressions_click_through_rate": None,
             }
         else:
-            for key in ["subscribers", "estimated_revenue", "impressions", "impressions_click_through_rate"]:
+            for key in ["views", "watch_time_hours", "subscribers", "estimated_revenue", "impressions", "impressions_click_through_rate"]:
                 if key not in out[vid]:
                     out[vid][key] = None
 
@@ -494,7 +498,11 @@ def content_list(
                 if not m:
                     continue
                 
-                # Core engagement usually always available
+                # Core metrics usually always available
+                if m.get("views") is not None:
+                    r["views"] = m.get("views")
+                if m.get("watch_time_hours") is not None:
+                    r["watchTimeHours"] = m.get("watch_time_hours")
                 if m.get("subscribers") is not None:
                     r["subscribers"] = m.get("subscribers")
                 if m.get("estimated_revenue") is not None:

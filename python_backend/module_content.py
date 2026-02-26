@@ -303,71 +303,95 @@ def get_video_daily_analytics(
     end_date: str,
     channel_id: Optional[str] = None,
 ) -> List[Dict]:
-
     yta = build("youtubeAnalytics", "v2", credentials=credentials)
-
     ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
-    q = {
-        "ids": ids,
-        "startDate": start_date,
-        "endDate": end_date,
-        "dimensions": "day",
-        "filters": f"video=={video_id}",
-        "metrics": ",".join([
-            "views",
-            "estimatedMinutesWatched",
-            "averageViewDuration",
-            "likes",
-            "subscribersGained",
-            "estimatedRevenue",
-            "cardImpressions",
-            "cardClicks",
-            "annotationImpressions",
-            "annotationClicks",
-        ]),
-        "sort": "day"
-    }
+    
+    def _query_daily(metrics: List[str], label: str) -> Dict[str, Dict]:
+        q = {
+            "ids": ids,
+            "startDate": start_date,
+            "endDate": end_date,
+            "dimensions": "day",
+            "filters": f"video=={video_id}",
+            "metrics": ",".join(metrics),
+            "sort": "day",
+        }
+        try:
+            resp = yta.reports().query(**q).execute() or {}
+        except Exception as e:
+            print(f"[WARN] Daily {label} failed for {video_id}: {e}")
+            return {}
 
-    try:
-        resp = yta.reports().query(**q).execute() or {}
-    except Exception as e:
-        print(f"[ERROR] Failed daily analytics for {video_id}: {e}")
+        rows = resp.get("rows") or []
+        headers = resp.get("columnHeaders", []) or []
+        if not rows or not headers:
+            return {}
+
+        idx = {h["name"]: i for i, h in enumerate(headers)}
+        i_day = idx.get("day")
+        if i_day is None:
+            return {}
+
+        out: Dict[str, Dict] = {}
+        for row in rows:
+            day = row[i_day]
+            out[day] = {}
+            for m in metrics:
+                i_m = idx.get(m)
+                if i_m is not None:
+                    out[day][m] = row[i_m]
+        return out
+
+    def _to_int(v) -> int:
+        try:
+            return int(v or 0)
+        except Exception:
+            return 0
+
+    def _to_float(v) -> float:
+        try:
+            return float(v or 0.0)
+        except Exception:
+            return 0.0
+
+    # Core metrics first (must-have). If this fails, no daily row should be saved.
+    core = _query_daily(
+        ["views", "estimatedMinutesWatched", "averageViewDuration", "likes"],
+        "core",
+    )
+    if not core:
+        print(f"[ERROR] Failed core daily analytics for {video_id}")
         return []
 
-    rows = resp.get("rows") or []
-    if not rows:
-        return []
+    # Optional groups: failures should not break daily ingestion.
+    subs_rev = _query_daily(["subscribersGained", "estimatedRevenue"], "subs_revenue")
+    reach = _query_daily(
+        ["cardImpressions", "cardClicks", "annotationImpressions", "annotationClicks"],
+        "reach",
+    )
 
-    col = {c["name"]: i for i, c in enumerate(resp["columnHeaders"])}
-
-    i_day = col["day"]
-    i_views = col["views"]
-    i_emw = col["estimatedMinutesWatched"]
-    i_avd = col["averageViewDuration"]
-    i_likes = col["likes"]
-    i_subs = col["subscribersGained"]
-    i_rev = col["estimatedRevenue"]
-    i_card_imp = col.get("cardImpressions")
-    i_card_clk = col.get("cardClicks")
-    i_anno_imp = col.get("annotationImpressions")
-    i_anno_clk = col.get("annotationClicks")
-
+    all_days = sorted(core.keys())
     results = []
-    for r in rows:
-        results.append({
-            "video_id": video_id,
-            "day": r[i_day],
-            "views": int(r[i_views] or 0),
-            "estimated_minutes": int(r[i_emw] or 0),
-            "average_view_duration": int(r[i_avd] or 0),
-            "likes": int(r[i_likes] or 0),
-            "subscribers_gained": int(r[i_subs] or 0),
-            "estimated_revenue": float(r[i_rev] or 0.0),
-            "card_impressions": int(r[i_card_imp] or 0) if i_card_imp is not None else 0,
-            "card_clicks": int(r[i_card_clk] or 0) if i_card_clk is not None else 0,
-            "annotation_impressions": int(r[i_anno_imp] or 0) if i_anno_imp is not None else 0,
-            "annotation_clicks": int(r[i_anno_clk] or 0) if i_anno_clk is not None else 0,
-        })
+    for day in all_days:
+        c = core.get(day, {})
+        sr = subs_rev.get(day, {})
+        r = reach.get(day, {})
+        results.append(
+            {
+                "video_id": video_id,
+                "day": day,
+                "views": _to_int(c.get("views")),
+                "estimated_minutes": _to_int(c.get("estimatedMinutesWatched")),
+                "average_view_duration": _to_int(c.get("averageViewDuration")),
+                "likes": _to_int(c.get("likes")),
+                "subscribers_gained": _to_int(sr.get("subscribersGained")),
+                "estimated_revenue": _to_float(sr.get("estimatedRevenue")),
+                "card_impressions": _to_int(r.get("cardImpressions")),
+                "card_clicks": _to_int(r.get("cardClicks")),
+                "annotation_impressions": _to_int(r.get("annotationImpressions")),
+                "annotation_clicks": _to_int(r.get("annotationClicks")),
+            }
+        )
 
     return results
 
