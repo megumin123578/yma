@@ -35,8 +35,6 @@ import CloseOutlinedIcon from "@mui/icons-material/CloseOutlined";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import dayjs from "dayjs";
 
-const ORDERS_STORAGE_KEY = "smmstore.orders";
-
 const Smmstore = () => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
@@ -233,7 +231,7 @@ const Smmstore = () => {
 
   const [dripFeed, setDripFeed] = useState(false);
   const [runs, setRuns] = useState("");
-  const [interval, setInterval] = useState("");
+  const [dripInterval, setDripInterval] = useState("");
 
   const [orders, setOrders] = useState([]);
   const [orderError, setOrderError] = useState("");
@@ -265,6 +263,52 @@ const Smmstore = () => {
       }
     },
     [hasKey]
+  );
+
+  const apiGet = useCallback(
+    async (endpoint, signal) => {
+      const token = localStorage.getItem("access_token");
+      try {
+        const resp = await fetch(`${API_BASE}${endpoint}`, {
+          method: "GET",
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          signal,
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          return { error: data?.detail || data?.error || "Request failed" };
+        }
+        return data;
+      } catch (err) {
+        if (err?.name === "AbortError") return { error: "aborted" };
+        return { error: err?.message || "Request failed" };
+      }
+    },
+    []
+  );
+
+  const apiDelete = useCallback(
+    async (endpoint) => {
+      const token = localStorage.getItem("access_token");
+      try {
+        const resp = await fetch(`${API_BASE}${endpoint}`, {
+          method: "DELETE",
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          return { error: data?.detail || data?.error || "Request failed" };
+        }
+        return data;
+      } catch (err) {
+        return { error: err?.message || "Request failed" };
+      }
+    },
+    []
   );
 
   const fetchBalance = useCallback(
@@ -345,23 +389,6 @@ const Smmstore = () => {
     return () => controller.abort();
   }, [apiRequest, hasKey]);
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(ORDERS_STORAGE_KEY);
-      setOrders(raw ? JSON.parse(raw) : []);
-    } catch {
-      setOrders([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
-    } catch {
-      // ignore storage errors
-    }
-  }, [orders]);
-
   const filteredServices = useMemo(() => {
     const keyword = search.trim().toLowerCase();
     if (!keyword) return [];
@@ -423,48 +450,25 @@ const Smmstore = () => {
     return merged.toDate();
   }, [runDate, runTime]);
 
-  const addOrderToQueue = useCallback((data) => {
-    setOrders((prev) => [...prev, data]);
-  }, []);
+  const fetchScheduledOrders = useCallback(async (signal) => {
+    const data = await apiGet("/api/smmstore/scheduled-orders", signal);
+    if (data?.error === "aborted") return;
+    if (data?.error) return;
+    setOrders(Array.isArray(data?.items) ? data.items : []);
+  }, [apiGet]);
 
-  const updateOrder = useCallback((id, changes) => {
-    setOrders((prev) =>
-      prev.map((order) => (order.id === id ? { ...order, ...changes } : order))
-    );
-  }, []);
+  const removeOrder = useCallback(async (id) => {
+    const dbId = String(id || "").replace(/^ord_/, "");
+    if (!dbId) return;
+    const resp = await apiDelete(`/api/smmstore/scheduled-orders/${dbId}`);
+    if (resp?.error) {
+      setOrderError(resp.error);
+      return;
+    }
+    await fetchScheduledOrders();
+  }, [apiDelete, fetchScheduledOrders]);
 
-  const removeOrder = useCallback((id) => {
-    setOrders((prev) => prev.filter((order) => order.id !== id));
-  }, []);
-
-  const sendOrder = useCallback(
-    async (order) => {
-      const params = {
-        action: "add",
-        service: order.serviceId,
-        link: order.link,
-        quantity: order.quantity,
-      };
-      if (order.dripFeed) {
-        params.runs = order.runs;
-        params.interval = order.interval;
-      }
-      const resp = await apiRequest("/api/smmstore/order", params);
-      if (resp?.error) {
-        updateOrder(order.id, { status: "Failed" });
-        return;
-      }
-      const orderId = String(resp?.order || "").trim();
-      if (!orderId) {
-        updateOrder(order.id, { status: "Failed" });
-        return;
-      }
-      updateOrder(order.id, { orderId, status: "In Queue" });
-    },
-    [apiRequest, updateOrder]
-  );
-
-  const submitOrder = useCallback(() => {
+  const submitOrder = useCallback(async () => {
     setOrderError("");
     if (!hasKey) return setOrderError("Missing API key. Set it in Profile.");
     if (!service) return setOrderError("Please select a service.");
@@ -473,82 +477,47 @@ const Smmstore = () => {
       return setOrderError("Quantity must be greater than 0.");
 
     const runAt = buildRunAt();
-    const now = new Date();
-    const orderId = `ord_${Date.now()}`;
-
-    const newOrder = {
-      id: orderId,
-      runAt: runAt.toISOString(),
-      service,
-      serviceId: serviceIdMap[service] || service.split(" - ")[0]?.trim(),
+    const payload = {
+      service: serviceIdMap[service] || service.split(" - ")[0]?.trim(),
       link: link.trim(),
       quantity: String(quantity),
-      status: "In Queue",
-      orderId: "",
-      charge: "",
-      remains: "",
-      dripFeed,
-      runs: dripFeed ? String(runs || "") : "",
-      interval: dripFeed ? String(interval || "") : "",
+      run_at: runAt.toISOString(),
+      runs: dripFeed ? String(runs || "") : null,
+      interval: dripFeed ? String(dripInterval || "") : null,
     };
 
-    addOrderToQueue(newOrder);
-
-    if (runAt <= now) {
-      sendOrder(newOrder);
+    const resp = await apiRequest("/api/smmstore/schedule-order", payload);
+    if (resp?.error) {
+      setOrderError(resp.error);
+      return;
     }
+    await fetchScheduledOrders();
   }, [
-    addOrderToQueue,
+    apiRequest,
     buildRunAt,
     dripFeed,
+    dripInterval,
     hasKey,
-    interval,
     link,
     quantity,
     runs,
-    sendOrder,
     service,
     serviceIdMap,
+    fetchScheduledOrders,
   ]);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      const now = Date.now();
-      orders.forEach((order) => {
-        if (order.orderId || order.status !== "In Queue") return;
-        if (new Date(order.runAt).getTime() <= now) {
-          sendOrder(order);
-        }
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [orders, sendOrder]);
+    const controller = new AbortController();
+    fetchScheduledOrders(controller.signal);
+    return () => controller.abort();
+  }, [fetchScheduledOrders]);
 
   useEffect(() => {
     const poll = setInterval(() => {
-      orders.forEach(async (order) => {
-        if (!order.orderId) return;
-        const statusLower = (order.status || "").toLowerCase();
-        if (
-          statusLower.includes("completed") ||
-          statusLower.includes("partial") ||
-          statusLower.includes("cancel")
-        ) {
-          return;
-        }
-        const resp = await apiRequest("/api/smmstore/status", {
-          order: order.orderId,
-        });
-        if (resp?.error) return;
-        updateOrder(order.id, {
-          status: resp.status || "Unknown",
-          charge: resp.charge || "",
-          remains: resp.remains || resp.remain || "",
-        });
-      });
+      fetchScheduledOrders();
     }, 15000);
     return () => clearInterval(poll);
-  }, [apiRequest, orders, updateOrder]);
+  }, [fetchScheduledOrders]);
 
   return (
     <Stack spacing={2.5}>
@@ -633,7 +602,7 @@ const Smmstore = () => {
                   }}
                   onFocus={() => setShowSuggestions(true)}
                   onBlur={() => {
-                    // delay để click được suggestion
+                    // delay to allow suggestion click
                     setTimeout(() => setShowSuggestions(false), 150);
                   }}
                   fullWidth
@@ -847,7 +816,7 @@ const Smmstore = () => {
             </LocalizationProvider>
           </Stack>
 
-          {/* Order Details (gọn hơn: Link + Quantity cùng hàng) */}
+          {/* Order Details */}
           <Stack spacing={1}>
             <Typography variant="subtitle1" fontWeight="700">
               Order Details
@@ -922,8 +891,8 @@ const Smmstore = () => {
                   />
                   <TextField
                     label="Interval (min)"
-                    value={interval}
-                    onChange={(e) => setInterval(e.target.value)}
+                    value={dripInterval}
+                    onChange={(e) => setDripInterval(e.target.value)}
                     size="small"
                     sx={[outlinedFieldSx, { width: 180 }]}
                     InputLabelProps={{ sx: inputLabelSx }}

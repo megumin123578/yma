@@ -80,6 +80,8 @@ def _should_run(schedule: UserSchedule, now: datetime) -> bool:
 
 
 def _run_loop():
+    from python_backend.routes.smmstore import process_due_smmstore_orders
+
     while not _STOP_EVENT.is_set():
         now = datetime.now()
         db = SessionLocal()
@@ -131,6 +133,11 @@ def _run_loop():
             print(f"[WARN] scheduler loop failed: {e}")
         finally:
             db.close()
+
+        try:
+            process_due_smmstore_orders()
+        except Exception as e:
+            print(f"[WARN] smmstore scheduler failed: {e}")
 
         _STOP_EVENT.wait(30)
 

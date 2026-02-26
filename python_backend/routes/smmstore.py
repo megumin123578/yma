@@ -3,8 +3,8 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict
 from sqlalchemy.orm import Session
 from python_backend.api.auth.auth_utils import get_current_user
-from python_backend.api.auth.database import get_db
-from python_backend.api.auth.models import User, SmmstoreAnalyticsCache
+from python_backend.api.auth.database import get_db, SessionLocal
+from python_backend.api.auth.models import User, SmmstoreAnalyticsCache, SmmstoreScheduledOrder
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import json
@@ -89,6 +89,218 @@ class OrderStatus(BaseModel):
 def order_status(payload: OrderStatus, current_user: User = Depends(get_current_user)):
     key = require_key(current_user)
     return smm_request(key, {"action": "status", "order": payload.order})
+
+
+
+
+def _serialize_scheduled_order(row: SmmstoreScheduledOrder) -> Dict:
+    return {
+        "id": f"ord_{row.id}",
+        "dbId": row.id,
+        "runAt": row.run_at.isoformat() if row.run_at else None,
+        "serviceId": row.service,
+        "service": row.service,
+        "link": row.link,
+        "quantity": row.quantity,
+        "status": row.status,
+        "orderId": row.remote_order_id or "",
+        "charge": row.charge or "",
+        "remains": row.remains or "",
+        "dripFeed": bool((row.runs or "").strip() or (row.interval or "").strip()),
+        "runs": row.runs or "",
+        "interval": row.interval or "",
+        "error": row.last_error or "",
+        "submittedAt": row.submitted_at.isoformat() if row.submitted_at else None,
+        "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+class ScheduleOrderCreate(BaseModel):
+    service: str
+    link: str
+    quantity: str
+    run_at: datetime
+    runs: Optional[str] = None
+    interval: Optional[str] = None
+
+
+@router.post("/schedule-order")
+def create_scheduled_order(
+    payload: ScheduleOrderCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    require_key(current_user)
+
+    service = (payload.service or "").strip()
+    link = (payload.link or "").strip()
+    quantity = str(payload.quantity or "").strip()
+
+    if not service:
+        raise HTTPException(status_code=400, detail="service is required")
+    if not link:
+        raise HTTPException(status_code=400, detail="link is required")
+    try:
+        qty_num = int(float(quantity))
+    except Exception:
+        raise HTTPException(status_code=400, detail="quantity must be a number")
+    if qty_num <= 0:
+        raise HTTPException(status_code=400, detail="quantity must be greater than 0")
+
+    run_at = payload.run_at
+    if run_at.tzinfo is not None:
+        run_at = run_at.astimezone().replace(tzinfo=None)
+
+    row = SmmstoreScheduledOrder(
+        user_id=current_user.id,
+        run_at=run_at,
+        service=service,
+        link=link,
+        quantity=str(qty_num),
+        runs=(payload.runs or "").strip() or None,
+        interval=(payload.interval or "").strip() or None,
+        status="queued",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"ok": True, "item": _serialize_scheduled_order(row)}
+
+
+@router.get("/scheduled-orders")
+def list_scheduled_orders(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(SmmstoreScheduledOrder)
+        .filter(SmmstoreScheduledOrder.user_id == current_user.id)
+        .order_by(SmmstoreScheduledOrder.run_at.desc(), SmmstoreScheduledOrder.id.desc())
+        .limit(300)
+        .all()
+    )
+    return {"items": [_serialize_scheduled_order(r) for r in rows]}
+
+
+@router.delete("/scheduled-orders/{order_id}")
+def delete_scheduled_order(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = (
+        db.query(SmmstoreScheduledOrder)
+        .filter(
+            SmmstoreScheduledOrder.id == order_id,
+            SmmstoreScheduledOrder.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Order not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
+def process_due_smmstore_orders(limit: int = 20) -> None:
+    now = datetime.utcnow()
+    db = SessionLocal()
+    try:
+        due_rows = (
+            db.query(SmmstoreScheduledOrder, User)
+            .join(User, User.id == SmmstoreScheduledOrder.user_id)
+            .filter(
+                SmmstoreScheduledOrder.status == "queued",
+                SmmstoreScheduledOrder.run_at <= now,
+            )
+            .order_by(SmmstoreScheduledOrder.run_at.asc(), SmmstoreScheduledOrder.id.asc())
+            .limit(limit)
+            .all()
+        )
+
+        for order_row, user_row in due_rows:
+            api_key = (user_row.smmstore_api_key or "").strip()
+            if not api_key:
+                order_row.status = "failed"
+                order_row.last_error = "Missing SMM API key"
+                order_row.attempts = int(order_row.attempts or 0) + 1
+                order_row.updated_at = datetime.utcnow()
+                db.add(order_row)
+                db.commit()
+                continue
+
+            params = {
+                "action": "add",
+                "service": order_row.service,
+                "link": order_row.link,
+                "quantity": order_row.quantity,
+            }
+            if order_row.runs:
+                params["runs"] = order_row.runs
+            if order_row.interval:
+                params["interval"] = order_row.interval
+
+            try:
+                resp = smm_request(api_key, params)
+                remote_id = str(resp.get("order") or "").strip()
+                if not remote_id:
+                    order_row.status = "failed"
+                    order_row.last_error = str(resp.get("error") or "Missing order id")
+                else:
+                    order_row.remote_order_id = remote_id
+                    order_row.status = "submitted"
+                    order_row.submitted_at = datetime.utcnow()
+                    order_row.last_error = None
+            except Exception as exc:
+                order_row.status = "failed"
+                order_row.last_error = str(exc)
+
+            order_row.attempts = int(order_row.attempts or 0) + 1
+            order_row.updated_at = datetime.utcnow()
+            db.add(order_row)
+            db.commit()
+
+        refresh_rows = (
+            db.query(SmmstoreScheduledOrder, User)
+            .join(User, User.id == SmmstoreScheduledOrder.user_id)
+            .filter(
+                SmmstoreScheduledOrder.remote_order_id.isnot(None),
+                SmmstoreScheduledOrder.status.notin_([
+                    "completed",
+                    "partial",
+                    "canceled",
+                    "cancelled",
+                    "failed",
+                ]),
+            )
+            .order_by(SmmstoreScheduledOrder.updated_at.asc())
+            .limit(limit)
+            .all()
+        )
+
+        for order_row, user_row in refresh_rows:
+            api_key = (user_row.smmstore_api_key or "").strip()
+            if not api_key:
+                continue
+            try:
+                resp = smm_request(
+                    api_key,
+                    {"action": "status", "order": order_row.remote_order_id},
+                )
+                status_text = str(resp.get("status") or "submitted").strip()
+                order_row.status = status_text or "submitted"
+                order_row.charge = str(resp.get("charge") or "")
+                order_row.remains = str(resp.get("remains") or resp.get("remain") or "")
+                order_row.updated_at = datetime.utcnow()
+                db.add(order_row)
+                db.commit()
+            except Exception:
+                pass
+    finally:
+        db.close()
 
 
 class AnalyticsRequest(BaseModel):
@@ -345,7 +557,7 @@ def smmstore_analytics(
                 snippet = resp.text[:400].replace("\n", " ").strip()
                 raise HTTPException(
                     status_code=401,
-                    detail=f"Không thấy bảng orders. Có thể cookie hết hạn hoặc bị redirect/login. Snippet: {snippet}",
+                    detail=f"Orders table not found. Cookie may be expired or redirected to login. Snippet: {snippet}",
                 )
 
             rows = table.find_all("tr")[1:]

@@ -64,6 +64,29 @@ class SmmstoreAnalyticsCache(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+
+class SmmstoreScheduledOrder(Base):
+    __tablename__ = "smmstore_scheduled_orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    run_at = Column(DateTime, nullable=False, index=True)
+    service = Column(String, nullable=False)
+    link = Column(String, nullable=False)
+    quantity = Column(String, nullable=False)
+    runs = Column(String, nullable=True)
+    interval = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="queued", index=True)
+    remote_order_id = Column(String, nullable=True, index=True)
+    charge = Column(String, nullable=True)
+    remains = Column(String, nullable=True)
+    last_error = Column(Text, nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    submitted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class UserHiddenChannel(Base):
     __tablename__ = "user_hidden_channels"
     __table_args__ = (

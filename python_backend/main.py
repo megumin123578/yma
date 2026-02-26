@@ -158,6 +158,37 @@ def ensure_smmstore_analytics_cache_table():
 
 ensure_smmstore_analytics_cache_table()
 
+
+def ensure_smmstore_scheduled_orders_table():
+    with engine.begin() as conn:
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS smmstore_scheduled_orders (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                run_at DATETIME NOT NULL,
+                service VARCHAR NOT NULL,
+                link VARCHAR NOT NULL,
+                quantity VARCHAR NOT NULL,
+                runs VARCHAR,
+                interval VARCHAR,
+                status VARCHAR NOT NULL DEFAULT 'queued',
+                remote_order_id VARCHAR,
+                charge VARCHAR,
+                remains VARCHAR,
+                last_error TEXT,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                submitted_at DATETIME,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            );
+        """)
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_smmstore_sched_user ON smmstore_scheduled_orders(user_id);")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_smmstore_sched_run_at ON smmstore_scheduled_orders(run_at);")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_smmstore_sched_status ON smmstore_scheduled_orders(status);")
+
+
+ensure_smmstore_scheduled_orders_table()
+
 def drop_geography_daily_table():
     pg_url = os.getenv("PG_URL")
     if not pg_url:
