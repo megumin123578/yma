@@ -1,45 +1,6 @@
 --set bien moi truong
 setx PG_URL "postgresql+psycopg2://postgres:V!etdu1492003@localhost:5432/analytics"
 
--- To run fast api
-python -m uvicorn main:app --reload
-python -m uvicorn python_backend.main:app --reload
-python -m uvicorn python_backend.main:app --host 0.0.0.0 --port 8001 --reload
-uvicorn python_backend.main:app --host 0.0.0.0 --port 8000 --reload
-ngrok http 8000
-
--- To run react_dashboard
-$env:PORT=3001; npm --prefix react_dashboard start
-npm --prefix react_dashboard run start
-npm --prefix react_dashboard run start --port 8000
-
---build and deploy with serv
-npm --prefix react_dashboard run build 
-npx serve -s react_dashboard/build -l 3001
-
-
---ipmort jose
-pip uninstall jose pycrypto crypto -y --uninstall if wrong package
-pip install python-jose[cryptography]
-
--- install google api client
-pip install google-auth google-auth-oauthlib google-auth-httplib2
-pip install google-api-python-client
-
---install python-multipart
-pip install python-multipart
-
---venv
-py -3.11 -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-
-
-
---change cloudflare account
-ren C:\Users\Admin\.cloudflared\cert.pem cert.pem.bak
-cloudflared login
-
 
 -- xóa và tạo lại db
 \c postgres
