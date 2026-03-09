@@ -151,6 +151,17 @@ def _chunks(seq: List[Dict], size: int):
     for i in range(0, len(seq), size):
         yield seq[i:i+size]
 
+
+def _coerce_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    text_value = str(value)
+    if "\x00" in text_value:
+        text_value = text_value.replace("\x00", "")
+    return text_value.encode("utf-8", errors="replace").decode("utf-8")
+
 # ===== Iter helpers =====
 _CHUNK_DAYS_DEFAULT = 90
 
@@ -243,7 +254,7 @@ def save_traffic_source_daily_to_postgres(
     if not db_url:
         raise ValueError("Thiếu db_url. Truyền db_url hoặc đặt biến môi trường PG_URL.")
 
-    ch_id = channel_id or ""  # NOT NULL DEFAULT '' theo PK
+    ch_id = _coerce_text(channel_id or "")  # NOT NULL DEFAULT '' theo PK
     engine = create_engine(db_url, pool_pre_ping=True, future=True)
 
     with engine.begin() as conn:
@@ -253,10 +264,10 @@ def save_traffic_source_daily_to_postgres(
                 conn.execute(text(s))
 
     payload = [{
-        "account_tag": account_tag,
+        "account_tag": _coerce_text(account_tag),
         "channel_id": ch_id,
-        "day": r["day"],  # YYYY-MM-DD
-        "source": r["insightTrafficSourceType"],
+        "day": _coerce_text(r["day"])[:10],  # YYYY-MM-DD
+        "source": _coerce_text(r["insightTrafficSourceType"]),
         "views": int(r.get("views", 0) or 0),
         "emw": int(r.get("estimatedMinutesWatched", 0) or 0),
         "avd": int(r.get("averageViewDuration", 0) or 0),
@@ -266,7 +277,20 @@ def save_traffic_source_daily_to_postgres(
 
     with engine.begin() as conn:
         for chunk in _chunks(payload, batch_size):
-            conn.execute(text(_PG_UPSERT), chunk)
+            try:
+                conn.execute(text(_PG_UPSERT), chunk)
+            except Exception as batch_exc:
+                for row in chunk:
+                    try:
+                        conn.execute(text(_PG_UPSERT), row)
+                    except Exception as row_exc:
+                        raise RuntimeError(
+                            "traffic_source_daily upsert failed for row "
+                            f"account_tag={row['account_tag']!r}, "
+                            f"channel_id={row['channel_id']!r}, "
+                            f"day={row['day']!r}, source={row['source']!r}"
+                        ) from row_exc
+                raise batch_exc
 
 # ===== Main fetcher → Postgres =====
 def run_traffic_source_lifetime_daily_to_postgres(
