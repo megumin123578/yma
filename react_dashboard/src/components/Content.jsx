@@ -736,7 +736,9 @@ const ContentAnalytics = () => {
 
   const [endDate, setEndDate] = useState("");
 
-  const [loadingContent, setLoadingContent] = useState(false);
+  const [loadingVideos, setLoadingVideos] = useState(false);
+  const [loadingTimeseries, setLoadingTimeseries] = useState(false);
+  const [loadingChannelMetrics, setLoadingChannelMetrics] = useState(false);
 
   /* ================================
 
@@ -802,15 +804,13 @@ const ContentAnalytics = () => {
 
         setChannelList(finalChannels);
 
-        if (!finalChannels.length) {
-
-          setChannelId("");
-
-        } else if (!channelId || !finalChannels.some((c) => c.id === channelId)) {
-
-          setChannelId(finalChannels[0].id);
-
-        }
+        setChannelId((current) => {
+          if (!finalChannels.length) return "";
+          if (!current || !finalChannels.some((c) => c.id === current)) {
+            return finalChannels[0].id;
+          }
+          return current;
+        });
 
       } catch (err) {
 
@@ -820,7 +820,7 @@ const ContentAnalytics = () => {
 
     })();
 
-  }, [channelId]);
+  }, []);
 
 
 
@@ -854,7 +854,7 @@ const ContentAnalytics = () => {
 
       if (!channelId) return;
 
-      setLoadingContent(true);
+      setLoadingVideos(true);
 
       try {
 
@@ -873,18 +873,16 @@ const ContentAnalytics = () => {
         const raw = resp.data;
 
         setVideos(raw.items ?? []);
-        setChannelMetrics(raw.channelMetrics ?? null);
 
       } catch (err) {
 
         console.error("Fetch videos failed:", err);
 
         setVideos([]);
-        setChannelMetrics(null);
 
       } finally {
 
-        setLoadingContent(false);
+        setLoadingVideos(false);
 
       }
 
@@ -902,7 +900,7 @@ const ContentAnalytics = () => {
 
       if (!channelId) return;
 
-      setLoadingContent(true);
+      setLoadingTimeseries(true);
 
       try {
 
@@ -930,7 +928,50 @@ const ContentAnalytics = () => {
 
       } finally {
 
-        setLoadingContent(false);
+        setLoadingTimeseries(false);
+
+      }
+
+    },
+
+    [channelId]
+
+  );
+
+  const fetchChannelMetrics = useCallback(
+
+    async (start, end) => {
+
+      if (!channelId) return;
+
+      setChannelMetrics(null);
+      setLoadingChannelMetrics(true);
+
+      try {
+
+        const resp = await api.post("/api/content/channel-metrics", {
+
+          start,
+
+          end,
+
+          channelId,
+
+        });
+
+
+
+        setChannelMetrics(resp.data ?? null);
+
+      } catch (err) {
+
+        console.error("Fetch channel metrics failed:", err);
+
+        setChannelMetrics(null);
+
+      } finally {
+
+        setLoadingChannelMetrics(false);
 
       }
 
@@ -1046,7 +1087,9 @@ const ContentAnalytics = () => {
 
     fetchTimeseries(start, end);
 
-  }, [resolvePeriod, fetchVideos, fetchTimeseries, channelId]);
+    fetchChannelMetrics(start, end);
+
+  }, [resolvePeriod, fetchVideos, fetchTimeseries, fetchChannelMetrics, channelId]);
 
 
 
@@ -1727,7 +1770,7 @@ const ContentAnalytics = () => {
 
       >
 
-        {loadingContent && (
+        {loadingTimeseries && (
 
           <Box
 
@@ -2389,13 +2432,23 @@ const ContentAnalytics = () => {
 
       {/* TABLE */}
 
+      {(loadingVideos || loadingChannelMetrics) && (
+        <Typography
+          variant="caption"
+          sx={{ color: "text.secondary", ml: 0.5 }}
+        >
+          Updating content data...
+        </Typography>
+      )}
+
       {(selectedTableMetrics.includes("impressions") ||
         selectedTableMetrics.includes("impressionsClickThroughRate")) && (
         <Typography
           variant="caption"
           sx={{ color: "text.secondary", ml: 0.5 }}
         >
-          Impressions/CTR are shown at channel level in the TOTAL row.
+          Impressions/CTR are shown at channel level in the TOTAL row
+          {loadingChannelMetrics ? " and may finish loading after the chart." : "."}
         </Typography>
       )}
 

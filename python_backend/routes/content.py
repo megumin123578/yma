@@ -517,19 +517,9 @@ def content_list(
     except Exception as e:
         print("[content.list] metrics enrich failed:", e)
 
-    channel_metrics_data = None
-    try:
-        channel_metrics_data = channel_metrics(
-            ChannelMetricsRequest(start=req.start, end=req.end, channelId=req.channelId),
-            db,
-            current_user,
-        )
-    except Exception as e:
-        print("[content.list] channel metrics enrichment failed:", e)
-
     return {
         "items": rows_mutable,
-        "channelMetrics": channel_metrics_data,
+        "channelMetrics": None,
     }
 
 class TimeSeriesRequest(BaseModel):
