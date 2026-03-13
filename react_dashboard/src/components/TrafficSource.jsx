@@ -147,12 +147,13 @@ const TrafficSourceChart = () => {
         const finalChannels = [...ordered, ...remaining];
         if (!stop) {
           setChannels(finalChannels);
-          if (!finalChannels.length) {
-            setChannel("");
-          } else {
-            const hasStored = channel && finalChannels.some((opt) => opt.value === channel);
-            if (!hasStored) setChannel(finalChannels[0].value);
-          }
+          setChannel((current) => {
+            if (!finalChannels.length) return "";
+            if (!current || !finalChannels.some((opt) => opt.value === current)) {
+              return finalChannels[0].value;
+            }
+            return current;
+          });
         }
       } catch (e) {
         console.error("Load channels failed:", e);
@@ -160,7 +161,7 @@ const TrafficSourceChart = () => {
       }
     })();
     return () => { stop = true; };
-  }, [channel, authHeaders]);
+  }, [authHeaders]);
 
   useEffect(() => {
     let active = true;
@@ -180,7 +181,7 @@ const TrafficSourceChart = () => {
   const [tsData, setTsData] = useState([]);
   const [tsSeries, setTsSeries] = useState([]);
 
-  const [, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
   const fetchRange = useCallback(
@@ -253,6 +254,11 @@ const TrafficSourceChart = () => {
     const now = new Date();
     return isCustom ? { start: startDate, end: endDate } : computeRange(period, now);
   }, [period, startDate, endDate, computeRange]);
+
+  const currentChannelLabel = useMemo(() => {
+    const selected = channels.find((item) => item.value === channel);
+    return selected?.label || channel || "No channel selected";
+  }, [channels, channel]);
 
   useEffect(() => {
     if (!channel) return;
@@ -456,6 +462,65 @@ const TrafficSourceChart = () => {
     p: 1,
     overflow: "hidden",
   }), [glassSx]);
+  const chartPaperSx = useMemo(() => ({
+    height: 420,
+    minWidth: 320,
+    borderRadius: 2,
+    border: `1px solid ${theme.palette.mode === "dark"
+      ? "rgba(255,255,255,0.08)"
+      : "rgba(0,0,0,0.06)"
+      }`,
+    p: 1,
+    position: "relative",
+    backgroundColor: "transparent",
+  }), [theme.palette.mode]);
+  const chartTooltipSx = useMemo(() => ({
+    px: 2,
+    py: 1.25,
+    borderRadius: 2,
+    bgcolor: theme.palette.mode === "dark" ? "#0b1020" : "#ffffff",
+    border: `1px solid ${theme.palette.mode === "dark"
+      ? "rgba(148,163,184,0.24)"
+      : "rgba(15,23,42,0.14)"
+      }`,
+    boxShadow: theme.palette.mode === "dark"
+      ? "0 18px 40px rgba(0,0,0,0.55)"
+      : "0 18px 34px rgba(15,23,42,0.18)",
+  }), [theme.palette.mode]);
+
+  const hasChartData = useMemo(() => {
+    if (chartType === "pie") return rows.length > 0;
+    if (chartType === "line") return lineSeries.length > 0;
+    return barPrep.data.length > 0 && barPrep.keys.length > 0;
+  }, [chartType, rows.length, lineSeries.length, barPrep.data.length, barPrep.keys.length]);
+
+  const emptyState = (
+    <Box
+      sx={{
+        position: "absolute",
+        inset: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        px: 3,
+        zIndex: 2,
+        borderRadius: 2,
+      }}
+    >
+      <Box>
+        <Typography variant="body2" color="text.secondary">
+          No timeseries data in this range.
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+          Channel: {currentChannelLabel}
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Range: {currentRange.start || "-"} to {currentRange.end || "-"}
+        </Typography>
+      </Box>
+    </Box>
+  );
 
   return (
     <motion.div
@@ -551,19 +616,30 @@ const TrafficSourceChart = () => {
         </Stack>
 
         {errorMsg && <Typography color="error" variant="body2" sx={{ px: 1 }}>{errorMsg}</Typography>}
-
         {/* CHART SECTION */}
         <Box
-          sx={{
-            ...glassSx,
-            height: 560,
-            p: 0.5,
-            position: "relative",
-            background: isDark
-              ? `radial-gradient(circle at 50% 50%, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 1) 100%)`
-              : `radial-gradient(circle at 50% 50%, #f8fafc 0%, #f1f5f9 100%)`,
-          }}
+          sx={chartPaperSx}
         >
+          {loading && (
+            <Box
+              sx={{
+                position: "absolute",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                bgcolor: "rgba(0,0,0,0.05)",
+                zIndex: 3,
+                borderRadius: 2,
+                backdropFilter: "blur(2px)",
+              }}
+            >
+              Loading...
+            </Box>
+          )}
+
+          {!loading && !errorMsg && !hasChartData && emptyState}
+
           {chartType === "pie" && (
             <ResponsivePie
               data={rows.filter(r => includeSourceForCharts(r.id)).map(r => ({ id: String(r.id), label: r.label, value: r.sortValue }))}
@@ -580,20 +656,12 @@ const TrafficSourceChart = () => {
               layers={["arcs", "arcLabels", "arcLinkLabels", "legends", CenterLabel]}
               tooltip={({ datum }) => (
                 <Box
-                  sx={{
-                    p: 1.5,
-                    bgcolor: isDark ? "#111827" : "#ffffff",
-                    border: "1px solid",
-                    borderColor: "divider",
-                    borderRadius: 2,
-                    boxShadow: 4,
-                    minWidth: 160
-                  }}
+                  sx={{ ...chartTooltipSx, minWidth: 180 }}
                 >
-                  <Typography variant="subtitle2" fontWeight={800} color={isDark ? "#f8fafc" : "#0f172a"}>{datum.label}</Typography>
+                  <Typography variant="subtitle2" fontWeight={800} color={isDark ? "#e5e7eb" : "#111827"}>{datum.label}</Typography>
                   <Divider sx={{ my: 0.5, opacity: 0.1 }} />
-                  <Typography variant="body2" sx={{ color: isDark ? "#94a3b8" : "#64748b" }}>
-                    {mconf.label}: <strong style={{ color: isDark ? "#f8fafc" : "#0f172a" }}>{metric === "averageViewDuration" ? formatSeconds(datum.value) : formatNumber(datum.value)}</strong>
+                  <Typography variant="body2" sx={{ color: "text.secondary" }}>
+                    {mconf.label}: <strong style={{ color: isDark ? "#e5e7eb" : "#111827" }}>{metric === "averageViewDuration" ? formatSeconds(datum.value) : formatNumber(datum.value)}</strong>
                   </Typography>
                 </Box>
               )}
@@ -625,74 +693,75 @@ const TrafficSourceChart = () => {
                   const isRight = chartRef.current && slice.x > chartRef.current.offsetWidth / 2;
                   return (
                     <Box sx={{
-                      p: 2, borderRadius: 3, minWidth: 240,
-                      bgcolor: isDark ? "rgba(11, 15, 25, 0.98)" : "rgba(255,255,255,0.98)",
-                      border: "1px solid",
-                      borderColor: isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.08)",
-                      boxShadow: isDark ? "0 12px 36px rgba(0,0,0,0.6)" : "0 8px 24px rgba(15,23,42,0.15)",
-                      backdropFilter: "blur(12px)",
+                      ...chartTooltipSx,
+                      minWidth: 240,
                       transform: isRight ? "translateX(-110%)" : "translateX(10%)",
-                      transition: "transform 0.1s"
+                      transition: "transform 0.1s",
                     }}>
-                      <Box sx={{ mb: 1, pb: 1, borderBottom: `1px solid ${isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.06)"}` }}>
-                        <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      <Typography
+                        variant="subtitle2"
+                        sx={{
+                          fontWeight: 800,
+                          mb: 1,
+                          color: isDark ? "#e5e7eb" : "#111827",
+                        }}
+                      >
                           {dayjs(slice.points[0].data.x).format("DD MMMM YYYY")}
-                        </Typography>
-                      </Box>
+                      </Typography>
                       <Stack spacing={1}>
-                        {slice.points.map(p => {
-                          // Prioritize color embedded in the data point itself
+                        {slice.points
+                          .slice()
+                          .sort((a, b) => (b.data.y ?? 0) - (a.data.y ?? 0))
+                          .slice(0, 5)
+                          .map((p) => {
                           const color = p.data.color || colorMap[p.serieId] || p.serieColor || "#888";
-                          // Get label from data point if possible, or fallback to serieId
                           const label = p.data.sourceLabel || getSourceDisplayName(p.serieId);
 
                           return (
                             <Box
                               key={p.id}
                               sx={{
-                                display: "flex",
+                                display: "grid",
+                                gridTemplateColumns: "minmax(0, 1fr) auto",
                                 alignItems: "center",
                                 justifyContent: "space-between",
                                 gap: 2,
-                                px: 1.5,
-                                py: 0.75,
-                                borderRadius: 2,
-                                bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)",
-                                borderLeft: `4px solid ${color}`,
+                                minWidth: 0,
                               }}
                             >
-                              <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, flex: 1 }}>
+                              <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, overflow: "hidden" }}>
                                 <Box sx={{
                                   width: 10,
                                   height: 10,
                                   borderRadius: "50%",
-                                  bgcolor: color,
+                                  backgroundColor: color,
                                   flexShrink: 0,
-                                  boxShadow: `0 0 8px ${color}`,
-                                  border: `2px solid ${isDark ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.4)"}`
                                 }} />
                                 <Typography
                                   variant="body2"
+                                  title={label}
+                                  noWrap
                                   sx={{
                                     fontSize: 12,
-                                    fontWeight: 700,
-                                    color: isDark ? "#f8fafc" : "#0f172a",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap"
+                                    fontWeight: 600,
+                                    lineHeight: 1.25,
+                                    display: "block",
+                                    width: "100%",
+                                    minWidth: 0,
+                                    maxWidth: "100%",
+                                    color: isDark ? "#e5e7eb" : "#111827",
                                   }}
                                 >
                                   {label}
                                 </Typography>
-                              </Stack>
+                              </Box>
                               <Typography
                                 variant="body2"
                                 sx={{
-                                  fontSize: 13,
-                                  fontWeight: 900,
-                                  color: color,
-                                  ml: 1,
-                                  fontFamily: "'Roboto Mono', monospace"
+                                  fontSize: 12,
+                                  fontWeight: 800,
+                                  color: isDark ? "#e5e7eb" : "#111827",
+                                  flexShrink: 0,
                                 }}
                               >
                                 {metric === "averageViewPercentage" ? `${n(p.data.y).toFixed(2)}%` : metric === "averageViewDuration" ? formatSeconds(p.data.y) : formatNumber(p.data.y)}
@@ -743,60 +812,53 @@ const TrafficSourceChart = () => {
                 grid: { line: { stroke: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)", strokeDasharray: "4 4" } }
               }}
               tooltip={({ id, value, indexValue, color }) => (
-                <Box
-                  sx={{
-                    p: 2,
-                    borderRadius: 3,
-                    minWidth: 200,
-                    bgcolor: isDark ? "rgba(11, 15, 25, 0.98)" : "rgba(255, 255, 255, 0.98)",
-                    border: "1px solid",
-                    borderColor: isDark ? "rgba(255, 255, 255, 0.15)" : "rgba(0, 0, 0, 0.08)",
-                    boxShadow: isDark ? "0 12px 36px rgba(0,0,0,0.6)" : "0 8px 24px rgba(15,23,42,0.15)",
-                    backdropFilter: "blur(12px)",
-                  }}
-                >
-                  <Box sx={{ mb: 1, pb: 1, borderBottom: `1px solid ${isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.06)"}` }}>
-                    <Typography variant="caption" sx={{ color: "text.secondary", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      {dayjs(indexValue).format("DD MMMM YYYY")}
-                    </Typography>
-                  </Box>
-                  <Box
+                <Box sx={{ ...chartTooltipSx, minWidth: 220 }}>
+                  <Typography
+                    variant="subtitle2"
                     sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 2,
-                      px: 1.5,
-                      py: 1,
-                      borderRadius: 2,
-                      bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)",
-                      borderLeft: `4px solid ${color}`,
+                      fontWeight: 800,
+                      mb: 1,
+                      color: isDark ? "#e5e7eb" : "#111827",
                     }}
                   >
-                    <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, flex: 1 }}>
-                      <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: color, flexShrink: 0, boxShadow: `0 0 8px ${color}` }} />
+                      {dayjs(indexValue).format("DD MMMM YYYY")}
+                  </Typography>
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: "minmax(0, 1fr) auto",
+                      alignItems: "center",
+                      gap: 2,
+                      minWidth: 0,
+                    }}
+                  >
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, overflow: "hidden" }}>
+                      <Box sx={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: color, flexShrink: 0 }} />
                       <Typography
                         variant="body2"
+                        title={getSourceDisplayName(id)}
+                        noWrap
                         sx={{
                           fontSize: 12,
-                          fontWeight: 700,
-                          color: isDark ? "#f8fafc" : "#0f172a",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap"
+                          fontWeight: 600,
+                          lineHeight: 1.25,
+                          display: "block",
+                          width: "100%",
+                          minWidth: 0,
+                          maxWidth: "100%",
+                          color: isDark ? "#e5e7eb" : "#111827",
                         }}
                       >
                         {getSourceDisplayName(id)}
                       </Typography>
-                    </Stack>
+                    </Box>
                     <Typography
                       variant="body2"
                       sx={{
-                        fontSize: 14,
-                        fontWeight: 900,
-                        color: color,
-                        ml: 1,
-                        fontFamily: "'Roboto Mono', monospace"
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: isDark ? "#e5e7eb" : "#111827",
+                        flexShrink: 0,
                       }}
                     >
                       {metric === "averageViewPercentage" ? `${n(value).toFixed(2)}%` : metric === "averageViewDuration" ? formatSeconds(value) : formatNumber(value)}
@@ -810,6 +872,13 @@ const TrafficSourceChart = () => {
 
         {/* TABLE SECTION */}
         <Box sx={tablePaperSx}>
+          {!loading && !errorMsg && rows.length === 0 && (
+            <Box sx={{ px: 2, py: 3 }}>
+              <Typography variant="body2" color="text.secondary">
+                No table rows for {currentChannelLabel} in {currentRange.start || "-"} to {currentRange.end || "-"}.
+              </Typography>
+            </Box>
+          )}
           <TableContainer>
             <Table size="small" stickyHeader>
               <TableHead>

@@ -25,12 +25,29 @@ def query_all_safe(sql: str, params=None):
 router = APIRouter(prefix="/api/traffic_source", tags=["traffic_source"])
 
 def resolve_channel(channel_root: str):
-    if "__" in channel_root:
-        account_tag, channel_id = channel_root.split("__", 1)
-        channel_id = channel_id.strip() or None
-    else:
-        account_tag, channel_id = channel_root.strip(), None
-    return {"account_tag": account_tag, "channel_id": channel_id}
+    raw = (channel_root or "").strip()
+    if not raw:
+        return {"account_tag": "", "channel_id": None}
+
+    exact = query_all_safe(
+        """
+        SELECT 1
+        FROM traffic_source_daily
+        WHERE account_tag = :account_tag
+        LIMIT 1;
+        """,
+        {"account_tag": raw},
+    )
+    if exact:
+        return {"account_tag": raw, "channel_id": None}
+
+    # Backward compatibility for older composite values encoded as
+    # "<account_tag>__<channel_id>".
+    if "__" in raw:
+        account_tag, channel_id = raw.split("__", 1)
+        return {"account_tag": account_tag.strip(), "channel_id": channel_id.strip() or None}
+
+    return {"account_tag": raw, "channel_id": None}
 
 @router.get("/channels")
 def list_channels(

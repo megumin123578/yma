@@ -300,6 +300,8 @@ const RivalsChannel = ({ viewMode = "list" }) => {
   const missingSelected =
     !!selectedSavedId &&
     !savedChannels.some((row) => row.channel_id === selectedSavedId);
+  const showSavedSelectors =
+    savedLoaded && (!!savedChannels.length || !!selectedSavedId);
 
   useEffect(() => {
     if (savedLoaded && selectedSavedId && !channel) {
@@ -800,7 +802,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
             </Button>
           </Stack>
 
-          {!!savedChannels.length && (
+          {showSavedSelectors && (
             <Stack spacing={1} sx={{ pt: 0.5 }}>
               <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
                 <FormControl

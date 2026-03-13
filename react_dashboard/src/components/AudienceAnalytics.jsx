@@ -79,16 +79,20 @@ const AudienceAnalytics = () => {
         );
         const finalAccounts = [...ordered, ...remaining];
         setAccounts(finalAccounts);
-        if (!accountTag && finalAccounts.length > 0) {
-          const next = ordered.length ? ordered[0] : finalAccounts[0];
-          setAccountTag(next.value);
-        }
+        setAccountTag((current) => {
+          if (!finalAccounts.length) return "";
+          if (!current || !finalAccounts.some((item) => item.value === current)) {
+            const next = ordered.length ? ordered[0] : finalAccounts[0];
+            return next?.value || "";
+          }
+          return current;
+        });
       } catch (err) {
         setAccounts([]);
       }
     };
     loadAccounts();
-  }, [accountTag]);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -517,7 +521,12 @@ const AudienceAnalytics = () => {
                   <Typography variant="body2">{(row.male ?? 0).toFixed(2)}%</Typography>
                   <Typography variant="body2">{(row.female ?? 0).toFixed(2)}%</Typography>
                   <Typography variant="body2">
-                    {(row.genderUnspecified ?? 0).toFixed(2)}%
+                    {(
+                      row.genderUnspecified ??
+                      row.genderUserSpecified ??
+                      row.unknown ??
+                      0
+                    ).toFixed(2)}%
                   </Typography>
                 </Box>
               ))}
