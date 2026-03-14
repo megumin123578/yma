@@ -1,4 +1,4 @@
-import { useState, useContext } from "react";
+import { useState, useContext, useEffect } from "react";
 import { Routes, Route, useLocation, Navigate } from "react-router-dom";
 import Topbar from "./scenes/global/Topbar";
 import Sidebar from "./scenes/global/Sidebar";
@@ -12,7 +12,7 @@ import SmmstoreScene from "./scenes/smmstore";
 import ChannelCompareScene from "./scenes/channel_compare";
 import RivalsData from "./scenes/rivals";
 
-import { Box, IconButton, useTheme } from "@mui/material";
+import { Box, IconButton, useMediaQuery, useTheme } from "@mui/material";
 import { ColorModeContext } from "./theme";
 import GeographyScene from "./scenes/geography";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
@@ -29,8 +29,9 @@ import LandingPage from "./scenes/landing";
 
 function App() {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const colorMode = useContext(ColorModeContext);
-  const [isSidebar, setIsSidebar] = useState(true);
+  const [isSidebar, setIsSidebar] = useState(!isMobile);
   const location = useLocation();
   const { user, loading } = useContext(UserContext);
 
@@ -44,6 +45,16 @@ function App() {
   ];
   const isNoLayout = noLayoutRoutes.includes(location.pathname);
 
+  useEffect(() => {
+    setIsSidebar(isMobile ? false : true);
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (isMobile) {
+      setIsSidebar(false);
+    }
+  }, [location.pathname, isMobile]);
+
   const ProtectedRoute = ({ children }) => {
     if (loading) return null; // Wait for auth check
     if (!user) return <Navigate to="/" replace />;
@@ -52,10 +63,21 @@ function App() {
 
   return (
     <div className="app">
-      {!isNoLayout && <Sidebar isSidebar={isSidebar} />}
+      {!isNoLayout && (
+        <Sidebar
+          isSidebar={isSidebar}
+          setIsSidebar={setIsSidebar}
+          isMobile={isMobile}
+        />
+      )}
 
       <main className="content">
-        {!isNoLayout && <Topbar setIsSidebar={setIsSidebar} />}
+        {!isNoLayout && (
+          <Topbar
+            setIsSidebar={setIsSidebar}
+            isMobile={isMobile}
+          />
+        )}
         {isNoLayout && (
           <Box display="flex" justifyContent="flex-end" pt={0} px={2}>
             <IconButton onClick={colorMode.toggleColorMode}>

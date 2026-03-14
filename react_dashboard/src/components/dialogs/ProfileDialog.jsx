@@ -12,6 +12,7 @@ import {
   IconButton,
   InputAdornment,
   useTheme,
+  useMediaQuery,
 } from "@mui/material";
 import { useContext, useEffect, useState, forwardRef } from "react";
 import { UserContext } from "../../context/UserContext";
@@ -37,6 +38,7 @@ const maskApiKey = (value, visibleStart = 4, visibleEnd = 4) => {
 
 const ProfileDialog = ({ open, onClose }) => {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isDark = theme.palette.mode === "dark";
   const paperBg = isDark
     ? "linear-gradient(180deg, #1e1e2f, #1a1a27)"
@@ -129,12 +131,14 @@ const ProfileDialog = ({ open, onClose }) => {
       open={open}
       onClose={onClose}
       keepMounted
+      fullScreen={isMobile}
       slots={{ transition: Transition }}
       slotProps={{
         paper: {
           sx: {
-            borderRadius: 4,
-            width: 420,
+            width: { xs: "100vw", sm: 420 },
+            maxWidth: { xs: "100vw", sm: 420 },
+            borderRadius: { xs: 0, sm: 4 },
             background: paperBg,
             boxShadow: isDark
               ? "0 20px 50px rgba(0,0,0,0.45)"
@@ -157,7 +161,7 @@ const ProfileDialog = ({ open, onClose }) => {
         </Typography>
       </DialogTitle>
 
-      <DialogContent>
+      <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
         <Fade in={open}>
           <Box
             display="flex"

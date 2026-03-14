@@ -10,6 +10,7 @@ import {
   Snackbar,
   LinearProgress,
   useTheme,
+  useMediaQuery,
 } from "@mui/material";
 import { useState, useMemo } from "react";
 import { changePassword } from "../../services/authService";
@@ -41,6 +42,7 @@ const strengthMap = [
 const ChangePasswordDialog = ({ open, onClose }) => {
 
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isDark = theme.palette.mode === "dark";
   const paperBg = isDark
     ? "linear-gradient(180deg, #1e1e2f, #1a1a27)"
@@ -123,11 +125,13 @@ const ChangePasswordDialog = ({ open, onClose }) => {
           resetForm();
           onClose();
         }}
+        fullScreen={isMobile}
         slotProps={{
           paper: {
             sx: {
-              borderRadius: 4,
-              width: 380,
+              width: { xs: "100vw", sm: 380 },
+              maxWidth: { xs: "100vw", sm: 380 },
+              borderRadius: { xs: 0, sm: 4 },
               background: paperBg,
               boxShadow: isDark
                 ? "0 20px 50px rgba(0,0,0,0.45)"
@@ -155,7 +159,7 @@ const ChangePasswordDialog = ({ open, onClose }) => {
           </Typography>
         </DialogTitle>
 
-        <DialogContent>
+        <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
           <Box display="flex" flexDirection="column" gap={2} mt={1}>
             {error && <Alert severity="error">{error}</Alert>}
 

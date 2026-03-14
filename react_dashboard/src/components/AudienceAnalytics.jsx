@@ -12,6 +12,7 @@ import {
   Stack,
   Typography,
   useTheme,
+  useMediaQuery,
 } from "@mui/material";
 import { ResponsiveLine } from "@nivo/line";
 import api from "../services/api";
@@ -29,6 +30,7 @@ const AudienceAnalytics = () => {
   const theme = useTheme();
   const chartRef = useRef(null);
   const isDark = theme.palette.mode === "dark";
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [accountTag, setAccountTag] = useState("");
   const [accounts, setAccounts] = useState([]);
   const [channelAvatarMap, setChannelAvatarMap] = useState({});
@@ -331,7 +333,7 @@ const AudienceAnalytics = () => {
           },
         }}
       >
-        <FormControl size="small" sx={{ minWidth: 220 }}>
+        <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 220 }, flex: 1 }}>
           <InputLabel>Channel</InputLabel>
           <Select
             label="Channel"
@@ -368,7 +370,7 @@ const AudienceAnalytics = () => {
           </Select>
         </FormControl>
 
-        <FormControl size="small" sx={{ minWidth: 260 }}>
+        <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 260 }, flex: 1 }}>
           <InputLabel>Video</InputLabel>
           <Select
             label="Video"
@@ -451,7 +453,12 @@ const AudienceAnalytics = () => {
           },
         }}
       >
-        <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          justifyContent="space-between"
+          alignItems={{ xs: "flex-start", sm: "baseline" }}
+          spacing={{ xs: 0.75, sm: 2 }}
+        >
           <Box>
             <Typography variant="h6">Demographics</Typography>
             <Typography variant="caption" color="text.secondary">
@@ -469,7 +476,7 @@ const AudienceAnalytics = () => {
           <Box mt={2}>
             <Box
               display="grid"
-              gridTemplateColumns="repeat(4, minmax(0, 1fr))"
+              gridTemplateColumns={{ xs: "1fr", sm: "repeat(4, minmax(0, 1fr))" }}
               gap={1}
               sx={{
                 p: 1,
@@ -494,6 +501,47 @@ const AudienceAnalytics = () => {
           <Typography variant="body2" color="text.secondary" mt={2}>
             No demographics data available.
           </Typography>
+        ) : isMobile ? (
+          <Stack spacing={1.25} mt={2}>
+            {demoTable.map((row) => (
+              <Box
+                key={row.age}
+                sx={{
+                  p: 1.25,
+                  borderRadius: 1.5,
+                  bgcolor: isDark ? "rgba(15,23,42,0.45)" : "rgba(255,255,255,0.9)",
+                  boxShadow: isDark
+                    ? "0 0 0 1px rgba(56,189,248,0.2)"
+                    : "0 0 0 1px rgba(14,165,233,0.2)",
+                }}
+              >
+                <Typography variant="subtitle2" sx={{ mb: 0.75 }}>
+                  {formatAgeLabel(row.age)}
+                </Typography>
+                <Stack spacing={0.5}>
+                  <Box display="flex" justifyContent="space-between" gap={2}>
+                    <Typography variant="body2" color="text.secondary">Male</Typography>
+                    <Typography variant="body2">{(row.male ?? 0).toFixed(2)}%</Typography>
+                  </Box>
+                  <Box display="flex" justifyContent="space-between" gap={2}>
+                    <Typography variant="body2" color="text.secondary">Female</Typography>
+                    <Typography variant="body2">{(row.female ?? 0).toFixed(2)}%</Typography>
+                  </Box>
+                  <Box display="flex" justifyContent="space-between" gap={2}>
+                    <Typography variant="body2" color="text.secondary">Unspecified</Typography>
+                    <Typography variant="body2">
+                      {(
+                        row.genderUnspecified ??
+                        row.genderUserSpecified ??
+                        row.unknown ??
+                        0
+                      ).toFixed(2)}%
+                    </Typography>
+                  </Box>
+                </Stack>
+              </Box>
+            ))}
+          </Stack>
         ) : (
           <Box mt={2}>
             <Box
@@ -553,7 +601,12 @@ const AudienceAnalytics = () => {
               : "0 12px 22px rgba(148,163,184,0.25)",
           }}
         >
-          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            justifyContent="space-between"
+            alignItems={{ xs: "flex-start", sm: "baseline" }}
+            spacing={{ xs: 0.75, sm: 2 }}
+          >
             <Box>
               <Typography variant="subtitle1" fontWeight={600}>
                 Devices
@@ -638,7 +691,12 @@ const AudienceAnalytics = () => {
               : "0 12px 22px rgba(148,163,184,0.25)",
           }}
         >
-          <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            justifyContent="space-between"
+            alignItems={{ xs: "flex-start", sm: "baseline" }}
+            spacing={{ xs: 0.75, sm: 2 }}
+          >
             <Box>
               <Typography variant="subtitle1" fontWeight={600}>
                 Subscribed vs Not subscribed
@@ -720,7 +778,7 @@ const AudienceAnalytics = () => {
           background: isDark
             ? "linear-gradient(140deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 55%, rgba(13,148,136,0.45) 100%)"
             : "linear-gradient(140deg, rgba(248,250,252,0.95) 0%, rgba(226,232,240,0.92) 55%, rgba(186,230,253,0.75) 100%)",
-          height: 520,
+          height: { xs: 440, sm: 520 },
           transition: "transform 180ms ease, box-shadow 180ms ease",
           boxShadow: isDark ? "0 18px 35px rgba(15,23,42,0.4)" : "0 18px 30px rgba(148,163,184,0.35)",
           position: "relative",
@@ -741,7 +799,12 @@ const AudienceAnalytics = () => {
           },
         }}
       >
-        <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          justifyContent="space-between"
+          alignItems={{ xs: "flex-start", sm: "baseline" }}
+          spacing={{ xs: 0.75, sm: 2 }}
+        >
           <Box>
             <Typography variant="h6">Retention Curve</Typography>
 
@@ -773,7 +836,7 @@ const AudienceAnalytics = () => {
 
         {showRetentionSkeleton ? (
           <Box mt={2}>
-            <Stack direction="row" spacing={2} mb={1}>
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={2} mb={1}>
               <Skeleton width={140} height={18} />
               <Skeleton width={140} height={18} />
             </Stack>
@@ -784,31 +847,35 @@ const AudienceAnalytics = () => {
             No retention data available.
           </Typography>
         ) : (
-          <Box ref={chartRef} sx={{ height: 380 }}>
+          <Box ref={chartRef} sx={{ height: { xs: 300, sm: 380 } }}>
             <ResponsiveLine
               data={retentionSeries}
-              margin={{ top: 40, right: 20, bottom: 70, left: 70 }}
+              margin={
+                isMobile
+                  ? { top: 24, right: 12, bottom: 56, left: 48 }
+                  : { top: 40, right: 20, bottom: 70, left: 70 }
+              }
               xScale={{ type: "linear", min: 0, max: 1 }}
               yScale={{ type: "linear", min: 0, max: "auto" }}
               curve="monotoneX"
               axisBottom={{
                 legend: "Video progress (0% → 100%)",
-                legendOffset: 44,
+                legendOffset: isMobile ? 0 : 44,
                 legendPosition: "middle",
                 format: (value) => `${Math.round(value * 100)}%`,
                 tickValues: [0, 0.25, 0.5, 0.75, 1],
-                tickSize: 10,
-                tickPadding: 10,
+                tickSize: isMobile ? 6 : 10,
+                tickPadding: isMobile ? 6 : 10,
                 tickRotation: 0,
               }}
               axisLeft={{
                 legend: "Audience retention (%)",
-                legendOffset: -58,
+                legendOffset: isMobile ? 0 : -58,
                 legendPosition: "middle",
                 format: (value) => `${Math.round(value * 100)}%`,
-                tickValues: 6,
-                tickSize: 8,
-                tickPadding: 8,
+                tickValues: isMobile ? 4 : 6,
+                tickSize: isMobile ? 6 : 8,
+                tickPadding: isMobile ? 6 : 8,
               }}
               colors={["#22d3ee", "#f97316"]}
               lineWidth={3}
@@ -848,7 +915,8 @@ const AudienceAnalytics = () => {
                       px: 1.4,
                       py: 0.8,
                       borderRadius: 1.5,
-                      minWidth: 180,
+                      minWidth: isMobile ? 150 : 180,
+                      maxWidth: isMobile ? 220 : 320,
                       bgcolor: isDark ? "rgba(15, 23, 42, 0.95)" : "rgba(255,255,255,0.98)",
                       border: `1px solid ${isDark ? "rgba(148, 163, 184, 0.25)" : "rgba(15,23,42,0.15)"}`,
                       color: isDark ? "#e5e7eb" : "#111827",
@@ -869,7 +937,7 @@ const AudienceAnalytics = () => {
                         display="flex"
                         alignItems="center"
                         justifyContent="space-between"
-                        gap={2}
+                        gap={1}
                       >
                         <Box display="flex" alignItems="center" gap={1}>
                           <Box

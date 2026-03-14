@@ -14,6 +14,7 @@ import {
   Checkbox,
   Switch,
   useTheme,
+  useMediaQuery,
 } from "@mui/material";
 import { useCallback, useEffect, useRef, useState } from "react";
 import dayjs from "dayjs";
@@ -43,6 +44,7 @@ import {
 
 const CredentialsDialog = ({ open, onClose }) => {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isDark = theme.palette.mode === "dark";
   const surface = isDark ? "rgba(17, 24, 39, 0.72)" : "rgba(255,255,255,0.82)";
   const panel = isDark ? "rgba(20, 28, 40, 0.55)" : "rgba(255,255,255,0.7)";
@@ -559,6 +561,7 @@ const CredentialsDialog = ({ open, onClose }) => {
       onClose={onClose}
       maxWidth="md"
       fullWidth
+      fullScreen={isMobile}
       TransitionComponent={Fade}
       transitionDuration={220}
       PaperProps={{
@@ -571,9 +574,10 @@ const CredentialsDialog = ({ open, onClose }) => {
           position: "relative",
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
-          width: { xs: "95vw", md: 860 },
-          maxWidth: "95vw",
-          minHeight: 620,
+          width: { xs: "100vw", md: 860 },
+          maxWidth: { xs: "100vw", md: "95vw" },
+          minHeight: { xs: "100vh", sm: 620 },
+          borderRadius: { xs: 0, sm: undefined },
           "&:before": {
             content: '""',
             position: "absolute",
@@ -596,15 +600,17 @@ const CredentialsDialog = ({ open, onClose }) => {
           </Typography>
         </Box>
       </DialogTitle>
-      <DialogContent sx={{ position: "relative", zIndex: 1, minHeight: 520, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <Box display="flex" gap={2} mt={1} flex={1} overflow="hidden">
+      <DialogContent sx={{ position: "relative", zIndex: 1, minHeight: { xs: "calc(100vh - 140px)", sm: 520 }, display: "flex", flexDirection: "column", overflow: "hidden", px: { xs: 1.5, sm: 3 } }}>
+        <Box display="flex" flexDirection={{ xs: "column", sm: "row" }} gap={2} mt={1} flex={1} overflow="hidden">
           <Box
             sx={{
-              minWidth: 140,
+              minWidth: { xs: "100%", sm: 140 },
               display: "flex",
-              flexDirection: "column",
+              flexDirection: { xs: "row", sm: "column" },
+              flexWrap: "wrap",
               gap: 1,
               flexShrink: 0,
+              overflowX: { xs: "auto", sm: "visible" },
             }}
           >
             <Button

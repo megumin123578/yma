@@ -10,8 +10,9 @@ import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import SettingsIcon from '@mui/icons-material/Settings';
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
+import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
 
-const Topbar = () => {
+const Topbar = ({ setIsSidebar, isMobile = false }) => {
   const theme = useTheme();
   // const colors = tokens(theme.palette.mode);
   const colorMode = useContext(ColorModeContext);
@@ -31,7 +32,15 @@ const Topbar = () => {
       <Box display="flex" justifyContent="flex-end" p={2}>
 
         {/* ICONS */}
-        <Box display="flex" alignItems="center">
+        <Box display="flex" alignItems="center" justifyContent="space-between" width="100%">
+          {isMobile ? (
+            <IconButton onClick={() => setIsSidebar?.((prev) => !prev)}>
+              <MenuOutlinedIcon />
+            </IconButton>
+          ) : (
+            <Box />
+          )}
+          <Box display="flex" alignItems="center">
           <IconButton onClick={colorMode.toggleColorMode}>
             {theme.palette.mode === "dark" ? (
               <DarkModeOutlinedIcon />
@@ -59,6 +68,7 @@ const Topbar = () => {
               <PersonOutlinedIcon />
             )}
           </IconButton>
+          </Box>
         </Box>
       </Box>
 

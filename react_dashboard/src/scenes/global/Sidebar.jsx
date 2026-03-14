@@ -19,7 +19,7 @@ import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import WebhookIcon from '@mui/icons-material/Webhook';
 import { UserContext } from "../../context/UserContext";
 
-const Item = ({ title, to, icon, isActive }) => {
+const Item = ({ title, to, icon, isActive, onClick }) => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
 
@@ -28,6 +28,7 @@ const Item = ({ title, to, icon, isActive }) => {
       active={isActive}
       style={{ color: colors.grey[100] }}
       icon={icon}
+      onClick={onClick}
     >
       <Typography>{title}</Typography>
       <Link to={to} />
@@ -35,7 +36,7 @@ const Item = ({ title, to, icon, isActive }) => {
   );
 };
 
-const Sidebar = () => {
+const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
 
@@ -50,6 +51,11 @@ const Sidebar = () => {
   };
 
   const { user } = useContext(UserContext);
+  const closeOnMobile = () => {
+    if (isMobile) {
+      setIsSidebar?.(false);
+    }
+  };
 
   const getSidebarAvatar = () => {
     if (!user?.avatar) {
@@ -64,10 +70,32 @@ const Sidebar = () => {
   };
 
   return (
-    <Box
+    <>
+      {isMobile && isSidebar && (
+        <Box
+          onClick={() => setIsSidebar?.(false)}
+          sx={{
+            position: "fixed",
+            inset: 0,
+            bgcolor: "rgba(2,6,23,0.45)",
+            backdropFilter: "blur(2px)",
+            zIndex: 1198,
+          }}
+        />
+      )}
+      <Box
       sx={{
         height: "100vh",
-        "& .pro-sidebar": { height: "100vh" },
+        position: isMobile ? "fixed" : "relative",
+        top: 0,
+        left: 0,
+        zIndex: isMobile ? 1199 : "auto",
+        transform: isMobile ? (isSidebar ? "translateX(0)" : "translateX(-110%)") : "none",
+        transition: isMobile ? "transform 220ms ease" : "none",
+        "& .pro-sidebar": {
+          height: "100vh",
+          width: isMobile ? "min(82vw, 320px)" : undefined,
+        },
         "& .pro-sidebar-inner": {
           background: `${colors.primary[400]} !important`,
           cursor: "pointer",
@@ -168,6 +196,7 @@ const Sidebar = () => {
               to="/dashboard"
               icon={<HomeOutlinedIcon />}
               isActive={isActivePath("/dashboard")}
+              onClick={closeOnMobile}
             />
 
             <Typography
@@ -183,6 +212,7 @@ const Sidebar = () => {
               to="/content"
               icon={<DatasetIcon />}
               isActive={isActivePath("/content")}
+              onClick={closeOnMobile}
             />
 
             <Item
@@ -190,6 +220,7 @@ const Sidebar = () => {
               to="/traffic_source"
               icon={<DeviceUnknownIcon />}
               isActive={isActivePath("/traffic_source")}
+              onClick={closeOnMobile}
             />
 
             <Item
@@ -197,6 +228,7 @@ const Sidebar = () => {
               to="/geography"
               icon={<MapOutlinedIcon />}
               isActive={isActivePath("/geography")}
+              onClick={closeOnMobile}
             />
 
             <Item
@@ -204,6 +236,7 @@ const Sidebar = () => {
               to="/audience_analytics"
               icon={<GroupsOutlinedIcon />}
               isActive={isActivePath("/audience_analytics")}
+              onClick={closeOnMobile}
             />
 
             <Item
@@ -211,6 +244,7 @@ const Sidebar = () => {
               to="/reach"
               icon={<VisibilityOutlinedIcon />}
               isActive={isActivePath("/reach")}
+              onClick={closeOnMobile}
             />
 
             <Item
@@ -218,6 +252,7 @@ const Sidebar = () => {
               to="/revenue"
               icon={<AttachMoneyIcon />}
               isActive={isActivePath("/revenue")}
+              onClick={closeOnMobile}
             />
             
 
@@ -234,6 +269,7 @@ const Sidebar = () => {
               to="/channel_compare"
               icon={<BarChartOutlinedIcon />}
               isActive={isActivePath("/channel_compare")}
+              onClick={closeOnMobile}
             />
 
             <Item
@@ -241,6 +277,7 @@ const Sidebar = () => {
               to="/rivals"
               icon={<WebhookIcon />}
               isActive={isActivePath("/rivals")}
+              onClick={closeOnMobile}
             />
 
             <Typography
@@ -256,6 +293,7 @@ const Sidebar = () => {
               to="/smmstore"
               icon={<AttachMoneyIcon />}
               isActive={isActivePath("/smmstore")}
+              onClick={closeOnMobile}
             />
 
             <Item
@@ -263,6 +301,7 @@ const Sidebar = () => {
               to="/smmstore_analytics"
               icon={<BarChartOutlinedIcon />}
               isActive={isActivePath("/smmstore_analytics")}
+              onClick={closeOnMobile}
             />
 
             {/* <Item
@@ -275,7 +314,8 @@ const Sidebar = () => {
           </Box>
         </Menu>
       </ProSidebar>
-    </Box>
+      </Box>
+    </>
   );
 };
 
