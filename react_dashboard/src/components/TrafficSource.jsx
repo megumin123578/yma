@@ -95,10 +95,135 @@ const loadStoredFilters = () => {
   }
 };
 
+const TrafficLineChart = ({
+  data,
+  lineDateExtent,
+  lineDateTicks,
+  colorMap,
+  themeMode,
+  onSliceMove,
+  onSliceLeave,
+}) => {
+  const isDark = themeMode === "dark";
+  const axisTextColor = isDark ? "#e5e7eb" : "#374151";
+
+  const renderBottomTick = useCallback(
+    (tick) => {
+      const d = tick.value instanceof Date ? tick.value : new Date(tick.value);
+      const label = dayjs(d).format("DD/MM");
+      return (
+        <g transform={`translate(${tick.x},${tick.y})`} style={{ pointerEvents: "none" }}>
+          <text
+            y={6}
+            textAnchor="middle"
+            dominantBaseline="hanging"
+            style={{
+              fill: axisTextColor,
+              fontSize: 11,
+              fontWeight: 600,
+            }}
+          >
+            {label}
+          </text>
+        </g>
+      );
+    },
+    [axisTextColor]
+  );
+
+  const lineTheme = useMemo(
+    () => ({
+      axis: {
+        ticks: {
+          text: {
+            fill: axisTextColor,
+            fontSize: 11,
+            fontWeight: 600,
+          },
+          line: {
+            stroke: isDark
+              ? "rgba(148,163,184,0.4)"
+              : "rgba(148,163,184,0.6)",
+          },
+        },
+      },
+      grid: {
+        line: {
+          stroke: isDark
+            ? "rgba(148,163,184,0.18)"
+            : "rgba(148,163,184,0.25)",
+          strokeWidth: 1,
+          strokeDasharray: "4 4",
+        },
+      },
+      crosshair: {
+        line: {
+          stroke: isDark
+            ? "rgba(226,232,240,0.45)"
+            : "rgba(15,23,42,0.35)",
+          strokeWidth: 1,
+          strokeDasharray: "3 3",
+        },
+      },
+      tooltip: {
+        container: {
+          background: "transparent",
+          padding: 0,
+          boxShadow: "none",
+          border: "none",
+          borderRadius: 0,
+        },
+      },
+    }),
+    [axisTextColor, isDark]
+  );
+
+  return (
+    <ResponsiveLine
+      debounceResize={150}
+      data={data}
+      colors={(serie) => colorMap[serie.id] || "#60a5fa"}
+      margin={{ top: 32, right: 8, bottom: 64, left: 56 }}
+      xScale={{
+        type: "time",
+        format: "native",
+        useUTC: false,
+        precision: "day",
+        min: lineDateExtent.min,
+        max: lineDateExtent.max,
+      }}
+      yScale={{ type: "linear", min: 0, stacked: false }}
+      curve="linear"
+      enablePoints
+      pointSize={6}
+      enableSlices="x"
+      enableCrosshair
+      crosshairType="cross"
+      tooltip={() => null}
+      sliceTooltip={() => null}
+      onMouseMove={onSliceMove}
+      onMouseLeave={onSliceLeave}
+      axisBottom={{
+        tickValues: lineDateTicks,
+        tickSize: 0,
+        tickPadding: 10,
+        renderTick: renderBottomTick,
+      }}
+      axisLeft={{
+        tickSize: 0,
+        tickPadding: 8,
+        format: (v) => formatNumber(v),
+      }}
+      theme={lineTheme}
+    />
+  );
+};
+
 const TrafficSourceChart = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const chartRef = useRef(null);
+  const [hoverSlice, setHoverSlice] = useState(null);
 
   /* === Controls === */
   const [chartType, setChartType] = useState(() => loadStoredFilters()?.chartType || "pie");
@@ -670,117 +795,117 @@ const TrafficSourceChart = () => {
 
           {chartType === "line" && (
             <Box ref={chartRef} sx={{ height: "100%" }}>
-              <ResponsiveLine
+              <TrafficLineChart
                 data={lineSeries}
-                colors={d => colorMap[d.id] || "#888"}
-                margin={{ top: 20, right: 20, bottom: 60, left: 60 }}
-                xScale={{ type: "time", format: "native", useUTC: true, precision: "day", min: lineDateExtent.min, max: lineDateExtent.max }}
-                yScale={{ type: "linear", min: 0, max: "auto" }}
-                curve="monotoneX"
-                axisBottom={{
-                  format: "%d/%m",
-                  tickValues: lineDateTicks,
-                  tickPadding: 10,
-                }}
-                enablePoints={true}
-                pointSize={8}
-                pointColor="#fff"
-                pointBorderWidth={2}
-                pointBorderColor={{ from: "serieColor" }}
-                useMesh
-                enableSlices="x"
-                sliceTooltip={({ slice }) => {
-                  const isRight = chartRef.current && slice.x > chartRef.current.offsetWidth / 2;
-                  return (
-                    <Box sx={{
-                      ...chartTooltipSx,
-                      minWidth: 240,
-                      transform: isRight ? "translateX(-110%)" : "translateX(10%)",
-                      transition: "transform 0.1s",
-                    }}>
-                      <Typography
-                        variant="subtitle2"
-                        sx={{
-                          fontWeight: 800,
-                          mb: 1,
-                          color: isDark ? "#e5e7eb" : "#111827",
-                        }}
-                      >
-                          {dayjs(slice.points[0].data.x).format("DD MMMM YYYY")}
-                      </Typography>
-                      <Stack spacing={1}>
-                        {slice.points
-                          .slice()
-                          .sort((a, b) => (b.data.y ?? 0) - (a.data.y ?? 0))
-                          .slice(0, 5)
-                          .map((p) => {
-                          const color = p.data.color || colorMap[p.serieId] || p.serieColor || "#888";
-                          const label = p.data.sourceLabel || getSourceDisplayName(p.serieId);
+                lineDateExtent={lineDateExtent}
+                lineDateTicks={lineDateTicks}
+                colorMap={colorMap}
+                themeMode={theme.palette.mode}
+                onSliceMove={setHoverSlice}
+                onSliceLeave={() => setHoverSlice(null)}
+              />
+            </Box>
+          )}
 
-                          return (
+          {chartType === "line" && hoverSlice && (
+            <Box
+              sx={{
+                position: "absolute",
+                top: 10,
+                left: 0,
+                transform: `translate3d(${56 + hoverSlice.x}px, 0, 0) translateX(-50%)`,
+                transition: "transform 140ms cubic-bezier(0.2, 0.9, 0.2, 1)",
+                willChange: "transform",
+                pointerEvents: "none",
+                zIndex: 20,
+                width: "min(360px, 92%)",
+              }}
+            >
+              <Box sx={{ ...chartTooltipSx }}>
+                <Typography
+                  variant="subtitle2"
+                  sx={{
+                    fontWeight: 800,
+                    mb: 1,
+                    color: isDark ? "#e5e7eb" : "#111827",
+                  }}
+                >
+                  {(() => {
+                    const p0 = hoverSlice.points?.[0];
+                    const x = p0?.data?.x;
+                    if (x instanceof Date) return dayjs(x).format("MMM D, YYYY");
+                    return String(x ?? "");
+                  })()}
+                </Typography>
+                <Box sx={{ display: "grid", gap: 0.75 }}>
+                  {hoverSlice.points
+                    .slice()
+                    .sort((a, b) => (b.data.y ?? 0) - (a.data.y ?? 0))
+                    .slice(0, 5)
+                    .map((p) => {
+                      const color = colorMap[p.serieId] || p.color || "#888";
+                      const label = p.data.sourceLabel || getSourceDisplayName(p.serieId);
+                      return (
+                        <Box
+                          key={p.id}
+                          sx={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(0, 1fr) auto",
+                            alignItems: "center",
+                            gap: 2,
+                            width: "100%",
+                            minWidth: 0,
+                          }}
+                        >
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, overflow: "hidden" }}>
                             <Box
-                              key={p.id}
+                              component="span"
                               sx={{
-                                display: "grid",
-                                gridTemplateColumns: "minmax(0, 1fr) auto",
-                                alignItems: "center",
-                                justifyContent: "space-between",
-                                gap: 2,
+                                width: 10,
+                                height: 10,
+                                borderRadius: "50%",
+                                backgroundColor: color,
+                                flexShrink: 0,
+                              }}
+                            />
+                            <Typography
+                              variant="body2"
+                              title={label}
+                              noWrap
+                              sx={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                lineHeight: 1.25,
+                                display: "block",
+                                width: "100%",
                                 minWidth: 0,
+                                maxWidth: "100%",
+                                color: isDark ? "#e5e7eb" : "#111827",
                               }}
                             >
-                              <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, overflow: "hidden" }}>
-                                <Box sx={{
-                                  width: 10,
-                                  height: 10,
-                                  borderRadius: "50%",
-                                  backgroundColor: color,
-                                  flexShrink: 0,
-                                }} />
-                                <Typography
-                                  variant="body2"
-                                  title={label}
-                                  noWrap
-                                  sx={{
-                                    fontSize: 12,
-                                    fontWeight: 600,
-                                    lineHeight: 1.25,
-                                    display: "block",
-                                    width: "100%",
-                                    minWidth: 0,
-                                    maxWidth: "100%",
-                                    color: isDark ? "#e5e7eb" : "#111827",
-                                  }}
-                                >
-                                  {label}
-                                </Typography>
-                              </Box>
-                              <Typography
-                                variant="body2"
-                                sx={{
-                                  fontSize: 12,
-                                  fontWeight: 800,
-                                  color: isDark ? "#e5e7eb" : "#111827",
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {metric === "averageViewPercentage" ? `${n(p.data.y).toFixed(2)}%` : metric === "averageViewDuration" ? formatSeconds(p.data.y) : formatNumber(p.data.y)}
-                              </Typography>
-                            </Box>
-                          );
-                        })}
-                      </Stack>
-                    </Box>
-                  );
-                }}
-                theme={{
-                  axis: {
-                    ticks: { text: { fontSize: 11, fill: theme.palette.text.secondary } },
-                    domain: { line: { stroke: "transparent" } }
-                  },
-                  grid: { line: { stroke: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)" } }
-                }}
-              />
+                              {label}
+                            </Typography>
+                          </Box>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontSize: 12,
+                              fontWeight: 800,
+                              color: isDark ? "#e5e7eb" : "#111827",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {metric === "averageViewPercentage"
+                              ? `${n(p.data.y).toFixed(2)}%`
+                              : metric === "averageViewDuration"
+                                ? formatSeconds(p.data.y)
+                                : formatNumber(p.data.y)}
+                          </Typography>
+                        </Box>
+                      );
+                    })}
+                </Box>
+              </Box>
             </Box>
           )}
 
@@ -909,7 +1034,7 @@ const TrafficSourceChart = () => {
                       transition={{ delay: idx * 0.03 }}
                       sx={{ "&:hover": { bgcolor: isDark ? "rgba(255,255,255,0.02) !important" : "rgba(0,0,0,0.01) !important" } }}
                     >
-                      <TableCell sx={{ fontWeight: 600, fontSize: 13, borderLeft: idx < 3 ? `3px solid ${colorMap[r.id]}` : "none" }}>
+                      <TableCell sx={{ fontWeight: 600, fontSize: 13, borderLeft: idx < 5 && colorMap[r.id] ? `3px solid ${colorMap[r.id]}` : "none" }}>
                         <Box display="flex" alignItems="center" gap={1.5}>
                           <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: colorMap[r.id] }} />
                           {r.label}
