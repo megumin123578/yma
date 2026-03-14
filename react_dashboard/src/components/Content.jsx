@@ -20,6 +20,7 @@ import {
   TableHead,
 
   TableRow,
+  TableSortLabel,
 
   TablePagination,
 
@@ -715,6 +716,8 @@ const ContentAnalytics = () => {
   const [page, setPage] = useState(0);
 
   const [rowsPerPage, setRowsPerPage] = useState(50);
+  const [sortKey, setSortKey] = useState("views");
+  const [sortDirection, setSortDirection] = useState("desc");
 
 
 
@@ -1150,6 +1153,34 @@ const ContentAnalytics = () => {
 
   );
 
+  const sortedRows = useMemo(() => {
+    const getComparableValue = (row, key) => {
+      if (key === "title") return String(row.title || "").toLowerCase();
+      if (key === "published") {
+        return row.published ? new Date(row.published).getTime() : Number.NEGATIVE_INFINITY;
+      }
+      const value = row[key];
+      if (value === null || value === undefined || value === "") {
+        return Number.NEGATIVE_INFINITY;
+      }
+      if (typeof value === "number") return value;
+      return String(value).toLowerCase();
+    };
+
+    const directionFactor = sortDirection === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const aValue = getComparableValue(a, sortKey);
+      const bValue = getComparableValue(b, sortKey);
+
+      if (typeof aValue === "string" || typeof bValue === "string") {
+        return String(aValue).localeCompare(String(bValue)) * directionFactor;
+      }
+
+      if (aValue === bValue) return 0;
+      return (aValue - bValue) * directionFactor;
+    });
+  }, [rows, sortDirection, sortKey]);
+
   const totals = useMemo(() => {
     const acc = TABLE_METRIC_OPTIONS.reduce((out, item) => {
       if (NON_SUM_METRICS.has(item.value)) {
@@ -1188,9 +1219,21 @@ const ContentAnalytics = () => {
 
     const end = start + rowsPerPage;
 
-    return rows.slice(start, end);
+    return sortedRows.slice(start, end);
 
-  }, [rows, page, rowsPerPage]);
+  }, [sortedRows, page, rowsPerPage]);
+
+  const handleSort = useCallback((key) => {
+    setPage(0);
+    if (sortKey === key) {
+      setSortDirection((currentDirection) =>
+        currentDirection === "desc" ? "asc" : "desc"
+      );
+      return;
+    }
+    setSortKey(key);
+    setSortDirection("desc");
+  }, [sortKey]);
 
 
 
@@ -1208,23 +1251,7 @@ const ContentAnalytics = () => {
 
     // 🔴 1. Get Top 5 IDs based on the current metric to avoid rendering 100s of lines
 
-    const metricToSort = {
-
-      views: "views",
-
-      estimatedMinutesWatched: "watchHours",
-
-      likes: "likes"
-
-    }[metric] || "views";
-
-
-
-    const topIds = rows
-
-      .slice()
-
-      .sort((a, b) => (b[metricToSort] || 0) - (a[metricToSort] || 0))
+    const topIds = sortedRows
 
       .slice(0, 5)
 
@@ -1320,7 +1347,7 @@ const ContentAnalytics = () => {
 
     });
 
-  }, [timeseries, chartType, metric, rows]);
+  }, [timeseries, chartType, metric, rows, sortedRows]);
 
 
 
@@ -1372,11 +1399,7 @@ const ContentAnalytics = () => {
 
     // 🔴 Limit to Top 5 for Bar chart too
 
-    const topRows = rows
-
-      .slice()
-
-      .sort((a, b) => (b[metricKey] || 0) - (a[metricKey] || 0))
+    const topRows = sortedRows
 
       .slice(0, 5);
 
@@ -1396,7 +1419,7 @@ const ContentAnalytics = () => {
 
     };
 
-  }, [rows, chartType, metric]);
+  }, [sortedRows, chartType, metric]);
 
 
 
@@ -1412,7 +1435,7 @@ const ContentAnalytics = () => {
 
       "#984ea3",
 
-      "#ff7f00",
+      "#facc15",
 
       "#ffff33",
 
@@ -2441,17 +2464,6 @@ const ContentAnalytics = () => {
         </Typography>
       )}
 
-      {(selectedTableMetrics.includes("impressions") ||
-        selectedTableMetrics.includes("impressionsClickThroughRate")) && (
-        <Typography
-          variant="caption"
-          sx={{ color: "text.secondary", ml: 0.5 }}
-        >
-          Impressions/CTR are shown at channel level in the TOTAL row
-          {loadingChannelMetrics ? " and may finish loading after the chart." : "."}
-        </Typography>
-      )}
-
       <TableContainer component={Paper} elevation={0} sx={tablePaperSx}>
 
         <Table size="small">
@@ -2462,7 +2474,15 @@ const ContentAnalytics = () => {
 
               <TableCell>Video</TableCell>
 
-              <TableCell>Publish Date</TableCell>
+              <TableCell sortDirection={sortKey === "published" ? sortDirection : false}>
+                <TableSortLabel
+                  active={sortKey === "published"}
+                  direction={sortKey === "published" ? sortDirection : "desc"}
+                  onClick={() => handleSort("published")}
+                >
+                  Publish Date
+                </TableSortLabel>
+              </TableCell>
 
               {selectedTableMetrics.map((metricKey) => {
 
@@ -2472,9 +2492,19 @@ const ContentAnalytics = () => {
 
                 return (
 
-                  <TableCell key={metricKey} align="right">
+                  <TableCell
+                    key={metricKey}
+                    align="right"
+                    sortDirection={sortKey === metricKey ? sortDirection : false}
+                  >
 
-                    {label}
+                    <TableSortLabel
+                      active={sortKey === metricKey}
+                      direction={sortKey === metricKey ? sortDirection : "desc"}
+                      onClick={() => handleSort(metricKey)}
+                    >
+                      {label}
+                    </TableSortLabel>
 
                   </TableCell>
 
