@@ -11,6 +11,7 @@ from python_backend.module_trafficsource import sanitize_filename
 
 
 router = APIRouter(prefix="/api/audience", tags=["audience"])
+TOKEN_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "token"))
 
 
 def _filter_hidden(accounts, hidden):
@@ -34,13 +35,40 @@ def _label_accounts(db: Session, accounts: list) -> list:
     return [{"value": tag, "label": label_map.get(tag, tag)} for tag in accounts]
 
 
+def _available_accounts_from_credentials(db: Session, current_user) -> list:
+    hidden = get_hidden_account_tags(db, current_user.id) if current_user else set()
+    allowed = get_allowed_account_tags(db, current_user)
+    rows = (
+        db.query(UserCredential)
+        .filter(UserCredential.token_name.isnot(None))
+        .order_by(UserCredential.updated_at.desc())
+        .all()
+    )
+    seen = set()
+    accounts = []
+    for row in rows:
+        value = sanitize_filename(row.account_tag or "")
+        if not value or value in seen:
+            continue
+        if allowed is not None and value not in allowed:
+            continue
+        token_name = (row.token_name or "").strip()
+        if not token_name:
+            continue
+        token_path = os.path.join(TOKEN_DIR, token_name)
+        if not os.path.exists(token_path):
+            continue
+        seen.add(value)
+        accounts.append(value)
+    return _filter_hidden(accounts, hidden)
+
+
 @router.get("/demographics")
 def get_demographics(
     accountTag: str = Query(None),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
-    hidden = get_hidden_account_tags(db, current_user.id) if current_user else set()
     allowed = get_allowed_account_tags(db, current_user)
     pg_url = os.getenv("PG_URL")
     if not pg_url:
@@ -49,13 +77,7 @@ def get_demographics(
         pg_engine = create_engine(pg_url, future=True)
         with pg_engine.connect() as conn:
             if not accountTag:
-                rows = conn.execute(
-                    text("SELECT DISTINCT account_tag FROM audience_demographics ORDER BY account_tag")
-                ).fetchall()
-                accounts = [r[0] for r in rows]
-                if allowed is not None:
-                    accounts = [acct for acct in accounts if acct in allowed]
-                accounts = _filter_hidden(accounts, hidden)
+                accounts = _available_accounts_from_credentials(db, current_user)
                 return {"availableAccounts": _label_accounts(db, accounts), "rows": []}
 
             safe_tag = sanitize_filename(accountTag)
@@ -112,7 +134,6 @@ def get_retention(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
-    hidden = get_hidden_account_tags(db, current_user.id) if current_user else set()
     allowed = get_allowed_account_tags(db, current_user)
     pg_url = os.getenv("PG_URL")
     if not pg_url:
@@ -121,14 +142,8 @@ def get_retention(
         pg_engine = create_engine(pg_url, future=True)
         with pg_engine.connect() as conn:
             if not accountTag:
-                rows = conn.execute(
-                    text("SELECT DISTINCT account_tag FROM audience_retention ORDER BY account_tag")
-                ).fetchall()
-                accounts = [r[0] for r in rows]
-                if allowed is not None:
-                    accounts = [acct for acct in accounts if acct in allowed]
-                accounts = _filter_hidden(accounts, hidden)
-                return {"availableAccounts": accounts, "videos": [], "rows": []}
+                accounts = _available_accounts_from_credentials(db, current_user)
+                return {"availableAccounts": _label_accounts(db, accounts), "videos": [], "rows": []}
 
             safe_tag = sanitize_filename(accountTag)
             if allowed is not None and safe_tag not in allowed:
@@ -207,7 +222,6 @@ def get_devices(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
-    hidden = get_hidden_account_tags(db, current_user.id) if current_user else set()
     allowed = get_allowed_account_tags(db, current_user)
     pg_url = os.getenv("PG_URL")
     if not pg_url:
@@ -216,14 +230,8 @@ def get_devices(
         pg_engine = create_engine(pg_url, future=True)
         with pg_engine.connect() as conn:
             if not accountTag:
-                rows = conn.execute(
-                    text("SELECT DISTINCT account_tag FROM audience_devices ORDER BY account_tag")
-                ).fetchall()
-                accounts = [r[0] for r in rows]
-                if allowed is not None:
-                    accounts = [acct for acct in accounts if acct in allowed]
-                accounts = _filter_hidden(accounts, hidden)
-                return {"availableAccounts": accounts, "rows": []}
+                accounts = _available_accounts_from_credentials(db, current_user)
+                return {"availableAccounts": _label_accounts(db, accounts), "rows": []}
 
             safe_tag = sanitize_filename(accountTag)
             if allowed is not None and safe_tag not in allowed:
@@ -274,7 +282,6 @@ def get_viewer_types(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
-    hidden = get_hidden_account_tags(db, current_user.id) if current_user else set()
     allowed = get_allowed_account_tags(db, current_user)
     pg_url = os.getenv("PG_URL")
     if not pg_url:
@@ -283,14 +290,8 @@ def get_viewer_types(
         pg_engine = create_engine(pg_url, future=True)
         with pg_engine.connect() as conn:
             if not accountTag:
-                rows = conn.execute(
-                    text("SELECT DISTINCT account_tag FROM audience_viewer_types ORDER BY account_tag")
-                ).fetchall()
-                accounts = [r[0] for r in rows]
-                if allowed is not None:
-                    accounts = [acct for acct in accounts if acct in allowed]
-                accounts = _filter_hidden(accounts, hidden)
-                return {"availableAccounts": accounts, "rows": []}
+                accounts = _available_accounts_from_credentials(db, current_user)
+                return {"availableAccounts": _label_accounts(db, accounts), "rows": []}
 
             safe_tag = sanitize_filename(accountTag)
             if allowed is not None and safe_tag not in allowed:

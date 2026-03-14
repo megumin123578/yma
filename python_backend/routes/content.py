@@ -327,13 +327,19 @@ def list_channels(
                 continue
             if hidden_all and value in hidden_all:
                 continue
+            token_name = (row.token_name or "").strip()
+            if not token_name:
+                continue
+            token_path = os.path.join(TOKEN_DIR, token_name)
+            if not os.path.exists(token_path):
+                continue
             seen.add(value)
             label = row.selected_channel_title or row.account_tag or value
             avatar = row.selected_channel_avatar or None
             is_stale = not row.updated_at or (row.updated_at < (now - avatar_ttl))
-            if (not avatar or is_stale) and row.token_name:
+            if (not avatar or is_stale) and token_name:
                 try:
-                    creds = _load_token_credentials(row.token_name)
+                    creds = _load_token_credentials(token_name)
                     if creds:
                         youtube = build("youtube", "v3", credentials=creds)
                         query = {"part": "snippet", "maxResults": 1}
