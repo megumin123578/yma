@@ -717,7 +717,7 @@ const ContentAnalytics = () => {
 
   const [rowsPerPage, setRowsPerPage] = useState(50);
   const [sortKey, setSortKey] = useState("views");
-  const [sortDirection, setSortDirection] = useState("desc");
+  const [sortDirection] = useState("desc");
 
 
 
@@ -1225,15 +1225,8 @@ const ContentAnalytics = () => {
 
   const handleSort = useCallback((key) => {
     setPage(0);
-    if (sortKey === key) {
-      setSortDirection((currentDirection) =>
-        currentDirection === "desc" ? "asc" : "desc"
-      );
-      return;
-    }
     setSortKey(key);
-    setSortDirection("desc");
-  }, [sortKey]);
+  }, []);
 
 
 
