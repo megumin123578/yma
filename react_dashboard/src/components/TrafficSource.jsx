@@ -37,7 +37,6 @@ import {
   METRIC_OPTIONS,
   PERIOD_OPTIONS,
   getRangeForPeriod,
-  makeDistinctPalette,
   toUTCDate,
   getMonthRange,
   getChannelAvatarMap,
@@ -84,6 +83,38 @@ const EXTRA_PERIODS = [
 ];
 
 const FILTERS_STORAGE_KEY = "trafficSource.filters";
+const TRAFFIC_SOURCE_COLORS = [
+  "#3b82f6",
+  "#ef4444",
+  "#22c55e",
+  "#f59e0b",
+  "#a855f7",
+  "#ec4899",
+  "#06b6d4",
+  "#84cc16",
+  "#f97316",
+  "#6366f1",
+  "#14b8a6",
+  "#f43f5e",
+];
+
+const makeTrafficSourceColorMap = (ids, useDark = false) => {
+  const orderedIds = Array.from(new Set((ids || []).map(String).filter(Boolean)));
+  const lightness = useDark ? 68 : 58;
+  const palette = {};
+
+  orderedIds.forEach((id, index) => {
+    if (index < TRAFFIC_SOURCE_COLORS.length) {
+      palette[id] = TRAFFIC_SOURCE_COLORS[index];
+      return;
+    }
+
+    const hue = Math.round((index * 137.508 + 23) % 360);
+    palette[id] = `hsl(${hue}, 78%, ${lightness}%)`;
+  });
+
+  return palette;
+};
 
 const loadStoredFilters = () => {
   if (typeof window === "undefined") return null;
@@ -471,7 +502,10 @@ const TrafficSourceChart = () => {
     return Array.from(ids);
   }, [rows, tsSeries]);
 
-  const colorMap = useMemo(() => makeDistinctPalette(seriesIdsForPalette, { useDark: theme.palette.mode === "dark" }), [seriesIdsForPalette, theme.palette.mode]);
+  const colorMap = useMemo(
+    () => makeTrafficSourceColorMap(seriesIdsForPalette, theme.palette.mode === "dark"),
+    [seriesIdsForPalette, theme.palette.mode]
+  );
 
   /* === Line Series with Padding and Alignment === */
   const lineSeries = useMemo(() => {
