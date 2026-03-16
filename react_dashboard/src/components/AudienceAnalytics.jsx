@@ -17,6 +17,7 @@ import {
 import { ResponsiveLine } from "@nivo/line";
 import api from "../services/api";
 import { getChannelAvatarMap } from "./Module";
+import ChannelSwitcher from "./ChannelSwitcher";
 
 const formatRangeLabel = (range) => {
   if (!range?.start || !range?.end) return "No data";
@@ -318,7 +319,6 @@ const AudienceAnalytics = () => {
   const showViewerSkeleton = loading && viewerTypeRows.length === 0;
   const showRetentionSkeleton =
     loading && retentionSeries[0].data.length === 0;
-
   return (
     <Box display="flex" flexDirection="column" gap={3}>
       <Box
@@ -333,42 +333,14 @@ const AudienceAnalytics = () => {
           },
         }}
       >
-        <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 220 }, flex: 1 }}>
-          <InputLabel>Channel</InputLabel>
-          <Select
-            label="Channel"
-            value={accountTag}
-            onChange={(event) => setAccountTag(event.target.value)}
-            renderValue={(value) => {
-              const sel = accounts.find((acct) => acct.value === value);
-              const label = sel?.label || value;
-              const avatar = channelAvatarMap[value] || "";
-              return (
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Avatar src={avatar} alt={label} sx={{ width: 22, height: 22 }} />
-                  <Typography variant="body2" noWrap>
-                    {label}
-                  </Typography>
-                </Stack>
-              );
-            }}
-          >
-            {accounts.map((acct) => (
-              <MenuItem key={acct.value} value={acct.value}>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Avatar
-                    src={channelAvatarMap[acct.value] || ""}
-                    alt={acct.label || acct.value}
-                    sx={{ width: 24, height: 24 }}
-                  />
-                  <Typography variant="body2" noWrap>
-                    {acct.label || acct.value}
-                  </Typography>
-                </Stack>
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <ChannelSwitcher
+          options={accounts}
+          value={accountTag}
+          onChange={(option) => setAccountTag(option?.value || "")}
+          sx={{ minWidth: { xs: "100%", sm: 220 }, flex: 1 }}
+          recentStorageKey="audienceAnalytics.recentChannels"
+          getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
+        />
 
         <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 260 }, flex: 1 }}>
           <InputLabel>Video</InputLabel>

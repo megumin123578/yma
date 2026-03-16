@@ -12,7 +12,6 @@ import {
     MenuItem,
     CircularProgress,
     useTheme,
-    Avatar,
 } from "@mui/material";
 import { motion } from "framer-motion";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
@@ -26,6 +25,7 @@ import api from "../services/api";
 import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { geoFeatures } from "../data/mockGeoFeatures";
 import { getChannelAvatarMap } from "./Module";
+import ChannelSwitcher from "./ChannelSwitcher";
 import {
     ResponsiveContainer,
     BarChart,
@@ -701,70 +701,23 @@ const VideoList = () => {
                 gap={2}
             >
                 <Box display="flex" alignItems="center" gap={2}>
-                    <Typography
-                        variant="subtitle1"
-                        color={colors.grey[100]}
-                        fontWeight={600}
-                    >
-                        Choose Channel:
-                    </Typography>
-
                     {loadingChannels ? (
                         <CircularProgress size={20} />
                     ) : (
-                        <TextField
-                            select
-                            size="small"
+                        <ChannelSwitcher
+                            options={channels}
                             value={selectedChannel}
-                            onChange={(e) => setSelectedChannel(e.target.value)}
-                            sx={{ minWidth: 220 }}
-                            SelectProps={{
-                                renderValue: (value) => {
-                                    const sel = channels.find((c) => c.value === value);
-                                    const label = sel?.label || value;
-                                    const avatar = channelAvatarMap[value] || "";
-                                    return (
-                                        <Stack direction="row" spacing={1} alignItems="center">
-                                            <Avatar
-                                                src={avatar}
-                                                alt={label}
-                                                sx={{ width: 22, height: 22 }}
-                                            />
-                                            <Typography variant="body2" noWrap>
-                                                {label}
-                                            </Typography>
-                                        </Stack>
-                                    );
-                                },
-                            }}
-                        >
-                            {channels.map((c) => (
-                                <MenuItem key={c.value} value={c.value}>
-                                    <Stack direction="row" spacing={1} alignItems="center">
-                                        <Avatar
-                                            src={channelAvatarMap[c.value] || ""}
-                                            alt={c.label || c.value}
-                                            sx={{ width: 24, height: 24 }}
-                                        />
-                                        <Typography variant="body2" noWrap>
-                                            {c.label}
-                                        </Typography>
-                                    </Stack>
-                                </MenuItem>
-                            ))}
-                        </TextField>
+                            onChange={(option) => setSelectedChannel(option?.value || "")}
+                            sx={{ minWidth: 280, flex: "1 1 320px", maxWidth: 420 }}
+                            recentStorageKey="dashboard.recentChannels"
+                            getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
+                        />
                     )}
 
-                    <Typography
-                        variant="subtitle1"
-                        color={colors.grey[100]}
-                        fontWeight={600}
-                    >
-                        Date Range:
-                    </Typography>
                     <TextField
                         select
                         size="small"
+                        label="Date range"
                         value={overviewRange}
                         onChange={(e) => setOverviewRange(e.target.value)}
                         sx={{ minWidth: 160 }}

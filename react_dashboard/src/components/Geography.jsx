@@ -3,7 +3,6 @@ import { useTheme } from "@mui/material/styles";
 import {
   Box,
   Stack,
-  Avatar,
   FormControl,
   InputLabel,
   Select,
@@ -23,13 +22,13 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
 import BarChartIcon from "@mui/icons-material/BarChart";
-import YouTubeIcon from "@mui/icons-material/YouTube";
 
 import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { ResponsiveChoropleth } from "@nivo/geo";
 import { geoFeatures } from "../data/mockGeoFeatures";
 import api from "../services/api";
 import { getChannelAvatarMap } from "./Module";
+import ChannelSwitcher from "./ChannelSwitcher";
 
 // ===== Helpers =====
 const n = (v) => Number(v) || 0;
@@ -269,47 +268,23 @@ const GeographyChart = ({ isDashboard = false }) => {
       <Stack spacing={3}>
         {/* SELECTORS */}
         <Stack direction={{ xs: "column", sm: "row" }} spacing={2} justifyContent="flex-start">
-          <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <YouTubeIcon sx={{ fontSize: 16 }} /> Channel
-            </InputLabel>
-            <Select
-              label="Channel"
-              value={channel}
-              onChange={(e) => {
-                const next = e.target.value;
-                setChannel(next);
-                const s = channels.find(c => c.value === next);
-                if (s) setChannelLabelFallback(s.label);
-              }}
-              renderValue={(v) => {
-                const sel = channels.find(c => c.value === v);
-                const label = sel?.label
-                  ? sel.label
-                  : channelLabelFallback || String(v || "").replace(/_+/g, " ").trim();
-                const avatar = channelAvatarMap[v] || "";
-                return (
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Avatar src={avatar} alt={label} sx={{ width: 22, height: 22 }} />
-                    <Typography variant="body2" noWrap>
-                      {label}
-                    </Typography>
-                  </Stack>
-                );
-              }}
-            >
-              {channels.map(c => (
-                <MenuItem key={c.value} value={c.value}>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Avatar src={channelAvatarMap[c.value] || ""} alt={c.label || c.value} sx={{ width: 24, height: 24 }} />
-                    <Typography variant="body2" sx={{ fontSize: 13 }} noWrap>
-                      {c.label}
-                    </Typography>
-                  </Stack>
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <ChannelSwitcher
+            options={channels}
+            value={channel}
+            onChange={(option) => {
+              const next = option?.value || "";
+              setChannel(next);
+              if (option?.label) setChannelLabelFallback(option.label);
+            }}
+            sx={{ minWidth: 240, flex: "1 1 280px", maxWidth: 420 }}
+            recentStorageKey="geography.recentChannels"
+            getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
+            getOptionLabel={(option) =>
+              option?.label
+                ? option.label
+                : channelLabelFallback || String(option?.value || "").replace(/_+/g, " ").trim()
+            }
+          />
 
           <FormControl size="small" sx={{ minWidth: 150 }}>
             <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>

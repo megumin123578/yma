@@ -3,7 +3,6 @@ import {
   Box,
   Stack,
   Typography,
-  Avatar,
   Paper,
   FormControl,
   InputLabel,
@@ -25,6 +24,7 @@ import dayjs from "dayjs";
 import api from "../services/api";
 import { tokens } from "../theme";
 import { getChannelAvatarMap } from "./Module";
+import ChannelSwitcher from "./ChannelSwitcher";
 
 const RANGE_OPTIONS = [
   { value: "7d", label: "Last 7 days" },
@@ -220,46 +220,17 @@ const RevenueAnalytics = () => {
         : "rgba(248,250,252,0.9)",
     p: 2,
   };
-
   return (
     <Stack spacing={2}>
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-        <FormControl size="small" sx={{ minWidth: 220 }}>
-          <InputLabel>Channel</InputLabel>
-          <Select
-            value={channel}
-            label="Channel"
-            onChange={(event) => setChannel(event.target.value)}
-            renderValue={(value) => {
-              const sel = channels.find((c) => c.value === value);
-              const label = sel?.label || value;
-              const avatar = channelAvatarMap[value] || "";
-              return (
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Avatar src={avatar} alt={label} sx={{ width: 22, height: 22 }} />
-                  <Typography variant="body2" noWrap>
-                    {label}
-                  </Typography>
-                </Stack>
-              );
-            }}
-          >
-            {channels.map((opt) => (
-              <MenuItem key={opt.value} value={opt.value}>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Avatar
-                    src={channelAvatarMap[opt.value] || ""}
-                    alt={opt.label || opt.value}
-                    sx={{ width: 24, height: 24 }}
-                  />
-                  <Typography variant="body2" noWrap>
-                    {opt.label}
-                  </Typography>
-                </Stack>
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <ChannelSwitcher
+          options={channels}
+          value={channel}
+          onChange={(option) => setChannel(option?.value || "")}
+          sx={{ minWidth: 280, flex: "1 1 320px", maxWidth: 420 }}
+          recentStorageKey="revenue.recentChannels"
+          getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
+        />
         <FormControl size="small" sx={{ minWidth: 180 }}>
           <InputLabel>Range</InputLabel>
           <Select

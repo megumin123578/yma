@@ -55,14 +55,23 @@ def list_channels(
     current_user=Depends(get_current_user_optional),
 ):
     rows_acc = query_all_safe("""
-        SELECT DISTINCT
+        SELECT
             account_tag,
-            account_tag AS label
+            account_tag AS label,
+            MAX(day)::date AS last_data_date
         FROM traffic_source_daily
         WHERE account_tag IS NOT NULL AND account_tag <> ''
+        GROUP BY account_tag
         ORDER BY 2;
     """)
-    items = [{"value": r["account_tag"], "label": r["account_tag"]} for r in rows_acc]
+    items = [
+        {
+            "value": r["account_tag"],
+            "label": r["account_tag"],
+            "lastDataDate": r.get("last_data_date"),
+        }
+        for r in rows_acc
+    ]
     allowed = get_allowed_account_tags(db, current_user)
     if allowed is not None:
         items = [r for r in items if r["value"] in allowed]
@@ -73,17 +82,32 @@ def list_channels(
     tags = [r["value"] for r in items]
     if tags:
         creds = (
-            db.query(UserCredential.account_tag, UserCredential.selected_channel_title)
+            db.query(
+                UserCredential.account_tag,
+                UserCredential.selected_channel_title,
+                UserCredential.selected_channel_avatar,
+                UserCredential.updated_at,
+            )
             .filter(UserCredential.account_tag.in_(tags))
             .all()
         )
-        label_map = {
-            sanitize_filename(row.account_tag): (row.selected_channel_title or row.account_tag)
+        meta_map = {
+            sanitize_filename(row.account_tag): {
+                "label": row.selected_channel_title or row.account_tag,
+                "avatar": row.selected_channel_avatar or None,
+                "updatedAt": row.updated_at.isoformat() if row.updated_at else None,
+            }
             for row in creds
             if row.account_tag
         }
         items = [
-            {"value": r["value"], "label": label_map.get(r["value"], r["label"])}
+            {
+                "value": r["value"],
+                "label": meta_map.get(r["value"], {}).get("label", r["label"]),
+                "avatar": meta_map.get(r["value"], {}).get("avatar"),
+                "updatedAt": meta_map.get(r["value"], {}).get("updatedAt"),
+                "lastDataDate": r.get("lastDataDate"),
+            }
             for r in items
         ]
     return {"items": items}

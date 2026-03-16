@@ -7,7 +7,6 @@ import {
   Box,
   Stack,
   Typography,
-  Avatar,
   Checkbox,
   ListItemText,
   Table,
@@ -73,6 +72,7 @@ import {
 } from "./Module";
 
 import api from "../services/api";
+import ChannelSwitcher from "./ChannelSwitcher";
 
 
 /* Extra periods – chỉ khai báo value + label (không chứa ngày) */
@@ -1575,45 +1575,17 @@ const ContentAnalytics = () => {
       <Stack direction="row" spacing={2} flexWrap="wrap">
 
         {/* Channel */}
-        <FormControl size="small" sx={{ minWidth: 200 }}>
-          <InputLabel>Channel</InputLabel>
-          <Select
-            value={channelList.some((c) => c.id === channelId) ? channelId : ""}
-            label="Channel"
-            onChange={(e) => setChannelId(e.target.value)}
-            renderValue={(v) => {
-              const sel = channelList.find((c) => c.id === v);
-              const label = sel?.title || v;
-              return (
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Avatar
-                    src={sel?.avatar || ""}
-                    alt={label}
-                    sx={{ width: 22, height: 22 }}
-                  />
-                  <Typography variant="body2" noWrap>
-                    {label}
-                  </Typography>
-                </Stack>
-              );
-            }}
-          >
-            {channelList.map((c) => (
-              <MenuItem key={c.id} value={c.id}>
-                <Stack direction="row" spacing={1} alignItems="center">
-                  <Avatar
-                    src={c.avatar || ""}
-                    alt={c.title || c.id}
-                    sx={{ width: 24, height: 24 }}
-                  />
-                  <Typography variant="body2" noWrap>
-                    {c.title}
-                  </Typography>
-                </Stack>
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <ChannelSwitcher
+          options={channelList.map((channelOption) => ({
+            value: channelOption.id,
+            label: channelOption.title,
+            avatar: channelOption.avatar,
+          }))}
+          value={channelList.some((c) => c.id === channelId) ? channelId : ""}
+          onChange={(option) => setChannelId(option?.value || "")}
+          sx={{ minWidth: 240, flex: "1 1 320px", maxWidth: 420 }}
+          recentStorageKey="content.recentChannels"
+        />
 
         {/* Metric */}
         <FormControl size="small" sx={{ minWidth: 180 }}>

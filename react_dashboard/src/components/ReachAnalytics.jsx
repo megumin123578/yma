@@ -2,10 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Box,
   CircularProgress,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
   Stack,
   Table,
   TableBody,
@@ -15,10 +11,8 @@ import {
   TableRow,
   Typography,
   useTheme,
-  Avatar,
 } from "@mui/material";
 import { motion } from "framer-motion";
-import YouTubeIcon from "@mui/icons-material/YouTube";
 import InsertLinkIcon from "@mui/icons-material/InsertLink";
 import PlaylistPlayIcon from "@mui/icons-material/PlaylistPlay";
 import ExploreIcon from "@mui/icons-material/Explore";
@@ -26,6 +20,7 @@ import ExploreIcon from "@mui/icons-material/Explore";
 import api from "../services/api";
 import { formatNumber } from "./Module";
 import { getChannelAvatarMap } from "./Module";
+import ChannelSwitcher from "./ChannelSwitcher";
 
 const formatPct = (value) => {
   if (value === null || value === undefined) return "-";
@@ -87,7 +82,6 @@ const ReachAnalytics = () => {
     browse: 0,
   });
   const [loading, setLoading] = useState(false);
-
   // === Data Fetching ===
   useEffect(() => {
     const loadChannels = async () => {
@@ -237,44 +231,14 @@ const ReachAnalytics = () => {
           alignItems="center"
           sx={{ flexWrap: "wrap", rowGap: 2 }}
         >
-          <FormControl size="small" sx={{ minWidth: 240 }}>
-            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <YouTubeIcon sx={{ fontSize: 16 }} /> Channel
-            </InputLabel>
-            <Select
-              label="Channel"
-              value={accounts.some((acct) => acct.value === accountTag) ? accountTag : ""}
-              onChange={(event) => setAccountTag(event.target.value)}
-              renderValue={(value) => {
-                const sel = accounts.find((acct) => acct.value === value);
-                const label = sel?.label || value;
-                const avatar = channelAvatarMap[value] || "";
-                return (
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Avatar src={avatar} alt={label} sx={{ width: 22, height: 22 }} />
-                    <Typography variant="body2" noWrap>
-                      {label}
-                    </Typography>
-                  </Stack>
-                );
-              }}
-            >
-              {accounts.map((acct) => (
-                <MenuItem key={acct.value} value={acct.value}>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Avatar
-                      src={channelAvatarMap[acct.value] || ""}
-                      alt={acct.label || acct.value}
-                      sx={{ width: 24, height: 24 }}
-                    />
-                    <Typography variant="body2" noWrap>
-                      {acct.label || acct.value}
-                    </Typography>
-                  </Stack>
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <ChannelSwitcher
+            options={accounts}
+            value={accounts.some((acct) => acct.value === accountTag) ? accountTag : ""}
+            onChange={(option) => setAccountTag(option?.value || "")}
+            sx={{ minWidth: 280, flex: "1 1 340px", maxWidth: 520 }}
+            recentStorageKey="reachAnalytics.recentChannels"
+            getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
+          />
 
           {loading && (
             <motion.div

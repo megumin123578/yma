@@ -6,6 +6,7 @@ import {
   Stack,
   Typography,
   Avatar,
+  Autocomplete,
   Table,
   TableBody,
   TableCell,
@@ -17,6 +18,7 @@ import {
   Select,
   MenuItem,
   Divider,
+  TextField,
 } from "@mui/material";
 import { motion, AnimatePresence } from "framer-motion";
 import BarChartIcon from "@mui/icons-material/BarChart";
@@ -83,6 +85,7 @@ const EXTRA_PERIODS = [
 ];
 
 const FILTERS_STORAGE_KEY = "trafficSource.filters";
+const RECENT_CHANNELS_STORAGE_KEY = "trafficSource.recentChannels";
 const TRAFFIC_SOURCE_COLORS = [
   "#3b82f6",
   "#ef4444",
@@ -124,6 +127,56 @@ const loadStoredFilters = () => {
   } catch (e) {
     return null;
   }
+};
+
+const loadRecentChannels = () => {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(RECENT_CHANNELS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+const saveRecentChannels = (items) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      RECENT_CHANNELS_STORAGE_KEY,
+      JSON.stringify(Array.from(new Set((items || []).map(String).filter(Boolean))).slice(0, 5))
+    );
+  } catch (e) { }
+};
+
+const formatChannelDate = (value, withTime = false) => {
+  if (!value) return "";
+  const parsed = dayjs(value);
+  if (!parsed.isValid()) return "";
+  return parsed.format(withTime ? "DD MMM YYYY, HH:mm" : "DD MMM YYYY");
+};
+
+const formatRelativeTime = (value) => {
+  if (!value) return "";
+  const parsed = dayjs(value);
+  if (!parsed.isValid()) return "";
+
+  const now = dayjs();
+  const diffMinutes = now.diff(parsed, "minute");
+  if (diffMinutes < 1) return "just now";
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = now.diff(parsed, "hour");
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = now.diff(parsed, "day");
+  if (diffDays < 30) return `${diffDays}d ago`;
+
+  const diffMonths = now.diff(parsed, "month");
+  if (diffMonths < 12) return `${diffMonths}mo ago`;
+
+  return `${now.diff(parsed, "year")}y ago`;
 };
 
 const TrafficLineChart = ({
@@ -264,6 +317,7 @@ const TrafficSourceChart = () => {
 
   const [channels, setChannels] = useState([]);
   const [channelAvatarMap, setChannelAvatarMap] = useState({});
+  const [recentChannels, setRecentChannels] = useState(() => loadRecentChannels());
   const [channel, setChannel] = useState(() => loadStoredFilters()?.channel || "");
 
   const authHeaders = useMemo(() => {
@@ -281,11 +335,45 @@ const TrafficSourceChart = () => {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const data = await resp.json();
         const norm = (Array.isArray(data?.items) ? data.items : data).map((x) => {
-          if (typeof x === "string") return { value: x, label: x };
-          if (x?.value && x?.label) return x;
-          if (x?.root && x?.label) return { value: x.root, label: x.label };
-          if (x?.root) return { value: x.root, label: x.root };
-          return { value: String(x?.value ?? x?.id ?? x), label: String(x?.label ?? x?.name ?? x?.value ?? x) };
+          if (typeof x === "string") return { value: x, label: x, avatar: "", updatedAt: null, lastDataDate: null, subscribers: null };
+          if (x?.value && x?.label) {
+            return {
+              value: String(x.value),
+              label: String(x.label),
+              avatar: x.avatar || "",
+              updatedAt: x.updatedAt || x.updated_at || null,
+              lastDataDate: x.lastDataDate || x.last_data_date || null,
+              subscribers: x.subscribers ?? x.subscriberCount ?? null,
+            };
+          }
+          if (x?.root && x?.label) {
+            return {
+              value: String(x.root),
+              label: String(x.label),
+              avatar: x.avatar || "",
+              updatedAt: x.updatedAt || x.updated_at || null,
+              lastDataDate: x.lastDataDate || x.last_data_date || null,
+              subscribers: x.subscribers ?? x.subscriberCount ?? null,
+            };
+          }
+          if (x?.root) {
+            return {
+              value: String(x.root),
+              label: String(x.root),
+              avatar: x.avatar || "",
+              updatedAt: x.updatedAt || x.updated_at || null,
+              lastDataDate: x.lastDataDate || x.last_data_date || null,
+              subscribers: x.subscribers ?? x.subscriberCount ?? null,
+            };
+          }
+          return {
+            value: String(x?.value ?? x?.id ?? x),
+            label: String(x?.label ?? x?.name ?? x?.value ?? x),
+            avatar: x?.avatar || "",
+            updatedAt: x?.updatedAt || x?.updated_at || null,
+            lastDataDate: x?.lastDataDate || x?.last_data_date || null,
+            subscribers: x?.subscribers ?? x?.subscriberCount ?? null,
+          };
         });
         const order = (() => {
           try {
@@ -329,6 +417,15 @@ const TrafficSourceChart = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!channel) return;
+    setRecentChannels((current) => {
+      const next = [channel, ...current.filter((item) => item !== channel)].slice(0, 5);
+      saveRecentChannels(next);
+      return next;
+    });
+  }, [channel]);
+
   const [startDate, setStartDate] = useState(() => loadStoredFilters()?.startDate || "");
   const [endDate, setEndDate] = useState(() => loadStoredFilters()?.endDate || "");
 
@@ -356,7 +453,7 @@ const TrafficSourceChart = () => {
       } catch (e) {
         console.error(e);
         setTsData([]);
-        setErrorMsg(e?.message || "Lỗi tải dữ liệu.");
+        setErrorMsg(e?.message || "Lá»—i táº£i dá»¯ liá»‡u.");
       } finally {
         setLoading(false);
       }
@@ -380,7 +477,7 @@ const TrafficSourceChart = () => {
       } catch (e) {
         console.error(e);
         setTsSeries([]);
-        setErrorMsg(e?.message || "Lỗi tải timeseries.");
+        setErrorMsg(e?.message || "Lá»—i táº£i timeseries.");
       } finally {
         setLoading(false);
       }
@@ -416,12 +513,47 @@ const TrafficSourceChart = () => {
     return selected?.label || channel || "No channel selected";
   }, [channels, channel]);
 
+  const orderedChannelOptions = useMemo(() => {
+    const recentRank = new Map(recentChannels.map((value, index) => [String(value), index]));
+    const recent = [];
+    const others = [];
+
+    channels.forEach((item) => {
+      if (recentRank.has(String(item.value))) {
+        recent.push({ ...item, group: "Recent" });
+      } else {
+        others.push({ ...item, group: "All channels" });
+      }
+    });
+
+    recent.sort((a, b) => recentRank.get(String(a.value)) - recentRank.get(String(b.value)));
+    return [...recent, ...others];
+  }, [channels, recentChannels]);
+
+  const currentChannelMeta = useMemo(
+    () => channels.find((item) => item.value === channel) || null,
+    [channels, channel]
+  );
+
+  const getChannelAvatar = useCallback(
+    (channelValue, fallbackAvatar = "") =>
+      channelAvatarMap[channelValue] || fallbackAvatar || "",
+    [channelAvatarMap]
+  );
+
+  const channelSyncText = useCallback((item) => {
+    if (!item) return "";
+    if (item.lastDataDate) return `Data through ${formatChannelDate(item.lastDataDate)}`;
+    if (item.updatedAt) return `Updated ${formatRelativeTime(item.updatedAt)}`;
+    return "Sync time unavailable";
+  }, []);
+
   useEffect(() => {
     if (!channel) return;
     const { start, end } = currentRange;
     if (period === "custom" && (!start || !end)) return;
     if (!start || !end) {
-      setErrorMsg("Hãy chọn thời gian hợp lệ.");
+      setErrorMsg("HÃ£y chá»n thá»i gian há»£p lá»‡.");
       return;
     }
     fetchRange(start, end);
@@ -690,38 +822,71 @@ const TrafficSourceChart = () => {
       <Stack spacing={2}>
         {/* SELECTORS */}
         <Stack direction="row" alignItems="center" spacing={2} sx={{ flexWrap: "wrap", rowGap: 2 }}>
-          <FormControl size="small" sx={{ minWidth: 240 }}>
-            <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-              <YouTubeIcon sx={{ fontSize: 16 }} /> Channel
-            </InputLabel>
-            <Select
-              value={channel}
-              label="Channel"
-              onChange={e => setChannel(e.target.value)}
-              renderValue={(v) => {
-                const sel = channels.find(c => c.value === v);
-                const label = sel ? sel.label : v;
-                const avatar = channelAvatarMap[v] || "";
-                return (
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Avatar src={avatar} alt={label} sx={{ width: 22, height: 22 }} />
-                    <Typography variant="body2" noWrap>
-                      {label}
-                    </Typography>
-                  </Stack>
+          <Box sx={{ minWidth: 280, flex: "1 1 340px", maxWidth: 520 }}>
+            <Autocomplete
+              size="small"
+              options={orderedChannelOptions}
+              value={currentChannelMeta}
+              isOptionEqualToValue={(option, value) => option?.value === value?.value}
+              groupBy={(option) => option.group || "All channels"}
+              filterOptions={(options, state) => {
+                const query = state.inputValue.trim().toLowerCase();
+                if (!query) return options;
+                return options.filter((option) =>
+                  [option.label, option.value, formatChannelDate(option.lastDataDate)]
+                    .filter(Boolean)
+                    .join(" ")
+                    .toLowerCase()
+                    .includes(query)
                 );
               }}
-            >
-              {channels.map(c => (
-                <MenuItem key={c.value} value={c.value}>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Avatar src={channelAvatarMap[c.value] || ""} alt={c.label || c.value} sx={{ width: 24, height: 24 }} />
-                    <Typography variant="body2" noWrap>{c.label}</Typography>
-                  </Stack>
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+              noOptionsText="No channels found"
+              onChange={(_, nextValue) => {
+                if (nextValue?.value) setChannel(nextValue.value);
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Channel"
+                  placeholder="Search by channel name"
+                  InputProps={{
+                    ...params.InputProps,
+                    startAdornment: (
+                      <>
+                        {currentChannelMeta ? (
+                          <Avatar
+                            src={getChannelAvatar(currentChannelMeta.value, currentChannelMeta.avatar)}
+                            alt={currentChannelMeta.label}
+                            sx={{ width: 22, height: 22, mr: 1 }}
+                          />
+                        ) : (
+                          <YouTubeIcon sx={{ fontSize: 18, color: "text.secondary", mr: 1 }} />
+                        )}
+                        {params.InputProps.startAdornment}
+                      </>
+                    ),
+                  }}
+                />
+              )}
+              renderOption={(props, option) => (
+                <Box component="li" {...props} sx={{ display: "flex", alignItems: "center", gap: 1.25, py: 1 }}>
+                  <Avatar
+                    src={getChannelAvatar(option.value, option.avatar)}
+                    alt={option.label}
+                    sx={{ width: 30, height: 30 }}
+                  />
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
+                      {option.label}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                      {channelSyncText(option)}
+                    </Typography>
+                  </Box>
+                </Box>
+              )}
+            />
+          </Box>
 
           <FormControl size="small" sx={{ minWidth: 140 }}>
             <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
