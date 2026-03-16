@@ -43,6 +43,7 @@ import {
   getMonthRange,
   getChannelAvatarMap,
 } from "./Module";
+import { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 
 import dayjs from "dayjs";
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
@@ -822,7 +823,7 @@ const TrafficSourceChart = () => {
       <Stack spacing={2}>
         {/* SELECTORS */}
         <Stack direction="row" alignItems="center" spacing={2} sx={{ flexWrap: "wrap", rowGap: 2 }}>
-          <Box sx={{ minWidth: 280, flex: "1 1 340px", maxWidth: 520 }}>
+          <Box sx={CHANNEL_SWITCHER_SX}>
             <Autocomplete
               size="small"
               options={orderedChannelOptions}

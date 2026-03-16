@@ -72,7 +72,7 @@ import {
 } from "./Module";
 
 import api from "../services/api";
-import ChannelSwitcher from "./ChannelSwitcher";
+import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 
 
 /* Extra periods – chỉ khai báo value + label (không chứa ngày) */
@@ -1583,7 +1583,7 @@ const ContentAnalytics = () => {
           }))}
           value={channelList.some((c) => c.id === channelId) ? channelId : ""}
           onChange={(option) => setChannelId(option?.value || "")}
-          sx={{ minWidth: 240, flex: "1 1 320px", maxWidth: 420 }}
+          sx={CHANNEL_SWITCHER_SX}
           recentStorageKey="content.recentChannels"
         />
 

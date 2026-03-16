@@ -17,7 +17,7 @@ import {
 import { ResponsiveLine } from "@nivo/line";
 import api from "../services/api";
 import { getChannelAvatarMap } from "./Module";
-import ChannelSwitcher from "./ChannelSwitcher";
+import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 
 const formatRangeLabel = (range) => {
   if (!range?.start || !range?.end) return "No data";
@@ -337,7 +337,7 @@ const AudienceAnalytics = () => {
           options={accounts}
           value={accountTag}
           onChange={(option) => setAccountTag(option?.value || "")}
-          sx={{ minWidth: { xs: "100%", sm: 220 }, flex: 1 }}
+          sx={CHANNEL_SWITCHER_SX}
           recentStorageKey="audienceAnalytics.recentChannels"
           getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
         />

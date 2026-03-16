@@ -24,7 +24,7 @@ import dayjs from "dayjs";
 import api from "../services/api";
 import { tokens } from "../theme";
 import { getChannelAvatarMap } from "./Module";
-import ChannelSwitcher from "./ChannelSwitcher";
+import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 
 const RANGE_OPTIONS = [
   { value: "7d", label: "Last 7 days" },
@@ -227,7 +227,7 @@ const RevenueAnalytics = () => {
           options={channels}
           value={channel}
           onChange={(option) => setChannel(option?.value || "")}
-          sx={{ minWidth: 280, flex: "1 1 320px", maxWidth: 420 }}
+          sx={CHANNEL_SWITCHER_SX}
           recentStorageKey="revenue.recentChannels"
           getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
         />

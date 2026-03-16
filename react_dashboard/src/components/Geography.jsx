@@ -28,7 +28,7 @@ import { ResponsiveChoropleth } from "@nivo/geo";
 import { geoFeatures } from "../data/mockGeoFeatures";
 import api from "../services/api";
 import { getChannelAvatarMap } from "./Module";
-import ChannelSwitcher from "./ChannelSwitcher";
+import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 
 // ===== Helpers =====
 const n = (v) => Number(v) || 0;
@@ -276,7 +276,7 @@ const GeographyChart = ({ isDashboard = false }) => {
               setChannel(next);
               if (option?.label) setChannelLabelFallback(option.label);
             }}
-            sx={{ minWidth: 240, flex: "1 1 280px", maxWidth: 420 }}
+            sx={CHANNEL_SWITCHER_SX}
             recentStorageKey="geography.recentChannels"
             getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
             getOptionLabel={(option) =>

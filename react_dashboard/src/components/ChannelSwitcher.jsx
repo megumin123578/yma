@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Autocomplete, Avatar, Box, TextField, Typography } from "@mui/material";
 import YouTubeIcon from "@mui/icons-material/YouTube";
 
+export const CHANNEL_SWITCHER_SX = {
+  minWidth: { xs: "100%", sm: 280 },
+  flex: "1 1 320px",
+  maxWidth: 420,
+};
+
 const loadRecentChannels = (storageKey) => {
   if (!storageKey || typeof window === "undefined") return [];
   try {
@@ -92,7 +98,7 @@ const ChannelSwitcher = ({
   }, [normalizedOptions, recentChannels, recentStorageKey]);
 
   return (
-    <Box sx={sx}>
+    <Box sx={sx || CHANNEL_SWITCHER_SX}>
       <Autocomplete
         size={size}
         options={groupedOptions}

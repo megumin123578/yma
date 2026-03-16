@@ -20,7 +20,7 @@ import ExploreIcon from "@mui/icons-material/Explore";
 import api from "../services/api";
 import { formatNumber } from "./Module";
 import { getChannelAvatarMap } from "./Module";
-import ChannelSwitcher from "./ChannelSwitcher";
+import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 
 const formatPct = (value) => {
   if (value === null || value === undefined) return "-";
@@ -235,7 +235,7 @@ const ReachAnalytics = () => {
             options={accounts}
             value={accounts.some((acct) => acct.value === accountTag) ? accountTag : ""}
             onChange={(option) => setAccountTag(option?.value || "")}
-            sx={{ minWidth: 280, flex: "1 1 340px", maxWidth: 520 }}
+            sx={CHANNEL_SWITCHER_SX}
             recentStorageKey="reachAnalytics.recentChannels"
             getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
           />

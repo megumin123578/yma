@@ -25,7 +25,7 @@ import api from "../services/api";
 import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { geoFeatures } from "../data/mockGeoFeatures";
 import { getChannelAvatarMap } from "./Module";
-import ChannelSwitcher from "./ChannelSwitcher";
+import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 import {
     ResponsiveContainer,
     BarChart,
@@ -708,7 +708,7 @@ const VideoList = () => {
                             options={channels}
                             value={selectedChannel}
                             onChange={(option) => setSelectedChannel(option?.value || "")}
-                            sx={{ minWidth: 280, flex: "1 1 320px", maxWidth: 420 }}
+                            sx={CHANNEL_SWITCHER_SX}
                             recentStorageKey="dashboard.recentChannels"
                             getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
                         />
