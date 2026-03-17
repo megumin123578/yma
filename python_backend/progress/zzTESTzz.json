@@ -1,1 +1,1 @@
-{"account_tag": "zzTESTzz", "stage": "stopped", "percent": 0, "status": "stopped", "message": "Stopped by admin", "updated_at": "2026-03-14T01:29:39.865809Z"}
+{"account_tag": "zzTESTzz", "status": "queued", "percent": 0, "stage": "queued", "message": "Queued manual refresh", "updated_at": 1773713211.1281564}

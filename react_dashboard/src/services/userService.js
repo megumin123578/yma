@@ -59,6 +59,11 @@ export const runToken = async (tokenName) => {
   return res.data;
 };
 
+export const runAllTokens = async () => {
+  const res = await api.post("/api/users/tokens/run-all");
+  return res.data;
+};
+
 export const runTokenStage = async (tokenName, stage) => {
   const res = await api.post(
     `/api/users/tokens/${encodeURIComponent(tokenName)}/run-stage`,

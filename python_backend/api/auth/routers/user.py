@@ -681,6 +681,73 @@ def set_token_visibility(
     return {"ok": True, "hidden": payload.hidden}
 
 
+@router.post("/tokens/run-all")
+def run_all_tokens(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    token_names = []
+    if is_admin:
+        if os.path.exists(TOKEN_DIR):
+            token_names = sorted(
+                [
+                    name
+                    for name in os.listdir(TOKEN_DIR)
+                    if name.lower().endswith(".pickle")
+                    and os.path.exists(os.path.join(TOKEN_DIR, name))
+                ]
+            )
+    else:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        rows = (
+            db.query(UserCredential.token_name, UserCredential.account_tag)
+            .filter(
+                UserCredential.user_id == current_user.id,
+                UserCredential.token_name.isnot(None),
+            )
+            .all()
+        )
+        for row in rows:
+            if not row.token_name:
+                continue
+            if (row.account_tag or "") in hidden:
+                continue
+            token_path = os.path.join(TOKEN_DIR, row.token_name)
+            if not os.path.exists(token_path):
+                continue
+            token_names.append(row.token_name)
+        token_names = sorted(set(token_names))
+
+    if not token_names:
+        raise HTTPException(status_code=400, detail="No tokens available to run")
+
+    for token_name in token_names:
+        account_tag = os.path.splitext(token_name)[0]
+        _write_progress_file(account_tag, "queued", 0, "queued", "Queued manual refresh")
+
+    run = UserScheduleRun(
+        user_id=current_user.id,
+        schedule_id=None,
+        status="queued",
+        started_at=datetime.utcnow(),
+        processed=0,
+        total=len(token_names),
+        message=f"Queued manual refresh for {len(token_names)} token(s)",
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    _kickoff_get_data(
+        "",
+        env_extra={
+            "SCHEDULE_RUN_ID": str(run.id),
+            "RUN_TOKEN_NAMES": json.dumps(token_names),
+        },
+    )
+    return {"ok": True, "run_id": run.id, "token_names": token_names}
+
+
 @router.get("/tokens/{token_name}/channels")
 def list_token_channels(
     token_name: str,
@@ -829,11 +896,11 @@ def run_token(
     run = UserScheduleRun(
         user_id=owned.user_id,
         schedule_id=None,
-        status="running",
+        status="queued",
         started_at=datetime.utcnow(),
         processed=0,
         total=6,
-        message="Manual refresh",
+        message="Queued manual refresh",
     )
     db.add(run)
     db.commit()
@@ -878,11 +945,11 @@ def run_token_stage(
     run = UserScheduleRun(
         user_id=owned.user_id,
         schedule_id=None,
-        status="running",
+        status="queued",
         started_at=datetime.utcnow(),
         processed=0,
         total=1,
-        message=f"Manual {stage}",
+        message=f"Queued manual {stage}",
     )
     db.add(run)
     db.commit()
@@ -1018,7 +1085,7 @@ def stop_schedule_run(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Run not found")
-    if row.status != "running":
+    if row.status not in {"running", "queued"}:
         return {"ok": True, "status": row.status}
     row.status = "stopping"
     row.message = "Stop requested by admin"

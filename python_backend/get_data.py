@@ -3,6 +3,8 @@ import os
 import sys
 import json
 import sqlite3
+import time
+import tempfile
 from datetime import datetime
 from module_trafficsource import *
 from module_content import *
@@ -14,6 +16,16 @@ try:
     from python_backend.module_channel_daily import run_channel_daily
 except ModuleNotFoundError:
     from module_channel_daily import run_channel_daily
+
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
+
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEFAULT_TOKEN = os.path.join(REPO_ROOT, "python_backend", "token")
@@ -36,10 +48,28 @@ def _resolve_token_file(name: str) -> str:
     return base
 
 
+def _resolve_token_list(raw_value: str):
+    if not raw_value:
+        return []
+    try:
+        parsed = json.loads(raw_value)
+        if isinstance(parsed, list):
+            return [_resolve_token_file(str(item)) for item in parsed if str(item).strip()]
+    except Exception:
+        pass
+    return [_resolve_token_file(item.strip()) for item in raw_value.split(",") if item.strip()]
+
+
 def _progress_path(account_tag: str) -> str:
     progress_dir = os.path.join("python_backend", "progress")
     os.makedirs(progress_dir, exist_ok=True)
     return os.path.join(progress_dir, f"{account_tag}.json")
+
+
+def _lock_path() -> str:
+    lock_dir = os.path.join(tempfile.gettempdir(), "yt_manage_app")
+    os.makedirs(lock_dir, exist_ok=True)
+    return os.path.join(lock_dir, "get_data.lock")
 
 
 def _write_progress(account_tag: str, stage: str, percent: int, status: str, message: str = "") -> None:
@@ -93,7 +123,7 @@ def _get_selected_channel_id(account_tag: str) -> str:
         pass
     return ""
 
-def _update_schedule_run(status: str, processed: int, total: int, message: str = "") -> None:
+def _update_schedule_run(status: str, processed=None, total=None, message: str = "") -> None:
     run_id = os.getenv("SCHEDULE_RUN_ID")
     if not run_id:
         return
@@ -106,7 +136,11 @@ def _update_schedule_run(status: str, processed: int, total: int, message: str =
         cur.execute(
             """
             UPDATE user_schedule_runs
-            SET status = ?, processed = ?, total = ?, message = ?, finished_at = COALESCE(?, finished_at)
+            SET status = ?,
+                processed = COALESCE(?, processed),
+                total = COALESCE(?, total),
+                message = ?,
+                finished_at = COALESCE(?, finished_at)
             WHERE id = ?
             """,
             (status, processed, total, message, finished_at, int(run_id)),
@@ -143,6 +177,76 @@ def _raise_if_stop_requested(account_tag: str, stage: str) -> None:
     _write_progress(account_tag, stage, 0, "stopped", "Stopped by admin")
     _update_schedule_run("stopped", 0, 0, "Stopped by admin")
     raise RuntimeError("Stop requested")
+
+
+def _try_lock_handle(handle) -> bool:
+    try:
+        if msvcrt is not None:
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            return True
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+    except OSError:
+        return False
+    return True
+
+
+def _unlock_handle(handle) -> None:
+    try:
+        if msvcrt is not None:
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            return
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+
+
+class _RunLock:
+    def __init__(self, account_tag: str):
+        self.account_tag = account_tag
+        self.handle = None
+
+    def __enter__(self):
+        self.handle = open(_lock_path(), "a+", encoding="utf-8")
+        self.handle.seek(0, os.SEEK_END)
+        if self.handle.tell() == 0:
+            self.handle.write(" ")
+            self.handle.flush()
+        poll_seconds = float(os.getenv("GET_DATA_LOCK_POLL_SECONDS", "2"))
+        wait_message = "Waiting for current run to finish"
+        while True:
+            if _try_lock_handle(self.handle):
+                self.handle.seek(0)
+                self.handle.truncate()
+                json.dump(
+                    {
+                        "pid": os.getpid(),
+                        "account_tag": self.account_tag,
+                        "run_id": os.getenv("SCHEDULE_RUN_ID"),
+                        "locked_at": datetime.utcnow().isoformat() + "Z",
+                    },
+                    self.handle,
+                )
+                self.handle.flush()
+                return self
+            if self.account_tag:
+                _write_progress(self.account_tag, "queued", 0, "queued", wait_message)
+            _update_schedule_run("queued", None, None, wait_message)
+            if _stop_requested():
+                if self.account_tag:
+                    _write_progress(self.account_tag, "stopped", 0, "stopped", "Stopped by admin")
+                _update_schedule_run("stopped", None, None, "Stopped by admin")
+                raise RuntimeError("Stop requested")
+            time.sleep(poll_seconds)
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.handle is not None:
+            _unlock_handle(self.handle)
+            self.handle.close()
 
 def _run_for_credential(cred_file: str) -> None:
     account_tag = os.path.splitext(os.path.basename(cred_file))[0]
@@ -226,8 +330,11 @@ def main():
     os.makedirs(TOKEN_FOLDER, exist_ok=True)
 
     target_arg = sys.argv[1] if len(sys.argv) > 1 else ""
+    env_token_names = _resolve_token_list(os.getenv("RUN_TOKEN_NAMES", ""))
 
     token_files = [f for f in os.listdir(TOKEN_FOLDER) if f.endswith(".pickle")]
+    if env_token_names:
+        token_files = [name for name in env_token_names if name in token_files]
 
     if target_arg:
         cred_file = _resolve_token_file(target_arg)
@@ -238,9 +345,10 @@ def main():
             print(f"Token not found: {cred_file}")
             return
         try:
-            _update_schedule_run("running", 0, 1, "Processing 1 account")
-            _run_for_credential(cred_file)
-            _update_schedule_run("done", 1, 1, "Completed")
+            with _RunLock(account_tag):
+                _update_schedule_run("running", 0, 1, "Processing 1 account")
+                _run_for_credential(cred_file)
+                _update_schedule_run("done", 1, 1, "Completed")
         except Exception as e:
             if str(e) == "Stop requested":
                 _write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")
@@ -259,24 +367,26 @@ def main():
     total = len(token_files)
     ok = 0
     print(f"Processing {total} token(s)...")
-    _update_schedule_run("running", 0, total, "Processing tokens")
-    for token_file in token_files:
-        account_tag = os.path.splitext(os.path.basename(token_file))[0]
-        cred_file = _resolve_token_file(token_file)
-        try:
-            _run_for_credential(cred_file)
-            ok += 1
-            _update_schedule_run("running", ok, total, f"Processed {ok}/{total}")
-        except Exception as e:
-            if str(e) == "Stop requested":
-                _write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")
-                _update_schedule_run("stopped", ok, total, "Stopped by admin")
+    first_account_tag = os.path.splitext(os.path.basename(token_files[0]))[0]
+    with _RunLock(first_account_tag):
+        _update_schedule_run("running", 0, total, "Processing tokens")
+        for token_file in token_files:
+            account_tag = os.path.splitext(os.path.basename(token_file))[0]
+            cred_file = _resolve_token_file(token_file)
+            try:
+                _run_for_credential(cred_file)
+                ok += 1
+                _update_schedule_run("running", ok, total, f"Processed {ok}/{total}")
+            except Exception as e:
+                if str(e) == "Stop requested":
+                    _write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")
+                    _update_schedule_run("stopped", ok, total, "Stopped by admin")
+                    break
+                _write_progress(account_tag, "error", 0, "error", str(e))
+                _update_schedule_run("error", ok, total, str(e))
                 break
-            _write_progress(account_tag, "error", 0, "error", str(e))
-            _update_schedule_run("error", ok, total, str(e))
-            break
-    if ok == total:
-        _update_schedule_run("done", ok, total, "Completed")
+        if ok == total:
+            _update_schedule_run("done", ok, total, "Completed")
 
 if __name__ == "__main__":
     main()

@@ -32,6 +32,7 @@ import {
   getTokenProgress,
   setTokenVisibility,
   runToken,
+  runAllTokens,
   runTokenStage,
   getOAuthState,
   listSchedules,
@@ -57,6 +58,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   const [latestTokenName, setLatestTokenName] = useState("");
   const [tokens, setTokens] = useState([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
+  const [runningAll, setRunningAll] = useState(false);
   const [, setTokenSyncing] = useState(false);
   const [tokenProgress, setTokenProgress] = useState({});
   const [progress, setProgress] = useState({ status: "idle", percent: 0, stage: "" });
@@ -389,6 +391,41 @@ const CredentialsDialog = ({ open, onClose }) => {
     }
   };
 
+  const handleRunAllTokens = async () => {
+    setRunningAll(true);
+    try {
+      const data = await runAllTokens();
+      const tokenNames = Array.isArray(data?.token_names) ? data.token_names : [];
+      if (tokenNames.length) {
+        setTokenProgress((prev) => {
+          const next = { ...prev };
+          tokenNames.forEach((tokenName) => {
+            next[tokenName] = {
+              status: "queued",
+              percent: 0,
+              stage: "queued",
+              message: "",
+            };
+          });
+          return next;
+        });
+        tokenNames.forEach((tokenName) => startProgressPolling(tokenName));
+      }
+      setStatus({
+        type: "success",
+        message: tokenNames.length
+          ? `Queued ${tokenNames.length} channel(s).`
+          : "Refresh queued.",
+      });
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to start refresh.";
+      setStatus({ type: "error", message });
+    } finally {
+      setRunningAll(false);
+    }
+  };
+
   const openTokenMenu = (event, tokenName) => {
     setMenuAnchorEl(event.currentTarget);
     setMenuTokenName(tokenName);
@@ -529,6 +566,7 @@ const CredentialsDialog = ({ open, onClose }) => {
   const statusStyles = (status) => {
     const lower = (status || "").toLowerCase();
     if (lower === "done") return { bg: "rgba(34,197,94,0.18)", fg: "#22c55e" };
+    if (lower === "queued") return { bg: "rgba(245,158,11,0.18)", fg: "#f59e0b" };
     if (lower === "running") return { bg: "rgba(59,130,246,0.18)", fg: "#3b82f6" };
     if (lower === "stopping") return { bg: "rgba(234,179,8,0.18)", fg: "#eab308" };
     if (lower === "stopped") return { bg: "rgba(148,163,184,0.28)", fg: "#94a3b8" };
@@ -553,6 +591,11 @@ const CredentialsDialog = ({ open, onClose }) => {
     };
     return map[key] || stage;
   };
+
+  const visibleTokenCount = tokens.filter((token) => {
+    if (typeof token === "string") return true;
+    return !token.hidden;
+  }).length;
 
 
   return (
@@ -818,18 +861,34 @@ const CredentialsDialog = ({ open, onClose }) => {
                     <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
                       Tokens
                     </Typography>
-                    <Button
-                      size="small"
-                      onClick={loadTokens}
-                      disabled={loadingTokens}
-                      sx={{
-                        ...shimmerSx,
-                        minWidth: 0,
-                        color: isDark ? "#9fe3d6" : undefined,
-                      }}
-                    >
-                      <RefreshIcon fontSize="small" />
-                    </Button>
+                    <Box display="flex" alignItems="center" gap={1}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<PlayArrowIcon fontSize="small" />}
+                        onClick={handleRunAllTokens}
+                        disabled={loadingTokens || runningAll || visibleTokenCount === 0}
+                        sx={{
+                          ...shimmerSx,
+                          borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
+                          color: isDark ? "#e9edf2" : undefined,
+                        }}
+                      >
+                        Run all
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={loadTokens}
+                        disabled={loadingTokens}
+                        sx={{
+                          ...shimmerSx,
+                          minWidth: 0,
+                          color: isDark ? "#9fe3d6" : undefined,
+                        }}
+                      >
+                        <RefreshIcon fontSize="small" />
+                      </Button>
+                    </Box>
                   </Box>
 
                   {tokens.length === 0 ? (
@@ -1213,7 +1272,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                                       {cleanError(run.message) || "No details"}
                                     </Typography>
                                   </Box>
-                                  {run.status === "running" && (
+                                  {(run.status === "running" || run.status === "queued") && (
                                     <Button
                                       size="small"
                                       color="error"

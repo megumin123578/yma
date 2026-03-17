@@ -103,11 +103,11 @@ def _run_loop():
                 run = UserScheduleRun(
                     user_id=row.user_id,
                     schedule_id=row.id,
-                    status="running",
+                    status="queued",
                     started_at=now,
                     processed=0,
                     total=0,
-                    message="Started",
+                    message="Queued by scheduler",
                 )
                 db.add(run)
                 db.commit()
