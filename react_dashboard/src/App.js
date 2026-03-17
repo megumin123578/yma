@@ -22,6 +22,7 @@ import SmmstoreAnalyticsScene from "./scenes/smmstore_analytics";
 import AudienceAnalyticsScene from "./scenes/audience_analytics";
 import ReachAnalyticsScene from "./scenes/reach_analytics";
 import RevenueAnalyticsScene from "./scenes/revenue";
+import LiveCountersScene from "./scenes/live_counters";
 import PrivacyPage from "./scenes/privacy";
 import TermsPage from "./scenes/terms";
 import LandingPage from "./scenes/landing";
@@ -186,6 +187,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <RevenueAnalyticsScene />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/live_counters"
+            element={
+              <ProtectedRoute>
+                <LiveCountersScene />
               </ProtectedRoute>
             }
           />

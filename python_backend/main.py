@@ -48,6 +48,20 @@ app.add_middleware(
 
 Base.metadata.create_all(bind=engine)
 
+def ensure_video_live_counter_snapshots_channel_name():
+    with engine.begin() as conn:
+        cols = conn.exec_driver_sql(
+            "PRAGMA table_info(video_live_counter_snapshots)"
+        ).fetchall()
+        has_column = any(row[1] == "channel_name" for row in cols)
+        if not has_column:
+            conn.exec_driver_sql(
+                "ALTER TABLE video_live_counter_snapshots ADD COLUMN channel_name VARCHAR"
+            )
+
+
+ensure_video_live_counter_snapshots_channel_name()
+
 start_scheduler()
 
 

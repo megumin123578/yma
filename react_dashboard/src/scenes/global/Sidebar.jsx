@@ -15,6 +15,7 @@ import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
 import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
+import InsightsIcon from "@mui/icons-material/Insights";
 // import FileUploadIcon from "@mui/icons-material/FileUpload";
 import WebhookIcon from '@mui/icons-material/Webhook';
 import { UserContext } from "../../context/UserContext";
@@ -252,6 +253,14 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
               to="/revenue"
               icon={<AttachMoneyIcon />}
               isActive={isActivePath("/revenue")}
+              onClick={closeOnMobile}
+            />
+
+            <Item
+              title="Live Counters"
+              to="/live_counters"
+              icon={<InsightsIcon />}
+              isActive={isActivePath("/live_counters")}
               onClick={closeOnMobile}
             />
             

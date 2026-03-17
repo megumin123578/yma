@@ -142,3 +142,35 @@ class UserCredential(Base):
     selected_channel_avatar = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class LiveCounterSnapshot(Base):
+    __tablename__ = "live_counter_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    account_tag = Column(String, nullable=False, index=True)
+    channel_id = Column(String, nullable=True, index=True)
+    subscriber_count = Column(Integer, nullable=False, default=0)
+    view_count = Column(Integer, nullable=False, default=0)
+    video_count = Column(Integer, nullable=False, default=0)
+    captured_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+class VideoLiveCounterSnapshot(Base):
+    __tablename__ = "video_live_counter_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    account_tag = Column(String, nullable=False, index=True)
+    channel_id = Column(String, nullable=True, index=True)
+    channel_name = Column(String, nullable=True)
+    video_id = Column(String, nullable=False, index=True)
+    title = Column(String, nullable=True)
+    thumbnail = Column(String, nullable=True)
+    published_at = Column(DateTime, nullable=True, index=True)
+    position = Column(Integer, nullable=False, default=0)
+    view_count = Column(Integer, nullable=False, default=0)
+    like_count = Column(Integer, nullable=False, default=0)
+    comment_count = Column(Integer, nullable=False, default=0)
+    captured_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

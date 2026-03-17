@@ -4,15 +4,16 @@ import os
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
-from datetime import date
+from datetime import date, datetime, timedelta
 from sqlalchemy import text
 from python_backend.db import engine
 from sqlalchemy.orm import Session
+from googleapiclient.discovery import build
 
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
-from python_backend.api.auth.models import UserCredential
+from python_backend.api.auth.models import LiveCounterSnapshot, UserCredential
 from python_backend.module_trafficsource import sanitize_filename
 from python_backend.module_trafficsource import create_token_from_credentials
 from python_backend.module_geography import fetch_geography, load_geography_from_postgres, save_geography_to_postgres
@@ -445,3 +446,156 @@ def subscribers_timeseries(
         {"tag": accountTag, "start_date": start_date},
     )
     return rows
+
+
+@router.get("/live_counters")
+def live_counters(
+    accountTag: str,
+    limit: int = Query(3, ge=1, le=10),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    if _allowed_or_hidden_blocked(current_user, db, accountTag):
+        return {
+            "channel": None,
+            "videos": [],
+            "refreshedAt": None,
+        }
+
+    cred_row = (
+        db.query(UserCredential)
+        .filter(UserCredential.account_tag == accountTag)
+        .order_by(UserCredential.updated_at.desc())
+        .first()
+    )
+    if not cred_row:
+        raise HTTPException(status_code=404, detail="Channel credentials not found")
+
+    cred_path = _load_credential_path(accountTag)
+    if not cred_path:
+        raise HTTPException(status_code=404, detail="Token file not found")
+
+    credentials = create_token_from_credentials(cred_path)
+    youtube = build("youtube", "v3", credentials=credentials)
+
+    channel_query = {"part": "snippet,statistics"}
+    if cred_row.selected_channel_id:
+        channel_query["id"] = cred_row.selected_channel_id
+    else:
+        channel_query["mine"] = True
+
+    channel_resp = youtube.channels().list(**channel_query).execute() or {}
+    channel_items = channel_resp.get("items") or []
+    if not channel_items:
+        raise HTTPException(status_code=404, detail="Channel not found")
+
+    channel_item = channel_items[0]
+    channel_snippet = channel_item.get("snippet", {}) or {}
+    channel_stats = channel_item.get("statistics", {}) or {}
+
+    rows = query(
+        """
+        SELECT video_id, title, thumbnail, publish_date
+        FROM video_overview
+        WHERE account_tag = :tag
+          AND video_id IS NOT NULL
+          AND video_id != ''
+        ORDER BY publish_date DESC
+        LIMIT :limit
+        """,
+        {"tag": accountTag, "limit": limit},
+    )
+    recent_videos = []
+    video_ids = [str(row.get("video_id") or "").strip() for row in rows if row.get("video_id")]
+
+    if video_ids:
+        videos_resp = youtube.videos().list(
+            part="snippet,statistics",
+            id=",".join(video_ids),
+        ).execute() or {}
+        by_id = {
+            item.get("id"): item
+            for item in (videos_resp.get("items") or [])
+            if item.get("id")
+        }
+
+        for row in rows:
+            video_id = str(row.get("video_id") or "").strip()
+            item = by_id.get(video_id, {})
+            stats = item.get("statistics", {}) or {}
+            snippet = item.get("snippet", {}) or {}
+            thumbs = snippet.get("thumbnails", {}) or {}
+            recent_videos.append(
+                {
+                    "videoId": video_id,
+                    "title": snippet.get("title") or row.get("title") or video_id,
+                    "thumbnail": (
+                        (thumbs.get("medium") or {}).get("url")
+                        or (thumbs.get("default") or {}).get("url")
+                        or row.get("thumbnail")
+                        or ""
+                    ),
+                    "publishedAt": snippet.get("publishedAt") or row.get("publish_date"),
+                    "viewCount": int(stats.get("viewCount", 0) or 0),
+                    "likeCount": int(stats.get("likeCount", 0) or 0),
+                    "commentCount": int(stats.get("commentCount", 0) or 0),
+                }
+            )
+
+    return {
+        "channel": {
+            "id": channel_item.get("id", ""),
+            "title": channel_snippet.get("title") or cred_row.selected_channel_title or accountTag,
+            "thumbnail": (
+                ((channel_snippet.get("thumbnails") or {}).get("medium") or {}).get("url")
+                or cred_row.selected_channel_avatar
+                or ""
+            ),
+            "subscriberCount": int(channel_stats.get("subscriberCount", 0) or 0),
+            "viewCount": int(channel_stats.get("viewCount", 0) or 0),
+            "videoCount": int(channel_stats.get("videoCount", 0) or 0),
+        },
+        "videos": recent_videos,
+        "refreshedAt": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@router.get("/live_counters/history")
+def live_counters_history(
+    accountTag: str,
+    hours: int = Query(24, ge=1, le=168),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    if _allowed_or_hidden_blocked(current_user, db, accountTag):
+        return {"rows": []}
+
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    rows = (
+        db.query(LiveCounterSnapshot)
+        .filter(
+            LiveCounterSnapshot.account_tag == accountTag,
+            LiveCounterSnapshot.captured_at >= cutoff,
+        )
+        .order_by(LiveCounterSnapshot.captured_at.asc())
+        .all()
+    )
+    normalized_rows = []
+    max_view_count = None
+    for row in rows:
+        view_count = int(row.view_count or 0)
+        if max_view_count is None:
+            max_view_count = view_count
+        else:
+            max_view_count = max(max_view_count, view_count)
+        normalized_rows.append(
+            {
+                "capturedAt": row.captured_at.isoformat() + "Z" if row.captured_at else None,
+                "subscriberCount": row.subscriber_count,
+                "viewCount": max_view_count,
+                "videoCount": row.video_count,
+            }
+        )
+    return {
+        "rows": normalized_rows
+    }
