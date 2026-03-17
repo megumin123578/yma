@@ -83,8 +83,6 @@ const EXTRA_PERIODS = [
 
   { value: "month_prev", label: "Last month" },
 
-  { value: "month_prev2", label: "Preceding month" },
-
   { value: "year_current", label: "This year" },
 
   { value: "year_prev", label: "Last year" },
@@ -94,6 +92,27 @@ const EXTRA_PERIODS = [
   { value: "last180", label: "Last 180 days" },
 
 ];
+
+const CONTENT_PERIOD_OPTION_ORDER = [
+  "last7",
+  "last14",
+  "last28",
+  "last90",
+  "last180",
+  "last365",
+  "month_current",
+  "month_prev",
+  "year_current",
+  "year_prev",
+  "lifetime",
+  "custom",
+];
+
+const CONTENT_PERIOD_OPTIONS = CONTENT_PERIOD_OPTION_ORDER
+  .map((value) =>
+    [...PERIOD_OPTIONS, ...EXTRA_PERIODS].find((option) => option.value === value)
+  )
+  .filter(Boolean);
 
 
 
@@ -1014,8 +1033,6 @@ const ContentAnalytics = () => {
 
     if (period === "month_prev") return getMonthRange(1, now);
 
-    if (period === "month_prev2") return getMonthRange(2, now);
-
 
 
     // Year-based
@@ -1624,12 +1641,11 @@ const ContentAnalytics = () => {
             label="Period"
             onChange={(e) => setPeriod(e.target.value)}
           >
-            {[...PERIOD_OPTIONS, ...EXTRA_PERIODS].map((p) => (
+            {CONTENT_PERIOD_OPTIONS.map((p) => (
               <MenuItem key={p.value} value={p.value}>
                 {p.label}
               </MenuItem>
             ))}
-            <MenuItem value="custom">Custom</MenuItem>
           </Select>
         </FormControl>
 

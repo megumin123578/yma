@@ -164,6 +164,7 @@ def _coerce_text(value) -> str:
 
 # ===== Iter helpers =====
 _CHUNK_DAYS_DEFAULT = 90
+_REFETCH_DAYS_DEFAULT = int(os.getenv("TRAFFIC_SOURCE_REFETCH_DAYS", "3"))
 
 def _iter_days(start: str, end: str) -> Iterator[str]:
     sd = datetime.strptime(start, "%Y-%m-%d").date()
@@ -292,6 +293,74 @@ def save_traffic_source_daily_to_postgres(
                         ) from row_exc
                 raise batch_exc
 
+
+def _get_existing_traffic_source_max_day(
+    account_tag: str,
+    channel_id: Optional[str] = None,
+    db_url: Optional[str] = None,
+) -> Optional[str]:
+    db_url = db_url or os.getenv("PG_URL")
+    if not db_url:
+        return None
+
+    ch_id = _coerce_text(channel_id or "")
+    engine = create_engine(db_url, pool_pre_ping=True, future=True)
+    with engine.begin() as conn:
+        for stmt in _PG_DDL.strip().split(";\n"):
+            s = stmt.strip()
+            if s:
+                conn.execute(text(s))
+        row = conn.execute(
+            text(
+                """
+                SELECT MAX(day) AS max_day
+                FROM traffic_source_daily
+                WHERE account_tag = :account_tag
+                  AND channel_id = :channel_id
+                """
+            ),
+            {
+                "account_tag": _coerce_text(account_tag),
+                "channel_id": ch_id,
+            },
+        ).mappings().first()
+    max_day = (row or {}).get("max_day")
+    if not max_day:
+        return None
+    return _safe_date_ymd(str(max_day))
+
+
+def _delete_traffic_source_daily_window(
+    account_tag: str,
+    channel_id: Optional[str],
+    start_date: str,
+    end_date: str,
+    db_url: Optional[str] = None,
+) -> None:
+    db_url = db_url or os.getenv("PG_URL")
+    if not db_url:
+        raise ValueError("Thiếu db_url. Truyền db_url hoặc đặt biến môi trường PG_URL.")
+
+    ch_id = _coerce_text(channel_id or "")
+    engine = create_engine(db_url, pool_pre_ping=True, future=True)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                DELETE FROM traffic_source_daily
+                WHERE account_tag = :account_tag
+                  AND channel_id = :channel_id
+                  AND day BETWEEN :start_date AND :end_date
+                """
+            ),
+            {
+                "account_tag": _coerce_text(account_tag),
+                "channel_id": ch_id,
+                "start_date": start_date,
+                "end_date": end_date,
+            },
+        )
+
 # ===== Main fetcher → Postgres =====
 def run_traffic_source_lifetime_daily_to_postgres(
     credentials,
@@ -326,6 +395,23 @@ def run_traffic_source_lifetime_daily_to_postgres(
         channel_id_for_db = owner_channel_id or ""  # gộp nhiều kênh => rỗng
     else:
         channel_id_for_db = owner_channel_id or get_mine_channel_id(credentials) or ""
+
+    existing_max_day = _get_existing_traffic_source_max_day(
+        account_tag=account_tag,
+        channel_id=channel_id_for_db,
+        db_url=pg_url,
+    )
+    if existing_max_day:
+        try:
+            incremental_start = (
+                datetime.strptime(existing_max_day, "%Y-%m-%d").date()
+                - timedelta(days=max(_REFETCH_DAYS_DEFAULT, 0))
+            )
+            absolute_start = datetime.strptime(start_date, "%Y-%m-%d").date()
+            if incremental_start > absolute_start:
+                start_date = incremental_start.isoformat()
+        except Exception:
+            pass
 
     # Query YouTube Analytics by chunks
     yta = build("youtubeAnalytics", "v2", credentials=credentials)
@@ -411,6 +497,20 @@ def run_traffic_source_lifetime_daily_to_postgres(
                 }
 
     out_rows = sorted(data_map.values(), key=lambda x: (x["day"], x["insightTrafficSourceType"]))
+
+    if existing_max_day and out_rows:
+        _delete_traffic_source_daily_window(
+            account_tag=account_tag,
+            channel_id=channel_id_for_db,
+            start_date=start_date,
+            end_date=end_date,
+            db_url=pg_url,
+        )
+    elif existing_max_day and not out_rows:
+        print(
+            f"[WARN] No traffic source rows fetched for incremental window "
+            f"{start_date}..{end_date}; keeping existing data."
+        )
 
     # Save to Postgres
     save_traffic_source_daily_to_postgres(

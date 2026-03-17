@@ -82,8 +82,20 @@ function applyDataLag(range, periodValue, now = new Date(), lagDays = DATA_LAG_D
 const EXTRA_PERIODS = [
   { value: "month_current", label: "This month" },
   { value: "month_prev", label: "Last month" },
-  { value: "month_prev2", label: "Preceding month" },
 ];
+
+const TRAFFIC_SOURCE_PERIOD_OPTIONS = [
+  ...PERIOD_OPTIONS.filter((option) => option.value.startsWith("last")),
+  ...EXTRA_PERIODS,
+  ...PERIOD_OPTIONS.filter((option) => option.value === "lifetime"),
+  ...PERIOD_OPTIONS.filter((option) => option.value === "custom"),
+];
+const TRAFFIC_SOURCE_PERIOD_VALUES = new Set(
+  TRAFFIC_SOURCE_PERIOD_OPTIONS.map((option) => option.value)
+);
+
+const normalizeTrafficSourcePeriod = (value) =>
+  TRAFFIC_SOURCE_PERIOD_VALUES.has(value) ? value : "last28";
 
 const FILTERS_STORAGE_KEY = "trafficSource.filters";
 const RECENT_CHANNELS_STORAGE_KEY = "trafficSource.recentChannels";
@@ -313,7 +325,9 @@ const TrafficSourceChart = () => {
   /* === Controls === */
   const [chartType, setChartType] = useState(() => loadStoredFilters()?.chartType || "pie");
   const [metric, setMetric] = useState(() => loadStoredFilters()?.metric || "views");
-  const [period, setPeriod] = useState(() => loadStoredFilters()?.period || "last28");
+  const [period, setPeriod] = useState(() =>
+    normalizeTrafficSourcePeriod(loadStoredFilters()?.period)
+  );
   const [interval, setInterval] = useState(() => loadStoredFilters()?.interval || "daily");
 
   const [channels, setChannels] = useState([]);
@@ -489,7 +503,6 @@ const TrafficSourceChart = () => {
   const computeRange = useCallback((periodValue, now = new Date()) => {
     if (periodValue === "month_current") return getMonthRange(0, now);
     if (periodValue === "month_prev") return getMonthRange(1, now);
-    if (periodValue === "month_prev2") return getMonthRange(2, now);
 
     const out = getRangeForPeriod(periodValue, now) || {};
     if (periodValue === "lifetime") {
@@ -928,7 +941,7 @@ const TrafficSourceChart = () => {
               <CalendarMonthIcon sx={{ fontSize: 16 }} /> Period
             </InputLabel>
             <Select value={period} label="Period" onChange={(e) => setPeriod(e.target.value)}>
-              {[...PERIOD_OPTIONS, ...EXTRA_PERIODS].map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+              {TRAFFIC_SOURCE_PERIOD_OPTIONS.map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
             </Select>
           </FormControl>
 

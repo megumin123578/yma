@@ -53,8 +53,6 @@ export const PERIOD_OPTIONS = [
   { value: "last90", label: "Last 90 days" },
   { value: "last365", label: "Last 365 days" },
   { value: "lifetime", label: "Lifetime" },
-  { value: "y-2025", label: "2025" },
-  { value: "y-2024", label: "2024" },
   { value: "custom", label: "Custom (date range)" },
 ];
 
@@ -65,8 +63,6 @@ export const PERIOD_TO_KEY = {
   last90: "90d",
   last365: "365d",
   lifetime: "lifetime",
-  "y-2025": "2025",
-  "y-2024": "2024",
 };
 
 export function getRangeForPeriod(periodValue, now = new Date()) {
