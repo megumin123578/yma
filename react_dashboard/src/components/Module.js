@@ -508,21 +508,43 @@ export function clampGraphemes(str = "", max = Infinity) {
 }
 
 
-export function formatDuration(iso) {
-  if (!iso) return "";
+export function formatDuration(value) {
+  if (value === null || value === undefined || value === "") return "";
 
-  const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-  if (!match) return iso;
+  const formatSecondsValue = (totalSeconds) => {
+    const safeSeconds = Math.max(0, Math.round(Number(totalSeconds) || 0));
+    const h = Math.floor(safeSeconds / 3600);
+    const m = Math.floor((safeSeconds % 3600) / 60);
+    const s = safeSeconds % 60;
+
+    const parts = [];
+    if (h > 0) parts.push(String(h).padStart(2, "0"));
+    parts.push(String(m).padStart(2, "0"));
+    parts.push(String(s).padStart(2, "0"));
+    return parts.join(":");
+  };
+
+  if (typeof value === "number") {
+    return formatSecondsValue(value);
+  }
+
+  if (typeof value !== "string") {
+    return String(value);
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    return formatSecondsValue(trimmed);
+  }
+
+  const match = trimmed.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return trimmed;
 
   const h = parseInt(match[1] || 0, 10);
   const m = parseInt(match[2] || 0, 10);
   const s = parseInt(match[3] || 0, 10);
 
-  const parts = [];
-  if (h > 0) parts.push(String(h).padStart(2, '0'));
-  parts.push(String(m).padStart(2, "0"));
-  parts.push(String(s).padStart(2, "0"));
-
-  return parts.join(":");
-
+  return formatSecondsValue(h * 3600 + m * 60 + s);
 }

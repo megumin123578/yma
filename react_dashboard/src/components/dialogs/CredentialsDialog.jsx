@@ -595,7 +595,7 @@ const CredentialsDialog = ({ open, onClose }) => {
 
   const visibleTokenCount = tokens.filter((token) => {
     if (typeof token === "string") return true;
-    return !token.hidden;
+    return !token.hidden && token.owned !== false;
   }).length;
 
 
@@ -906,6 +906,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                             ? tokenName.slice(0, -7)
                             : tokenName);
                         const isHidden = typeof token === "string" ? false : !!token.hidden;
+                        const isOwned = typeof token === "string" ? true : token.owned !== false;
                         return (
                           <Box
                             key={tokenName}
@@ -958,17 +959,6 @@ const CredentialsDialog = ({ open, onClose }) => {
                             >
                               <DragIndicatorIcon fontSize="small" />
                             </IconButton>
-                            <Checkbox
-                              size="small"
-                              checked={!isHidden}
-                              onChange={(event) =>
-                                handleToggleToken(tokenName, event.target.checked)
-                              }
-                              sx={{
-                                color: isDark ? "#7ed6ff" : undefined,
-                                "&.Mui-checked": { color: isDark ? "#43c2ff" : undefined },
-                              }}
-                            />
                             <Box
                               display="flex"
                               flexDirection="column"
@@ -1000,6 +990,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                                     size="small"
                                     variant="outlined"
                                     onClick={() => handleRunToken(tokenName)}
+                                    disabled={!isOwned}
                                     sx={{
                                       ...shimmerSx,
                                       borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
@@ -1014,6 +1005,7 @@ const CredentialsDialog = ({ open, onClose }) => {
                                   <IconButton
                                     size="small"
                                     onClick={(event) => openTokenMenu(event, tokenName)}
+                                    disabled={!isOwned}
                                     sx={{
                                       ...shimmerSx,
                                       border: `1px solid ${border}`,
@@ -1037,15 +1029,34 @@ const CredentialsDialog = ({ open, onClose }) => {
                                     {displayName.slice(0, 1).toUpperCase()}
                                   </Avatar>
                                   <Typography variant="body2">{displayName}</Typography>
+                                  {!isOwned && (
+                                    <Typography variant="caption" color="text.secondary">
+                                      View only
+                                    </Typography>
+                                  )}
                                 </Box>
-                                <Button
-                                  size="small"
-                                  color="error"
-                                  onClick={() => requestDeleteToken(tokenName)}
-                                  sx={shimmerSx}
-                                >
-                                  Delete
-                                </Button>
+                                <Box display="flex" alignItems="center" gap={0.5}>
+                                  <Button
+                                    size="small"
+                                    color="error"
+                                    onClick={() => requestDeleteToken(tokenName)}
+                                    disabled={!isOwned}
+                                    sx={shimmerSx}
+                                  >
+                                    Delete
+                                  </Button>
+                                  <Checkbox
+                                    size="small"
+                                    checked={!isHidden}
+                                    onChange={(event) =>
+                                      handleToggleToken(tokenName, event.target.checked)
+                                    }
+                                    sx={{
+                                      color: isDark ? "#7ed6ff" : undefined,
+                                      "&.Mui-checked": { color: isDark ? "#43c2ff" : undefined },
+                                    }}
+                                  />
+                                </Box>
                               </Box>
                               {tokenProgress[tokenName] && (
                                 <Box display="flex" flexDirection="column" gap={0.4}>

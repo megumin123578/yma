@@ -573,55 +573,36 @@ def list_tokens(
     current_user: User = Depends(get_current_user),
 ):
     is_admin = (current_user.username or "").lower() in _get_admin_users()
-    hidden = set()
-    allowed = None
+    hidden = get_hidden_account_tags(db, current_user.id)
     labels = {}
-    if not is_admin:
-        hidden = get_hidden_account_tags(db, current_user.id)
-        rows = (
-            db.query(
-                UserCredential.token_name,
-                UserCredential.selected_channel_title,
-                UserCredential.account_tag,
-                UserCredential.selected_channel_avatar,
-            )
-            .filter(
-                UserCredential.user_id == current_user.id,
-                UserCredential.token_name.isnot(None),
-            )
-            .all()
+    avatars = {}
+    owned_names = set()
+    rows = (
+        db.query(
+            UserCredential.token_name,
+            UserCredential.user_id,
+            UserCredential.selected_channel_title,
+            UserCredential.account_tag,
+            UserCredential.selected_channel_avatar,
         )
-        allowed = {row.token_name for row in rows if row.token_name}
-        labels = {
-            row.token_name: (row.selected_channel_title or row.account_tag or "")
-            for row in rows
-            if row.token_name
-        }
-        avatars = {
-            row.token_name: (row.selected_channel_avatar or "")
-            for row in rows
-            if row.token_name
-        }
+        .filter(UserCredential.token_name.isnot(None))
+        .all()
+    )
+    labels = {
+        row.token_name: (row.selected_channel_title or row.account_tag or "")
+        for row in rows
+        if row.token_name
+    }
+    avatars = {
+        row.token_name: (row.selected_channel_avatar or "")
+        for row in rows
+        if row.token_name
+    }
+    if is_admin:
+        owned_names = {row.token_name for row in rows if row.token_name}
     else:
-        rows = (
-            db.query(
-                UserCredential.token_name,
-                UserCredential.selected_channel_title,
-                UserCredential.account_tag,
-                UserCredential.selected_channel_avatar,
-            )
-            .filter(UserCredential.token_name.isnot(None))
-            .all()
-        )
-        labels = {
-            row.token_name: (row.selected_channel_title or row.account_tag or "")
-            for row in rows
-            if row.token_name
-        }
-        avatars = {
-            row.token_name: (row.selected_channel_avatar or "")
-            for row in rows
-            if row.token_name
+        owned_names = {
+            row.token_name for row in rows if row.token_name and row.user_id == current_user.id
         }
 
     if not os.path.exists(TOKEN_DIR):
@@ -630,8 +611,6 @@ def list_tokens(
     files = []
     for name in os.listdir(TOKEN_DIR):
         if not name.lower().endswith(".pickle"):
-            continue
-        if allowed is not None and name not in allowed:
             continue
         token_path = os.path.join(TOKEN_DIR, name)
         if not os.path.exists(token_path):
@@ -643,6 +622,7 @@ def list_tokens(
                 "hidden": base in hidden,
                 "label": labels.get(name, ""),
                 "avatar": avatars.get(name, ""),
+                "owned": name in owned_names,
             }
         )
     files.sort(key=lambda x: x["name"])
@@ -665,15 +645,12 @@ def set_token_visibility(
         raise HTTPException(status_code=400, detail="Invalid token filename")
 
     base_name = os.path.splitext(token_name)[0]
-    owned = (
+    token_row = (
         db.query(UserCredential)
-        .filter(
-            UserCredential.user_id == current_user.id,
-            UserCredential.token_name == token_name,
-        )
+        .filter(UserCredential.token_name == token_name)
         .first()
     )
-    if not owned:
+    if not token_row:
         raise HTTPException(status_code=404, detail="Token not found")
     row = (
         db.query(UserHiddenChannel)
