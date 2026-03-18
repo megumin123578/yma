@@ -137,6 +137,25 @@ const ChannelSwitcher = ({
                   ) : (
                     <YouTubeIcon sx={{ fontSize: 18, color: "text.secondary", mr: 1 }} />
                   )}
+                  {selectedOption?.meta ? (
+                    <Box
+                      sx={{
+                        mr: 1,
+                        px: 0.5,
+                        py: 0.15,
+                        borderRadius: 999,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        lineHeight: 1,
+                        color: "success.main",
+                        bgcolor: "rgba(46, 125, 50, 0.12)",
+                        border: "1px solid",
+                        borderColor: "rgba(46, 125, 50, 0.2)",
+                      }}
+                    >
+                      {selectedOption.meta}
+                    </Box>
+                  ) : null}
                   {params.InputProps.startAdornment}
                 </>
               ),
@@ -150,12 +169,26 @@ const ChannelSwitcher = ({
               <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
                 {option.label}
               </Typography>
-              {option.meta ? (
-                <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
-                  {option.meta}
-                </Typography>
-              ) : null}
             </Box>
+            {option.meta ? (
+              <Box
+                sx={{
+                  minWidth: 20,
+                  px: 0.75,
+                  py: 0.25,
+                  borderRadius: 999,
+                  fontSize: 12,
+                  fontWeight: 800,
+                  lineHeight: 1,
+                  color: "success.main",
+                  bgcolor: "rgba(46, 125, 50, 0.12)",
+                  border: "1px solid",
+                  borderColor: "rgba(46, 125, 50, 0.2)",
+                }}
+              >
+                {option.meta}
+              </Box>
+            ) : null}
           </Box>
         )}
       />

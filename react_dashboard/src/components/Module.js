@@ -202,6 +202,50 @@ export async function getChannelAvatarMap() {
   return channelAvatarPromise;
 }
 
+let channelRevenueCache = new Map();
+let channelRevenuePromise = new Map();
+
+export async function getChannelRevenueMap(rangeOrParams = "lifetime") {
+  const params =
+    typeof rangeOrParams === "object" && rangeOrParams !== null
+      ? rangeOrParams
+      : { range: rangeOrParams };
+  const cacheKey = JSON.stringify({
+    range: params.range || "lifetime",
+    startDate: params.startDate || "",
+    endDate: params.endDate || "",
+  });
+  if (channelRevenueCache.has(cacheKey)) return channelRevenueCache.get(cacheKey);
+  if (channelRevenuePromise.has(cacheKey)) return channelRevenuePromise.get(cacheKey);
+
+  const promise = api
+    .get("/api/revenue/channels", { params })
+    .then((resp) => {
+      const items = resp?.data?.items || [];
+      const map = {};
+      items.forEach((item) => {
+        const value = item?.value || item?.id || "";
+        const estimatedRevenue = Number(item?.estimated_revenue ?? item?.estimatedRevenue ?? 0);
+        if (!value) return;
+        if (Number.isFinite(estimatedRevenue) && estimatedRevenue > 0) {
+          map[value] = "$";
+        }
+      });
+      channelRevenueCache.set(cacheKey, map);
+      return map;
+    })
+    .catch(() => {
+      const empty = {};
+      channelRevenueCache.set(cacheKey, empty);
+      return empty;
+    });
+
+  channelRevenuePromise.set(cacheKey, promise);
+  return promise.finally(() => {
+    channelRevenuePromise.delete(cacheKey);
+  });
+}
+
 
 const hashStr = (s) => {
   let h = 53752757 >>> 0;

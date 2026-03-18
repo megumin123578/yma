@@ -24,7 +24,7 @@ import Header from "./Header";
 import api from "../services/api";
 import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { geoFeatures } from "../data/mockGeoFeatures";
-import { getChannelAvatarMap } from "./Module";
+import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 import {
     ResponsiveContainer,
@@ -76,6 +76,7 @@ const VideoList = () => {
 
     const [channels, setChannels] = useState([]);
     const [channelAvatarMap, setChannelAvatarMap] = useState({});
+    const [channelRevenueMap, setChannelRevenueMap] = useState({});
     const [selectedChannel, setSelectedChannel] = useState(() => {
         try {
             return localStorage.getItem("overview.selectedChannelId") || "";
@@ -327,6 +328,16 @@ const VideoList = () => {
             active = false;
         };
     }, []);
+
+    useEffect(() => {
+        let active = true;
+        getChannelRevenueMap(overviewRange).then((map) => {
+            if (active) setChannelRevenueMap(map || {});
+        });
+        return () => {
+            active = false;
+        };
+    }, [overviewRange]);
 
     useEffect(() => {
         try {
@@ -711,6 +722,7 @@ const VideoList = () => {
                             sx={CHANNEL_SWITCHER_SX}
                             recentStorageKey="dashboard.recentChannels"
                             getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
+                            getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
                         />
                     )}
 

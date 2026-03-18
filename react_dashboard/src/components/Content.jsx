@@ -70,6 +70,7 @@ import {
   pickTicks, // dùng để chọn ít tick ngày
 
 } from "./Module";
+import { getChannelRevenueMap } from "./Module";
 
 import api from "../services/api";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
@@ -715,6 +716,7 @@ const ContentAnalytics = () => {
   const [timeseries, setTimeseries] = useState([]);
 
   const [channelList, setChannelList] = useState([]);
+  const [channelRevenueMap, setChannelRevenueMap] = useState({});
 
   const [channelMetrics, setChannelMetrics] = useState(null);
 
@@ -843,8 +845,6 @@ const ContentAnalytics = () => {
     })();
 
   }, []);
-
-
 
   useEffect(() => {
 
@@ -1110,6 +1110,18 @@ const ContentAnalytics = () => {
     fetchChannelMetrics(start, end);
 
   }, [resolvePeriod, fetchVideos, fetchTimeseries, fetchChannelMetrics, channelId]);
+
+  useEffect(() => {
+    let active = true;
+    const { start, end } = resolvePeriod();
+    const revenueParams = start && end ? { startDate: start, endDate: end } : { range: "lifetime" };
+    getChannelRevenueMap(revenueParams).then((map) => {
+      if (active) setChannelRevenueMap(map || {});
+    });
+    return () => {
+      active = false;
+    };
+  }, [period, resolvePeriod]);
 
 
 
@@ -1597,6 +1609,7 @@ const ContentAnalytics = () => {
             value: channelOption.id,
             label: channelOption.title,
             avatar: channelOption.avatar,
+            meta: channelRevenueMap[channelOption.id] || "",
           }))}
           value={channelList.some((c) => c.id === channelId) ? channelId : ""}
           onChange={(option) => setChannelId(option?.value || "")}

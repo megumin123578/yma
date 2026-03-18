@@ -19,7 +19,7 @@ import ExploreIcon from "@mui/icons-material/Explore";
 
 import api from "../services/api";
 import { formatNumber } from "./Module";
-import { getChannelAvatarMap } from "./Module";
+import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 
 const formatPct = (value) => {
@@ -65,6 +65,7 @@ const ReachAnalytics = () => {
   // === State ===
   const [accounts, setAccounts] = useState([]);
   const [channelAvatarMap, setChannelAvatarMap] = useState({});
+  const [channelRevenueMap, setChannelRevenueMap] = useState({});
   const [accountTag, setAccountTag] = useState(() => {
     try {
       return localStorage.getItem("reach.selectedChannelId") || "";
@@ -139,6 +140,16 @@ const ReachAnalytics = () => {
     let active = true;
     getChannelAvatarMap().then((map) => {
       if (active) setChannelAvatarMap(map || {});
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    getChannelRevenueMap().then((map) => {
+      if (active) setChannelRevenueMap(map || {});
     });
     return () => {
       active = false;
@@ -235,10 +246,11 @@ const ReachAnalytics = () => {
             options={accounts}
             value={accounts.some((acct) => acct.value === accountTag) ? accountTag : ""}
             onChange={(option) => setAccountTag(option?.value || "")}
-            sx={CHANNEL_SWITCHER_SX}
-            recentStorageKey="reachAnalytics.recentChannels"
-            getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
-          />
+          sx={CHANNEL_SWITCHER_SX}
+          recentStorageKey="reachAnalytics.recentChannels"
+          getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
+          getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
+        />
 
           {loading && (
             <motion.div

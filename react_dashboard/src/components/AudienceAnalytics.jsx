@@ -16,7 +16,7 @@ import {
 } from "@mui/material";
 import { ResponsiveLine } from "@nivo/line";
 import api from "../services/api";
-import { getChannelAvatarMap } from "./Module";
+import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 
 const formatRangeLabel = (range) => {
@@ -35,6 +35,7 @@ const AudienceAnalytics = () => {
   const [accountTag, setAccountTag] = useState("");
   const [accounts, setAccounts] = useState([]);
   const [channelAvatarMap, setChannelAvatarMap] = useState({});
+  const [channelRevenueMap, setChannelRevenueMap] = useState({});
   const [demoRows, setDemoRows] = useState([]);
   const [demoRange, setDemoRange] = useState({ start: "", end: "" });
   const [deviceRows, setDeviceRows] = useState([]);
@@ -101,6 +102,16 @@ const AudienceAnalytics = () => {
     let active = true;
     getChannelAvatarMap().then((map) => {
       if (active) setChannelAvatarMap(map || {});
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    getChannelRevenueMap().then((map) => {
+      if (active) setChannelRevenueMap(map || {});
     });
     return () => {
       active = false;
@@ -340,6 +351,7 @@ const AudienceAnalytics = () => {
           sx={CHANNEL_SWITCHER_SX}
           recentStorageKey="audienceAnalytics.recentChannels"
           getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
+          getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
         />
 
         <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 260 }, flex: 1 }}>

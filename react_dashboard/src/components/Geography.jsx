@@ -27,7 +27,7 @@ import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { ResponsiveChoropleth } from "@nivo/geo";
 import { geoFeatures } from "../data/mockGeoFeatures";
 import api from "../services/api";
-import { getChannelAvatarMap } from "./Module";
+import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 
 // ===== Helpers =====
@@ -118,6 +118,7 @@ const GeographyChart = ({ isDashboard = false }) => {
   );
   const [channels, setChannels] = useState([]);
   const [channelAvatarMap, setChannelAvatarMap] = useState({});
+  const [channelRevenueMap, setChannelRevenueMap] = useState({});
   const channelsRef = useRef([]);
 
   const [visibleColumns, setVisibleColumns] = useState(() => loadStoredFilters()?.visibleColumns || {
@@ -172,6 +173,16 @@ const GeographyChart = ({ isDashboard = false }) => {
     let active = true;
     getChannelAvatarMap().then((map) => {
       if (active) setChannelAvatarMap(map || {});
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    getChannelRevenueMap().then((map) => {
+      if (active) setChannelRevenueMap(map || {});
     });
     return () => {
       active = false;
@@ -279,6 +290,7 @@ const GeographyChart = ({ isDashboard = false }) => {
             sx={CHANNEL_SWITCHER_SX}
             recentStorageKey="geography.recentChannels"
             getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
+            getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
             getOptionLabel={(option) =>
               option?.label
                 ? option.label

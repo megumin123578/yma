@@ -23,7 +23,7 @@ import {
 import dayjs from "dayjs";
 import api from "../services/api";
 import { tokens } from "../theme";
-import { getChannelAvatarMap } from "./Module";
+import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 
 const RANGE_OPTIONS = [
@@ -56,6 +56,7 @@ const RevenueAnalytics = () => {
 
   const [channels, setChannels] = useState([]);
   const [channelAvatarMap, setChannelAvatarMap] = useState({});
+  const [channelRevenueMap, setChannelRevenueMap] = useState({});
   const [channel, setChannel] = useState("");
   const [range, setRange] = useState("28d");
   const [rows, setRows] = useState([]);
@@ -107,6 +108,16 @@ const RevenueAnalytics = () => {
       active = false;
     };
   }, []);
+
+    useEffect(() => {
+        let active = true;
+        getChannelRevenueMap(range).then((map) => {
+            if (active) setChannelRevenueMap(map || {});
+        });
+        return () => {
+            active = false;
+        };
+    }, [range]);
 
   useEffect(() => {
     if (!channel) {
@@ -230,6 +241,7 @@ const RevenueAnalytics = () => {
           sx={CHANNEL_SWITCHER_SX}
           recentStorageKey="revenue.recentChannels"
           getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
+          getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
         />
         <FormControl size="small" sx={{ minWidth: 180 }}>
           <InputLabel>Range</InputLabel>
