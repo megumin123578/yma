@@ -1,6 +1,13 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, Text, DateTime
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from python_backend.api.auth.database import Base
+
+
+SAIGON_TZ = timezone(timedelta(hours=7))
+
+
+def _now_saigon_naive() -> datetime:
+    return datetime.now(SAIGON_TZ).replace(tzinfo=None)
 
 class User(Base):
     __tablename__ = "users"
@@ -154,7 +161,7 @@ class LiveCounterSnapshot(Base):
     subscriber_count = Column(Integer, nullable=False, default=0)
     view_count = Column(Integer, nullable=False, default=0)
     video_count = Column(Integer, nullable=False, default=0)
-    captured_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    captured_at = Column(DateTime, default=_now_saigon_naive, nullable=False, index=True)
 
 
 class VideoLiveCounterSnapshot(Base):
@@ -173,4 +180,4 @@ class VideoLiveCounterSnapshot(Base):
     view_count = Column(Integer, nullable=False, default=0)
     like_count = Column(Integer, nullable=False, default=0)
     comment_count = Column(Integer, nullable=False, default=0)
-    captured_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    captured_at = Column(DateTime, default=_now_saigon_naive, nullable=False, index=True)

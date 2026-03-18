@@ -1,7 +1,7 @@
 import os
 import subprocess
 import sys
-from datetime import datetime, time as dtime, timedelta
+from datetime import datetime, time as dtime, timedelta, timezone
 from typing import Optional
 from threading import Event, Thread
 
@@ -23,10 +23,15 @@ _STOP_EVENT = Event()
 _THREAD = None
 _RUNS_MAX = int(os.getenv("SCHEDULE_RUNS_MAX", "200"))
 _LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS = int(
-    os.getenv("LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS", str(4 * 60 * 60))
+    os.getenv("LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS", str(5 * 60))
 )
 _LIVE_COUNTER_RETENTION_DAYS = int(os.getenv("LIVE_COUNTER_RETENTION_DAYS", "7"))
 _LAST_LIVE_COUNTER_SNAPSHOT_AT = None
+SAIGON_TZ = timezone(timedelta(hours=7))
+
+
+def _now_saigon_naive() -> datetime:
+    return datetime.now(SAIGON_TZ).replace(tzinfo=None)
 
 
 def _kickoff_get_data(account_tag: Optional[str], env_extra: Optional[dict] = None) -> None:
@@ -108,10 +113,11 @@ def _should_capture_live_counters(now: datetime) -> bool:
     return True
 
 
-def _get_live_api_keys() -> list[str]:
+def _get_youtube_api_keys() -> list[str]:
     keys = [
-        os.getenv("LIVE_YOUTUBE_API_KEY1", "").strip(),
-        os.getenv("LIVE_YOUTUBE_API_KEY2", "").strip(),
+        os.getenv("YOUTUBE_API_KEY1", "").strip(),
+        os.getenv("YOUTUBE_API_KEY2", "").strip(),
+        os.getenv("YOUTUBE_API_KEY", "").strip(),
     ]
     return [key for key in keys if key]
 
@@ -130,9 +136,9 @@ def _is_quota_exceeded(err) -> bool:
 def _capture_live_counter_snapshots(db, now: datetime) -> None:
     from googleapiclient.discovery import build
 
-    api_keys = _get_live_api_keys()
+    api_keys = _get_youtube_api_keys()
     if not api_keys:
-        print("[WARN] live counter snapshot skipped: missing LIVE_YOUTUBE_API_KEY1/2")
+        print("[WARN] live counter snapshot skipped: missing YOUTUBE_API_KEY1/2 or YOUTUBE_API_KEY")
         return
 
     rows = (
@@ -142,10 +148,14 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
         .all()
     )
     if not rows:
+        print("[INFO] live counter snapshot skipped: no eligible accounts")
         return
 
+    print(f"[INFO] live counter snapshot started: accounts={len(rows)}")
     channel_snapshots = []
     latest_video_snapshots = {}
+    processed_accounts = 0
+    failed_accounts = 0
     for row in rows:
         token_name = os.path.basename(row.token_name or "").strip()
         if not token_name:
@@ -249,6 +259,7 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
                     channel_snapshots.append(channel_snapshot)
                     latest_video_snapshots[(row.user_id, row.account_tag)] = account_video_snapshots
                     handled = True
+                    processed_accounts += 1
                     break
                 except HttpError as e:
                     last_error = e
@@ -258,6 +269,7 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
             if not handled and last_error is not None:
                 raise last_error
         except Exception as e:
+            failed_accounts += 1
             print(
                 f"[WARN] live counter snapshot failed for {row.account_tag}: {e}"
             )
@@ -283,6 +295,12 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
             VideoLiveCounterSnapshot.captured_at < cutoff
         ).delete(synchronize_session=False)
         db.commit()
+
+    print(
+        "[INFO] live counter snapshot finished: "
+        f"processed={processed_accounts}, failed={failed_accounts}, "
+        f"saved_channel={len(channel_snapshots)}, saved_video_groups={len(latest_video_snapshots)}"
+    )
 
 
 def _load_recent_video_rows(account_tag: str, limit: int = 3):
@@ -381,7 +399,7 @@ def _run_loop():
                     token_base or None,
                     env_extra={"SCHEDULE_RUN_ID": str(run.id)},
                 )
-            snapshot_now = datetime.utcnow()
+            snapshot_now = _now_saigon_naive()
             if _should_capture_live_counters(snapshot_now):
                 _capture_live_counter_snapshots(db, snapshot_now)
         except Exception as e:

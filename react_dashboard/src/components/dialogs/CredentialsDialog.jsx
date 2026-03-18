@@ -44,7 +44,7 @@ import {
   stopScheduleRun,
 } from "../../services/userService";
 
-const CredentialsDialog = ({ open, onClose }) => {
+const CredentialsDialog = ({ open, onClose, inline = false }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isDark = theme.palette.mode === "dark";
@@ -601,11 +601,13 @@ const CredentialsDialog = ({ open, onClose }) => {
 
   return (
     <Dialog
-      open={open}
-      onClose={onClose}
+      open={inline ? true : open}
+      onClose={inline ? undefined : onClose}
       maxWidth="md"
       fullWidth
-      fullScreen={isMobile}
+      fullScreen={isMobile || inline}
+      hideBackdrop={inline}
+      disablePortal={inline}
       TransitionComponent={Fade}
       transitionDuration={220}
       PaperProps={{
@@ -618,8 +620,8 @@ const CredentialsDialog = ({ open, onClose }) => {
           position: "relative",
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
-          width: { xs: "100vw", md: 860 },
-          maxWidth: { xs: "100vw", md: "95vw" },
+          width: inline ? "100vw" : { xs: "100vw", md: 860 },
+          maxWidth: inline ? "100vw" : { xs: "100vw", md: "95vw" },
           minHeight: { xs: "100vh", sm: 620 },
           borderRadius: { xs: 0, sm: undefined },
           "&:before": {

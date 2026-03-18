@@ -17,6 +17,7 @@ import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 // import FileUploadIcon from "@mui/icons-material/FileUpload";
 import WebhookIcon from '@mui/icons-material/Webhook';
+import SettingsIcon from "@mui/icons-material/Settings";
 import { UserContext } from "../../context/UserContext";
 
 const Item = ({ title, to, icon, isActive, onClick }) => {
@@ -300,6 +301,14 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
               to="/smmstore_analytics"
               icon={<BarChartOutlinedIcon />}
               isActive={isActivePath("/smmstore_analytics")}
+              onClick={closeOnMobile}
+            />
+
+            <Item
+              title="Config"
+              to="/config"
+              icon={<SettingsIcon />}
+              isActive={isActivePath("/config")}
               onClick={closeOnMobile}
             />
 
