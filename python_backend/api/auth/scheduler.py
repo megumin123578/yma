@@ -5,6 +5,7 @@ from datetime import datetime, time as dtime, timedelta
 from typing import Optional
 from threading import Event, Thread
 
+from googleapiclient.errors import HttpError
 from sqlalchemy import text
 
 from python_backend.api.auth.database import SessionLocal
@@ -107,9 +108,32 @@ def _should_capture_live_counters(now: datetime) -> bool:
     return True
 
 
+def _get_live_api_keys() -> list[str]:
+    keys = [
+        os.getenv("LIVE_YOUTUBE_API_KEY1", "").strip(),
+        os.getenv("LIVE_YOUTUBE_API_KEY2", "").strip(),
+    ]
+    return [key for key in keys if key]
+
+
+def _is_quota_exceeded(err) -> bool:
+    try:
+        details = getattr(err, "error_details", None) or []
+        for item in details:
+            if item.get("reason") == "quotaExceeded":
+                return True
+    except Exception:
+        pass
+    return "quotaExceeded" in str(err)
+
+
 def _capture_live_counter_snapshots(db, now: datetime) -> None:
     from googleapiclient.discovery import build
-    from python_backend.module_trafficsource import create_token_from_credentials
+
+    api_keys = _get_live_api_keys()
+    if not api_keys:
+        print("[WARN] live counter snapshot skipped: missing LIVE_YOUTUBE_API_KEY1/2")
+        return
 
     rows = (
         db.query(UserCredential)
@@ -128,101 +152,111 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
             continue
         if not (row.selected_channel_id or "").strip():
             continue
-        token_path = os.path.join("python_backend", "token", token_name)
-        if not os.path.exists(token_path):
-            continue
         try:
-            credentials = create_token_from_credentials(token_path)
-            youtube = build("youtube", "v3", credentials=credentials)
-            query = {"part": "snippet,statistics", "id": row.selected_channel_id}
-            resp = youtube.channels().list(**query).execute() or {}
-            items = resp.get("items") or []
-            if not items:
-                continue
-            channel_snippet = items[0].get("snippet", {}) or {}
-            stats = (items[0].get("statistics") or {})
-            channel_id = row.selected_channel_id or items[0].get("id") or None
-            channel_name = (
-                channel_snippet.get("title")
-                or row.selected_channel_title
-                or row.account_tag
-            )
-            latest_channel_snapshot = (
-                db.query(LiveCounterSnapshot)
-                .filter(
-                    LiveCounterSnapshot.user_id == row.user_id,
-                    LiveCounterSnapshot.account_tag == row.account_tag,
-                )
-                .order_by(LiveCounterSnapshot.captured_at.desc(), LiveCounterSnapshot.id.desc())
-                .first()
-            )
-            current_view_count = int(stats.get("viewCount", 0) or 0)
-            if latest_channel_snapshot and latest_channel_snapshot.view_count is not None:
-                current_view_count = max(current_view_count, int(latest_channel_snapshot.view_count or 0))
-            channel_snapshots.append(
-                LiveCounterSnapshot(
-                    user_id=row.user_id,
-                    account_tag=row.account_tag,
-                    channel_id=channel_id,
-                    subscriber_count=int(stats.get("subscriberCount", 0) or 0),
-                    view_count=current_view_count,
-                    video_count=int(stats.get("videoCount", 0) or 0),
-                    captured_at=now,
-                )
-            )
-            recent_video_rows = _load_recent_video_rows(row.account_tag)
-            video_ids = [
-                str(video_row.get("video_id") or "").strip()
-                for video_row in recent_video_rows
-                if video_row.get("video_id")
-            ]
-            account_video_snapshots = []
-            if video_ids:
-                videos_resp = youtube.videos().list(
-                    part="snippet,statistics",
-                    id=",".join(video_ids),
-                ).execute() or {}
-                videos_by_id = {
-                    item.get("id"): item
-                    for item in (videos_resp.get("items") or [])
-                    if item.get("id")
-                }
-                for position, video_row in enumerate(recent_video_rows, start=1):
-                    video_id = str(video_row.get("video_id") or "").strip()
-                    if not video_id:
-                        continue
-                    item = videos_by_id.get(video_id, {})
-                    stats = item.get("statistics", {}) or {}
-                    snippet = item.get("snippet", {}) or {}
-                    thumbs = snippet.get("thumbnails", {}) or {}
-                    published_at = _parse_published_at(
-                        snippet.get("publishedAt") or video_row.get("publish_date")
+            last_error = None
+            handled = False
+            for api_key in api_keys:
+                try:
+                    youtube = build("youtube", "v3", developerKey=api_key)
+                    query = {"part": "snippet,statistics", "id": row.selected_channel_id}
+                    resp = youtube.channels().list(**query).execute() or {}
+                    items = resp.get("items") or []
+                    if not items:
+                        handled = True
+                        break
+                    channel_snippet = items[0].get("snippet", {}) or {}
+                    stats = (items[0].get("statistics") or {})
+                    channel_id = row.selected_channel_id or items[0].get("id") or None
+                    channel_name = (
+                        channel_snippet.get("title")
+                        or row.selected_channel_title
+                        or row.account_tag
                     )
-                    account_video_snapshots.append(
-                        VideoLiveCounterSnapshot(
-                            user_id=row.user_id,
-                            account_tag=row.account_tag,
-                            channel_id=channel_id,
-                            channel_name=channel_name,
-                            video_id=video_id,
-                            title=snippet.get("title") or video_row.get("title") or video_id,
-                            thumbnail=(
-                                (thumbs.get("medium") or {}).get("url")
-                                or (thumbs.get("default") or {}).get("url")
-                                or video_row.get("thumbnail")
-                                or ""
-                            ),
-                            published_at=published_at,
-                            position=position,
-                            view_count=int(stats.get("viewCount", 0) or 0),
-                            like_count=int(stats.get("likeCount", 0) or 0),
-                            comment_count=int(stats.get("commentCount", 0) or 0),
-                            captured_at=now,
+                    current_view_count = int(stats.get("viewCount", 0) or 0)
+                    latest_channel_snapshot = (
+                        db.query(LiveCounterSnapshot)
+                        .filter(
+                            LiveCounterSnapshot.user_id == row.user_id,
+                            LiveCounterSnapshot.account_tag == row.account_tag,
                         )
+                        .order_by(LiveCounterSnapshot.captured_at.desc(), LiveCounterSnapshot.id.desc())
+                        .first()
                     )
-                latest_video_snapshots[(row.user_id, row.account_tag)] = account_video_snapshots
-            else:
-                latest_video_snapshots[(row.user_id, row.account_tag)] = []
+                    if latest_channel_snapshot and latest_channel_snapshot.view_count is not None:
+                        current_view_count = max(
+                            current_view_count,
+                            int(latest_channel_snapshot.view_count or 0),
+                        )
+                    channel_snapshot = LiveCounterSnapshot(
+                        user_id=row.user_id,
+                        account_tag=row.account_tag,
+                        channel_id=channel_id,
+                        subscriber_count=int(stats.get("subscriberCount", 0) or 0),
+                        view_count=current_view_count,
+                        video_count=int(stats.get("videoCount", 0) or 0),
+                        captured_at=now,
+                    )
+                    recent_video_rows = _load_recent_video_rows(row.account_tag)
+                    video_ids = [
+                        str(video_row.get("video_id") or "").strip()
+                        for video_row in recent_video_rows
+                        if video_row.get("video_id")
+                    ]
+                    account_video_snapshots = []
+                    if video_ids:
+                        videos_resp = youtube.videos().list(
+                            part="snippet,statistics",
+                            id=",".join(video_ids),
+                        ).execute() or {}
+                        videos_by_id = {
+                            item.get("id"): item
+                            for item in (videos_resp.get("items") or [])
+                            if item.get("id")
+                        }
+                        for position, video_row in enumerate(recent_video_rows, start=1):
+                            video_id = str(video_row.get("video_id") or "").strip()
+                            if not video_id:
+                                continue
+                            item = videos_by_id.get(video_id, {})
+                            stats = item.get("statistics", {}) or {}
+                            snippet = item.get("snippet", {}) or {}
+                            thumbs = snippet.get("thumbnails", {}) or {}
+                            published_at = _parse_published_at(
+                                snippet.get("publishedAt") or video_row.get("publish_date")
+                            )
+                            account_video_snapshots.append(
+                                VideoLiveCounterSnapshot(
+                                    user_id=row.user_id,
+                                    account_tag=row.account_tag,
+                                    channel_id=channel_id,
+                                    channel_name=channel_name,
+                                    video_id=video_id,
+                                    title=snippet.get("title") or video_row.get("title") or video_id,
+                                    thumbnail=(
+                                        (thumbs.get("medium") or {}).get("url")
+                                        or (thumbs.get("default") or {}).get("url")
+                                        or video_row.get("thumbnail")
+                                        or ""
+                                    ),
+                                    published_at=published_at,
+                                    position=position,
+                                    view_count=int(stats.get("viewCount", 0) or 0),
+                                    like_count=int(stats.get("likeCount", 0) or 0),
+                                    comment_count=int(stats.get("commentCount", 0) or 0),
+                                    captured_at=now,
+                                    )
+                                )
+                    channel_snapshots.append(channel_snapshot)
+                    latest_video_snapshots[(row.user_id, row.account_tag)] = account_video_snapshots
+                    handled = True
+                    break
+                except HttpError as e:
+                    last_error = e
+                    if _is_quota_exceeded(e):
+                        continue
+                    raise
+            if not handled and last_error is not None:
+                raise last_error
         except Exception as e:
             print(
                 f"[WARN] live counter snapshot failed for {row.account_tag}: {e}"
