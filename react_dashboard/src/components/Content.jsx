@@ -1167,11 +1167,7 @@ const ContentAnalytics = () => {
           likes: n(v.likes),
 
           cardImpressions: n(v.cardImpressions),
-
           adImpressions: n(v.adImpressions),
-
-          annotationImpressions: n(v.annotationImpressions),
-
         }))
 
         .sort((a, b) => b.views - a.views), // 🔴 Sort table by views

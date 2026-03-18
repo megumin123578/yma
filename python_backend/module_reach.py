@@ -64,15 +64,12 @@ def _ensure_reach_table(conn) -> None:
                 end_date DATE NOT NULL,
                 views BIGINT DEFAULT 0,
                 estimated_minutes_watched BIGINT DEFAULT 0,
-                annotation_impressions BIGINT DEFAULT 0,
                 card_impressions BIGINT DEFAULT 0,
                 teaser_impressions BIGINT DEFAULT 0,
                 total_impressions BIGINT DEFAULT 0,
-                annotation_clicks BIGINT DEFAULT 0,
                 card_clicks BIGINT DEFAULT 0,
                 teaser_clicks BIGINT DEFAULT 0,
                 total_clicks BIGINT DEFAULT 0,
-                annotation_ctr DOUBLE PRECISION,
                 card_ctr DOUBLE PRECISION,
                 teaser_ctr DOUBLE PRECISION,
                 total_ctr DOUBLE PRECISION,
@@ -137,9 +134,6 @@ def fetch_reach(
     primary_metrics = [
         "views",
         "estimatedMinutesWatched",
-        "annotationImpressions",
-        "annotationClicks",
-        "annotationClickThroughRate",
         "cardImpressions",
         "cardClicks",
         "cardClickRate",
@@ -186,14 +180,12 @@ def fetch_reach(
                 return default
 
         video_id = row[idx["video"]]
-        annotation_impressions = int(val("annotationImpressions", 0))
         card_impressions = int(val("cardImpressions", 0))
         teaser_impressions = int(val("cardTeaserImpressions", 0))
-        annotation_clicks = int(val("annotationClicks", 0))
         card_clicks = int(val("cardClicks", 0))
         teaser_clicks = int(val("cardTeaserClicks", 0))
-        total_impressions = annotation_impressions + card_impressions + teaser_impressions
-        total_clicks = annotation_clicks + card_clicks + teaser_clicks
+        total_impressions = card_impressions + teaser_impressions
+        total_clicks = card_clicks + teaser_clicks
         total_ctr = (total_clicks / total_impressions) if total_impressions > 0 else None
 
         if total > 0:
@@ -211,15 +203,12 @@ def fetch_reach(
                 "video_id": video_id,
                 "views": int(val("views", 0)),
                 "estimated_minutes_watched": int(val("estimatedMinutesWatched", 0)),
-                "annotation_impressions": annotation_impressions,
                 "card_impressions": card_impressions,
                 "teaser_impressions": teaser_impressions,
                 "total_impressions": total_impressions,
-                "annotation_clicks": annotation_clicks,
                 "card_clicks": card_clicks,
                 "teaser_clicks": teaser_clicks,
                 "total_clicks": total_clicks,
-                "annotation_ctr": val("annotationClickThroughRate", None),
                 "card_ctr": val("cardClickRate", None),
                 "teaser_ctr": val("cardTeaserClickRate", None),
                 "total_ctr": total_ctr,
@@ -303,15 +292,12 @@ def _fetch_reach_per_video(
                 "video_id": vid,
                 "views": sums["views"],
                 "estimated_minutes_watched": sums["estimatedMinutesWatched"],
-                "annotation_impressions": 0,
                 "card_impressions": card_impressions,
                 "teaser_impressions": teaser_impressions,
                 "total_impressions": total_impressions,
-                "annotation_clicks": 0,
                 "card_clicks": card_clicks,
                 "teaser_clicks": teaser_clicks,
                 "total_clicks": total_clicks,
-                "annotation_ctr": None,
                 "card_ctr": (card_clicks / card_impressions) if card_impressions else None,
                 "teaser_ctr": (teaser_clicks / teaser_impressions) if teaser_impressions else None,
                 "total_ctr": (total_clicks / total_impressions) if total_impressions else None,
@@ -336,16 +322,16 @@ def save_reach(pg_url: str, account_tag: str, rows: List[Dict], start_date: str,
                     INSERT INTO reach_video_metrics (
                         account_tag, video_id, title, thumbnail,
                         start_date, end_date, views, estimated_minutes_watched,
-                        annotation_impressions, card_impressions, teaser_impressions, total_impressions,
-                        annotation_clicks, card_clicks, teaser_clicks, total_clicks,
-                        annotation_ctr, card_ctr, teaser_ctr, total_ctr, updated_at
+                        card_impressions, teaser_impressions, total_impressions,
+                        card_clicks, teaser_clicks, total_clicks,
+                        card_ctr, teaser_ctr, total_ctr, updated_at
                     )
                     VALUES (
                         :account_tag, :video_id, :title, :thumbnail,
                         :start_date, :end_date, :views, :estimated_minutes_watched,
-                        :annotation_impressions, :card_impressions, :teaser_impressions, :total_impressions,
-                        :annotation_clicks, :card_clicks, :teaser_clicks, :total_clicks,
-                        :annotation_ctr, :card_ctr, :teaser_ctr, :total_ctr, NOW()
+                        :card_impressions, :teaser_impressions, :total_impressions,
+                        :card_clicks, :teaser_clicks, :total_clicks,
+                        :card_ctr, :teaser_ctr, :total_ctr, NOW()
                     )
                     ON CONFLICT (account_tag, video_id, start_date, end_date)
                     DO UPDATE SET
@@ -353,15 +339,12 @@ def save_reach(pg_url: str, account_tag: str, rows: List[Dict], start_date: str,
                         thumbnail = EXCLUDED.thumbnail,
                         views = EXCLUDED.views,
                         estimated_minutes_watched = EXCLUDED.estimated_minutes_watched,
-                        annotation_impressions = EXCLUDED.annotation_impressions,
                         card_impressions = EXCLUDED.card_impressions,
                         teaser_impressions = EXCLUDED.teaser_impressions,
                         total_impressions = EXCLUDED.total_impressions,
-                        annotation_clicks = EXCLUDED.annotation_clicks,
                         card_clicks = EXCLUDED.card_clicks,
                         teaser_clicks = EXCLUDED.teaser_clicks,
                         total_clicks = EXCLUDED.total_clicks,
-                        annotation_ctr = EXCLUDED.annotation_ctr,
                         card_ctr = EXCLUDED.card_ctr,
                         teaser_ctr = EXCLUDED.teaser_ctr,
                         total_ctr = EXCLUDED.total_ctr,
@@ -377,15 +360,12 @@ def save_reach(pg_url: str, account_tag: str, rows: List[Dict], start_date: str,
                     "end_date": end_date,
                     "views": row["views"],
                     "estimated_minutes_watched": row["estimated_minutes_watched"],
-                    "annotation_impressions": row["annotation_impressions"],
                     "card_impressions": row["card_impressions"],
                     "teaser_impressions": row["teaser_impressions"],
                     "total_impressions": row["total_impressions"],
-                    "annotation_clicks": row["annotation_clicks"],
                     "card_clicks": row["card_clicks"],
                     "teaser_clicks": row["teaser_clicks"],
                     "total_clicks": row["total_clicks"],
-                    "annotation_ctr": row["annotation_ctr"],
                     "card_ctr": row["card_ctr"],
                     "teaser_ctr": row["teaser_ctr"],
                     "total_ctr": row["total_ctr"],

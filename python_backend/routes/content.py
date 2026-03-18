@@ -426,24 +426,23 @@ def content_list(
         COALESCE(SUM(s.subscribers_gained), 0) AS "subscribers",
         COALESCE(SUM(s.estimated_revenue), 0) AS "estimatedRevenue",
         
-        -- Unified Impressions logic: Prefer daily stats sum (card+anno), fallback to reach table
+        -- Unified Impressions logic: Prefer daily stats sum (card + teaser), fallback to reach table
         COALESCE(
-            NULLIF(SUM(COALESCE(s.card_impressions, 0) + COALESCE(s.annotation_impressions, 0)), 0),
+            NULLIF(SUM(COALESCE(s.card_impressions, 0)), 0),
             MAX(r.total_impressions), 
             0
         ) AS impressions,
 
         -- Unified CTR logic: Weighted calculation based on the same source as impressions
         CASE 
-            WHEN SUM(COALESCE(s.card_impressions, 0) + COALESCE(s.annotation_impressions, 0)) > 0
-                THEN (SUM(COALESCE(s.card_clicks, 0) + COALESCE(s.annotation_clicks, 0))::numeric / 
-                      SUM(COALESCE(s.card_impressions, 0) + COALESCE(s.annotation_impressions, 0))) * 100.0
+            WHEN SUM(COALESCE(s.card_impressions, 0)) > 0
+                THEN (SUM(COALESCE(s.card_clicks, 0))::numeric / 
+                      SUM(COALESCE(s.card_impressions, 0))) * 100.0
             ELSE COALESCE(MAX(r.total_ctr), 0) * 100.0
         END AS "impressionsClickThroughRate",
         
         COALESCE(v.card_impressions, 0) AS "cardImpressions",
-        COALESCE(v.ad_impressions, 0) AS "adImpressions",
-        COALESCE(v.annotation_impressions, 0) AS "annotationImpressions"
+        COALESCE(v.ad_impressions, 0) AS "adImpressions"
     FROM videos v
     LEFT JOIN video_daily_stats s
       ON s.video_id = v.video_id
@@ -460,8 +459,7 @@ def content_list(
         v.duration,
         v.ctr,
         v.card_impressions,
-        v.ad_impressions,
-        v.annotation_impressions
+        v.ad_impressions
     HAVING SUM(s.views) > 0 OR MAX(v.views) > 0
     ORDER BY v.published_at DESC;
 """

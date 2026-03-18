@@ -90,7 +90,6 @@ def get_video_metadata(credentials, video_ids: List[str]) -> List[Dict]:
                 # reach impressions (filled later)
                 "card_impressions": 0,
                 "ad_impressions": 0,
-                "annotation_impressions": 0,
             })
 
     return results
@@ -160,7 +159,7 @@ def get_video_reach_impressions_bulk(
             "endDate": end_date,
             "dimensions": "video",
             "filters": f"video=={','.join(chunk)}",
-            "metrics": "cardImpressions,cardTeaserImpressions,annotationImpressions",
+            "metrics": "cardImpressions,cardTeaserImpressions",
         }
         try:
             resp = yta.reports().query(**query).execute() or {}
@@ -182,7 +181,6 @@ def get_video_reach_impressions_bulk(
         i_video = idx.get("video")
         i_card = idx.get("cardImpressions")
         i_teaser = idx.get("cardTeaserImpressions")
-        i_anno = idx.get("annotationImpressions")
         if i_video is None or i_card is None or i_teaser is None:
             continue
 
@@ -196,14 +194,9 @@ def get_video_reach_impressions_bulk(
                 teaser = int(row[i_teaser] or 0)
             except Exception:
                 teaser = 0
-            try:
-                anno = int(row[i_anno] or 0) if i_anno is not None else 0
-            except Exception:
-                anno = 0
             out[vid] = {
                 "card_impressions": card,
                 "ad_impressions": teaser,
-                "annotation_impressions": anno,
             }
         any_success = True
 
@@ -365,10 +358,7 @@ def get_video_daily_analytics(
 
     # Optional groups: failures should not break daily ingestion.
     subs_rev = _query_daily(["subscribersGained", "estimatedRevenue"], "subs_revenue")
-    reach = _query_daily(
-        ["cardImpressions", "cardClicks", "annotationImpressions", "annotationClicks"],
-        "reach",
-    )
+    reach = _query_daily(["cardImpressions", "cardClicks"], "reach")
 
     all_days = sorted(core.keys())
     results = []
@@ -388,8 +378,6 @@ def get_video_daily_analytics(
                 "estimated_revenue": _to_float(sr.get("estimatedRevenue")),
                 "card_impressions": _to_int(r.get("cardImpressions")),
                 "card_clicks": _to_int(r.get("cardClicks")),
-                "annotation_impressions": _to_int(r.get("annotationImpressions")),
-                "annotation_clicks": _to_int(r.get("annotationClicks")),
             }
         )
 
@@ -413,7 +401,6 @@ def save_metadata(videos, account_tag: str, pg_url: str):
                 comments INTEGER DEFAULT 0,
                 card_impressions BIGINT DEFAULT 0,
                 ad_impressions BIGINT DEFAULT 0,
-                annotation_impressions BIGINT DEFAULT 0,
                 tags TEXT,
                 ctr NUMERIC DEFAULT 0
             );
@@ -422,18 +409,17 @@ def save_metadata(videos, account_tag: str, pg_url: str):
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS tags TEXT;"))
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS card_impressions BIGINT DEFAULT 0;"))
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS ad_impressions BIGINT DEFAULT 0;"))
-        conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS annotation_impressions BIGINT DEFAULT 0;"))
 
         for v in videos:
             conn.execute(text("""
                 INSERT INTO videos
                     (video_id, account_tag, title, thumbnail,
                      published_at, duration, views, likes, comments,
-                     card_impressions, ad_impressions, annotation_impressions, tags, ctr)
+                     card_impressions, ad_impressions, tags, ctr)
                 VALUES
                     (:id, :acct, :title, :thumb, :pub, :duration,
                      :views, :likes, :comments,
-                     :card, :ad, :anno, :tags, :ctr)
+                     :card, :ad, :tags, :ctr)
                 ON CONFLICT(video_id)
                 DO UPDATE SET
                     views = EXCLUDED.views,
@@ -441,7 +427,6 @@ def save_metadata(videos, account_tag: str, pg_url: str):
                     comments = EXCLUDED.comments,
                     card_impressions = EXCLUDED.card_impressions,
                     ad_impressions = EXCLUDED.ad_impressions,
-                    annotation_impressions = EXCLUDED.annotation_impressions,
                     tags = EXCLUDED.tags,
                     ctr = EXCLUDED.ctr;
             """), {
@@ -456,7 +441,6 @@ def save_metadata(videos, account_tag: str, pg_url: str):
                 "comments": v["comments"],
                 "card": v.get("card_impressions", 0),
                 "ad": v.get("ad_impressions", 0),
-                "anno": v.get("annotation_impressions", 0),
                 "tags": json.dumps(v.get("tags") or []),
                 "ctr": v.get("ctr", 0.0),
             })
@@ -478,8 +462,6 @@ def save_daily_stats(daily_rows, pg_url: str):
                 estimated_revenue NUMERIC DEFAULT 0,
                 card_impressions INTEGER DEFAULT 0,
                 card_clicks INTEGER DEFAULT 0,
-                annotation_impressions INTEGER DEFAULT 0,
-                annotation_clicks INTEGER DEFAULT 0,
                 PRIMARY KEY (video_id, day)
             );
         """))
@@ -489,8 +471,6 @@ def save_daily_stats(daily_rows, pg_url: str):
             conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS estimated_revenue NUMERIC DEFAULT 0;"))
             conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS card_impressions INTEGER DEFAULT 0;"))
             conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS card_clicks INTEGER DEFAULT 0;"))
-            conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS annotation_impressions INTEGER DEFAULT 0;"))
-            conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS annotation_clicks INTEGER DEFAULT 0;"))
         except Exception:
             pass
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vds_day ON video_daily_stats(day);"))
@@ -501,9 +481,9 @@ def save_daily_stats(daily_rows, pg_url: str):
                 INSERT INTO video_daily_stats
                     (video_id, day, views, estimated_minutes, average_view_duration, likes, 
                      subscribers_gained, estimated_revenue,
-                     card_impressions, card_clicks, annotation_impressions, annotation_clicks)
+                     card_impressions, card_clicks)
                 VALUES
-                    (:id, :day, :views, :emw, :avd, :likes, :subs, :rev, :ci, :cc, :ai, :ac)
+                    (:id, :day, :views, :emw, :avd, :likes, :subs, :rev, :ci, :cc)
                 ON CONFLICT (video_id, day)
                 DO UPDATE SET
                     views = EXCLUDED.views,
@@ -513,9 +493,7 @@ def save_daily_stats(daily_rows, pg_url: str):
                     subscribers_gained = EXCLUDED.subscribers_gained,
                     estimated_revenue = EXCLUDED.estimated_revenue,
                     card_impressions = EXCLUDED.card_impressions,
-                    card_clicks = EXCLUDED.card_clicks,
-                    annotation_impressions = EXCLUDED.annotation_impressions,
-                    annotation_clicks = EXCLUDED.annotation_clicks;
+                    card_clicks = EXCLUDED.card_clicks;
             """), {
                 "id": r["video_id"],
                 "day": r["day"],
@@ -527,8 +505,6 @@ def save_daily_stats(daily_rows, pg_url: str):
                 "rev": r["estimated_revenue"],
                 "ci": r["card_impressions"],
                 "cc": r["card_clicks"],
-                "ai": r["annotation_impressions"],
-                "ac": r["annotation_clicks"],
             })
 
 
@@ -583,7 +559,6 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id: Optional
         metrics = reach_map.get(video_id, {}) if reach_map is not None else {}
         v["card_impressions"] = int(metrics.get("card_impressions", 0) or 0)
         v["ad_impressions"] = int(metrics.get("ad_impressions", 0) or 0)
-        v["annotation_impressions"] = int(metrics.get("annotation_impressions", 0) or 0)
 
     print("→ Saving metadata to PostgreSQL...")
     save_metadata(videos, account_tag, pg_url)
