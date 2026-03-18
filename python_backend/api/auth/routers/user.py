@@ -583,6 +583,7 @@ def list_tokens(
                 UserCredential.token_name,
                 UserCredential.selected_channel_title,
                 UserCredential.account_tag,
+                UserCredential.selected_channel_avatar,
             )
             .filter(
                 UserCredential.user_id == current_user.id,
@@ -596,18 +597,29 @@ def list_tokens(
             for row in rows
             if row.token_name
         }
+        avatars = {
+            row.token_name: (row.selected_channel_avatar or "")
+            for row in rows
+            if row.token_name
+        }
     else:
         rows = (
             db.query(
                 UserCredential.token_name,
                 UserCredential.selected_channel_title,
                 UserCredential.account_tag,
+                UserCredential.selected_channel_avatar,
             )
             .filter(UserCredential.token_name.isnot(None))
             .all()
         )
         labels = {
             row.token_name: (row.selected_channel_title or row.account_tag or "")
+            for row in rows
+            if row.token_name
+        }
+        avatars = {
+            row.token_name: (row.selected_channel_avatar or "")
             for row in rows
             if row.token_name
         }
@@ -630,6 +642,7 @@ def list_tokens(
                 "name": name,
                 "hidden": base in hidden,
                 "label": labels.get(name, ""),
+                "avatar": avatars.get(name, ""),
             }
         )
     files.sort(key=lambda x: x["name"])
@@ -899,7 +912,7 @@ def run_token(
         status="queued",
         started_at=datetime.utcnow(),
         processed=0,
-        total=6,
+        total=7,
         message="Queued manual refresh",
     )
     db.add(run)
@@ -925,7 +938,7 @@ def run_token_stage(
         raise HTTPException(status_code=400, detail="Invalid token filename")
 
     stage = (payload.stage or "").strip().lower()
-    if stage not in {"content", "overview", "audience", "reach", "traffic_source", "revenue"}:
+    if stage not in {"content", "overview", "audience", "reach", "traffic_source", "revenue", "subscribers"}:
         raise HTTPException(status_code=400, detail="Invalid stage")
 
     is_admin = (current_user.username or "").lower() in _get_admin_users()

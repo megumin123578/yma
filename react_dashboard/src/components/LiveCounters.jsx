@@ -103,7 +103,7 @@ const formatTimeTick = (iso) => {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
 
-const LIVE_COUNTERS_POLL_INTERVAL_MS = 5 * 60 * 1000;
+const LIVE_COUNTERS_POLL_INTERVAL_MS = 15 * 60 * 1000;
 
 const LiveCounters = () => {
   const theme = useTheme();
@@ -119,7 +119,6 @@ const LiveCounters = () => {
   const [channelAvatarMap, setChannelAvatarMap] = useState({});
   const [liveCounters, setLiveCounters] = useState(null);
   const [history24Rows, setHistory24Rows] = useState([]);
-  const [history60Rows, setHistory60Rows] = useState([]);
   const [historyMetric, setHistoryMetric] = useState("views");
   const [loadingChannels, setLoadingChannels] = useState(true);
   const [loadingLiveCounters, setLoadingLiveCounters] = useState(false);
@@ -194,7 +193,7 @@ const LiveCounters = () => {
         setLoadingLiveCounters(true);
       }
       try {
-        const [counterRes, history24Res, history60Res] = await Promise.all([
+        const [counterRes, history24Res] = await Promise.all([
           api.get(
             `/api/video_overview/live_counters?accountTag=${encodeURIComponent(
               selectedChannel
@@ -205,23 +204,16 @@ const LiveCounters = () => {
               selectedChannel
             )}&hours=24`
           ),
-          api.get(
-            `/api/video_overview/live_counters/history?accountTag=${encodeURIComponent(
-              selectedChannel
-            )}&hours=1`
-          ),
         ]);
         if (!cancelled) {
           setLiveCounters(counterRes.data || null);
           setHistory24Rows(Array.isArray(history24Res.data?.rows) ? history24Res.data.rows : []);
-          setHistory60Rows(Array.isArray(history60Res.data?.rows) ? history60Res.data.rows : []);
           setError("");
         }
       } catch {
         if (!cancelled) {
           setLiveCounters(null);
           setHistory24Rows([]);
-          setHistory60Rows([]);
           setError("Khong load duoc live counters.");
         }
       } finally {
@@ -259,10 +251,6 @@ const LiveCounters = () => {
   const history24DeltaRows = useMemo(
     () => buildDeltaRows(history24Rows),
     [history24Rows]
-  );
-  const history60DeltaRows = useMemo(
-    () => buildDeltaRows(history60Rows),
-    [history60Rows]
   );
 
   const renderHistoryChart = (title, rows, emptyText) => (
@@ -440,13 +428,11 @@ const LiveCounters = () => {
             <Box
               sx={{
                 display: "grid",
-                gridTemplateColumns: { xs: "1fr", xl: "1fr 1fr" },
-                gap: 1.5,
+                gridTemplateColumns: "1fr",
                 mb: 2,
               }}
             >
               {renderHistoryChart("Last 24 hours", history24DeltaRows, "Waiting for 24h snapshots...")}
-              {renderHistoryChart("Last 60 minutes", history60DeltaRows, "Waiting for 60-minute snapshots...")}
             </Box>
 
             <Box

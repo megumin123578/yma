@@ -22,7 +22,7 @@ _STOP_EVENT = Event()
 _THREAD = None
 _RUNS_MAX = int(os.getenv("SCHEDULE_RUNS_MAX", "200"))
 _LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS = int(
-    os.getenv("LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS", "60")
+    os.getenv("LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS", "300")
 )
 _LIVE_COUNTER_RETENTION_DAYS = int(os.getenv("LIVE_COUNTER_RETENTION_DAYS", "7"))
 _LAST_LIVE_COUNTER_SNAPSHOT_AT = None
@@ -114,6 +114,7 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
     rows = (
         db.query(UserCredential)
         .filter(UserCredential.token_name.isnot(None))
+        .filter(UserCredential.selected_channel_id.isnot(None))
         .all()
     )
     if not rows:
@@ -125,17 +126,15 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
         token_name = os.path.basename(row.token_name or "").strip()
         if not token_name:
             continue
+        if not (row.selected_channel_id or "").strip():
+            continue
         token_path = os.path.join("python_backend", "token", token_name)
         if not os.path.exists(token_path):
             continue
         try:
             credentials = create_token_from_credentials(token_path)
             youtube = build("youtube", "v3", credentials=credentials)
-            query = {"part": "snippet,statistics"}
-            if row.selected_channel_id:
-                query["id"] = row.selected_channel_id
-            else:
-                query["mine"] = True
+            query = {"part": "snippet,statistics", "id": row.selected_channel_id}
             resp = youtube.channels().list(**query).execute() or {}
             items = resp.get("items") or []
             if not items:

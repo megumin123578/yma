@@ -369,7 +369,7 @@ def save_viewer_types(pg_url: str, account_tag: str, rows: List[Dict], start_dat
 
 
 def _list_video_ids(pg_url: str, account_tag: str) -> List[str]:
-    max_videos = int(os.getenv("AUDIENCE_MAX_VIDEOS", "10"))
+    max_videos = int(os.getenv("AUDIENCE_MAX_VIDEOS", "5"))
     engine = create_engine(pg_url, future=True)
     with engine.begin() as conn:
         rows = conn.execute(

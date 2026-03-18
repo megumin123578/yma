@@ -3,6 +3,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Avatar,
   Button,
   IconButton,
   Menu,
@@ -1022,6 +1023,19 @@ const CredentialsDialog = ({ open, onClose }) => {
                                   >
                                     <MoreVertIcon fontSize="small" />
                                   </IconButton>
+                                  <Avatar
+                                    src={typeof token === "object" ? token.avatar || "" : ""}
+                                    alt={displayName}
+                                    sx={{
+                                      width: 26,
+                                      height: 26,
+                                      fontSize: 12,
+                                      bgcolor: isDark ? "rgba(125,224,210,0.18)" : "rgba(25,118,210,0.12)",
+                                      color: isDark ? "#d7fff7" : "rgba(15,23,42,0.8)",
+                                    }}
+                                  >
+                                    {displayName.slice(0, 1).toUpperCase()}
+                                  </Avatar>
                                   <Typography variant="body2">{displayName}</Typography>
                                 </Box>
                                 <Button
@@ -1396,6 +1410,9 @@ const CredentialsDialog = ({ open, onClose }) => {
         </MenuItem>
         <MenuItem onClick={() => handleRunTokenStage("revenue")}>
           Run revenue
+        </MenuItem>
+        <MenuItem onClick={() => handleRunTokenStage("subscribers")}>
+          Run subscribers
         </MenuItem>
       </Menu>
     </Dialog>

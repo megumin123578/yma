@@ -289,6 +289,12 @@ def _run_for_credential(cred_file: str) -> None:
                 raise RuntimeError("Missing PG_URL env var")
             creds = create_token_from_credentials(os.path.join(TOKEN_FOLDER, cred_file))
             run_revenue_analytics(creds, account_tag, pg_url, channel_id=channel_id)
+        elif stage == "subscribers":
+            pg_url = os.getenv("PG_URL")
+            if not pg_url:
+                raise RuntimeError("Missing PG_URL env var")
+            creds = create_token_from_credentials(os.path.join(TOKEN_FOLDER, cred_file))
+            run_channel_daily(creds, account_tag, pg_url, channel_id=channel_id)
         else:
             raise RuntimeError(f"Unsupported stage: {stage}")
         _raise_if_stop_requested(account_tag, "stopped")
@@ -314,15 +320,19 @@ def _run_for_credential(cred_file: str) -> None:
         raise RuntimeError("Missing PG_URL env var")
     creds = create_token_from_credentials(os.path.join(TOKEN_FOLDER, cred_file))
     run_audience_analytics(creds, account_tag, pg_url, channel_id=channel_id)
-    _update_schedule_run("running", 4, 6, "Audience done")
+    _update_schedule_run("running", 4, 7, "Audience done")
     _raise_if_stop_requested(account_tag, "stopped")
     _write_progress(account_tag, "reach", 90, "running", "Starting reach analytics")
     run_reach_analytics(creds, account_tag, pg_url, channel_id=channel_id)
-    _update_schedule_run("running", 5, 6, "Reach done")
+    _update_schedule_run("running", 5, 7, "Reach done")
     _raise_if_stop_requested(account_tag, "stopped")
-    _write_progress(account_tag, "subscribers", 95, "running", "Starting subscriber analytics")
+    _write_progress(account_tag, "revenue", 95, "running", "Starting revenue analytics")
+    run_revenue_analytics(creds, account_tag, pg_url, channel_id=channel_id)
+    _update_schedule_run("running", 6, 7, "Revenue done")
+    _raise_if_stop_requested(account_tag, "stopped")
+    _write_progress(account_tag, "subscribers", 98, "running", "Starting subscriber analytics")
     run_channel_daily(creds, account_tag, pg_url, channel_id=channel_id)
-    _update_schedule_run("running", 6, 6, "Subscribers done")
+    _update_schedule_run("running", 7, 7, "Subscribers done")
     _write_progress(account_tag, "done", 100, "done", "Completed")
 
 
