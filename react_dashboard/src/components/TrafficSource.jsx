@@ -42,6 +42,7 @@ import {
   toUTCDate,
   getMonthRange,
   getChannelAvatarMap,
+  getChannelRevenueMap,
 } from "./Module";
 import { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 
@@ -332,6 +333,7 @@ const TrafficSourceChart = () => {
 
   const [channels, setChannels] = useState([]);
   const [channelAvatarMap, setChannelAvatarMap] = useState({});
+  const [channelRevenueMap, setChannelRevenueMap] = useState({});
   const [recentChannels, setRecentChannels] = useState(() => loadRecentChannels());
   const [channel, setChannel] = useState(() => loadStoredFilters()?.channel || "");
 
@@ -426,6 +428,16 @@ const TrafficSourceChart = () => {
     let active = true;
     getChannelAvatarMap().then((map) => {
       if (active) setChannelAvatarMap(map || {});
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    getChannelRevenueMap().then((map) => {
+      if (active) setChannelRevenueMap(map || {});
     });
     return () => {
       active = false;
@@ -534,15 +546,15 @@ const TrafficSourceChart = () => {
 
     channels.forEach((item) => {
       if (recentRank.has(String(item.value))) {
-        recent.push({ ...item, group: "Recent" });
+        recent.push({ ...item, group: "Recent", meta: channelRevenueMap[item.value] || "" });
       } else {
-        others.push({ ...item, group: "All channels" });
+        others.push({ ...item, group: "All channels", meta: channelRevenueMap[item.value] || "" });
       }
     });
 
     recent.sort((a, b) => recentRank.get(String(a.value)) - recentRank.get(String(b.value)));
     return [...recent, ...others];
-  }, [channels, recentChannels]);
+  }, [channels, recentChannels, channelRevenueMap]);
 
   const currentChannelMeta = useMemo(
     () => channels.find((item) => item.value === channel) || null,
@@ -839,6 +851,7 @@ const TrafficSourceChart = () => {
           <Box sx={CHANNEL_SWITCHER_SX}>
             <Autocomplete
               size="small"
+              disableClearable
               options={orderedChannelOptions}
               value={currentChannelMeta}
               isOptionEqualToValue={(option, value) => option?.value === value?.value}
@@ -879,6 +892,30 @@ const TrafficSourceChart = () => {
                         {params.InputProps.startAdornment}
                       </>
                     ),
+                    endAdornment: (
+                      <>
+                        {orderedChannelOptions.find((item) => item.value === channel)?.meta ? (
+                          <Box
+                            sx={{
+                              mr: 0.25,
+                              px: 0.5,
+                              py: 0.15,
+                              borderRadius: 999,
+                              fontSize: 11,
+                              fontWeight: 800,
+                              lineHeight: 1,
+                              color: "success.main",
+                              bgcolor: "rgba(46, 125, 50, 0.12)",
+                              border: "1px solid",
+                              borderColor: "rgba(46, 125, 50, 0.2)",
+                            }}
+                            >
+                            {orderedChannelOptions.find((item) => item.value === channel)?.meta}
+                          </Box>
+                        ) : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
                   }}
                 />
               )}
@@ -897,6 +934,25 @@ const TrafficSourceChart = () => {
                       {channelSyncText(option)}
                     </Typography>
                   </Box>
+                  {option.meta ? (
+                    <Box
+                      sx={{
+                        minWidth: 20,
+                        px: 0.75,
+                        py: 0.25,
+                        borderRadius: 999,
+                        fontSize: 12,
+                        fontWeight: 800,
+                        lineHeight: 1,
+                        color: "success.main",
+                        bgcolor: "rgba(46, 125, 50, 0.12)",
+                        border: "1px solid",
+                        borderColor: "rgba(46, 125, 50, 0.2)",
+                      }}
+                    >
+                      {option.meta}
+                    </Box>
+                  ) : null}
                 </Box>
               )}
             />

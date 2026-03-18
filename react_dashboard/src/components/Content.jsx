@@ -1113,9 +1113,7 @@ const ContentAnalytics = () => {
 
   useEffect(() => {
     let active = true;
-    const { start, end } = resolvePeriod();
-    const revenueParams = start && end ? { startDate: start, endDate: end } : { range: "lifetime" };
-    getChannelRevenueMap(revenueParams).then((map) => {
+    getChannelRevenueMap().then((map) => {
       if (active) setChannelRevenueMap(map || {});
     });
     return () => {
@@ -1609,12 +1607,12 @@ const ContentAnalytics = () => {
             value: channelOption.id,
             label: channelOption.title,
             avatar: channelOption.avatar,
-            meta: channelRevenueMap[channelOption.id] || "",
           }))}
           value={channelList.some((c) => c.id === channelId) ? channelId : ""}
           onChange={(option) => setChannelId(option?.value || "")}
           sx={CHANNEL_SWITCHER_SX}
           recentStorageKey="content.recentChannels"
+          getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
         />
 
         {/* Metric */}

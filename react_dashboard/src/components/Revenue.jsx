@@ -111,13 +111,13 @@ const RevenueAnalytics = () => {
 
     useEffect(() => {
         let active = true;
-        getChannelRevenueMap(range).then((map) => {
+        getChannelRevenueMap().then((map) => {
             if (active) setChannelRevenueMap(map || {});
         });
         return () => {
             active = false;
         };
-    }, [range]);
+    }, []);
 
   useEffect(() => {
     if (!channel) {

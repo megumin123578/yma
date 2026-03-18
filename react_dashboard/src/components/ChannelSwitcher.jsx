@@ -104,6 +104,7 @@ const ChannelSwitcher = ({
         options={groupedOptions}
         value={selectedOption}
         noOptionsText={noOptionsText}
+        clearIcon={null}
         getOptionLabel={(option) => option?.label || ""}
         groupBy={recentStorageKey ? (option) => option.group || "All channels" : undefined}
         isOptionEqualToValue={(option, current) => option?.value === current?.value}
@@ -137,10 +138,15 @@ const ChannelSwitcher = ({
                   ) : (
                     <YouTubeIcon sx={{ fontSize: 18, color: "text.secondary", mr: 1 }} />
                   )}
+                  {params.InputProps.startAdornment}
+                </>
+              ),
+              endAdornment: (
+                <>
                   {selectedOption?.meta ? (
                     <Box
                       sx={{
-                        mr: 1,
+                        mr: 0.25,
                         px: 0.5,
                         py: 0.15,
                         borderRadius: 999,
@@ -156,7 +162,7 @@ const ChannelSwitcher = ({
                       {selectedOption.meta}
                     </Box>
                   ) : null}
-                  {params.InputProps.startAdornment}
+                  <Box sx={{ ml: -0.5 }}>{params.InputProps.endAdornment}</Box>
                 </>
               ),
             }}

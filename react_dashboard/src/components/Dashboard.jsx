@@ -331,13 +331,13 @@ const VideoList = () => {
 
     useEffect(() => {
         let active = true;
-        getChannelRevenueMap(overviewRange).then((map) => {
+        getChannelRevenueMap().then((map) => {
             if (active) setChannelRevenueMap(map || {});
         });
         return () => {
             active = false;
         };
-    }, [overviewRange]);
+    }, []);
 
     useEffect(() => {
         try {
