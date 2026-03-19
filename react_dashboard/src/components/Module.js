@@ -202,14 +202,15 @@ export async function getChannelAvatarMap() {
   return channelAvatarPromise;
 }
 
-let channelRevenueCache = null;
-let channelRevenuePromise = null;
+let channelRevenueCache = {};
+let channelRevenuePromise = {};
 
-export async function getChannelRevenueMap() {
-  if (channelRevenueCache) return channelRevenueCache;
-  if (channelRevenuePromise) return channelRevenuePromise;
+export async function getChannelRevenueMap(range = "lifetime") {
+  const cacheKey = String(range || "lifetime");
+  if (channelRevenueCache[cacheKey]) return channelRevenueCache[cacheKey];
+  if (channelRevenuePromise[cacheKey]) return channelRevenuePromise[cacheKey];
 
-  const params = { range: "lifetime" };
+  const params = { range: cacheKey };
 
   const promise = api
     .get("/api/revenue/channels", { params })
@@ -224,18 +225,18 @@ export async function getChannelRevenueMap() {
           map[value] = "$";
         }
       });
-      channelRevenueCache = map;
+      channelRevenueCache[cacheKey] = map;
       return map;
     })
     .catch(() => {
-      channelRevenueCache = {};
-      return channelRevenueCache;
+      channelRevenueCache[cacheKey] = {};
+      return channelRevenueCache[cacheKey];
     });
 
-  channelRevenuePromise = promise.finally(() => {
-    channelRevenuePromise = null;
+  channelRevenuePromise[cacheKey] = promise.finally(() => {
+    channelRevenuePromise[cacheKey] = null;
   });
-  return channelRevenuePromise;
+  return channelRevenuePromise[cacheKey];
 }
 
 

@@ -16,6 +16,21 @@ from python_backend.module_revenue import _ensure_revenue_table
 router = APIRouter(prefix="/api/revenue", tags=["revenue"])
 
 
+def _load_credential_path(account_tag: str):
+    if not account_tag:
+        return None
+    token_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "token"))
+    direct = os.path.join(token_dir, f"{account_tag}.pickle")
+    if os.path.exists(direct):
+        return direct
+    safe = sanitize_filename(account_tag)
+    if safe != account_tag:
+        safe_path = os.path.join(token_dir, f"{safe}.pickle")
+        if os.path.exists(safe_path):
+            return safe_path
+    return None
+
+
 def _range_to_dates(range_key: str):
     today = date.today()
     if range_key == "7d":
@@ -91,6 +106,7 @@ def list_channels(
     if allowed is not None:
         items = [item for item in items if item["value"] in allowed]
     items = _filter_hidden(items, hidden)
+    items = [item for item in items if _load_credential_path(item["value"])]
     label_map = {}
     if items:
         creds = (

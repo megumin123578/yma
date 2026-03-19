@@ -757,9 +757,6 @@ const ContentAnalytics = () => {
 
   const [endDate, setEndDate] = useState("");
 
-  const [loadingVideos, setLoadingVideos] = useState(false);
-  const [loadingTimeseries, setLoadingTimeseries] = useState(false);
-
   /* ================================
 
      LOAD CHANNELS
@@ -838,7 +835,6 @@ const ContentAnalytics = () => {
 
       if (!channelId) return;
 
-      setLoadingVideos(true);
       setChannelMetrics(null);
 
       try {
@@ -867,10 +863,6 @@ const ContentAnalytics = () => {
         setVideos([]);
         setChannelMetrics(null);
 
-      } finally {
-
-        setLoadingVideos(false);
-
       }
 
     },
@@ -886,8 +878,6 @@ const ContentAnalytics = () => {
     async (start, end) => {
 
       if (!channelId) return;
-
-      setLoadingTimeseries(true);
 
       try {
 
@@ -912,10 +902,6 @@ const ContentAnalytics = () => {
         console.error("Fetch timeseries failed:", err);
 
         setTimeseries([]);
-
-      } finally {
-
-        setLoadingTimeseries(false);
 
       }
 
@@ -1700,40 +1686,6 @@ const ContentAnalytics = () => {
 
       >
 
-        {loadingTimeseries && (
-
-          <Box
-
-            sx={{
-
-              position: "absolute",
-
-              inset: 0,
-
-              display: "flex",
-
-              alignItems: "center",
-
-              justifyContent: "center",
-
-              bgcolor: "rgba(0,0,0,0.05)",
-
-              zIndex: 10,
-
-              borderRadius: 2,
-
-              backdropFilter: "blur(2px)",
-
-            }}
-
-          >
-
-            Loading...
-
-          </Box>
-
-        )}
-
         {chartType === "line" && lineData.length > 0 && (
 
           <LineChart
@@ -2355,15 +2307,6 @@ const ContentAnalytics = () => {
 
 
       {/* TABLE */}
-
-      {loadingVideos && (
-        <Typography
-          variant="caption"
-          sx={{ color: "text.secondary", ml: 0.5 }}
-        >
-          Updating content data...
-        </Typography>
-      )}
 
       <TableContainer component={Paper} elevation={0} sx={tablePaperSx}>
 

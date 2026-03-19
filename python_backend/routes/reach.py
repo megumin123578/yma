@@ -13,6 +13,21 @@ from python_backend.module_reach import _ensure_reach_table
 
 router = APIRouter(prefix="/api/reach", tags=["reach"])
 
+
+def _load_credential_path(account_tag: str):
+    if not account_tag:
+        return None
+    token_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "token"))
+    direct = os.path.join(token_dir, f"{account_tag}.pickle")
+    if os.path.exists(direct):
+        return direct
+    safe = sanitize_filename(account_tag)
+    if safe != account_tag:
+        safe_path = os.path.join(token_dir, f"{safe}.pickle")
+        if os.path.exists(safe_path):
+            return safe_path
+    return None
+
 def _is_external_source(source: str) -> bool:
     if not source:
         return False
@@ -69,6 +84,7 @@ def list_channels(
     if allowed is not None:
         items = [acct for acct in items if acct in allowed]
     items = _filter_hidden(items, hidden)
+    items = [acct for acct in items if _load_credential_path(acct)]
     label_map = {}
     if items:
         creds = (

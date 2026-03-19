@@ -110,6 +110,8 @@ def list_channels(
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}
         rows = [r for r in rows if r["value"] not in hidden_all]
 
+    rows = [r for r in rows if _load_credential_path(r["value"])]
+
     tags = [r["value"] for r in rows]
     label_map = {}
     if tags:

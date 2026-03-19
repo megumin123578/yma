@@ -66,7 +66,9 @@ const RevenueAnalytics = () => {
     let stop = false;
     (async () => {
       try {
-        const res = await api.get("/api/revenue/channels");
+        const res = await api.get("/api/revenue/channels", {
+          params: { range },
+        });
         const data = res.data;
         const items = (data?.items || [])
           .map((item) => {
@@ -97,7 +99,7 @@ const RevenueAnalytics = () => {
     return () => {
       stop = true;
     };
-  }, [channel]);
+  }, [channel, range]);
 
   useEffect(() => {
     let active = true;
@@ -111,13 +113,13 @@ const RevenueAnalytics = () => {
 
     useEffect(() => {
         let active = true;
-        getChannelRevenueMap().then((map) => {
+        getChannelRevenueMap(range).then((map) => {
             if (active) setChannelRevenueMap(map || {});
         });
         return () => {
             active = false;
         };
-    }, []);
+    }, [range]);
 
   useEffect(() => {
     if (!channel) {

@@ -1,4 +1,5 @@
 # routes/traffic_timeseries.py
+import os
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from datetime import date
@@ -23,6 +24,21 @@ def query_all_safe(sql: str, params=None):
         return []
 
 router = APIRouter(prefix="/api/traffic_source", tags=["traffic_source"])
+
+
+def _load_credential_path(account_tag: str):
+    if not account_tag:
+        return None
+    token_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "token"))
+    direct = os.path.join(token_dir, f"{account_tag}.pickle")
+    if os.path.exists(direct):
+        return direct
+    safe = sanitize_filename(account_tag)
+    if safe != account_tag:
+        safe_path = os.path.join(token_dir, f"{safe}.pickle")
+        if os.path.exists(safe_path):
+            return safe_path
+    return None
 
 def resolve_channel(channel_root: str):
     raw = (channel_root or "").strip()
@@ -79,6 +95,7 @@ def list_channels(
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}
         items = [r for r in items if r["value"] not in hidden_all]
+    items = [r for r in items if _load_credential_path(r["value"])]
     tags = [r["value"] for r in items]
     if tags:
         creds = (
