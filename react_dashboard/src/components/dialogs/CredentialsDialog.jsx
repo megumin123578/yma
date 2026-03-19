@@ -12,6 +12,9 @@ import {
   Typography,
   Divider,
   Fade,
+  Tooltip,
+  Tabs,
+  Tab,
   Checkbox,
   Switch,
   useTheme,
@@ -26,6 +29,9 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import {
   uploadCredentials,
   listTokens,
@@ -35,6 +41,7 @@ import {
   runToken,
   runAllTokens,
   runTokenStage,
+  runTokenFullBackfill,
   getOAuthState,
   listSchedules,
   createSchedule,
@@ -44,7 +51,7 @@ import {
   stopScheduleRun,
 } from "../../services/userService";
 
-const CredentialsDialog = ({ open, onClose, inline = false }) => {
+const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "list" }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isDark = theme.palette.mode === "dark";
@@ -69,6 +76,7 @@ const CredentialsDialog = ({ open, onClose, inline = false }) => {
   const [activeTab, setActiveTab] = useState("add");
   const [dragTokenName, setDragTokenName] = useState("");
   const [dragOverTokenName, setDragOverTokenName] = useState("");
+  const [tokenView, setTokenView] = useState(defaultTokenView);
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
   const [menuTokenName, setMenuTokenName] = useState("");
   const [schedules, setSchedules] = useState([]);
@@ -167,10 +175,11 @@ const CredentialsDialog = ({ open, onClose, inline = false }) => {
       setProgress({ status: "idle", percent: 0, stage: "" });
       setAutoReloaded(false);
       setActiveTab("add");
+      setTokenView(defaultTokenView);
       loadTokens();
       loadSchedules();
     }
-  }, [open, loadSchedules, loadTokens]);
+  }, [open, loadSchedules, loadTokens, defaultTokenView]);
 
   useEffect(() => {
     if (activeTab === "schedule") {
@@ -456,6 +465,25 @@ const CredentialsDialog = ({ open, onClose, inline = false }) => {
     }
   };
 
+  const handleRunFullBackfill = async () => {
+    if (!menuTokenName) return;
+    try {
+      await runTokenFullBackfill(menuTokenName);
+      setTokenProgress((prev) => ({
+        ...prev,
+        [menuTokenName]: { status: "queued", percent: 0, stage: "queued", message: "" },
+      }));
+      startProgressPolling(menuTokenName);
+      setStatus({ type: "success", message: "Full backfill queued." });
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to start full backfill.";
+      setStatus({ type: "error", message });
+    } finally {
+      closeTokenMenu();
+    }
+  };
+
   const startProgressPolling = (tokenName) => {
     const existing = progressTimersRef.current[tokenName];
     if (existing) {
@@ -598,145 +626,497 @@ const CredentialsDialog = ({ open, onClose, inline = false }) => {
     return !token.hidden && token.owned !== false;
   }).length;
 
-
-  return (
-    <Dialog
-      open={inline ? true : open}
-      onClose={inline ? undefined : onClose}
-      maxWidth="md"
-      fullWidth
-      fullScreen={isMobile || inline}
-      hideBackdrop={inline}
-      disablePortal={inline}
-      TransitionComponent={Fade}
-      transitionDuration={220}
-      PaperProps={{
-        sx: {
-          bgcolor: surface,
-          color: isDark ? "#e9edf2" : "inherit",
+  const renderTokenControls = (tokenName, displayName, isOwned, isHidden, layout = "list") => (
+    <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap">
+      <Button
+        size="small"
+        variant="outlined"
+        onClick={() => handleRunToken(tokenName)}
+        disabled={!isOwned}
+        sx={{
+          ...shimmerSx,
+          borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
+          color: isDark ? "#e9edf2" : undefined,
+          minWidth: 32,
+          px: 0.75,
+        }}
+        aria-label={`Run ${displayName}`}
+      >
+        <PlayArrowIcon fontSize="small" />
+      </Button>
+      <IconButton
+        size="small"
+        onClick={(event) => openTokenMenu(event, tokenName)}
+        disabled={!isOwned}
+        sx={{
+          ...shimmerSx,
           border: `1px solid ${border}`,
-          boxShadow: isDark ? "0 18px 60px rgba(0,0,0,0.55)" : undefined,
-          overflow: "hidden",
-          position: "relative",
-          backdropFilter: "blur(16px)",
-          WebkitBackdropFilter: "blur(16px)",
-          width: inline ? "100vw" : { xs: "100vw", md: 860 },
-          maxWidth: inline ? "100vw" : { xs: "100vw", md: "95vw" },
-          minHeight: { xs: "100vh", sm: 620 },
-          borderRadius: { xs: 0, sm: undefined },
-          "&:before": {
-            content: '""',
-            position: "absolute",
-            inset: 0,
-            background: isDark
-              ? "radial-gradient(600px 300px at 110% -10%, rgba(125,224,210,0.24), transparent 55%)"
-              : "radial-gradient(600px 300px at 110% -10%, rgba(25,118,210,0.1), transparent 55%)",
-            pointerEvents: "none",
-          },
-        },
-      }}
-    >
-      <DialogTitle sx={{ pb: 1, position: "relative", zIndex: 1 }}>
-        <Box display="flex" flexDirection="column" gap={0.5}>
-          <Typography variant="h6" sx={{ fontWeight: 700 }}>
-            Setting
-          </Typography>
-          <Typography variant="body2" sx={{ color: isDark ? "#aab4c2" : "text.secondary" }}>
-            Connect Google accounts and schedules for automatic data fetching.
-          </Typography>
+          color: isDark ? "#e9edf2" : undefined,
+        }}
+        aria-label={`Run options for ${displayName}`}
+      >
+        <MoreVertIcon fontSize="small" />
+      </IconButton>
+      {layout === "card" ? (
+        <Tooltip title="Delete this token">
+          <IconButton
+            size="small"
+            onClick={() => requestDeleteToken(tokenName)}
+            disabled={!isOwned}
+            sx={{
+              p: 0.35,
+              borderRadius: 999,
+              color: "#ef4444",
+              bgcolor: "rgba(239,68,68,0.12)",
+              "&:hover": {
+                bgcolor: "rgba(239,68,68,0.18)",
+              },
+            }}
+            aria-label={`Delete ${displayName}`}
+          >
+            <DeleteOutlineIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      ) : (
+        <Button
+          size="small"
+          color="error"
+          onClick={() => requestDeleteToken(tokenName)}
+          disabled={!isOwned}
+          sx={shimmerSx}
+        >
+          Delete
+        </Button>
+      )}
+      {layout !== "card" && (
+        <Box display="flex" alignItems="center" gap={0.5}>
+          <Checkbox
+            size="small"
+            checked={!isHidden}
+            onChange={(event) => handleToggleToken(tokenName, event.target.checked)}
+            sx={{
+              color: isDark ? "#7ed6ff" : undefined,
+              "&.Mui-checked": { color: isDark ? "#43c2ff" : undefined },
+            }}
+          />
         </Box>
-      </DialogTitle>
-      <DialogContent sx={{ position: "relative", zIndex: 1, minHeight: { xs: "calc(100vh - 140px)", sm: 520 }, display: "flex", flexDirection: "column", overflow: "hidden", px: { xs: 1.5, sm: 3 } }}>
-        <Box display="flex" flexDirection={{ xs: "column", sm: "row" }} gap={2} mt={1} flex={1} overflow="hidden">
+      )}
+    </Box>
+  );
+
+  const renderTokenProgress = (tokenName) =>
+    tokenProgress[tokenName] ? (
+      <Box display="flex" flexDirection="column" gap={0.4} mt={1}>
+        <Box
+          sx={{
+            height: 6,
+            borderRadius: 999,
+            overflow: "hidden",
+            bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)",
+          }}
+        >
           <Box
             sx={{
-              minWidth: { xs: "100%", sm: 140 },
-              display: "flex",
-              flexDirection: { xs: "row", sm: "column" },
-              flexWrap: "wrap",
-              gap: 1,
-              flexShrink: 0,
-              overflowX: { xs: "auto", sm: "visible" },
+              height: "100%",
+              width: `${Math.min(100, Math.max(0, tokenProgress[tokenName]?.percent ?? 0))}%`,
+              bgcolor: isDark ? "#7de0d2" : "#1aa86c",
+              transition: "width 200ms ease",
+            }}
+          />
+        </Box>
+        {tokenProgress[tokenName]?.stage && (
+          <Typography variant="caption" color="text.secondary">
+            {tokenProgress[tokenName].stage}
+          </Typography>
+        )}
+      </Box>
+    ) : null;
+
+  const renderTokenItem = (token, layout = "list") => {
+    const tokenName = typeof token === "string" ? token : token.name || "";
+    const displayName =
+      (typeof token === "object" && token.label) ||
+      (tokenName.toLowerCase().endsWith(".pickle") ? tokenName.slice(0, -7) : tokenName);
+    const isHidden = typeof token === "string" ? false : !!token.hidden;
+    const isOwned = typeof token === "string" ? true : token.owned !== false;
+    const avatarSrc = typeof token === "object" ? token.avatar || "" : "";
+
+    if (layout === "card") {
+      return (
+        <Box
+          key={tokenName}
+          sx={{
+            width: "100%",
+            maxWidth: 440,
+            border: `1px solid ${border}`,
+            borderRadius: 3,
+            p: 2,
+            minHeight: 180,
+            display: "flex",
+            flexDirection: "column",
+            bgcolor: isDark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.85)",
+            backdropFilter: "blur(12px)",
+            WebkitBackdropFilter: "blur(12px)",
+            transition: "all 200ms cubic-bezier(0.4, 0, 0.2, 1)",
+            boxShadow: isDark ? "0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)" : "0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05)",
+            "&:hover": {
+              transform: "translateY(-4px)",
+              boxShadow: isDark ? "0 10px 25px -5px rgba(0,0,0,0.3)" : "0 10px 25px -5px rgba(25,118,210,0.15)",
+              bgcolor: isDark ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,1)",
+              borderColor: isDark ? "rgba(125,224,210,0.4)" : "rgba(25,118,210,0.3)",
+            },
+            opacity: isHidden ? 0.7 : 1,
+            position: "relative",
+            overflow: "hidden",
+            justifyContent: "space-between",
+          }}
+        >
+          {isHidden && (
+            <Box
+              sx={{
+                position: "absolute",
+                inset: 0,
+                bgcolor: isDark ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.4)",
+                pointerEvents: "none",
+                zIndex: 0,
+              }}
+            />
+          )}
+          <Box sx={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", height: "100%" }}>
+            <Box display="flex" alignItems="flex-start" justifyContent="space-between" gap={1.5}>
+              <Box display="flex" alignItems="center" gap={2}>
+                <Avatar
+                  src={avatarSrc}
+                  alt={displayName}
+                  sx={{
+                    width: 56,
+                    height: 56,
+                    fontSize: 22,
+                    fontWeight: 700,
+                    bgcolor: isDark ? "rgba(125,224,210,0.15)" : "rgba(25,118,210,0.1)",
+                    color: isDark ? "#7de0d2" : accent,
+                    border: `1.5px solid ${isDark ? "rgba(125,224,210,0.3)" : "rgba(25,118,210,0.2)"}`,
+                    boxShadow: isDark ? "0 0 10px rgba(125,224,210,0.1)" : "0 0 10px rgba(25,118,210,0.05)",
+                  }}
+                >
+                  {displayName.slice(0, 1).toUpperCase()}
+                </Avatar>
+                <Box>
+                  <Typography
+                    variant="h6"
+                    fontWeight={700}
+                    sx={{
+                      lineHeight: 1.2,
+                      mb: 0.5,
+                      fontSize: "1.05rem",
+                      display: "-webkit-box",
+                      overflow: "hidden",
+                      WebkitBoxOrient: "vertical",
+                      WebkitLineClamp: 2,
+                    }}
+                  >
+                    {displayName}
+                  </Typography>
+                  {!isOwned && (
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        color: "text.secondary",
+                        bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)",
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 1,
+                      }}
+                    >
+                      View only
+                    </Typography>
+                  )}
+                </Box>
+              </Box>
+              
+              <Box display="flex" alignItems="center" gap={0.5}>
+                <Tooltip title={isHidden ? "Hidden. Click to show." : "Visible. Click to hide."}>
+                  <IconButton
+                    size="small"
+                    onClick={() => handleToggleToken(tokenName, isHidden)}
+                    disabled={!isOwned}
+                    sx={{
+                      p: 0.5,
+                      bgcolor: isHidden ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
+                      color: isHidden ? "#ef4444" : "#22c55e",
+                      "&:hover": {
+                        bgcolor: isHidden ? "rgba(239,68,68,0.18)" : "rgba(34,197,94,0.18)",
+                      },
+                    }}
+                    aria-label={isHidden ? "Show token" : "Hide token"}
+                  >
+                    {isHidden ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Delete this token">
+                  <IconButton
+                    size="small"
+                    onClick={() => requestDeleteToken(tokenName)}
+                    disabled={!isOwned}
+                    sx={{
+                      p: 0.5,
+                      color: "#ef4444",
+                      "&:hover": {
+                        bgcolor: "rgba(239,68,68,0.12)",
+                      },
+                    }}
+                    aria-label={`Delete ${displayName}`}
+                  >
+                    <DeleteOutlineIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            </Box>
+
+            <Box mt={1.5} mb={2} flex={1}>
+              {renderTokenProgress(tokenName)}
+            </Box>
+
+            <Box display="flex" alignItems="center" justifyContent="space-between" mt="auto">
+              <Button
+                size="small"
+                variant="contained"
+                onClick={() => handleRunToken(tokenName)}
+                disabled={!isOwned}
+                startIcon={<PlayArrowIcon />}
+                sx={{
+                  ...shimmerSx,
+                  bgcolor: isDark ? "rgba(125,224,210,0.15)" : "rgba(25,118,210,0.1)",
+                  color: isDark ? "#7de0d2" : accent,
+                  boxShadow: "none",
+                  fontWeight: 600,
+                  px: 2,
+                  py: 0.5,
+                  borderRadius: 2,
+                  "&:hover": {
+                    bgcolor: isDark ? "rgba(125,224,210,0.25)" : "rgba(25,118,210,0.18)",
+                    boxShadow: "none",
+                  },
+                }}
+                aria-label={`Run ${displayName}`}
+              >
+                Run
+              </Button>
+              <IconButton
+                size="small"
+                onClick={(event) => openTokenMenu(event, tokenName)}
+                disabled={!isOwned}
+                sx={{
+                  ...shimmerSx,
+                  border: `1px solid ${border}`,
+                  bgcolor: isDark ? "rgba(255,255,255,0.05)" : "transparent",
+                  "&:hover": {
+                    bgcolor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.04)",
+                  },
+                }}
+                aria-label={`Run options for ${displayName}`}
+              >
+                <MoreVertIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          </Box>
+        </Box>
+      );
+    }
+
+    return (
+      <Box
+        key={tokenName}
+        display="flex"
+        alignItems="center"
+        gap={1}
+        draggable
+        onDragStart={() => setDragTokenName(tokenName)}
+        onDragEnd={() => {
+          setDragTokenName("");
+          setDragOverTokenName("");
+        }}
+        onDragOver={(event) => event.preventDefault()}
+        onDragEnter={() => {
+          if (dragTokenName && dragTokenName !== tokenName) {
+            setDragOverTokenName(tokenName);
+          }
+        }}
+        onDrop={() => {
+          if (!dragTokenName || dragTokenName === tokenName) return;
+          setTokens((prev) => {
+            const next = [...prev];
+            const from = next.findIndex((t) => (t.name || t) === dragTokenName);
+            const to = next.findIndex((t) => (t.name || t) === tokenName);
+            if (from < 0 || to < 0) return prev;
+            const [moved] = next.splice(from, 1);
+            next.splice(to, 0, moved);
+            saveTokenOrder(next);
+            return next;
+          });
+          setDragOverTokenName("");
+        }}
+        sx={{
+          transition: "transform 180ms ease, background-color 180ms ease",
+          ...(dragTokenName === tokenName ? { transform: "scale(1.01)" } : {}),
+          ...(dragOverTokenName === tokenName ? { transform: "translateY(6px)" } : {}),
+        }}
+      >
+        <Tooltip title="Drag to reorder tokens when you switch to List view.">
+          <IconButton
+            size="small"
+            sx={{
+              color: isDark ? "#9fe3d6" : "rgba(15,23,42,0.6)",
+              cursor: "grab",
+            }}
+            aria-label={`Drag ${displayName}`}
+          >
+            <DragIndicatorIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Box
+          display="flex"
+          flexDirection="column"
+          gap={0.75}
+          sx={{
+            flex: 1,
+            border: `1px solid ${border}`,
+            borderRadius: 1,
+            p: 1,
+            bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)",
+            backdropFilter: "blur(10px)",
+            WebkitBackdropFilter: "blur(10px)",
+            opacity: isHidden ? 0.5 : 1,
+            transition: "opacity 220ms ease, border-color 180ms ease, background-color 180ms ease",
+            "&:hover": {
+              bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(25,118,210,0.08)",
+              borderColor: isDark ? "rgba(255,255,255,0.2)" : "rgba(25,118,210,0.2)",
+              opacity: isHidden ? 0.6 : 1,
+            },
+            cursor: "grab",
+            ...(dragTokenName === tokenName
+              ? { borderColor: isDark ? "#7de0d2" : "#1aa86c" }
+              : {}),
+          }}
+        >
+          <Box display="flex" alignItems="center" justifyContent="space-between" gap={0.5}>
+            <Box display="flex" alignItems="center" gap={1.5}>
+              <Avatar
+                src={avatarSrc}
+                alt={displayName}
+                sx={{
+                  width: 26,
+                  height: 26,
+                  fontSize: 12,
+                  bgcolor: isDark ? "rgba(125,224,210,0.18)" : "rgba(25,118,210,0.12)",
+                  color: isDark ? "#d7fff7" : "rgba(15,23,42,0.8)",
+                }}
+              >
+                {displayName.slice(0, 1).toUpperCase()}
+              </Avatar>
+              <Typography variant="body2">{displayName}</Typography>
+              {!isOwned && (
+                <Typography variant="caption" color="text.secondary">
+                  View only
+                </Typography>
+              )}
+            </Box>
+            {renderTokenControls(tokenName, displayName, isOwned, isHidden, "list")}
+          </Box>
+          {renderTokenProgress(tokenName)}
+        </Box>
+      </Box>
+    );
+  };
+
+
+  const Shell = inline ? Box : Dialog;
+  const shellProps = inline
+    ? {
+        sx: {
+          position: "relative",
+          zIndex: 0,
+          color: isDark ? "#e9edf2" : "inherit",
+        },
+      }
+    : {
+        open,
+        onClose,
+        maxWidth: "md",
+        fullWidth: true,
+        fullScreen: isMobile,
+        TransitionComponent: Fade,
+        transitionDuration: 220,
+        PaperProps: {
+          sx: {
+            bgcolor: surface,
+            color: isDark ? "#e9edf2" : "inherit",
+            border: `1px solid ${border}`,
+            boxShadow: isDark ? "0 18px 60px rgba(0,0,0,0.55)" : undefined,
+            overflow: "hidden",
+            position: "relative",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            width: { xs: "100vw", md: 860 },
+            maxWidth: { xs: "100vw", md: "95vw" },
+            minHeight: { xs: "100vh", sm: 620 },
+            borderRadius: { xs: 0, sm: undefined },
+            "&:before": {
+              content: '""',
+              position: "absolute",
+              inset: 0,
+              background: isDark
+                ? "radial-gradient(600px 300px at 110% -10%, rgba(125,224,210,0.24), transparent 55%)"
+                : "radial-gradient(600px 300px at 110% -10%, rgba(25,118,210,0.1), transparent 55%)",
+              pointerEvents: "none",
+            },
+          },
+        },
+      };
+
+  return (
+    <Shell {...shellProps}>
+      {!inline && <DialogTitle sx={{ pb: 0.5, position: "relative", zIndex: 1 }} />}
+      <DialogContent sx={{ position: "relative", zIndex: 1, minHeight: { xs: "calc(100vh - 140px)", sm: 520 }, display: "flex", flexDirection: "column", overflow: "hidden", px: { xs: 1.5, sm: 3 } }}>
+          <Tabs
+            value={activeTab}
+            onChange={(_, next) => setActiveTab(next)}
+            variant="scrollable"
+            scrollButtons="auto"
+            allowScrollButtonsMobile
+            textColor="inherit"
+            indicatorColor="primary"
+            sx={{
+              mt: 1,
+              mb: 2,
+              borderBottom: `1px solid ${border}`,
+              minHeight: 44,
+              "& .MuiTabs-flexContainer": {
+                gap: 0.5,
+              },
+              "& .MuiTab-root": {
+                minHeight: 44,
+                textTransform: "none",
+                fontWeight: 600,
+                borderRadius: 2,
+                px: 2,
+                color: isDark ? "#d6deea" : "rgba(15,23,42,0.75)",
+              },
+              "& .Mui-selected": {
+                color: "#fff !important",
+                bgcolor: accent,
+              },
+              "& .MuiTabs-indicator": {
+                display: "none",
+              },
             }}
           >
-            <Button
-              variant="text"
-              onClick={() => setActiveTab("add")}
-              sx={{
-                ...shimmerSx,
-                justifyContent: "flex-start",
-                border: "1px solid transparent",
-                color:
-                  activeTab === "add"
-                    ? "#ffffff"
-                    : isDark
-                      ? "#ffffff"
-                      : "rgba(15,23,42,0.9)",
-                bgcolor: activeTab === "add" ? accent : "transparent",
-                "&:hover": {
-                  bgcolor: activeTab === "add"
-                    ? accent
-                    : isDark
-                      ? "rgba(255,255,255,0.06)"
-                      : "rgba(15,23,42,0.06)",
-                },
-              }}
-            >
-              Add channel
-            </Button>
-            <Button
-              variant="text"
-              onClick={() => setActiveTab("schedule")}
-              sx={{
-                ...shimmerSx,
-                justifyContent: "flex-start",
-                border: "1px solid transparent",
-                color:
-                  activeTab === "schedule"
-                    ? "#ffffff"
-                    : isDark
-                      ? "#ffffff"
-                      : "rgba(15,23,42,0.9)",
-                bgcolor: activeTab === "schedule" ? accent : "transparent",
-                "&:hover": {
-                  bgcolor: activeTab === "schedule"
-                    ? accent
-                    : isDark
-                      ? "rgba(255,255,255,0.06)"
-                      : "rgba(15,23,42,0.06)",
-                },
-              }}
-            >
-              Schedule
-            </Button>
-            <Button
-              variant="text"
-              onClick={() => setActiveTab("logs")}
-              sx={{
-                ...shimmerSx,
-                justifyContent: "flex-start",
-                border: "1px solid transparent",
-                color:
-                  activeTab === "logs"
-                    ? "#ffffff"
-                    : isDark
-                      ? "#ffffff"
-                      : "rgba(15,23,42,0.9)",
-                bgcolor: activeTab === "logs" ? accent : "transparent",
-                "&:hover": {
-                  bgcolor: activeTab === "logs"
-                    ? accent
-                    : isDark
-                      ? "rgba(255,255,255,0.06)"
-                      : "rgba(15,23,42,0.06)",
-                },
-              }}
-            >
-              Run logs
-            </Button>
-          </Box>
+            <Tab value="add" label="Add channel" />
+            <Tab value="schedule" label="Schedule" />
+            <Tab value="logs" label="Run logs" />
+          </Tabs>
 
-          <Box display="flex" flexDirection="column" gap={2} flex={1} sx={{ overflowY: "auto", pr: 1.5, py: 0.5 }}>
+        <Box display="flex" flexDirection="column" gap={2} flex={1} sx={{ overflowY: "auto", pr: 1.5, py: 0.5 }}>
             {activeTab === "add" ? (
               <>
                 <Box
@@ -761,25 +1141,27 @@ const CredentialsDialog = ({ open, onClose, inline = false }) => {
                     Connect Google account
                   </Typography>
 
-                  <Button
-                    variant="contained"
-                    color="success"
-                    startIcon={<LinkIcon />}
-                    onClick={handleStartOAuth}
-                    disabled={uploading}
-                    sx={{
-                      ...shimmerSx,
-                      bgcolor: isDark ? "#2b8a7b" : undefined,
-                      color: isDark ? "#e9edf2" : undefined,
-                      transition: "all 180ms ease",
-                      "&:hover": {
-                        bgcolor: isDark ? "#247468" : undefined,
-                        transform: "translateY(-1px)",
-                      },
-                    }}
-                  >
-                    Add Channel
-                  </Button>
+                  <Tooltip title="Start Google sign-in, then pick the channel to sync.">
+                    <Button
+                      variant="contained"
+                      color="success"
+                      startIcon={<LinkIcon />}
+                      onClick={handleStartOAuth}
+                      disabled={uploading}
+                      sx={{
+                        ...shimmerSx,
+                        bgcolor: isDark ? "#2b8a7b" : undefined,
+                        color: isDark ? "#e9edf2" : undefined,
+                        transition: "all 180ms ease",
+                        "&:hover": {
+                          bgcolor: isDark ? "#247468" : undefined,
+                          transform: "translateY(-1px)",
+                        },
+                      }}
+                    >
+                      Add Channel
+                    </Button>
+                  </Tooltip>
                 </Box>
 
                 {progress.status === "idle" && status.message && (
@@ -864,33 +1246,95 @@ const CredentialsDialog = ({ open, onClose, inline = false }) => {
                     <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
                       Tokens
                     </Typography>
-                    <Box display="flex" alignItems="center" gap={1}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<PlayArrowIcon fontSize="small" />}
-                        onClick={handleRunAllTokens}
-                        disabled={loadingTokens || runningAll || visibleTokenCount === 0}
-                        sx={{
-                          ...shimmerSx,
-                          borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
-                          color: isDark ? "#e9edf2" : undefined,
-                        }}
-                      >
-                        Run all
-                      </Button>
-                      <Button
-                        size="small"
-                        onClick={loadTokens}
-                        disabled={loadingTokens}
-                        sx={{
-                          ...shimmerSx,
-                          minWidth: 0,
-                          color: isDark ? "#9fe3d6" : undefined,
-                        }}
-                      >
-                        <RefreshIcon fontSize="small" />
-                      </Button>
+                    <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                      <Tooltip title="Compact cards for scanning. Good as the default view on Config.">
+                        <Box
+                          sx={{
+                            display: "inline-flex",
+                            p: 0.25,
+                            borderRadius: 999,
+                            border: `1px solid ${border}`,
+                            bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.55)",
+                          }}
+                        >
+                          <Button
+                            size="small"
+                            onClick={() => setTokenView("card")}
+                            sx={{
+                              minWidth: 64,
+                              borderRadius: 999,
+                              px: 1.25,
+                              py: 0.4,
+                              color: tokenView === "card" ? "#fff" : "text.secondary",
+                              bgcolor: tokenView === "card" ? accent : "transparent",
+                              "&:hover": {
+                                bgcolor: tokenView === "card" ? accent : "rgba(255,255,255,0.08)",
+                              },
+                            }}
+                          >
+                            Cards
+                          </Button>
+                        </Box>
+                      </Tooltip>
+                      <Tooltip title="List view exposes drag handles so you can reorder tokens.">
+                        <Box
+                          sx={{
+                            display: "inline-flex",
+                            p: 0.25,
+                            borderRadius: 999,
+                            border: `1px solid ${border}`,
+                            bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.55)",
+                          }}
+                        >
+                          <Button
+                            size="small"
+                            onClick={() => setTokenView("list")}
+                            sx={{
+                              minWidth: 64,
+                              borderRadius: 999,
+                              px: 1.25,
+                              py: 0.4,
+                              color: tokenView === "list" ? "#fff" : "text.secondary",
+                              bgcolor: tokenView === "list" ? accent : "transparent",
+                              "&:hover": {
+                                bgcolor: tokenView === "list" ? accent : "rgba(255,255,255,0.08)",
+                              },
+                            }}
+                          >
+                            List
+                          </Button>
+                        </Box>
+                      </Tooltip>
+                      <Tooltip title="Run all visible tokens using the normal incremental content sync.">
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<PlayArrowIcon fontSize="small" />}
+                          onClick={handleRunAllTokens}
+                          disabled={loadingTokens || runningAll || visibleTokenCount === 0}
+                          sx={{
+                            ...shimmerSx,
+                            borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
+                            color: isDark ? "#e9edf2" : undefined,
+                          }}
+                        >
+                          Run all
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title="Reload the token list from the server.">
+                        <Button
+                          size="small"
+                          onClick={loadTokens}
+                          disabled={loadingTokens}
+                          sx={{
+                            ...shimmerSx,
+                            minWidth: 0,
+                            color: isDark ? "#9fe3d6" : undefined,
+                          }}
+                        >
+                          <RefreshIcon fontSize="small" />
+                        </Button>
+                      </Tooltip>
                     </Box>
                   </Box>
 
@@ -899,201 +1343,27 @@ const CredentialsDialog = ({ open, onClose, inline = false }) => {
                       {loadingTokens ? "Loading tokens..." : "No tokens found."}
                     </Typography>
                   ) : (
-                    <Box display="flex" flexDirection="column" gap={1}>
-                      {tokens.map((token) => {
-                        const tokenName = typeof token === "string" ? token : token.name || "";
-                        const displayName =
-                          (typeof token === "object" && token.label) ||
-                          (tokenName.toLowerCase().endsWith(".pickle")
-                            ? tokenName.slice(0, -7)
-                            : tokenName);
-                        const isHidden = typeof token === "string" ? false : !!token.hidden;
-                        const isOwned = typeof token === "string" ? true : token.owned !== false;
-                        return (
-                          <Box
-                            key={tokenName}
-                            display="flex"
-                            alignItems="center"
-                            gap={1}
-                            draggable
-                            onDragStart={() => setDragTokenName(tokenName)}
-                            onDragEnd={() => {
-                              setDragTokenName("");
-                              setDragOverTokenName("");
-                            }}
-                            onDragOver={(event) => event.preventDefault()}
-                            onDragEnter={() => {
-                              if (dragTokenName && dragTokenName !== tokenName) {
-                                setDragOverTokenName(tokenName);
-                              }
-                            }}
-                            onDrop={() => {
-                              if (!dragTokenName || dragTokenName === tokenName) return;
-                              setTokens((prev) => {
-                                const next = [...prev];
-                                const from = next.findIndex((t) => (t.name || t) === dragTokenName);
-                                const to = next.findIndex((t) => (t.name || t) === tokenName);
-                                if (from < 0 || to < 0) return prev;
-                                const [moved] = next.splice(from, 1);
-                                next.splice(to, 0, moved);
-                                saveTokenOrder(next);
-                                return next;
-                              });
-                              setDragOverTokenName("");
-                            }}
-                            sx={{
-                              transition: "transform 180ms ease, background-color 180ms ease",
-                              ...(dragTokenName === tokenName
-                                ? { transform: "scale(1.01)" }
-                                : {}),
-                              ...(dragOverTokenName === tokenName
-                                ? { transform: "translateY(6px)" }
-                                : {}),
-                            }}
-                          >
-                            <IconButton
-                              size="small"
-                              sx={{
-                                color: isDark ? "#9fe3d6" : "rgba(15,23,42,0.6)",
-                                cursor: "grab",
-                              }}
-                              aria-label={`Drag ${displayName}`}
-                            >
-                              <DragIndicatorIcon fontSize="small" />
-                            </IconButton>
-                            <Box
-                              display="flex"
-                              flexDirection="column"
-                              gap={0.75}
-                              sx={{
-                                flex: 1,
-                                border: `1px solid ${border}`,
-                                borderRadius: 1,
-                                p: 1,
-                                bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)",
-                                backdropFilter: "blur(10px)",
-                                WebkitBackdropFilter: "blur(10px)",
-                                opacity: isHidden ? 0.5 : 1,
-                                transition: "opacity 220ms ease, border-color 180ms ease, background-color 180ms ease",
-                                "&:hover": {
-                                  bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(25,118,210,0.08)",
-                                  borderColor: isDark ? "rgba(255,255,255,0.2)" : "rgba(25,118,210,0.2)",
-                                  opacity: isHidden ? 0.6 : 1,
-                                },
-                                cursor: "grab",
-                                ...(dragTokenName === tokenName
-                                  ? { borderColor: isDark ? "#7de0d2" : "#1aa86c" }
-                                  : {}),
-                              }}
-                            >
-                              <Box display="flex" alignItems="center" justifyContent="space-between" gap={0.5}>
-                                <Box display="flex" alignItems="center" gap={1.5}>
-                                  <Button
-                                    size="small"
-                                    variant="outlined"
-                                    onClick={() => handleRunToken(tokenName)}
-                                    disabled={!isOwned}
-                                    sx={{
-                                      ...shimmerSx,
-                                      borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
-                                      color: isDark ? "#e9edf2" : undefined,
-                                      minWidth: 32,
-                                      px: 0.75,
-                                    }}
-                                    aria-label={`Run ${displayName}`}
-                                  >
-                                    <PlayArrowIcon fontSize="small" />
-                                  </Button>
-                                  <IconButton
-                                    size="small"
-                                    onClick={(event) => openTokenMenu(event, tokenName)}
-                                    disabled={!isOwned}
-                                    sx={{
-                                      ...shimmerSx,
-                                      border: `1px solid ${border}`,
-                                      color: isDark ? "#e9edf2" : undefined,
-                                    }}
-                                    aria-label={`Run options for ${displayName}`}
-                                  >
-                                    <MoreVertIcon fontSize="small" />
-                                  </IconButton>
-                                  <Avatar
-                                    src={typeof token === "object" ? token.avatar || "" : ""}
-                                    alt={displayName}
-                                    sx={{
-                                      width: 26,
-                                      height: 26,
-                                      fontSize: 12,
-                                      bgcolor: isDark ? "rgba(125,224,210,0.18)" : "rgba(25,118,210,0.12)",
-                                      color: isDark ? "#d7fff7" : "rgba(15,23,42,0.8)",
-                                    }}
-                                  >
-                                    {displayName.slice(0, 1).toUpperCase()}
-                                  </Avatar>
-                                  <Typography variant="body2">{displayName}</Typography>
-                                  {!isOwned && (
-                                    <Typography variant="caption" color="text.secondary">
-                                      View only
-                                    </Typography>
-                                  )}
-                                </Box>
-                                <Box display="flex" alignItems="center" gap={0.5}>
-                                  <Button
-                                    size="small"
-                                    color="error"
-                                    onClick={() => requestDeleteToken(tokenName)}
-                                    disabled={!isOwned}
-                                    sx={shimmerSx}
-                                  >
-                                    Delete
-                                  </Button>
-                                  <Checkbox
-                                    size="small"
-                                    checked={!isHidden}
-                                    onChange={(event) =>
-                                      handleToggleToken(tokenName, event.target.checked)
-                                    }
-                                    sx={{
-                                      color: isDark ? "#7ed6ff" : undefined,
-                                      "&.Mui-checked": { color: isDark ? "#43c2ff" : undefined },
-                                    }}
-                                  />
-                                </Box>
-                              </Box>
-                              {tokenProgress[tokenName] && (
-                                <Box display="flex" flexDirection="column" gap={0.4}>
-                                  <Box
-                                    sx={{
-                                      height: 6,
-                                      borderRadius: 999,
-                                      overflow: "hidden",
-                                      bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)",
-                                    }}
-                                  >
-                                    <Box
-                                      sx={{
-                                        height: "100%",
-                                        width: `${Math.min(
-                                          100,
-                                          Math.max(0, tokenProgress[tokenName]?.percent ?? 0)
-                                        )}%`,
-                                        bgcolor: isDark ? "#7de0d2" : "#1aa86c",
-                                        transition: "width 200ms ease",
-                                      }}
-                                    />
-                                  </Box>
-                                  {tokenProgress[tokenName]?.stage && (
-                                    <Typography variant="caption" color="text.secondary">
-                                      {tokenProgress[tokenName].stage}
-                                    </Typography>
-                                  )}
-                                </Box>
-                              )}
-                            </Box>
-                          </Box>
-                        );
-                      })}
-                    </Box>
+                    tokenView === "card" ? (
+                      <Box
+                        display="grid"
+                        gap={1.5}
+                        sx={{
+                          justifyContent: "start",
+                          justifyItems: "start",
+                          gridTemplateColumns: {
+                            xs: "1fr",
+                            sm: "repeat(auto-fill, minmax(220px, 1fr))",
+                            lg: "repeat(auto-fill, minmax(240px, 1fr))",
+                          },
+                        }}
+                      >
+                        {tokens.map((token) => renderTokenItem(token, "card"))}
+                      </Box>
+                    ) : (
+                      <Box display="flex" flexDirection="column" gap={1}>
+                        {tokens.map((token) => renderTokenItem(token, "list"))}
+                      </Box>
+                    )
                   )}
                 </Box>
               </>
@@ -1358,20 +1628,21 @@ const CredentialsDialog = ({ open, onClose, inline = false }) => {
               </>
             )}
           </Box>
-        </Box>
       </DialogContent>
-      <DialogActions>
-        <Button
-          onClick={onClose}
-          disabled={uploading}
-          sx={{ ...shimmerSx, color: isDark ? "#aab4c2" : "text.secondary" }}
-        >
-          Cancel
-        </Button>
-        <Button variant="contained" onClick={handleDone} disabled={uploading} sx={shimmerSx}>
-          Done
-        </Button>
-      </DialogActions>
+      {!inline && (
+        <DialogActions>
+          <Button
+            onClick={onClose}
+            disabled={uploading}
+            sx={{ ...shimmerSx, color: isDark ? "#aab4c2" : "text.secondary" }}
+          >
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={handleDone} disabled={uploading} sx={shimmerSx}>
+            Done
+          </Button>
+        </DialogActions>
+      )}
       <Dialog
         open={confirmOpen}
         onClose={handleConfirmClose}
@@ -1412,6 +1683,13 @@ const CredentialsDialog = ({ open, onClose, inline = false }) => {
         <MenuItem onClick={() => handleRunTokenStage("content")}>
           Run content
         </MenuItem>
+        {inline && (
+          <Tooltip title="Re-fetch the entire content history. This is slower but useful after big historical fixes.">
+            <MenuItem onClick={handleRunFullBackfill}>
+              Run full backfill
+            </MenuItem>
+          </Tooltip>
+        )}
         <MenuItem onClick={() => handleRunTokenStage("traffic_source")}>
           Run traffic source
         </MenuItem>
@@ -1428,7 +1706,7 @@ const CredentialsDialog = ({ open, onClose, inline = false }) => {
           Run subscribers
         </MenuItem>
       </Menu>
-    </Dialog>
+    </Shell>
   );
 };
 

@@ -267,6 +267,8 @@ def _run_for_credential(cred_file: str) -> None:
         _write_progress(account_tag, stage, 10, "running", f"Starting {stage}")
         if stage == "content":
             process_content(cred_file, channel_id=channel_id)
+        elif stage == "content_full":
+            process_content(cred_file, channel_id=channel_id, force_full_backfill=True)
         elif stage == "overview":
             process_overall(cred_file, channel_id=channel_id)
         elif stage == "audience":

@@ -72,6 +72,14 @@ export const runTokenStage = async (tokenName, stage) => {
   return res.data;
 };
 
+export const runTokenFullBackfill = async (tokenName) => {
+  const res = await api.post(
+    `/api/users/tokens/${encodeURIComponent(tokenName)}/run-stage`,
+    { stage: "content_full" }
+  );
+  return res.data;
+};
+
 export const setTokenVisibility = async (tokenName, hidden) => {
   const res = await api.post("/api/users/tokens/visibility", {
     token: tokenName,

@@ -1,7 +1,7 @@
 import os
 import json
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 from typing import List, Dict, Optional
 
 from googleapiclient.discovery import build
@@ -12,6 +12,11 @@ from module_trafficsource import (
     create_token_from_credentials,
     sanitize_filename,
     TOKEN_FOLDER,
+)
+
+CONTENT_DAILY_LOOKBACK_DAYS = int(os.getenv("CONTENT_DAILY_LOOKBACK_DAYS", "7"))
+CONTENT_DAILY_FULL_BACKFILL_LOOKBACK_DAYS = int(
+    os.getenv("CONTENT_DAILY_FULL_BACKFILL_LOOKBACK_DAYS", "0")
 )
 
 
@@ -508,6 +513,50 @@ def save_daily_stats(daily_rows, pg_url: str):
             })
 
 
+def _ensure_content_sync_state(conn) -> None:
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS content_sync_state (
+            account_tag TEXT PRIMARY KEY,
+            backfill_complete BOOLEAN NOT NULL DEFAULT FALSE,
+            last_daily_sync_date DATE,
+            updated_at TIMESTAMP DEFAULT NOW()
+        );
+    """))
+
+
+def _get_content_sync_state(pg_url: str, account_tag: str) -> Dict:
+    engine = create_engine(pg_url, future=True)
+    with engine.begin() as conn:
+        _ensure_content_sync_state(conn)
+        row = conn.execute(
+            text("""
+                SELECT account_tag, backfill_complete, last_daily_sync_date
+                FROM content_sync_state
+                WHERE account_tag = :tag
+            """),
+            {"tag": account_tag},
+        ).mappings().first()
+        return dict(row) if row else {}
+
+
+def _mark_content_sync_complete(pg_url: str, account_tag: str, last_daily_sync_date: str) -> None:
+    engine = create_engine(pg_url, future=True)
+    with engine.begin() as conn:
+        _ensure_content_sync_state(conn)
+        conn.execute(
+            text("""
+                INSERT INTO content_sync_state (account_tag, backfill_complete, last_daily_sync_date, updated_at)
+                VALUES (:tag, TRUE, :last_daily_sync_date, NOW())
+                ON CONFLICT (account_tag)
+                DO UPDATE SET
+                    backfill_complete = TRUE,
+                    last_daily_sync_date = EXCLUDED.last_daily_sync_date,
+                    updated_at = NOW()
+            """),
+            {"tag": account_tag, "last_daily_sync_date": last_daily_sync_date},
+        )
+
+
 # ===== Cache invalidation =====
 def invalidate_content_timeseries_cache(pg_url: str, account_tag: str) -> None:
     engine = create_engine(pg_url, future=True)
@@ -532,13 +581,22 @@ def invalidate_content_timeseries_cache(pg_url: str, account_tag: str) -> None:
 # RUNNER
 # ============================
 
-def run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id: Optional[str] = None):
+def run_content_v3_hybrid(
+    credentials,
+    account_tag,
+    pg_url,
+    channel_id: Optional[str] = None,
+    force_full_backfill: bool = False,
+):
     playlist_id = get_upload_playlist_id(credentials, channel_id=channel_id)
     if not playlist_id:
         print("Không tìm thấy uploads playlist.")
         return
 
     end_date = date.today().isoformat()
+    recent_start_date = (date.today() - timedelta(days=max(0, CONTENT_DAILY_LOOKBACK_DAYS - 1))).isoformat()
+    sync_state = _get_content_sync_state(pg_url, account_tag)
+    full_backfill = force_full_backfill or not bool(sync_state.get("backfill_complete"))
 
     print("→ Fetching video list...")
     video_ids = get_video_list(credentials, playlist_id)
@@ -562,8 +620,21 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id: Optional
 
     print("→ Saving metadata to PostgreSQL...")
     save_metadata(videos, account_tag, pg_url)
-
-    print("→ Fetching DAILY analytics via YouTube Analytics API...")
+    if full_backfill:
+        lookback_days = max(0, CONTENT_DAILY_FULL_BACKFILL_LOOKBACK_DAYS)
+        if lookback_days > 0:
+            recent_start_date = (date.today() - timedelta(days=max(0, lookback_days - 1))).isoformat()
+            print(
+                "-> Fetching DAILY analytics via YouTube Analytics API "
+                f"(full backfill, last {lookback_days} days window)..."
+            )
+        else:
+            print("-> Fetching DAILY analytics via YouTube Analytics API (full backfill)...")
+    else:
+        print(
+            "-> Fetching DAILY analytics via YouTube Analytics API "
+            f"(recent {CONTENT_DAILY_LOOKBACK_DAYS} days)..."
+        )
     daily_rows = []
 
     for v in videos:
@@ -571,7 +642,7 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id: Optional
             raise RuntimeError("Stop requested")
         video_id = v["video_id"]
         print(f"[INFO] [content] Daily video: {video_id}")
-        start_date = v["published_at"]
+        start_date = v["published_at"] if full_backfill else max(v["published_at"], recent_start_date)
         d = get_video_daily_analytics(
             credentials, video_id, start_date, end_date, channel_id=channel_id
         )
@@ -579,12 +650,13 @@ def run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id: Optional
 
     print("→ Saving daily stats...")
     save_daily_stats(daily_rows, pg_url)
+    _mark_content_sync_complete(pg_url, account_tag, end_date)
     invalidate_content_timeseries_cache(pg_url, account_tag)
 
     print("[DONE] Metadata + DAILY stats saved successfully")
 
 
-def process_content(cred_file: str, channel_id: Optional[str] = None):
+def process_content(cred_file: str, channel_id: Optional[str] = None, force_full_backfill: bool = False):
     cred_path = os.path.join(TOKEN_FOLDER, cred_file)
     pg_url = os.getenv("PG_URL")
     if not pg_url:
@@ -593,4 +665,10 @@ def process_content(cred_file: str, channel_id: Optional[str] = None):
     credentials = create_token_from_credentials(cred_path)
     account_tag = sanitize_filename(os.path.splitext(cred_file)[0])
 
-    run_content_v3_hybrid(credentials, account_tag, pg_url, channel_id=channel_id)
+    run_content_v3_hybrid(
+        credentials,
+        account_tag,
+        pg_url,
+        channel_id=channel_id,
+        force_full_backfill=force_full_backfill,
+    )

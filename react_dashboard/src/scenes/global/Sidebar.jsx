@@ -304,6 +304,14 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
               onClick={closeOnMobile}
             />
 
+            <Typography
+              variant="h6"
+              color={colors.grey[300]}
+              sx={{ m: "15px 0 5px 20px" }}
+            >
+              Setting
+            </Typography>
+
             <Item
               title="Config"
               to="/config"
