@@ -38,6 +38,7 @@ import {
 
 
 import dayjs from "dayjs";
+import { sortByStoredTokenOrder } from "../utils/tokenOrder";
 
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 
@@ -145,8 +146,6 @@ const TABLE_METRIC_OPTIONS = [
 
   { value: "subscribers", label: "Subscribers", type: "number" },
 
-  { value: "estimatedRevenue", label: "Estimated revenue", type: "currency" },
-
   { value: "impressions", label: "Impressions", type: "number" },
 
   { value: "impressionsClickThroughRate", label: "Impressions click-through rate", type: "percent" },
@@ -162,8 +161,6 @@ const DEFAULT_TABLE_METRICS = [
   "watchTimeHours",
 
   "subscribers",
-
-  "estimatedRevenue",
 
   "impressions",
 
@@ -762,7 +759,6 @@ const ContentAnalytics = () => {
 
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [loadingTimeseries, setLoadingTimeseries] = useState(false);
-  const [loadingChannelMetrics, setLoadingChannelMetrics] = useState(false);
 
   /* ================================
 
@@ -790,41 +786,7 @@ const ContentAnalytics = () => {
           })) ?? [];
 
 
-        const order = (() => {
-
-          try {
-
-            return JSON.parse(localStorage.getItem("tokens.order") || "[]");
-
-          } catch {
-
-            return [];
-
-          }
-
-        })()
-
-          .map((name) => (name || "").replace(/\.pickle$/i, ""))
-
-          .filter(Boolean);
-
-        const orderKey = (value) => String(value || "").toLowerCase();
-
-        const byId = new Map(items.map((c) => [orderKey(c.id), c]));
-
-        const ordered = order
-
-          .map((name) => byId.get(orderKey(name)))
-
-          .filter(Boolean);
-
-        const remaining = items.filter(
-
-          (c) => !order.map(orderKey).includes(orderKey(c.id))
-
-        );
-
-        const finalChannels = [...ordered, ...remaining];
+        const finalChannels = sortByStoredTokenOrder(items, (item) => item.id);
 
         setChannelList(finalChannels);
 
@@ -877,6 +839,7 @@ const ContentAnalytics = () => {
       if (!channelId) return;
 
       setLoadingVideos(true);
+      setChannelMetrics(null);
 
       try {
 
@@ -895,12 +858,14 @@ const ContentAnalytics = () => {
         const raw = resp.data;
 
         setVideos(raw.items ?? []);
+        setChannelMetrics(raw.channelMetrics ?? null);
 
       } catch (err) {
 
         console.error("Fetch videos failed:", err);
 
         setVideos([]);
+        setChannelMetrics(null);
 
       } finally {
 
@@ -951,49 +916,6 @@ const ContentAnalytics = () => {
       } finally {
 
         setLoadingTimeseries(false);
-
-      }
-
-    },
-
-    [channelId]
-
-  );
-
-  const fetchChannelMetrics = useCallback(
-
-    async (start, end) => {
-
-      if (!channelId) return;
-
-      setChannelMetrics(null);
-      setLoadingChannelMetrics(true);
-
-      try {
-
-        const resp = await api.post("/api/content/channel-metrics", {
-
-          start,
-
-          end,
-
-          channelId,
-
-        });
-
-
-
-        setChannelMetrics(resp.data ?? null);
-
-      } catch (err) {
-
-        console.error("Fetch channel metrics failed:", err);
-
-        setChannelMetrics(null);
-
-      } finally {
-
-        setLoadingChannelMetrics(false);
 
       }
 
@@ -1107,9 +1029,7 @@ const ContentAnalytics = () => {
 
     fetchTimeseries(start, end);
 
-    fetchChannelMetrics(start, end);
-
-  }, [resolvePeriod, fetchVideos, fetchTimeseries, fetchChannelMetrics, channelId]);
+  }, [resolvePeriod, fetchVideos, fetchTimeseries, channelId]);
 
   useEffect(() => {
     let active = true;
@@ -1161,7 +1081,6 @@ const ContentAnalytics = () => {
           casualViewers: toNullableNumber(v.casualViewers ?? v.casual_viewers),
           regularViewers: toNullableNumber(v.regularViewers ?? v.regular_viewers),
           subscribers: toNullableNumber(v.subscribers),
-          estimatedRevenue: toNullableNumber(v.estimatedRevenue ?? v.estimated_revenue),
           impressions: toNullableNumber(v.impressions),
           impressionsClickThroughRate: toNullableNumber(v.impressionsClickThroughRate ?? v.impressions_click_through_rate),
           likes: n(v.likes),
@@ -2431,19 +2350,13 @@ const ContentAnalytics = () => {
 
         {/* 🔴 Performance Tip */}
 
-        <Box sx={{ mt: 1, textAlign: "center", fontSize: "0.75rem", color: "text.secondary", opacity: 0.8 }}>
-
-          Showing top 5 videos by {metric} for better performance.
-
-        </Box>
-
       </Box>
 
 
 
       {/* TABLE */}
 
-      {(loadingVideos || loadingChannelMetrics) && (
+      {loadingVideos && (
         <Typography
           variant="caption"
           sx={{ color: "text.secondary", ml: 0.5 }}

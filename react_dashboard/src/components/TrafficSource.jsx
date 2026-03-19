@@ -51,6 +51,7 @@ import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 
 import { API_BASE } from "../config";
+import { sortByStoredTokenOrder } from "../utils/tokenOrder";
 
 const DATA_LAG_DAYS = 3;
 const LAG_PERIODS = new Set(["last7", "last28", "last90", "last365"]);
@@ -392,20 +393,10 @@ const TrafficSourceChart = () => {
             subscribers: x?.subscribers ?? x?.subscriberCount ?? null,
           };
         });
-        const order = (() => {
-          try {
-            return JSON.parse(localStorage.getItem("tokens.order") || "[]");
-          } catch {
-            return [];
-          }
-        })()
-          .map((name) => (name || "").replace(/\.pickle$/i, ""))
-          .filter(Boolean);
-        const orderKey = (value) => String(value || "").toLowerCase();
-        const byId = new Map(norm.map((c) => [orderKey(c.value), c]));
-        const ordered = order.map((name) => byId.get(orderKey(name))).filter(Boolean);
-        const remaining = norm.filter((c) => !order.map(orderKey).includes(orderKey(c.value)));
-        const finalChannels = [...ordered, ...remaining];
+        const finalChannels = sortByStoredTokenOrder(
+          norm,
+          (item) => item.value
+        );
         if (!stop) {
           setChannels(finalChannels);
           setChannel((current) => {

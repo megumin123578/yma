@@ -426,19 +426,23 @@ def content_list(
         COALESCE(SUM(s.subscribers_gained), 0) AS "subscribers",
         COALESCE(SUM(s.estimated_revenue), 0) AS "estimatedRevenue",
         
-        -- Unified Impressions logic: Prefer daily stats sum (card + teaser), fallback to reach table
+        -- Prefer exact-range reach totals (card + teaser). If unavailable, fall back
+        -- to daily card-only metrics because video_daily_stats does not store teaser data.
         COALESCE(
+            MAX(r.total_impressions),
             NULLIF(SUM(COALESCE(s.card_impressions, 0)), 0),
-            MAX(r.total_impressions), 
             0
         ) AS impressions,
 
-        -- Unified CTR logic: Weighted calculation based on the same source as impressions
-        CASE 
+        CASE
+            WHEN MAX(r.total_impressions) IS NOT NULL
+                THEN COALESCE(MAX(r.total_ctr), 0) * 100.0
             WHEN SUM(COALESCE(s.card_impressions, 0)) > 0
-                THEN (SUM(COALESCE(s.card_clicks, 0))::numeric / 
-                      SUM(COALESCE(s.card_impressions, 0))) * 100.0
-            ELSE COALESCE(MAX(r.total_ctr), 0) * 100.0
+                THEN (
+                    SUM(COALESCE(s.card_clicks, 0))::numeric
+                    / SUM(COALESCE(s.card_impressions, 0))
+                ) * 100.0
+            ELSE 0
         END AS "impressionsClickThroughRate",
         
         COALESCE(v.card_impressions, 0) AS "cardImpressions",
@@ -450,6 +454,8 @@ def content_list(
     LEFT JOIN reach_video_metrics r
       ON r.video_id = v.video_id
      AND r.account_tag = :account_tag
+     AND r.start_date = :start
+     AND r.end_date = :end
     WHERE v.account_tag = :account_tag
     GROUP BY
         v.video_id,
@@ -473,16 +479,19 @@ def content_list(
 
     rows_mutable = [dict(r) for r in query_all_safe(sql, params)]
 
+    channel_metrics_payload = {"impressions": 0, "ctr": None, "supported": False}
+
     # enrich per-video metrics (impressions, ctr, revenue, subscribers)
     try:
         cred_row = _find_credential_row(db, req.channelId)
         metrics_map = None
+        creds = None
         if cred_row and cred_row.token_name:
+            creds = _load_token_credentials(cred_row.token_name)
             cached = _load_video_metrics_cache(req.channelId, req.start, req.end)
             if cached is not None:
                 metrics_map = cached
             else:
-                creds = _load_token_credentials(cred_row.token_name)
                 if creds:
                     # Limit real-time enrichment to top 200 videos by views/priority for speed
                     # The rest will stay with DB fallback values.
@@ -495,6 +504,14 @@ def content_list(
                         req.end.isoformat(),
                     )
                     _save_video_metrics_cache(req.channelId, req.start, req.end, metrics_map)
+            if creds:
+                channel_metrics_payload = _compute_channel_metrics(
+                    req.channelId,
+                    creds,
+                    cred_row.selected_channel_id,
+                    req.start,
+                    req.end,
+                )
         if metrics_map:
             for r in rows_mutable:
                 vid = r.get("videoId")
@@ -523,7 +540,7 @@ def content_list(
 
     return {
         "items": rows_mutable,
-        "channelMetrics": None,
+        "channelMetrics": channel_metrics_payload,
     }
 
 class TimeSeriesRequest(BaseModel):
@@ -635,45 +652,24 @@ def _find_credential_row(db: Session, account_tag: str) -> Optional[UserCredenti
     return None
 
 
-@router.post("/channel-metrics")
-def channel_metrics(
-    req: ChannelMetricsRequest,
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user_optional),
+def _compute_channel_metrics(
+    account_tag: str,
+    creds,
+    selected_channel_id: Optional[str],
+    start_date: date,
+    end_date: date,
 ):
-    allowed = get_allowed_account_tags(db, current_user)
-    if allowed is not None and req.channelId not in allowed:
-        return {"impressions": 0, "ctr": None, "supported": False}
-    if current_user:
-        hidden = get_hidden_account_tags(db, current_user.id)
-        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
-        if req.channelId in hidden_all:
-            return {"impressions": 0, "ctr": None, "supported": False}
-    cred_row = _find_credential_row(db, req.channelId)
-    if not cred_row or not cred_row.token_name:
-        return {"impressions": 0, "ctr": None, "supported": False}
-    creds = _load_token_credentials(cred_row.token_name)
     if not creds:
         return {"impressions": 0, "ctr": None, "supported": False}
 
     yta = build("youtubeAnalytics", "v2", credentials=creds)
-    ids = (
-        f"channel=={cred_row.selected_channel_id}"
-        if cred_row.selected_channel_id
-        else "channel==MINE"
-    )
-
-    # Attempt channel-level reach metrics first. If unsupported, fall back
-    # to aggregating per-video metrics (dimension=video).
+    ids = f"channel=={selected_channel_id}" if selected_channel_id else "channel==MINE"
     query = {
         "ids": ids,
-        "startDate": req.start.isoformat(),
-        "endDate": req.end.isoformat(),
+        "startDate": start_date.isoformat(),
+        "endDate": end_date.isoformat(),
         "metrics": "videoThumbnailImpressions,videoThumbnailImpressionsClickRate",
     }
-    # Note: 'dimensions': 'day' is removed because Reach metrics 
-    # (impressions, CTR) are not supported with daily granularity 
-    # at the channel level in YT Analytics API v2.
     try:
         resp = yta.reports().query(**query).execute() or {}
         rows = resp.get("rows") or []
@@ -700,26 +696,23 @@ def channel_metrics(
                 ctr = (weighted_ctr_sum / total_impressions) * 100.0 if total_impressions > 0 else None
                 return {"impressions": total_impressions, "ctr": ctr, "supported": True}
     except HttpError as e:
-        # We silence 400 errors here because videoThumbnailImpressions 
-        # is often not supported for standard channels at the channel level.
         if e.resp.status != 400:
             print(f"[content.channel-metrics] HttpError: {e}")
     except Exception as e:
         print(f"[content.channel-metrics] ERROR: {e}")
 
-    # Fallback: aggregate per-video metrics
     try:
         rows = query_all_safe(
             "SELECT video_id FROM videos WHERE account_tag = :tag",
-            {"tag": req.channelId},
+            {"tag": account_tag},
         )
         video_ids = [r.get("video_id") for r in rows if r.get("video_id")]
         metrics_map = _fetch_video_metrics_bulk(
             creds,
-            cred_row.selected_channel_id,
+            selected_channel_id,
             video_ids,
-            req.start.isoformat(),
-            req.end.isoformat(),
+            start_date.isoformat(),
+            end_date.isoformat(),
         )
         if not metrics_map:
             return {"impressions": 0, "ctr": None, "supported": False}
@@ -743,3 +736,30 @@ def channel_metrics(
     except Exception as e:
         print(f"[content.channel-metrics] fallback failed: {e}")
         return {"impressions": 0, "ctr": None, "supported": False}
+
+
+@router.post("/channel-metrics")
+def channel_metrics(
+    req: ChannelMetricsRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    allowed = get_allowed_account_tags(db, current_user)
+    if allowed is not None and req.channelId not in allowed:
+        return {"impressions": 0, "ctr": None, "supported": False}
+    if current_user:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
+        if req.channelId in hidden_all:
+            return {"impressions": 0, "ctr": None, "supported": False}
+    cred_row = _find_credential_row(db, req.channelId)
+    if not cred_row or not cred_row.token_name:
+        return {"impressions": 0, "ctr": None, "supported": False}
+    creds = _load_token_credentials(cred_row.token_name)
+    return _compute_channel_metrics(
+        req.channelId,
+        creds,
+        cred_row.selected_channel_id,
+        req.start,
+        req.end,
+    )
