@@ -637,6 +637,17 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
     return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : stage;
   };
 
+  const statusStyles = (status) => {
+    const lower = String(status || "").toLowerCase();
+    if (lower === "done") return { bg: "rgba(34,197,94,0.18)", fg: "#22c55e" };
+    if (lower === "queued") return { bg: "rgba(245,158,11,0.18)", fg: "#f59e0b" };
+    if (lower === "running") return { bg: "rgba(59,130,246,0.18)", fg: "#3b82f6" };
+    if (lower === "stopping") return { bg: "rgba(234,179,8,0.18)", fg: "#eab308" };
+    if (lower === "stopped") return { bg: "rgba(148,163,184,0.28)", fg: "#94a3b8" };
+    if (lower === "error") return { bg: "rgba(239,68,68,0.18)", fg: "#ef4444" };
+    return { bg: "rgba(148,163,184,0.2)", fg: "#94a3b8" };
+  };
+
   const visibleTokenCount = tokens.filter((token) => {
     if (typeof token === "string") return true;
     return !token.hidden && token.owned !== false;
@@ -1535,6 +1546,7 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                       ) : (
                         <Box display="flex" flexDirection="column" gap={1}>
                           {scheduleRuns.map((run) => {
+                            const styles = statusStyles(run.status);
                             const processed = run.processed ?? 0;
                             const total = run.total ?? 0;
                             const tokenName = formatTokenName(run.token_name);
@@ -1558,6 +1570,21 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                               >
                                 <Box display="flex" alignItems="center" justifyContent="space-between" gap={1}>
                                   <Box display="flex" alignItems="center" gap={1}>
+                                    <Box
+                                      sx={{
+                                        px: 1,
+                                        py: 0.25,
+                                        borderRadius: 999,
+                                        fontSize: 12,
+                                        fontWeight: 700,
+                                        letterSpacing: 0.4,
+                                        textTransform: "uppercase",
+                                        bgcolor: styles.bg,
+                                        color: styles.fg,
+                                      }}
+                                    >
+                                      {run.status || "unknown"}
+                                    </Box>
                                     <Box display="flex" flexDirection="column" gap={0.25}>
                                       <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap">
                                         <Box
@@ -1587,9 +1614,11 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                                           {runType}
                                         </Box>
                                       </Box>
-                                      <Typography variant="body2">
-                                        {cleanError(run.message) || "No details"}
-                                      </Typography>
+                                      {cleanError(run.message) && cleanError(run.message).toLowerCase() !== "completed" && (
+                                        <Typography variant="body2">
+                                          {cleanError(run.message)}
+                                        </Typography>
+                                      )}
                                     </Box>
                                   </Box>
                                   <Box display="flex" alignItems="center" gap={0.5}>

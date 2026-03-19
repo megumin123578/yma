@@ -395,11 +395,13 @@ def credentials_callback(
         raise HTTPException(status_code=400, detail=f"Failed to fetch token: {e}")
 
     token_filename = f"{account_tag}.pickle"
+    token_name = token_filename
     token_path = os.path.join(TOKEN_DIR, token_filename)
     with open(token_path, "wb") as f:
         pickle.dump(flow.credentials, f)
 
     user_id = pending.get("user_id")
+    cred_row = None
     if user_id is not None:
         cred_row = (
             db.query(UserCredential)
@@ -424,6 +426,15 @@ def credentials_callback(
                 )
             )
         db.commit()
+        if cred_row is None:
+            cred_row = (
+                db.query(UserCredential)
+                .filter(
+                    UserCredential.user_id == user_id,
+                    UserCredential.account_tag == account_tag,
+                )
+                .first()
+            )
     pending["token_name"] = token_filename
     pending["account_tag"] = account_tag
     channel_id, title = _pick_primary_channel(flow.credentials)
@@ -476,6 +487,9 @@ def credentials_callback(
                     pass
             account_tag = new_tag
             token_name = new_token_name
+
+    if cred_row is None:
+        raise HTTPException(status_code=400, detail="OAuth state is missing the user credential record")
 
     cred_row.selected_channel_id = channel_id
     cred_row.selected_channel_title = title
@@ -1058,8 +1072,9 @@ def stop_schedule_run(
         raise HTTPException(status_code=404, detail="Run not found")
     if row.status not in {"running", "queued"}:
         return {"ok": True, "status": row.status}
-    row.status = "stopping"
-    row.message = "Stop requested by admin"
+    row.status = "stopped"
+    row.message = "Stopped by admin"
+    row.finished_at = datetime.utcnow()
     db.add(row)
     db.commit()
     return {"ok": True, "status": row.status}
