@@ -22,6 +22,7 @@ import { formatNumber } from "./Module";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
+import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 
 const formatPct = (value) => {
   if (value === null || value === undefined) return "-";
@@ -69,7 +70,7 @@ const ReachAnalytics = () => {
   const [channelRevenueMap, setChannelRevenueMap] = useState({});
   const [accountTag, setAccountTag] = useState(() => {
     try {
-      return localStorage.getItem("reach.selectedChannelId") || "";
+      return getStoredSharedChannelId("reach.selectedChannelId");
     } catch {
       return "";
     }
@@ -112,8 +113,14 @@ const ReachAnalytics = () => {
         setAccounts(finalAccounts);
         if (!finalAccounts.length) {
           setAccountTag("");
-        } else if (!accountTag || !finalAccounts.some((a) => a.value === accountTag)) {
-          setAccountTag(finalAccounts[0].value);
+        } else {
+          const preferredChannel =
+            getStoredSharedChannelId("reach.selectedChannelId") || accountTag;
+          if (!preferredChannel || !finalAccounts.some((a) => a.value === preferredChannel)) {
+            setAccountTag(finalAccounts[0].value);
+          } else if (preferredChannel !== accountTag) {
+            setAccountTag(preferredChannel);
+          }
         }
       } catch (err) {
         setAccounts([]);
@@ -143,12 +150,7 @@ const ReachAnalytics = () => {
   }, []);
 
   useEffect(() => {
-    if (!accountTag) return;
-    try {
-      localStorage.setItem("reach.selectedChannelId", accountTag);
-    } catch {
-      // ignore storage errors
-    }
+    setStoredSharedChannelId(accountTag, "reach.selectedChannelId");
   }, [accountTag]);
 
   useEffect(() => {

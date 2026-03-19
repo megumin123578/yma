@@ -29,6 +29,7 @@ import { geoFeatures } from "../data/mockGeoFeatures";
 import api from "../services/api";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
+import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 
 // ===== Helpers =====
 const n = (v) => Number(v) || 0;
@@ -99,7 +100,12 @@ const loadStoredFilters = () => {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(FILTERS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const parsed = raw ? JSON.parse(raw) : null;
+    const sharedChannel = getStoredSharedChannelId("geography.selectedChannelId");
+    if (parsed) {
+      return parsed.channel ? parsed : { ...parsed, channel: sharedChannel };
+    }
+    return sharedChannel ? { channel: sharedChannel } : null;
   } catch (e) {
     return null;
   }
@@ -160,9 +166,13 @@ const GeographyChart = ({ isDashboard = false }) => {
               const sel = final.find(c => c.value === channel);
               if (sel?.label) setChannelLabelFallback(sel.label);
             }
-            if (!channel && final.length) {
-              setChannel(final[0].value);
-              setChannelLabelFallback(final[0].label);
+            if (final.length) {
+              const preferredChannel =
+                getStoredSharedChannelId("geography.selectedChannelId") || channel;
+              const selected =
+                final.find((item) => item.value === preferredChannel) || final[0];
+              setChannel(selected.value);
+              setChannelLabelFallback(selected.label);
             }
           }
         }
@@ -191,6 +201,7 @@ const GeographyChart = ({ isDashboard = false }) => {
 
   useEffect(() => {
     const label = (channelsRef.current || []).find(c => c.value === channel)?.label || channelLabelFallback || "";
+    setStoredSharedChannelId(channel, "geography.selectedChannelId");
     window.localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify({ range, channel, channelLabel: label, metric, visibleColumns }));
   }, [range, channel, metric, visibleColumns, channelLabelFallback]);
 

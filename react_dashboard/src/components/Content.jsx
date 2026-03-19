@@ -39,6 +39,7 @@ import {
 
 import dayjs from "dayjs";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
+import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 
@@ -743,7 +744,7 @@ const ContentAnalytics = () => {
 
     try {
 
-      return localStorage.getItem("content.selectedChannelId") || "";
+      return getStoredSharedChannelId("content.selectedChannelId");
 
     } catch {
 
@@ -788,11 +789,16 @@ const ContentAnalytics = () => {
         setChannelList(finalChannels);
 
         setChannelId((current) => {
+          const preferredChannel =
+            getStoredSharedChannelId("content.selectedChannelId") || current;
           if (!finalChannels.length) return "";
-          if (!current || !finalChannels.some((c) => c.id === current)) {
+          if (
+            !preferredChannel ||
+            !finalChannels.some((c) => c.id === preferredChannel)
+          ) {
             return finalChannels[0].id;
           }
-          return current;
+          return preferredChannel;
         });
 
       } catch (err) {
@@ -807,17 +813,7 @@ const ContentAnalytics = () => {
 
   useEffect(() => {
 
-    if (!channelId) return;
-
-    try {
-
-      localStorage.setItem("content.selectedChannelId", channelId);
-
-    } catch {
-
-      // ignore storage errors
-
-    }
+    setStoredSharedChannelId(channelId, "content.selectedChannelId");
 
   }, [channelId]);
 

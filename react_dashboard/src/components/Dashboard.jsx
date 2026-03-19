@@ -26,6 +26,7 @@ import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { geoFeatures } from "../data/mockGeoFeatures";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
+import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 import {
     ResponsiveContainer,
     BarChart,
@@ -79,7 +80,7 @@ const VideoList = () => {
     const [channelRevenueMap, setChannelRevenueMap] = useState({});
     const [selectedChannel, setSelectedChannel] = useState(() => {
         try {
-            return localStorage.getItem("overview.selectedChannelId") || "";
+            return getStoredSharedChannelId("overview.selectedChannelId");
         } catch {
             return "";
         }
@@ -294,8 +295,12 @@ const VideoList = () => {
                 const finalChannels = [...ordered, ...remaining];
                 setChannels(finalChannels);
                 if (finalChannels.length > 0) {
-                    const exists = selectedChannel && finalChannels.some((c) => c.value === selectedChannel);
-                    if (!exists) setSelectedChannel(finalChannels[0].value);
+                    const preferredChannel =
+                        getStoredSharedChannelId("overview.selectedChannelId") || selectedChannel;
+                    const exists =
+                        preferredChannel &&
+                        finalChannels.some((c) => c.value === preferredChannel);
+                    setSelectedChannel(exists ? preferredChannel : finalChannels[0].value);
                 }
             } catch (err) {
                 console.error(err);
@@ -311,12 +316,7 @@ const VideoList = () => {
     }, [selectedChannel]);
 
     useEffect(() => {
-        if (!selectedChannel) return;
-        try {
-            localStorage.setItem("overview.selectedChannelId", selectedChannel);
-        } catch {
-            // ignore storage errors
-        }
+        setStoredSharedChannelId(selectedChannel, "overview.selectedChannelId");
     }, [selectedChannel]);
 
     useEffect(() => {

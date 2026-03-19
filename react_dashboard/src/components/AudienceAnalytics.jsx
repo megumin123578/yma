@@ -18,6 +18,7 @@ import { ResponsiveLine } from "@nivo/line";
 import api from "../services/api";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
+import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 
 const formatRangeLabel = (range) => {
   if (!range?.start || !range?.end) return "No data";
@@ -32,7 +33,9 @@ const AudienceAnalytics = () => {
   const chartRef = useRef(null);
   const isDark = theme.palette.mode === "dark";
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const [accountTag, setAccountTag] = useState("");
+  const [accountTag, setAccountTag] = useState(() =>
+    getStoredSharedChannelId("audience.selectedChannelId")
+  );
   const [accounts, setAccounts] = useState([]);
   const [channelAvatarMap, setChannelAvatarMap] = useState({});
   const [channelRevenueMap, setChannelRevenueMap] = useState({});
@@ -84,12 +87,17 @@ const AudienceAnalytics = () => {
         const finalAccounts = [...ordered, ...remaining];
         setAccounts(finalAccounts);
         setAccountTag((current) => {
+          const preferredChannel =
+            getStoredSharedChannelId("audience.selectedChannelId") || current;
           if (!finalAccounts.length) return "";
-          if (!current || !finalAccounts.some((item) => item.value === current)) {
+          if (
+            !preferredChannel ||
+            !finalAccounts.some((item) => item.value === preferredChannel)
+          ) {
             const next = ordered.length ? ordered[0] : finalAccounts[0];
             return next?.value || "";
           }
-          return current;
+          return preferredChannel;
         });
       } catch (err) {
         setAccounts([]);
@@ -97,6 +105,10 @@ const AudienceAnalytics = () => {
     };
     loadAccounts();
   }, []);
+
+  useEffect(() => {
+    setStoredSharedChannelId(accountTag, "audience.selectedChannelId");
+  }, [accountTag]);
 
   useEffect(() => {
     let active = true;

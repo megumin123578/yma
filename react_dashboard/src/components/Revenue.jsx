@@ -25,6 +25,7 @@ import api from "../services/api";
 import { tokens } from "../theme";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
+import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 
 const RANGE_OPTIONS = [
   { value: "7d", label: "Last 7 days" },
@@ -57,7 +58,9 @@ const RevenueAnalytics = () => {
   const [channels, setChannels] = useState([]);
   const [channelAvatarMap, setChannelAvatarMap] = useState({});
   const [channelRevenueMap, setChannelRevenueMap] = useState({});
-  const [channel, setChannel] = useState("");
+  const [channel, setChannel] = useState(() =>
+    getStoredSharedChannelId("revenue.selectedChannelId")
+  );
   const [range, setRange] = useState("28d");
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
@@ -84,8 +87,14 @@ const RevenueAnalytics = () => {
           setChannels(items);
           if (!items.length) {
             setChannel("");
-          } else if (!items.some((c) => c.value === channel)) {
-            setChannel(items[0].value);
+          } else {
+            const preferredChannel =
+              getStoredSharedChannelId("revenue.selectedChannelId") || channel;
+            if (!preferredChannel || !items.some((c) => c.value === preferredChannel)) {
+              setChannel(items[0].value);
+            } else if (preferredChannel !== channel) {
+              setChannel(preferredChannel);
+            }
           }
         }
       } catch (err) {
@@ -111,7 +120,11 @@ const RevenueAnalytics = () => {
     };
   }, []);
 
-    useEffect(() => {
+  useEffect(() => {
+    setStoredSharedChannelId(channel, "revenue.selectedChannelId");
+  }, [channel]);
+
+  useEffect(() => {
         let active = true;
         getChannelRevenueMap(range).then((map) => {
             if (active) setChannelRevenueMap(map || {});

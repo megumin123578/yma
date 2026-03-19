@@ -52,6 +52,7 @@ import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 
 import { API_BASE } from "../config";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
+import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 
 const DATA_LAG_DAYS = 3;
 const LAG_PERIODS = new Set(["last7", "last28", "last90", "last365"]);
@@ -138,7 +139,12 @@ const loadStoredFilters = () => {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(FILTERS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const parsed = raw ? JSON.parse(raw) : null;
+    const sharedChannel = getStoredSharedChannelId("trafficSource.selectedChannelId");
+    if (parsed) {
+      return parsed.channel ? parsed : { ...parsed, channel: sharedChannel };
+    }
+    return sharedChannel ? { channel: sharedChannel } : null;
   } catch (e) {
     return null;
   }
@@ -378,11 +384,16 @@ const TrafficSourceChart = () => {
         if (!stop) {
           setChannels(finalChannels);
           setChannel((current) => {
+            const preferredChannel =
+              getStoredSharedChannelId("trafficSource.selectedChannelId") || current;
             if (!finalChannels.length) return "";
-            if (!current || !finalChannels.some((opt) => opt.value === current)) {
+            if (
+              !preferredChannel ||
+              !finalChannels.some((opt) => opt.value === preferredChannel)
+            ) {
               return finalChannels[0].value;
             }
-            return current;
+            return preferredChannel;
           });
         }
       } catch (e) {
@@ -420,6 +431,7 @@ const TrafficSourceChart = () => {
       saveRecentChannels(next);
       return next;
     });
+    setStoredSharedChannelId(channel, "trafficSource.selectedChannelId");
   }, [channel]);
 
   const [startDate, setStartDate] = useState(() => loadStoredFilters()?.startDate || "");
