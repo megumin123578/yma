@@ -7,7 +7,6 @@ import CredentialsDialog from "../../components/dialogs/CredentialsDialog";
 
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
-import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import SettingsIcon from '@mui/icons-material/Settings';
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
@@ -47,13 +46,6 @@ const Topbar = ({ setIsSidebar, isMobile = false }) => {
             ) : (
               <LightModeOutlinedIcon />
             )}
-          </IconButton>
-
-          <IconButton
-            aria-label="Help"
-            onClick={() => window.open("/help.pdf", "_blank", "noopener,noreferrer")}
-          >
-            <HelpOutlineIcon />
           </IconButton>
 
           <IconButton onClick={() => setOpenCredentials(true)}>

@@ -27,7 +27,6 @@ import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import AddIcon from "@mui/icons-material/Add";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
-import MoreVertIcon from "@mui/icons-material/MoreVert";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import VisibilityIcon from "@mui/icons-material/Visibility";
@@ -400,6 +399,8 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
       const message =
         err?.response?.data?.detail || "Failed to start refresh.";
       setStatus({ type: "error", message });
+    } finally {
+      closeTokenMenu();
     }
   };
 
@@ -658,32 +659,20 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
       <Button
         size="small"
         variant="outlined"
-        onClick={() => handleRunToken(tokenName)}
+        onClick={(event) => openTokenMenu(event, tokenName)}
         disabled={!isOwned}
         sx={{
           ...shimmerSx,
           borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
           color: isDark ? "#e9edf2" : undefined,
           minWidth: 32,
-          px: 0.75,
+          px: 1,
         }}
         aria-label={`Run ${displayName}`}
+        endIcon={<ExpandMoreIcon fontSize="small" />}
       >
         <PlayArrowIcon fontSize="small" />
       </Button>
-      <IconButton
-        size="small"
-        onClick={(event) => openTokenMenu(event, tokenName)}
-        disabled={!isOwned}
-        sx={{
-          ...shimmerSx,
-          border: `1px solid ${border}`,
-          color: isDark ? "#e9edf2" : undefined,
-        }}
-        aria-label={`Run options for ${displayName}`}
-      >
-        <MoreVertIcon fontSize="small" />
-      </IconButton>
       {layout === "card" ? (
         <Tooltip title="Delete this token">
           <IconButton
@@ -908,9 +897,10 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
               <Button
                 size="small"
                 variant="contained"
-                onClick={() => handleRunToken(tokenName)}
+                onClick={(event) => openTokenMenu(event, tokenName)}
                 disabled={!isOwned}
                 startIcon={<PlayArrowIcon />}
+                endIcon={<ExpandMoreIcon fontSize="small" />}
                 sx={{
                   ...shimmerSx,
                   bgcolor: isDark ? "rgba(125,224,210,0.15)" : "rgba(25,118,210,0.1)",
@@ -929,22 +919,6 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
               >
                 Run
               </Button>
-              <IconButton
-                size="small"
-                onClick={(event) => openTokenMenu(event, tokenName)}
-                disabled={!isOwned}
-                sx={{
-                  ...shimmerSx,
-                  border: `1px solid ${border}`,
-                  bgcolor: isDark ? "rgba(255,255,255,0.05)" : "transparent",
-                  "&:hover": {
-                    bgcolor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.04)",
-                  },
-                }}
-                aria-label={`Run options for ${displayName}`}
-              >
-                <MoreVertIcon fontSize="small" />
-              </IconButton>
             </Box>
           </Box>
         </Box>
@@ -1787,13 +1761,6 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
         <MenuItem onClick={() => handleRunTokenStage("content")}>
           Run content
         </MenuItem>
-        {inline && (
-          <Tooltip title="Re-fetch the entire content history. This is slower but useful after big historical fixes.">
-            <MenuItem onClick={handleRunFullBackfill}>
-              Run full backfill
-            </MenuItem>
-          </Tooltip>
-        )}
         <MenuItem onClick={() => handleRunTokenStage("traffic_source")}>
           Run traffic source
         </MenuItem>
@@ -1808,6 +1775,12 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
         </MenuItem>
         <MenuItem onClick={() => handleRunTokenStage("subscribers")}>
           Run subscribers
+        </MenuItem>
+        <MenuItem onClick={() => handleRunToken(menuTokenName)}>
+          Run incremental
+        </MenuItem>
+        <MenuItem onClick={handleRunFullBackfill}>
+          Run full backfill
         </MenuItem>
       </Menu>
     </Shell>

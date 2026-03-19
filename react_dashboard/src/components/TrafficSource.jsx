@@ -172,28 +172,6 @@ const formatChannelDate = (value, withTime = false) => {
   return parsed.format(withTime ? "DD MMM YYYY, HH:mm" : "DD MMM YYYY");
 };
 
-const formatRelativeTime = (value) => {
-  if (!value) return "";
-  const parsed = dayjs(value);
-  if (!parsed.isValid()) return "";
-
-  const now = dayjs();
-  const diffMinutes = now.diff(parsed, "minute");
-  if (diffMinutes < 1) return "just now";
-  if (diffMinutes < 60) return `${diffMinutes}m ago`;
-
-  const diffHours = now.diff(parsed, "hour");
-  if (diffHours < 24) return `${diffHours}h ago`;
-
-  const diffDays = now.diff(parsed, "day");
-  if (diffDays < 30) return `${diffDays}d ago`;
-
-  const diffMonths = now.diff(parsed, "month");
-  if (diffMonths < 12) return `${diffMonths}mo ago`;
-
-  return `${now.diff(parsed, "year")}y ago`;
-};
-
 const TrafficLineChart = ({
   data,
   lineDateExtent,
@@ -558,13 +536,6 @@ const TrafficSourceChart = () => {
     [channelAvatarMap]
   );
 
-  const channelSyncText = useCallback((item) => {
-    if (!item) return "";
-    if (item.lastDataDate) return `Data through ${formatChannelDate(item.lastDataDate)}`;
-    if (item.updatedAt) return `Updated ${formatRelativeTime(item.updatedAt)}`;
-    return "Sync time unavailable";
-  }, []);
-
   useEffect(() => {
     if (!channel) return;
     const { start, end } = currentRange;
@@ -920,9 +891,6 @@ const TrafficSourceChart = () => {
                   <Box sx={{ minWidth: 0, flex: 1 }}>
                     <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
                       {option.label}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
-                      {channelSyncText(option)}
                     </Typography>
                   </Box>
                   {option.meta ? (
