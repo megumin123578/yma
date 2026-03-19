@@ -6,7 +6,7 @@ import pickle
 import subprocess
 import sys
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Form, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, text
@@ -234,6 +234,60 @@ def _kickoff_get_data(account_tag: str, env_extra: Optional[dict] = None) -> Non
         print(f"[WARN] Failed to start get_data.py: {e}")
 
 
+def _run_token_names_from_row(row: UserScheduleRun) -> List[str]:
+    raw = (row.token_names or "").strip()
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        except Exception:
+            pass
+    if row.token_name:
+        return [row.token_name]
+    return []
+
+
+def _run_channel_titles(db: Session, user_id: int, token_names: List[str]) -> List[str]:
+    if not token_names:
+        return []
+    rows = (
+        db.query(UserCredential.token_name, UserCredential.selected_channel_title, UserCredential.account_tag)
+        .filter(
+            UserCredential.user_id == user_id,
+            UserCredential.token_name.in_(token_names),
+        )
+        .all()
+    )
+    title_map = {
+        row.token_name: (row.selected_channel_title or row.account_tag or row.token_name or "")
+        for row in rows
+        if row.token_name
+    }
+    out = []
+    for token_name in token_names:
+        title = title_map.get(token_name, os.path.splitext(os.path.basename(token_name))[0])
+        if title:
+            out.append(title)
+    return out
+
+
+def _pick_primary_channel(credentials):
+    yt = build("youtube", "v3", credentials=credentials)
+    req = yt.channels().list(part="snippet", mine=True, maxResults=50)
+    while req is not None:
+        resp = req.execute() or {}
+        items = resp.get("items", [])
+        if items:
+            item = items[0]
+            channel_id = item.get("id", "") or ""
+            snippet = item.get("snippet", {}) or {}
+            title = snippet.get("title", "") or channel_id
+            return channel_id, title
+        req = yt.channels().list_next(req, resp)
+    return "", ""
+
+
 @router.post("/avatar")
 def upload_avatar(
     avatar: UploadFile = File(...),
@@ -372,97 +426,10 @@ def credentials_callback(
         db.commit()
     pending["token_name"] = token_filename
     pending["account_tag"] = account_tag
-    _write_progress_file(
-        account_tag,
-        "waiting_channel",
-        0,
-        "idle",
-        "Select a channel to start.",
-    )
-    yt = build("youtube", "v3", credentials=flow.credentials)
-    req = yt.channels().list(part="snippet", mine=True, maxResults=50)
-    channels = []
-    while req is not None:
-        resp = req.execute() or {}
-        for item in resp.get("items", []):
-            snippet = item.get("snippet", {})
-            channels.append(
-                {
-                    "id": item.get("id", ""),
-                    "title": snippet.get("title", "") or item.get("id", ""),
-                }
-            )
-        req = yt.channels().list_next(req, resp)
-
-    options = "\n".join(
-        f'<option value="{c["id"]}">{c["title"]}</option>' for c in channels if c["id"]
-    )
-    return f"""
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Select channel</title>
-    <style>
-      body {{ font-family: Arial, sans-serif; padding: 24px; background: #0f172a; color: #e2e8f0; }}
-      .card {{ max-width: 520px; margin: 40px auto; background: #111827; padding: 24px; border-radius: 12px; border: 1px solid #334155; }}
-      h1 {{ font-size: 18px; margin: 0 0 12px; }}
-      select, button {{ width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #e2e8f0; }}
-      button {{ margin-top: 12px; background: #22c55e; color: #052e16; font-weight: 700; cursor: pointer; }}
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <h1>Select a channel for this credential</h1>
-      <form method="post" action="/api/users/credentials/select-channel">
-        <input type="hidden" name="state" value="{state}" />
-        <select name="channel_id" required>
-          {options}
-        </select>
-        <button type="submit">Confirm</button>
-      </form>
-    </div>
-  </body>
-</html>
-"""
-
-
-@router.post("/credentials/select-channel", response_class=HTMLResponse)
-def select_channel_after_auth(
-    state: str = Form(""),
-    channel_id: str = Form(""),
-    db: Session = Depends(get_db),
-):
-    pending = PENDING_OAUTH.get(state)
-    if not pending:
-        raise HTTPException(status_code=400, detail="Invalid or expired state")
-    token_name = pending.get("token_name")
-    user_id = pending.get("user_id")
-    account_tag = pending.get("account_tag")
-    if not token_name or not user_id or not account_tag:
-        raise HTTPException(status_code=400, detail="Invalid auth state")
-    channel_id = (channel_id or "").strip()
+    channel_id, title = _pick_primary_channel(flow.credentials)
     if not channel_id:
-        raise HTTPException(status_code=400, detail="channel_id is required")
+        raise HTTPException(status_code=400, detail="No YouTube channel found for this account")
 
-    creds = _load_token_credentials(token_name)
-    yt = build("youtube", "v3", credentials=creds)
-    resp = yt.channels().list(part="snippet", id=channel_id, maxResults=1).execute() or {}
-    items = resp.get("items", [])
-    if not items:
-        raise HTTPException(status_code=400, detail="Channel not found for this token")
-    title = items[0].get("snippet", {}).get("title", "")
-
-    cred_row = (
-        db.query(UserCredential)
-        .filter(
-            UserCredential.user_id == user_id,
-            UserCredential.account_tag == account_tag,
-        )
-        .first()
-    )
-    if not cred_row:
-        raise HTTPException(status_code=404, detail="Credential not found")
     if pending.get("auto_name"):
         new_tag = sanitize_filename(title) or account_tag
         if new_tag:
@@ -509,6 +476,7 @@ def select_channel_after_auth(
                     pass
             account_tag = new_tag
             token_name = new_token_name
+
     cred_row.selected_channel_id = channel_id
     cred_row.selected_channel_title = title
     cred_row.account_tag = account_tag
@@ -523,24 +491,24 @@ def select_channel_after_auth(
         "updated_at": time.time(),
     }
     PENDING_OAUTH.pop(state, None)
-    _write_progress_file(account_tag, "queued", 0, "queued", "Queued after channel selection")
+    _write_progress_file(account_tag, "queued", 0, "queued", "Queued after authorization")
     _kickoff_get_data(account_tag)
 
-    return """
+    return f"""
 <!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
     <title>Authorized</title>
     <style>
-      body { font-family: Arial, sans-serif; padding: 24px; background: #0f172a; color: #e2e8f0; }
-      .card { max-width: 520px; margin: 40px auto; background: #111827; padding: 24px; border-radius: 12px; border: 1px solid #334155; }
-      h1 { font-size: 18px; margin: 0 0 12px; }
+      body {{ font-family: Arial, sans-serif; padding: 24px; background: #0f172a; color: #e2e8f0; }}
+      .card {{ max-width: 520px; margin: 40px auto; background: #111827; padding: 24px; border-radius: 12px; border: 1px solid #334155; }}
+      h1 {{ font-size: 18px; margin: 0 0 12px; }}
     </style>
   </head>
   <body>
     <div class="card">
-      <h1>Channel selected. You can close this tab.</h1>
+      <h1>Channel connected.</h1>
       <p>Data sync is now running on the server.</p>
     </div>
   </body>
@@ -719,6 +687,9 @@ def run_all_tokens(
     run = UserScheduleRun(
         user_id=current_user.id,
         schedule_id=None,
+        token_name=None,
+        token_names=json.dumps(token_names),
+        run_type="manual_all",
         status="queued",
         started_at=datetime.utcnow(),
         processed=0,
@@ -826,7 +797,7 @@ def set_token_channel(
     db.add(owned)
     db.commit()
     account_tag = os.path.splitext(safe_name)[0]
-    _write_progress_file(account_tag, "queued", 0, "queued", "Queued after channel selection")
+    _write_progress_file(account_tag, "queued", 0, "queued", "Queued after authorization")
     _kickoff_get_data(account_tag)
     return {"ok": True, "selected_channel_id": channel_id, "selected_channel_title": title}
 
@@ -886,6 +857,9 @@ def run_token(
     run = UserScheduleRun(
         user_id=owned.user_id,
         schedule_id=None,
+        token_name=safe_name,
+        token_names=json.dumps([safe_name]),
+        run_type="manual_single",
         status="queued",
         started_at=datetime.utcnow(),
         processed=0,
@@ -935,6 +909,9 @@ def run_token_stage(
     run = UserScheduleRun(
         user_id=owned.user_id,
         schedule_id=None,
+        token_name=safe_name,
+        token_names=json.dumps([safe_name]),
+        run_type=f"manual_stage:{stage}",
         status="queued",
         started_at=datetime.utcnow(),
         processed=0,
@@ -1049,6 +1026,10 @@ def list_schedule_runs(
             {
                 "id": r.id,
                 "schedule_id": r.schedule_id,
+                "token_name": r.token_name,
+                "token_names": r.token_names,
+                "run_type": r.run_type,
+                "channel_titles": _run_channel_titles(db, r.user_id, _run_token_names_from_row(r)),
                 "status": r.status,
                 "processed": r.processed,
                 "total": r.total,

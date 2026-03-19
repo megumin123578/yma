@@ -126,6 +126,9 @@ class UserScheduleRun(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     schedule_id = Column(Integer, ForeignKey("user_schedules.id"), nullable=True, index=True)
+    token_name = Column(String, nullable=True)
+    token_names = Column(Text, nullable=True)
+    run_type = Column(String, nullable=True)
     status = Column(String, nullable=False)  # running | done | error | empty
     started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     finished_at = Column(DateTime, nullable=True)

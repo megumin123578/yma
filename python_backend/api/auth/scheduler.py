@@ -1,4 +1,5 @@
 import os
+import json
 import subprocess
 import sys
 from datetime import datetime, time as dtime, timedelta, timezone
@@ -373,6 +374,9 @@ def _run_loop():
                 run = UserScheduleRun(
                     user_id=row.user_id,
                     schedule_id=row.id,
+                    token_name=row.token_name,
+                    token_names=json.dumps([row.token_name]) if row.token_name else None,
+                    run_type="scheduled",
                     status="queued",
                     started_at=now,
                     processed=0,

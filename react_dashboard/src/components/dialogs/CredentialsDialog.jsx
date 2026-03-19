@@ -24,10 +24,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import dayjs from "dayjs";
 import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
-import LinkIcon from "@mui/icons-material/Link";
+import AddIcon from "@mui/icons-material/Add";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
@@ -84,6 +85,7 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [runsError, setRunsError] = useState("");
   const [stoppingRunId, setStoppingRunId] = useState(null);
+  const [expandedRunIds, setExpandedRunIds] = useState(() => new Set());
   const [scheduleForm, setScheduleForm] = useState({
     time_of_day: "08:00",
   });
@@ -592,15 +594,30 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
   const formatRunTime = (value) =>
     value ? dayjs(value).format("MMM D, HH:mm") : "--";
 
-  const statusStyles = (status) => {
-    const lower = (status || "").toLowerCase();
-    if (lower === "done") return { bg: "rgba(34,197,94,0.18)", fg: "#22c55e" };
-    if (lower === "queued") return { bg: "rgba(245,158,11,0.18)", fg: "#f59e0b" };
-    if (lower === "running") return { bg: "rgba(59,130,246,0.18)", fg: "#3b82f6" };
-    if (lower === "stopping") return { bg: "rgba(234,179,8,0.18)", fg: "#eab308" };
-    if (lower === "stopped") return { bg: "rgba(148,163,184,0.28)", fg: "#94a3b8" };
-    if (lower === "error") return { bg: "rgba(239,68,68,0.18)", fg: "#ef4444" };
-    return { bg: "rgba(148,163,184,0.2)", fg: "#94a3b8" };
+  const formatTokenName = (value) => {
+    if (!value) return "All tokens";
+    return String(value).replace(/\.pickle$/i, "");
+  };
+
+  const formatRunType = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "run";
+    if (raw === "manual_all") return "manual all";
+    if (raw === "manual_single") return "manual";
+    if (raw.startsWith("manual_stage:")) {
+      return `stage: ${raw.split(":").slice(1).join(":")}`;
+    }
+    if (raw === "scheduled") return "scheduled";
+    return raw.replace(/_/g, " ");
+  };
+
+  const toggleRunExpanded = (runId) => {
+    setExpandedRunIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(runId)) next.delete(runId);
+      else next.add(runId);
+      return next;
+    });
   };
 
   const formatProgressStage = (stage) => {
@@ -616,9 +633,8 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
       subscribers: "Subscribers",
       queued: "Queued",
       running: "Running",
-      done: "Completed",
     };
-    return map[key] || stage;
+    return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : stage;
   };
 
   const visibleTokenCount = tokens.filter((token) => {
@@ -1138,14 +1154,14 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                   }}
                 >
                   <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
-                    Connect Google account
+                    Add new channel
                   </Typography>
 
-                  <Tooltip title="Start Google sign-in, then pick the channel to sync.">
+                  <Tooltip title="Start Google sign-in. The app will auto-select the connected channel and begin syncing.">
                     <Button
                       variant="contained"
                       color="success"
-                      startIcon={<LinkIcon />}
+                      startIcon={<AddIcon />}
                       onClick={handleStartOAuth}
                       disabled={uploading}
                       sx={{
@@ -1184,19 +1200,11 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                     <Box display="flex" alignItems="center" justifyContent="space-between">
                       <Typography
                         variant="body2"
-                        color={
-                          progress.status === "done"
-                            ? "text.secondary"
-                            : status.message
-                              ? theme.palette.success.main
-                              : "text.secondary"
-                        }
+                        color={status.message ? theme.palette.success.main : "text.secondary"}
                       >
-                        {progress.status === "done"
-                          ? "Completed"
-                          : status.message
-                            ? `${cleanError(status.message)}${progress.stage ? ` • ${formatProgressStage(progress.stage)}` : ""}`
-                            : formatProgressStage(progress.stage) || "Processing"}
+                        {status.message
+                          ? `${cleanError(status.message)}${progress.stage ? ` • ${formatProgressStage(progress.stage)}` : ""}`
+                          : formatProgressStage(progress.stage) || "Processing"}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
                         {progress.percent}%
@@ -1515,9 +1523,6 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                       p: 2,
                     }}
                   >
-                    <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
-                      Run Logs
-                    </Typography>
                     <Box display="flex" flexDirection="column" gap={1} mt={1}>
                       {runsError ? (
                         <Typography variant="body2" color="text.secondary">
@@ -1530,9 +1535,12 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                       ) : (
                         <Box display="flex" flexDirection="column" gap={1}>
                           {scheduleRuns.map((run) => {
-                            const styles = statusStyles(run.status);
                             const processed = run.processed ?? 0;
                             const total = run.total ?? 0;
+                            const tokenName = formatTokenName(run.token_name);
+                            const runType = formatRunType(run.run_type);
+                            const channelTitles = Array.isArray(run.channel_titles) ? run.channel_titles : [];
+                            const isExpanded = expandedRunIds.has(run.id);
                             return (
                               <Box
                                 key={run.id}
@@ -1550,41 +1558,72 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                               >
                                 <Box display="flex" alignItems="center" justifyContent="space-between" gap={1}>
                                   <Box display="flex" alignItems="center" gap={1}>
-                                    <Box
+                                    <Box display="flex" flexDirection="column" gap={0.25}>
+                                      <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap">
+                                        <Box
+                                          sx={{
+                                            px: 1,
+                                            py: 0.2,
+                                            borderRadius: 999,
+                                            fontSize: 12,
+                                            fontWeight: 600,
+                                            bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)",
+                                            color: isDark ? "#d6deea" : "rgba(15,23,42,0.72)",
+                                          }}
+                                        >
+                                          {tokenName}
+                                        </Box>
+                                        <Box
+                                          sx={{
+                                            px: 1,
+                                            py: 0.2,
+                                            borderRadius: 999,
+                                            fontSize: 12,
+                                            fontWeight: 600,
+                                            bgcolor: isDark ? "rgba(125,224,210,0.14)" : "rgba(25,118,210,0.08)",
+                                            color: isDark ? "#7de0d2" : "#1976d2",
+                                          }}
+                                        >
+                                          {runType}
+                                        </Box>
+                                      </Box>
+                                      <Typography variant="body2">
+                                        {cleanError(run.message) || "No details"}
+                                      </Typography>
+                                    </Box>
+                                  </Box>
+                                  <Box display="flex" alignItems="center" gap={0.5}>
+                                    {(run.status === "running" || run.status === "queued") && (
+                                      <Button
+                                        size="small"
+                                        color="error"
+                                        onClick={() => handleStopRun(run.id)}
+                                        disabled={stoppingRunId === run.id}
+                                        sx={shimmerSx}
+                                      >
+                                        Stop
+                                      </Button>
+                                    )}
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => toggleRunExpanded(run.id)}
+                                      aria-label={isExpanded ? "Collapse run details" : "Expand run details"}
                                       sx={{
-                                        px: 1,
-                                        py: 0.25,
-                                        borderRadius: 999,
-                                        fontSize: 12,
-                                        fontWeight: 700,
-                                        letterSpacing: 0.4,
-                                        textTransform: "uppercase",
-                                        bgcolor: styles.bg,
-                                        color: styles.fg,
+                                        border: `1px solid ${border}`,
+                                        color: isDark ? "#e9edf2" : undefined,
+                                        transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                                        transition: "transform 180ms ease",
                                       }}
                                     >
-                                      {run.status || "unknown"}
-                                    </Box>
-                                    <Typography variant="body2">
-                                      {cleanError(run.message) || "No details"}
-                                    </Typography>
+                                      <ExpandMoreIcon fontSize="small" />
+                                    </IconButton>
                                   </Box>
-                                  {(run.status === "running" || run.status === "queued") && (
-                                    <Button
-                                      size="small"
-                                      color="error"
-                                      onClick={() => handleStopRun(run.id)}
-                                      disabled={stoppingRunId === run.id}
-                                      sx={shimmerSx}
-                                    >
-                                      Stop
-                                    </Button>
-                                  )}
                                 </Box>
                                 <Box
                                   display="flex"
                                   alignItems="center"
                                   justifyContent="space-between"
+                                  gap={1}
                                 >
                                   <Typography variant="caption" color="text.secondary">
                                     {`Accounts: ${processed}/${total}`}
@@ -1615,6 +1654,42 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                                         transition: "width 200ms ease",
                                       }}
                                     />
+                                  </Box>
+                                )}
+                                {isExpanded && (
+                                  <Box
+                                    sx={{
+                                      mt: 0.5,
+                                      pt: 1,
+                                      borderTop: `1px solid ${border}`,
+                                    }}
+                                  >
+                                    <Typography variant="caption" color="text.secondary">
+                                      Channels
+                                    </Typography>
+                                    <Box display="flex" flexWrap="wrap" gap={0.5} mt={0.5}>
+                                      {channelTitles.length > 0 ? (
+                                        channelTitles.map((title, index) => (
+                                          <Box
+                                            key={`${run.id}-${title}-${index}`}
+                                            sx={{
+                                              px: 1,
+                                              py: 0.35,
+                                              borderRadius: 999,
+                                              fontSize: 12,
+                                              bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)",
+                                              color: isDark ? "#d6deea" : "rgba(15,23,42,0.78)",
+                                            }}
+                                          >
+                                            {title}
+                                          </Box>
+                                        ))
+                                      ) : (
+                                        <Typography variant="caption" color="text.secondary">
+                                          No channel names available.
+                                        </Typography>
+                                      )}
+                                    </Box>
                                   </Box>
                                 )}
                               </Box>

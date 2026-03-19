@@ -62,6 +62,29 @@ def ensure_video_live_counter_snapshots_channel_name():
 
 ensure_video_live_counter_snapshots_channel_name()
 
+
+def ensure_user_schedule_run_columns():
+    with engine.begin() as conn:
+        columns = conn.exec_driver_sql("PRAGMA table_info(user_schedule_runs)").fetchall()
+        has_token_name = any(row[1] == "token_name" for row in columns)
+        has_token_names = any(row[1] == "token_names" for row in columns)
+        has_run_type = any(row[1] == "run_type" for row in columns)
+        if not has_token_name:
+            conn.exec_driver_sql(
+                "ALTER TABLE user_schedule_runs ADD COLUMN token_name VARCHAR"
+            )
+        if not has_token_names:
+            conn.exec_driver_sql(
+                "ALTER TABLE user_schedule_runs ADD COLUMN token_names TEXT"
+            )
+        if not has_run_type:
+            conn.exec_driver_sql(
+                "ALTER TABLE user_schedule_runs ADD COLUMN run_type VARCHAR"
+            )
+
+
+ensure_user_schedule_run_columns()
+
 start_scheduler()
 
 
