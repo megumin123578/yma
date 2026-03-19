@@ -63,10 +63,14 @@ def _label_channels(db: Session, channels: list) -> list:
 def get_range_dates(range_key: str):
     today = datetime.today().date()
 
-    if range_key == "7d":   return today - timedelta(days=6), today
-    if range_key == "28d":  return today - timedelta(days=27), today
-    if range_key == "90d":  return today - timedelta(days=89), today
-    if range_key == "365d": return today - timedelta(days=364), today
+    if range_key == "7d":
+        return today - timedelta(days=6), today
+    if range_key == "28d":
+        return today - timedelta(days=27), today
+    if range_key == "90d":
+        return today - timedelta(days=89), today
+    if range_key == "365d":
+        return today - timedelta(days=364), today
     if range_key == "lifetime":
         return datetime(2005, 2, 14).date(), today
 
@@ -102,7 +106,6 @@ def api_geography(
         }
         CHANNEL_LABELS = {k: v for k, v in CHANNEL_LABELS.items() if k in CHANNEL_CREDENTIALS}
 
-    # Nếu channel = None → không chọn gì → trả về availableChannels
     if not channel:
         available = list(CHANNEL_CREDENTIALS.keys())
         return {
@@ -131,7 +134,7 @@ def api_geography(
 
     try:
         creds = create_token_from_credentials(cred_file)
-    except Exception as e:
+    except Exception:
         return {
             "start": None,
             "end": None,
@@ -144,7 +147,6 @@ def api_geography(
             ],
         }
 
-    # ========= date range logic =========
     if range:
         s, e = get_range_dates(range)
     elif month:
@@ -157,17 +159,16 @@ def api_geography(
     else:
         s = datetime.strptime(start, "%Y-%m-%d").date()
         e = datetime.strptime(end, "%Y-%m-%d").date()
+
     try:
         rows = load_geography_from_postgres(channel, s.isoformat(), e.isoformat())
     except Exception as e:
         print(f"[WARN] Geography DB load failed: {e}")
         rows = []
     if not rows:
-        # ========= Fetch data from YouTube =========
         try:
             rows = fetch_geography(creds, s.isoformat(), e.isoformat())
         except Exception:
-            # Channel hop le nhung khong co data xac minh
             rows = []
         try:
             save_geography_to_postgres(rows, channel, s.isoformat(), e.isoformat())
@@ -179,8 +180,6 @@ def api_geography(
         "end": e.isoformat(),
         "channel": channel,
         "rows": rows,
-        # Keep API shape consistent with other pages: always return {value,label},
-        # otherwise the frontend may fall back to the slug/account_tag.
         "availableChannels": [
             {"value": tag, "label": CHANNEL_LABELS.get(tag, tag)}
             for tag in list(CHANNEL_CREDENTIALS.keys())

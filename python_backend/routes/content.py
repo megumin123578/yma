@@ -317,8 +317,6 @@ def list_channels(
             .all()
         )
         seen = set()
-        now = datetime.utcnow()
-        avatar_ttl = timedelta(days=30)
         for row in rows:
             value = sanitize_filename(row.account_tag or "")
             if not value or value in seen:
@@ -336,38 +334,6 @@ def list_channels(
             seen.add(value)
             label = row.selected_channel_title or row.account_tag or value
             avatar = row.selected_channel_avatar or None
-            is_stale = not row.updated_at or (row.updated_at < (now - avatar_ttl))
-            if (not avatar or is_stale) and token_name:
-                try:
-                    creds = _load_token_credentials(token_name)
-                    if creds:
-                        youtube = build("youtube", "v3", credentials=creds)
-                        query = {"part": "snippet", "maxResults": 1}
-                        if row.selected_channel_id:
-                            query["id"] = row.selected_channel_id
-                        else:
-                            query["mine"] = True
-                        resp = youtube.channels().list(**query).execute() or {}
-                        it = (resp.get("items") or [])
-                        if it:
-                            snippet = it[0].get("snippet", {})
-                            thumbs = snippet.get("thumbnails", {}) or {}
-                            avatar = (
-                                (thumbs.get("high") or {}).get("url")
-                                or (thumbs.get("medium") or {}).get("url")
-                                or (thumbs.get("default") or {}).get("url")
-                            )
-                            if avatar:
-                                row.selected_channel_avatar = avatar
-                                if not row.selected_channel_title and snippet.get("title"):
-                                    row.selected_channel_title = snippet.get("title")
-                                row.updated_at = now
-                                db.add(row)
-                                db.commit()
-                except HttpError as e:
-                    print("[content.channels] avatar fetch failed:", e)
-                except Exception as e:
-                    print("[content.channels] avatar fetch error:", e)
             items.append({"value": value, "label": label, "avatar": avatar})
     except Exception as e:
         print("[content.channels] ERROR:", e)
@@ -479,64 +445,11 @@ def content_list(
 
     rows_mutable = [dict(r) for r in query_all_safe(sql, params)]
 
-    channel_metrics_payload = {"impressions": 0, "ctr": None, "supported": False}
-
-    # enrich per-video metrics (impressions, ctr, revenue, subscribers)
-    try:
-        cred_row = _find_credential_row(db, req.channelId)
-        metrics_map = None
-        creds = None
-        if cred_row and cred_row.token_name:
-            creds = _load_token_credentials(cred_row.token_name)
-            cached = _load_video_metrics_cache(req.channelId, req.start, req.end)
-            if cached is not None:
-                metrics_map = cached
-            else:
-                if creds:
-                    # Limit real-time enrichment to top 200 videos by views/priority for speed
-                    # The rest will stay with DB fallback values.
-                    video_ids = [r.get("videoId") for r in rows_mutable if r.get("videoId")][:200]
-                    metrics_map = _fetch_video_metrics_bulk(
-                        creds,
-                        cred_row.selected_channel_id,
-                        video_ids,
-                        req.start.isoformat(),
-                        req.end.isoformat(),
-                    )
-                    _save_video_metrics_cache(req.channelId, req.start, req.end, metrics_map)
-            if creds:
-                channel_metrics_payload = _compute_channel_metrics(
-                    req.channelId,
-                    creds,
-                    cred_row.selected_channel_id,
-                    req.start,
-                    req.end,
-                )
-        if metrics_map:
-            for r in rows_mutable:
-                vid = r.get("videoId")
-                m = metrics_map.get(vid)
-                if not m:
-                    continue
-                
-                # Core metrics usually always available
-                if m.get("views") is not None:
-                    r["views"] = m.get("views")
-                if m.get("watch_time_hours") is not None:
-                    r["watchTimeHours"] = m.get("watch_time_hours")
-                if m.get("subscribers") is not None:
-                    r["subscribers"] = m.get("subscribers")
-                if m.get("estimated_revenue") is not None:
-                    r["estimatedRevenue"] = m.get("estimated_revenue")
-                
-                # Only overwrite Reach metrics if API actually returned them.
-                # Since many channels return 400 for these, we keep the DB fallback otherwise.
-                if m.get("impressions") is not None:
-                    r["impressions"] = m.get("impressions")
-                if m.get("impressions_click_through_rate") is not None:
-                    r["impressionsClickThroughRate"] = m.get("impressions_click_through_rate")
-    except Exception as e:
-        print("[content.list] metrics enrich failed:", e)
+    channel_metrics_payload = _compute_channel_metrics_from_db(
+        req.channelId,
+        req.start,
+        req.end,
+    )
 
     return {
         "items": rows_mutable,
@@ -652,90 +565,66 @@ def _find_credential_row(db: Session, account_tag: str) -> Optional[UserCredenti
     return None
 
 
-def _compute_channel_metrics(
-    account_tag: str,
-    creds,
-    selected_channel_id: Optional[str],
-    start_date: date,
-    end_date: date,
-):
-    if not creds:
+def _compute_channel_metrics_from_db(account_tag: str, start_date: date, end_date: date):
+    sql = """
+        WITH per_video AS (
+            SELECT
+                v.video_id,
+                COALESCE(
+                    MAX(r.total_impressions),
+                    NULLIF(SUM(COALESCE(s.card_impressions, 0)), 0),
+                    0
+                ) AS impressions,
+                CASE
+                    WHEN MAX(r.total_impressions) IS NOT NULL
+                        THEN COALESCE(MAX(r.total_ctr), 0) * 100.0
+                    WHEN SUM(COALESCE(s.card_impressions, 0)) > 0
+                        THEN (
+                            SUM(COALESCE(s.card_clicks, 0))::numeric
+                            / SUM(COALESCE(s.card_impressions, 0))
+                        ) * 100.0
+                    ELSE NULL
+                END AS ctr
+            FROM videos v
+            LEFT JOIN video_daily_stats s
+              ON s.video_id = v.video_id
+             AND s.day BETWEEN :start_date AND :end_date
+            LEFT JOIN reach_video_metrics r
+              ON r.video_id = v.video_id
+             AND r.account_tag = :account_tag
+             AND r.start_date = :start_date
+             AND r.end_date = :end_date
+            WHERE v.account_tag = :account_tag
+            GROUP BY v.video_id
+        )
+        SELECT
+            COALESCE(SUM(impressions), 0) AS impressions,
+            CASE
+                WHEN SUM(impressions) > 0
+                    THEN SUM(COALESCE(ctr, 0) * impressions) / SUM(impressions)
+                ELSE NULL
+            END AS ctr
+        FROM per_video;
+    """
+    row = query_all_safe(
+        sql,
+        {
+            "account_tag": account_tag,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+    )
+    if not row:
         return {"impressions": 0, "ctr": None, "supported": False}
-
-    yta = build("youtubeAnalytics", "v2", credentials=creds)
-    ids = f"channel=={selected_channel_id}" if selected_channel_id else "channel==MINE"
-    query = {
-        "ids": ids,
-        "startDate": start_date.isoformat(),
-        "endDate": end_date.isoformat(),
-        "metrics": "videoThumbnailImpressions,videoThumbnailImpressionsClickRate",
+    payload = row[0]
+    impressions = int(payload.get("impressions") or 0)
+    ctr = payload.get("ctr")
+    ctr = float(ctr) if ctr is not None else None
+    return {
+        "impressions": impressions,
+        "ctr": ctr,
+        "supported": impressions > 0 or ctr is not None,
     }
-    try:
-        resp = yta.reports().query(**query).execute() or {}
-        rows = resp.get("rows") or []
-        if rows:
-            headers = resp.get("columnHeaders", []) or []
-            idx = {h["name"]: i for i, h in enumerate(headers)}
-            i_impr = idx.get("videoThumbnailImpressions")
-            i_ctr = idx.get("videoThumbnailImpressionsClickRate")
-            if i_impr is not None and i_ctr is not None:
-                total_impressions = 0
-                weighted_ctr_sum = 0.0
-                for row in rows:
-                    try:
-                        impr = int(row[i_impr] or 0)
-                    except Exception:
-                        impr = 0
-                    try:
-                        ctr_val = float(row[i_ctr] or 0.0)
-                    except Exception:
-                        ctr_val = 0.0
-                    total_impressions += impr
-                    weighted_ctr_sum += ctr_val * impr
-
-                ctr = (weighted_ctr_sum / total_impressions) * 100.0 if total_impressions > 0 else None
-                return {"impressions": total_impressions, "ctr": ctr, "supported": True}
-    except HttpError as e:
-        if e.resp.status != 400:
-            print(f"[content.channel-metrics] HttpError: {e}")
-    except Exception as e:
-        print(f"[content.channel-metrics] ERROR: {e}")
-
-    try:
-        rows = query_all_safe(
-            "SELECT video_id FROM videos WHERE account_tag = :tag",
-            {"tag": account_tag},
-        )
-        video_ids = [r.get("video_id") for r in rows if r.get("video_id")]
-        metrics_map = _fetch_video_metrics_bulk(
-            creds,
-            selected_channel_id,
-            video_ids,
-            start_date.isoformat(),
-            end_date.isoformat(),
-        )
-        if not metrics_map:
-            return {"impressions": 0, "ctr": None, "supported": False}
-
-        total_impressions = 0
-        weighted_ctr_sum = 0.0
-        for m in metrics_map.values():
-            try:
-                impr = int(m.get("impressions") or 0)
-            except Exception:
-                impr = 0
-            try:
-                ctr_val = float(m.get("impressions_click_through_rate") or 0.0)
-            except Exception:
-                ctr_val = 0.0
-            total_impressions += impr
-            weighted_ctr_sum += ctr_val * impr
-
-        ctr = (weighted_ctr_sum / total_impressions) if total_impressions > 0 else None
-        return {"impressions": total_impressions, "ctr": ctr, "supported": True}
-    except Exception as e:
-        print(f"[content.channel-metrics] fallback failed: {e}")
-        return {"impressions": 0, "ctr": None, "supported": False}
 
 
 @router.post("/channel-metrics")
@@ -752,14 +641,4 @@ def channel_metrics(
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}
         if req.channelId in hidden_all:
             return {"impressions": 0, "ctr": None, "supported": False}
-    cred_row = _find_credential_row(db, req.channelId)
-    if not cred_row or not cred_row.token_name:
-        return {"impressions": 0, "ctr": None, "supported": False}
-    creds = _load_token_credentials(cred_row.token_name)
-    return _compute_channel_metrics(
-        req.channelId,
-        creds,
-        cred_row.selected_channel_id,
-        req.start,
-        req.end,
-    )
+    return _compute_channel_metrics_from_db(req.channelId, req.start, req.end)
