@@ -7,7 +7,6 @@ import { uploadCredentials } from "../../services/userService";
 
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
-import AddIcon from "@mui/icons-material/Add";
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
 
@@ -25,6 +24,27 @@ const Topbar = ({ setIsSidebar, isMobile = false }) => {
     user?.avatar && !user.avatar.startsWith("blob:")
       ? `${process.env.REACT_APP_API_URL || ""}${user.avatar}`
       : null;
+  const shimmerSx = {
+    position: "relative",
+    overflow: "hidden",
+    "&:before": {
+      content: '""',
+      position: "absolute",
+      top: "-50%",
+      left: "-120%",
+      width: "80%",
+      height: "200%",
+      background:
+        "linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.45) 45%, transparent 90%)",
+      transform: "translateX(0)",
+      transition: "transform 0.7s ease",
+      opacity: 0.8,
+      pointerEvents: "none",
+    },
+    "&:hover:before": {
+      transform: "translateX(260%)",
+    },
+  };
 
   const handleAddChannel = async () => {
     if (addingChannel) return;
@@ -42,52 +62,85 @@ const Topbar = ({ setIsSidebar, isMobile = false }) => {
 
   return (
     <>
-      <Box display="flex" justifyContent="flex-end" p={2}>
+      <Box
+        display="flex"
+        justifyContent="flex-end"
+        px={2}
+        py={1.25}
+        sx={{
+          position: "sticky",
+          top: 0,
+          zIndex: 1100,
+          bgcolor: theme.palette.mode === "dark"
+            ? "rgba(17, 24, 39, 0.82)"
+            : "rgba(255, 255, 255, 0.82)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+        }}
+      >
 
         {/* ICONS */}
         <Box display="flex" alignItems="center" justifyContent="space-between" width="100%">
           {isMobile ? (
-            <IconButton onClick={() => setIsSidebar?.((prev) => !prev)}>
-              <MenuOutlinedIcon />
+            <IconButton size="medium" onClick={() => setIsSidebar?.((prev) => !prev)}>
+              <MenuOutlinedIcon fontSize="medium" />
             </IconButton>
           ) : (
             <Box />
           )}
           <Box display="flex" alignItems="center">
-          <IconButton onClick={colorMode.toggleColorMode}>
-            {theme.palette.mode === "dark" ? (
-              <DarkModeOutlinedIcon />
-            ) : (
-              <LightModeOutlinedIcon />
-            )}
-          </IconButton>
+            <Button
+              variant="contained"
+              size="small"
+              onClick={handleAddChannel}
+              disabled={addingChannel}
+              sx={{
+                ...shimmerSx,
+                mx: 1,
+                borderRadius: 999,
+                textTransform: "none",
+                fontWeight: 700,
+                minWidth: 0,
+                px: 1.25,
+                py: 0.45,
+                lineHeight: 1.2,
+                minHeight: 30,
+                bgcolor: theme.palette.mode === "dark" ? "#2b8a7b" : theme.palette.primary.main,
+                color: "#fff",
+                boxShadow:
+                  theme.palette.mode === "dark"
+                    ? "0 10px 22px rgba(43,138,123,0.28)"
+                    : "0 10px 22px rgba(25,118,210,0.22)",
+                transition: "all 180ms ease",
+                "&:hover": {
+                  bgcolor: theme.palette.mode === "dark" ? "#247468" : theme.palette.primary.dark,
+                  transform: "translateY(-1px)",
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? "0 14px 26px rgba(43,138,123,0.34)"
+                      : "0 14px 26px rgba(25,118,210,0.28)",
+                },
+              }}
+            >
+              Add Channel
+            </Button>
 
-          <Button
-            variant="contained"
-            size="small"
-            startIcon={<AddIcon fontSize="small" />}
-            onClick={handleAddChannel}
-            disabled={addingChannel}
-            sx={{
-              mx: 1,
-              borderRadius: 999,
-              textTransform: "none",
-              fontWeight: 700,
-              minWidth: 0,
-              px: 1.5,
-            }}
-          >
-            Add Channel
-          </Button>
+            <IconButton size="medium" onClick={colorMode.toggleColorMode}>
+              {theme.palette.mode === "dark" ? (
+                <DarkModeOutlinedIcon fontSize="medium" />
+              ) : (
+                <LightModeOutlinedIcon fontSize="medium" />
+              )}
+            </IconButton>
 
-          {/* PROFILE */}
-          <IconButton onClick={() => setOpenProfile(true)}>
-            {avatarSrc ? (
-              <Avatar src={avatarSrc} sx={{ width: 32, height: 32 }} />
-            ) : (
-              <PersonOutlinedIcon />
-            )}
-          </IconButton>
+            {/* PROFILE */}
+            <IconButton size="medium" onClick={() => setOpenProfile(true)}>
+              {avatarSrc ? (
+                <Avatar src={avatarSrc} sx={{ width: 32, height: 32 }} />
+              ) : (
+                <PersonOutlinedIcon fontSize="medium" />
+              )}
+            </IconButton>
           </Box>
         </Box>
       </Box>
