@@ -26,7 +26,7 @@ import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { geoFeatures } from "../data/mockGeoFeatures";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
-import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 import {
     ResponsiveContainer,
     BarChart,
@@ -318,6 +318,15 @@ const VideoList = () => {
     useEffect(() => {
         setStoredSharedChannelId(selectedChannel, "overview.selectedChannelId");
     }, [selectedChannel]);
+
+    useEffect(() => {
+        return listenSharedChannelId((nextChannelId) => {
+            setSelectedChannel((current) => {
+                if (!nextChannelId || nextChannelId === current) return current;
+                return nextChannelId;
+            });
+        });
+    }, []);
 
     useEffect(() => {
         let active = true;

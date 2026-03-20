@@ -52,7 +52,7 @@ import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 
 import { API_BASE } from "../config";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
-import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 
 const DATA_LAG_DAYS = 3;
 const LAG_PERIODS = new Set(["last7", "last28", "last90", "last365"]);
@@ -142,7 +142,10 @@ const loadStoredFilters = () => {
     const parsed = raw ? JSON.parse(raw) : null;
     const sharedChannel = getStoredSharedChannelId("trafficSource.selectedChannelId");
     if (parsed) {
-      return parsed.channel ? parsed : { ...parsed, channel: sharedChannel };
+      return {
+        ...parsed,
+        channel: sharedChannel || parsed.channel || "",
+      };
     }
     return sharedChannel ? { channel: sharedChannel } : null;
   } catch (e) {
@@ -433,6 +436,15 @@ const TrafficSourceChart = () => {
     });
     setStoredSharedChannelId(channel, "trafficSource.selectedChannelId");
   }, [channel]);
+
+  useEffect(() => {
+    return listenSharedChannelId((nextChannelId) => {
+      setChannel((current) => {
+        if (!nextChannelId || nextChannelId === current) return current;
+        return nextChannelId;
+      });
+    });
+  }, []);
 
   const [startDate, setStartDate] = useState(() => loadStoredFilters()?.startDate || "");
   const [endDate, setEndDate] = useState(() => loadStoredFilters()?.endDate || "");

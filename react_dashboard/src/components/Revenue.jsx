@@ -25,7 +25,7 @@ import api from "../services/api";
 import { tokens } from "../theme";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
-import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 
 const RANGE_OPTIONS = [
   { value: "7d", label: "Last 7 days" },
@@ -123,6 +123,15 @@ const RevenueAnalytics = () => {
   useEffect(() => {
     setStoredSharedChannelId(channel, "revenue.selectedChannelId");
   }, [channel]);
+
+  useEffect(() => {
+    return listenSharedChannelId((nextChannelId) => {
+      setChannel((current) => {
+        if (!nextChannelId || nextChannelId === current) return current;
+        return nextChannelId;
+      });
+    });
+  }, []);
 
   useEffect(() => {
         let active = true;

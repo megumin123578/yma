@@ -18,7 +18,7 @@ import { ResponsiveLine } from "@nivo/line";
 import api from "../services/api";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
-import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 
 const formatRangeLabel = (range) => {
   if (!range?.start || !range?.end) return "No data";
@@ -109,6 +109,15 @@ const AudienceAnalytics = () => {
   useEffect(() => {
     setStoredSharedChannelId(accountTag, "audience.selectedChannelId");
   }, [accountTag]);
+
+  useEffect(() => {
+    return listenSharedChannelId((nextChannelId) => {
+      setAccountTag((current) => {
+        if (!nextChannelId || nextChannelId === current) return current;
+        return nextChannelId;
+      });
+    });
+  }, []);
 
   useEffect(() => {
     let active = true;

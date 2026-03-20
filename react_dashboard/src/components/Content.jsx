@@ -39,7 +39,7 @@ import {
 
 import dayjs from "dayjs";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
-import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 
@@ -817,6 +817,15 @@ const ContentAnalytics = () => {
 
   }, [channelId]);
 
+  useEffect(() => {
+    return listenSharedChannelId((nextChannelId) => {
+      setChannelId((current) => {
+        if (!nextChannelId || nextChannelId === current) return current;
+        return nextChannelId;
+      });
+    });
+  }, []);
+
 
 
   /* ================================
@@ -1381,6 +1390,12 @@ const ContentAnalytics = () => {
   const hasBarData =
 
     barPrep.data && barPrep.data.length > 0 && barPrep.keys && barPrep.keys.length > 0;
+
+  const formatBarTickLabel = useCallback((value) => {
+    const label = String(value || "").trim();
+    if (label.length <= 18) return label;
+    return `${label.slice(0, 18).trimEnd()}...`;
+  }, []);
 
 
 
@@ -1960,7 +1975,7 @@ const ContentAnalytics = () => {
 
             indexBy="video"
 
-            margin={{ top: 32, right: 16, bottom: 80, left: 56 }}
+            margin={{ top: 32, right: 16, bottom: 112, left: 56 }}
 
             padding={0.2}
 
@@ -1978,7 +1993,8 @@ const ContentAnalytics = () => {
 
               renderTick: (tick) => {
 
-                const label = String(tick.value);
+                const fullLabel = String(tick.value || "");
+                const label = formatBarTickLabel(fullLabel);
 
                 const color =
 
@@ -2005,6 +2021,8 @@ const ContentAnalytics = () => {
                       }}
 
                     >
+
+                      <title>{fullLabel}</title>
 
                       {label}
 

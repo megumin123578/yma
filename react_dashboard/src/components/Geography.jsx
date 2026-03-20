@@ -29,7 +29,7 @@ import { geoFeatures } from "../data/mockGeoFeatures";
 import api from "../services/api";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
-import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 
 // ===== Helpers =====
 const n = (v) => Number(v) || 0;
@@ -103,7 +103,10 @@ const loadStoredFilters = () => {
     const parsed = raw ? JSON.parse(raw) : null;
     const sharedChannel = getStoredSharedChannelId("geography.selectedChannelId");
     if (parsed) {
-      return parsed.channel ? parsed : { ...parsed, channel: sharedChannel };
+      return {
+        ...parsed,
+        channel: sharedChannel || parsed.channel || "",
+      };
     }
     return sharedChannel ? { channel: sharedChannel } : null;
   } catch (e) {
@@ -204,6 +207,15 @@ const GeographyChart = ({ isDashboard = false }) => {
     setStoredSharedChannelId(channel, "geography.selectedChannelId");
     window.localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify({ range, channel, channelLabel: label, metric, visibleColumns }));
   }, [range, channel, metric, visibleColumns, channelLabelFallback]);
+
+  useEffect(() => {
+    return listenSharedChannelId((nextChannelId) => {
+      setChannel((current) => {
+        if (!nextChannelId || nextChannelId === current) return current;
+        return nextChannelId;
+      });
+    });
+  }, []);
 
   // ===== ISO Resolver =====
   const resolvers = useMemo(() => {

@@ -22,7 +22,7 @@ import { formatNumber } from "./Module";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
-import { getStoredSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
 
 const formatPct = (value) => {
   if (value === null || value === undefined) return "-";
@@ -152,6 +152,15 @@ const ReachAnalytics = () => {
   useEffect(() => {
     setStoredSharedChannelId(accountTag, "reach.selectedChannelId");
   }, [accountTag]);
+
+  useEffect(() => {
+    return listenSharedChannelId((nextChannelId) => {
+      setAccountTag((current) => {
+        if (!nextChannelId || nextChannelId === current) return current;
+        return nextChannelId;
+      });
+    });
+  }, []);
 
   useEffect(() => {
     if (!accountTag) return;
