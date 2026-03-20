@@ -33,6 +33,7 @@ import {
   Select,
 
   MenuItem,
+  Skeleton,
 
 } from "@mui/material";
 
@@ -739,7 +740,7 @@ const ContentAnalytics = () => {
 
   const [page, setPage] = useState(0);
 
-  const [rowsPerPage, setRowsPerPage] = useState(50);
+  const [rowsPerPage, setRowsPerPage] = useState(20);
   const [sortKey, setSortKey] = useState("views");
   const [sortDirection] = useState("desc");
 
@@ -1019,6 +1020,14 @@ const ContentAnalytics = () => {
 
     if (!start || !end) return;
 
+    setVideos([]);
+
+    setTimeseries([]);
+
+    setHoverSlice(null);
+
+    setChannelMetrics(null);
+
 
 
     fetchVideos(start, end);
@@ -1160,6 +1169,101 @@ const ContentAnalytics = () => {
     return sortedRows.slice(start, end);
 
   }, [sortedRows, page, rowsPerPage]);
+
+  const chartSkeleton = useMemo(
+    () => (
+      <Box
+        sx={{
+          height: "100%",
+          width: "100%",
+          px: 2,
+          py: 2,
+          display: "flex",
+          alignItems: "stretch",
+          gap: 1.25,
+        }}
+      >
+        {chartType === "line" ? (
+          <Box sx={{ position: "relative", width: "100%", height: "100%" }}>
+            <Box
+              sx={{
+                position: "absolute",
+                left: 44,
+                right: 16,
+                top: 16,
+                bottom: 36,
+                display: "grid",
+                gridTemplateRows: "repeat(4, 1fr)",
+                gap: 3,
+              }}
+            >
+              {[0, 1, 2, 3].map((idx) => (
+                <Skeleton
+                  key={idx}
+                  variant="rectangular"
+                  animation="wave"
+                  sx={{
+                    height: 1,
+                    width: "100%",
+                    transform: "scaleY(0.06)",
+                    transformOrigin: "center",
+                    borderRadius: 999,
+                  }}
+                />
+              ))}
+            </Box>
+            <Box
+              component="svg"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              sx={{
+                position: "absolute",
+                left: 44,
+                right: 16,
+                top: 16,
+                bottom: 36,
+                width: "calc(100% - 60px)",
+                height: "calc(100% - 52px)",
+              }}
+            >
+              <path
+                d="M0,78 C10,74 16,38 28,44 C40,50 44,66 56,58 C68,50 72,16 84,24 C92,30 96,42 100,34"
+                fill="none"
+                stroke={theme.palette.mode === "dark" ? "rgba(148,163,184,0.38)" : "rgba(148,163,184,0.55)"}
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray="6 6"
+              />
+            </Box>
+          </Box>
+        ) : (
+          Array.from({ length: 8 }).map((_, idx) => (
+            <Box
+              key={idx}
+              sx={{
+                flex: 1,
+                display: "flex",
+                alignItems: "flex-end",
+                minWidth: 0,
+              }}
+            >
+              <Skeleton
+                variant="rounded"
+                animation="wave"
+                sx={{
+                  width: "100%",
+                  height: `${40 + ((idx * 9) % 38)}%`,
+                  borderRadius: "10px 10px 4px 4px",
+                }}
+              />
+            </Box>
+          ))
+        )}
+      </Box>
+    ),
+    [chartType, theme.palette.mode]
+  );
 
   const handleSort = useCallback((key) => {
     setPage(0);
@@ -1943,22 +2047,12 @@ const ContentAnalytics = () => {
               height: 1,
 
               minHeight: 120,
-
-              display: "flex",
-
-              alignItems: "center",
-
-              justifyContent: "center",
-
-              color: "text.secondary",
-
-              fontSize: 14,
+              width: "100%",
 
             }}
 
           >
-
-            No timeseries data in this range.
+            {chartSkeleton}
 
           </Box>
 
@@ -2294,22 +2388,12 @@ const ContentAnalytics = () => {
               height: 1,
 
               minHeight: 120,
-
-              display: "flex",
-
-              alignItems: "center",
-
-              justifyContent: "center",
-
-              color: "text.secondary",
-
-              fontSize: 14,
+              width: "100%",
 
             }}
 
           >
-
-            No data to display.
+            {chartSkeleton}
 
           </Box>
 
@@ -2528,7 +2612,7 @@ const ContentAnalytics = () => {
 
           }}
 
-          rowsPerPageOptions={[25, 50, 100, 200]}
+          rowsPerPageOptions={[20, 50, 100, 200]}
 
         />
 
