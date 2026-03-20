@@ -817,27 +817,10 @@ const TrafficSourceChart = () => {
       sx={{
         position: "absolute",
         inset: 0,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        textAlign: "center",
-        px: 3,
         zIndex: 2,
         borderRadius: 2,
       }}
-    >
-      <Box>
-        <Typography variant="body2" color="text.secondary">
-          No timeseries data in this range.
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-          Channel: {currentChannelLabel}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Range: {currentRange.start || "-"} to {currentRange.end || "-"}
-        </Typography>
-      </Box>
-    </Box>
+    />
   );
 
   return (
@@ -1017,17 +1000,12 @@ const TrafficSourceChart = () => {
               sx={{
                 position: "absolute",
                 inset: 0,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
                 bgcolor: "rgba(0,0,0,0.05)",
                 zIndex: 3,
                 borderRadius: 2,
                 backdropFilter: "blur(2px)",
               }}
-            >
-              Loading...
-            </Box>
+            />
           )}
 
           {!loading && !errorMsg && !hasChartData && emptyState}

@@ -130,6 +130,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
           height: "100vh",
           width: sidebarWidth,
           minWidth: sidebarWidth,
+          overflow: "hidden !important",
           boxShadow: isMobile
             ? "0 20px 50px rgba(2,6,23,0.45)"
             : isSidebar
@@ -150,8 +151,13 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
               ? "rgba(255,255,255,0.08)"
               : "rgba(15,23,42,0.08)"
           }`,
-          overflowY: "hidden",
-          overflowX: "hidden",
+          overflow: "hidden !important",
+        },
+        "& .pro-sidebar .pro-menu": {
+          overflow: "hidden !important",
+        },
+        "& .pro-sidebar .pro-menu > ul": {
+          overflow: "hidden !important",
         },
         "& .pro-icon-wrapper": {
           backgroundColor: "transparent !important",

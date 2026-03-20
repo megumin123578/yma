@@ -26,6 +26,7 @@ import ConfigPage from "./scenes/config";
 import PrivacyPage from "./scenes/privacy";
 import TermsPage from "./scenes/terms";
 import LandingPage from "./scenes/landing";
+import { AnimatePresence, motion } from "framer-motion";
 
 const ProtectedRoute = memo(function ProtectedRoute({ children, user, loading }) {
   if (loading) return null;
@@ -203,7 +204,18 @@ function App() {
           </Box>
         )}
 
-        <AppRoutes user={user} loading={loading} />
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+            style={{ minHeight: 0 }}
+          >
+            <AppRoutes user={user} loading={loading} />
+          </motion.div>
+        </AnimatePresence>
       </main>
     </div>
   );

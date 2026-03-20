@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
+import { motion } from "framer-motion";
 
 import { useTheme } from "@mui/material/styles";
 
@@ -628,6 +629,10 @@ const LineChart = memo(function LineChart({
       data={data}
 
       margin={margin}
+
+      animate={true}
+
+      motionConfig="gentle"
 
       xScale={{
 
@@ -1698,28 +1703,26 @@ const ContentAnalytics = () => {
       >
 
         {chartType === "line" && lineData.length > 0 && (
-
-          <LineChart
-
-            data={lineData}
-
-            margin={LINE_MARGIN}
-
-            lineDateExtent={lineDateExtent}
-
-            xTickValues={xTickValues}
-
-            metric={metric}
-
-            themeMode={theme.palette.mode}
-
-            seriesColors={seriesColors}
-
-            onSliceMove={handleSliceMove}
-
-            onSliceLeave={handleSliceLeave}
-
-          />
+          <Box
+            component={motion.div}
+            key={`${channelId}-${period}-${metric}-${lineData.length}`}
+            initial={{ opacity: 0, y: 16, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+            sx={{ width: "100%", height: "100%" }}
+          >
+            <LineChart
+              data={lineData}
+              margin={LINE_MARGIN}
+              lineDateExtent={lineDateExtent}
+              xTickValues={xTickValues}
+              metric={metric}
+              themeMode={theme.palette.mode}
+              seriesColors={seriesColors}
+              onSliceMove={handleSliceMove}
+              onSliceLeave={handleSliceLeave}
+            />
+          </Box>
 
         )}
 
