@@ -739,7 +739,22 @@ const TrafficSourceChart = () => {
     for (let i = 0; i < 7; i++) picks.push(xs[Math.round(i * step)]);
     return picks;
   }, [barPrep.data]);
-
+  const barBucketLookup = useMemo(() => {
+    const lookup = new Map();
+    barPrep.data.forEach((row) => {
+      const items = barPrep.keys
+        .map((key) => ({
+          id: key,
+          label: getSourceDisplayName(key),
+          value: n(row[key]),
+          color: colorMap[key] || "#888",
+        }))
+        .filter((item) => item.value > 0)
+        .sort((a, b) => b.value - a.value);
+      lookup.set(String(row.bucket), items);
+    });
+    return lookup;
+  }, [barPrep.data, barPrep.keys, getSourceDisplayName, colorMap]);
   const CenterLabel = ({ centerX, centerY }) => (
     <g transform={`translate(${centerX}, ${centerY})`}>
       <text textAnchor="middle" dominantBaseline="central" style={{ fontSize: 12, fill: theme.palette.text.secondary, fontWeight: 600 }} y={-8}>
@@ -1168,13 +1183,21 @@ const TrafficSourceChart = () => {
               indexBy="bucket"
               colors={d => colorMap[d.id] || "#888"}
               margin={{ top: 20, right: 20, bottom: 60, left: 60 }}
-              padding={0.4}
+              padding={0.35}
               innerPadding={2}
               borderRadius={6}
+              enableLabel={false}
               axisBottom={{
                 format: v => dayjs(v).format("DD/MM"),
                 tickValues: barXTicks,
                 tickPadding: 10,
+                tickRotation: 0,
+              }}
+              axisLeft={{
+                tickSize: 0,
+                tickPadding: 8,
+                tickValues: 5,
+                format: (v) => formatNumber(v),
               }}
               enableGridY={true}
               gridYValues={5}
@@ -1183,10 +1206,22 @@ const TrafficSourceChart = () => {
               motionConfig="gentle"
               theme={{
                 axis: {
-                  ticks: { text: { fontSize: 11, fill: theme.palette.text.secondary, fontWeight: 500 } },
+                  ticks: {
+                    text: {
+                      fontSize: 11,
+                      fill: theme.palette.text.secondary,
+                      fontWeight: 500,
+                    },
+                    line: { stroke: "transparent" },
+                  },
                   domain: { line: { stroke: "transparent" } }
                 },
-                grid: { line: { stroke: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)", strokeDasharray: "4 4" } }
+                grid: {
+                  line: {
+                    stroke: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)",
+                    strokeDasharray: "4 4",
+                  }
+                },
               }}
               tooltip={({ id, value, indexValue, color }) => (
                 <Box sx={{ ...chartTooltipSx, minWidth: 220 }}>
@@ -1198,48 +1233,66 @@ const TrafficSourceChart = () => {
                       color: isDark ? "#e5e7eb" : "#111827",
                     }}
                   >
-                      {dayjs(indexValue).format("DD MMMM YYYY")}
+                    {dayjs(indexValue).format("DD/MM/YYYY")}
                   </Typography>
-                  <Box
-                    sx={{
-                      display: "grid",
-                      gridTemplateColumns: "minmax(0, 1fr) auto",
-                      alignItems: "center",
-                      gap: 2,
-                      minWidth: 0,
-                    }}
-                  >
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, overflow: "hidden" }}>
-                      <Box sx={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: color, flexShrink: 0 }} />
-                      <Typography
-                        variant="body2"
-                        title={getSourceDisplayName(id)}
-                        noWrap
-                        sx={{
-                          fontSize: 12,
-                          fontWeight: 600,
-                          lineHeight: 1.25,
-                          display: "block",
-                          width: "100%",
-                          minWidth: 0,
-                          maxWidth: "100%",
-                          color: isDark ? "#e5e7eb" : "#111827",
-                        }}
-                      >
-                        {getSourceDisplayName(id)}
-                      </Typography>
-                    </Box>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontSize: 12,
-                        fontWeight: 800,
-                        color: isDark ? "#e5e7eb" : "#111827",
-                        flexShrink: 0,
-                      }}
-                    >
-                      {metric === "averageViewPercentage" ? `${n(value).toFixed(2)}%` : metric === "averageViewDuration" ? formatSeconds(value) : formatNumber(value)}
-                    </Typography>
+                  <Box sx={{ display: "grid", gap: 0.75 }}>
+                    {(barBucketLookup.get(String(indexValue)) || [
+                      {
+                        id,
+                        label: getSourceDisplayName(id),
+                        value: n(value),
+                        color,
+                      },
+                    ])
+                      .slice(0, 5)
+                      .map((item) => (
+                        <Box
+                          key={`${indexValue}-${item.id}`}
+                          sx={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(0, 1fr) auto",
+                            alignItems: "center",
+                            gap: 2,
+                            minWidth: 0,
+                          }}
+                        >
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, overflow: "hidden" }}>
+                            <Box sx={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: item.color, flexShrink: 0 }} />
+                            <Typography
+                              variant="body2"
+                              title={item.label}
+                              noWrap
+                              sx={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                lineHeight: 1.25,
+                                display: "block",
+                                width: "100%",
+                                minWidth: 0,
+                                maxWidth: "100%",
+                                color: isDark ? "#e5e7eb" : "#111827",
+                              }}
+                            >
+                              {item.label}
+                            </Typography>
+                          </Box>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontSize: 12,
+                              fontWeight: 800,
+                              color: isDark ? "#e5e7eb" : "#111827",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {metric === "averageViewPercentage"
+                              ? `${n(item.value).toFixed(2)}%`
+                              : metric === "averageViewDuration"
+                                ? formatSeconds(item.value)
+                                : formatNumber(item.value)}
+                          </Typography>
+                        </Box>
+                      ))}
                   </Box>
                 </Box>
               )}
