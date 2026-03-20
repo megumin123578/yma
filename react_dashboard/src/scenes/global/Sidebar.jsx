@@ -1,7 +1,5 @@
-import { useContext } from "react";
 import { ProSidebar, Menu, MenuItem} from "react-pro-sidebar";
 import { Box, Typography, useTheme } from "@mui/material";
-import { alpha } from "@mui/material/styles";
 import { Link, useLocation } from "react-router-dom";
 import "react-pro-sidebar/dist/css/styles.css";
 import { tokens } from "../../theme";
@@ -18,7 +16,6 @@ import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 // import FileUploadIcon from "@mui/icons-material/FileUpload";
 import WebhookIcon from '@mui/icons-material/Webhook';
 import SettingsIcon from "@mui/icons-material/Settings";
-import { UserContext } from "../../context/UserContext";
 
 const Item = ({ title, to, icon, isActive, onClick }) => {
   const theme = useTheme();
@@ -31,7 +28,7 @@ const Item = ({ title, to, icon, isActive, onClick }) => {
       icon={icon}
       onClick={onClick}
     >
-      <Typography sx={{ fontSize: "0.95rem", fontWeight: isActive ? 700 : 600 }}>
+      <Typography sx={{ fontSize: "0.88rem", fontWeight: isActive ? 700 : 600 }}>
         {title}
       </Typography>
       <Link to={to} />
@@ -44,7 +41,7 @@ const SectionLabel = ({ children, isCollapsed }) => {
   const colors = tokens(theme.palette.mode);
 
   if (isCollapsed) {
-    return <Box sx={{ height: 14 }} />;
+    return <Box sx={{ height: 8 }} />;
   }
 
   return (
@@ -52,10 +49,10 @@ const SectionLabel = ({ children, isCollapsed }) => {
       variant="h6"
       color={theme.palette.mode === "dark" ? colors.grey[300] : colors.grey[500]}
       sx={{
-        m: "20px 0 8px 18px",
-        fontSize: "0.69rem",
+        m: "12px 0 4px 18px",
+        fontSize: "0.64rem",
         fontWeight: 800,
-        letterSpacing: "0.16em",
+        letterSpacing: "0.14em",
         textTransform: "uppercase",
       }}
     >
@@ -66,7 +63,6 @@ const SectionLabel = ({ children, isCollapsed }) => {
 
 const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
   const theme = useTheme();
-  const colors = tokens(theme.palette.mode);
   const location = useLocation();
   const pathname = location.pathname || "/dashboard";
   const desktopSidebarWidth = 280;
@@ -80,23 +76,10 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
     return pathname === to || pathname.startsWith(`${to}/`);
   };
 
-  const { user } = useContext(UserContext);
   const closeOnMobile = () => {
     if (isMobile) {
       setIsSidebar?.(false);
     }
-  };
-
-  const getSidebarAvatar = () => {
-    if (!user?.avatar) {
-      return "../../assets/user.jpg";
-    }
-
-    if (user.avatar.startsWith("blob:")) {
-      return "../../assets/user.jpg";
-    }
-
-    return `${process.env.REACT_APP_API_URL || ""}${user.avatar}`;
   };
 
   return (
@@ -133,7 +116,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
           : "none",
         transition: isMobile
           ? "opacity 180ms ease, transform 240ms cubic-bezier(0.22, 1, 0.36, 1)"
-          : "width 240ms cubic-bezier(0.22, 1, 0.36, 1)",
+          : "none",
         "& .pro-sidebar": {
           height: "100vh",
           width: sidebarWidth,
@@ -143,7 +126,9 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
             : isSidebar
               ? "0 18px 48px rgba(2,6,23,0.18)"
               : "none",
-          transition: "width 200ms cubic-bezier(0.22, 1, 0.36, 1) !important",
+          transition: isMobile
+            ? "width 200ms cubic-bezier(0.22, 1, 0.36, 1) !important"
+            : "none !important",
         },
         "& .pro-sidebar-inner": {
           background: `${
@@ -156,40 +141,26 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
               ? "rgba(255,255,255,0.08)"
               : "rgba(15,23,42,0.08)"
           }`,
-          overflowY: "auto",
+          overflowY: "hidden",
           overflowX: "hidden",
-          scrollbarWidth: "thin",
-          scrollbarColor:
-            theme.palette.mode === "dark"
-              ? "rgba(148,163,184,0.4) transparent"
-              : "rgba(100,116,139,0.35) transparent",
-          "&::-webkit-scrollbar": {
-            width: 8,
-          },
-          "&::-webkit-scrollbar-thumb": {
-            backgroundColor:
-              theme.palette.mode === "dark"
-                ? "rgba(148,163,184,0.28)"
-                : "rgba(100,116,139,0.24)",
-            borderRadius: 999,
-          },
         },
         "& .pro-icon-wrapper": {
           backgroundColor: "transparent !important",
-          width: 36,
-          minWidth: 36,
-          height: 36,
-          minHeight: 36,
-          borderRadius: 12,
+          width: 32,
+          minWidth: 32,
+          height: 32,
+          minHeight: 32,
+          borderRadius: 10,
           display: "grid",
           placeItems: "center",
           transition: "all 180ms ease",
         },
         "& .pro-inner-item": {
           position: "relative",
-          margin: "4px 12px !important",
-          padding: "10px 16px !important",
-          borderRadius: "14px !important",
+          margin: "2px 10px !important",
+          padding: "7px 12px !important",
+          minHeight: "unset !important",
+          borderRadius: "12px !important",
           transition: "all 180ms ease !important",
         },
         "& .pro-inner-item:focus-visible": {
@@ -231,9 +202,9 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
           content: '""',
           position: "absolute",
           left: 0,
-          top: 10,
-          bottom: 10,
-          width: 4,
+          top: 7,
+          bottom: 7,
+          width: 3,
           borderRadius: 999,
           background: theme.palette.mode === "dark" ? "#7de0d2" : "#2563eb",
         },
@@ -252,59 +223,8 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
     >
       <ProSidebar collapsed={false}>
         <Menu iconShape="square">
-          {/* USER INFO */}
-          <Box
-            px="16px"
-            mb="22px"
-            sx={{
-              transition: "padding 200ms ease",
-            }}
-          >
-            <Box
-              sx={{
-                p: 1.5,
-                borderRadius: 4,
-                background: theme.palette.mode === "dark"
-                  ? "rgba(255,255,255,0.04)"
-                  : "rgba(15,23,42,0.04)",
-                border: `1px solid ${
-                  theme.palette.mode === "dark"
-                    ? "rgba(255,255,255,0.08)"
-                    : "rgba(15,23,42,0.08)"
-                }`,
-              }}
-            >
-              <Box display="flex" justifyContent="center" alignItems="center">
-                <img
-                  alt="profile-user"
-                  width="72px"
-                  height="72px"
-                  src={getSidebarAvatar()}
-                  style={{
-                    cursor: "pointer",
-                    borderRadius: "50%",
-                    objectFit: "cover",
-                    border: `2px solid ${alpha(theme.palette.mode === "dark" ? "#7de0d2" : "#2563eb", 0.35)}`,
-                    boxShadow: `0 10px 24px ${alpha(theme.palette.mode === "dark" ? "#000000" : "#1e3a8a", 0.18)}`,
-                  }}
-                />
-              </Box>
-
-              <Box textAlign="center" mt={1.25}>
-                <Typography
-                  variant="h6"
-                  color={theme.palette.mode === "dark" ? colors.grey[100] : colors.primary[100]}
-                  fontWeight="bold"
-                  sx={{ lineHeight: 1.2 }}
-                >
-                  {user?.name || "Admin"}
-                </Typography>
-              </Box>
-            </Box>
-          </Box>
-
           {/* MENU */}
-          <Box paddingLeft="6px" paddingRight="6px">
+          <Box paddingLeft="6px" paddingRight="6px" pt="8px" pb="8px">
             <Item
               title="Dashboard"
               to="/dashboard"

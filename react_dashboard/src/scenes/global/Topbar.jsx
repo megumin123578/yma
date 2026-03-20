@@ -1,4 +1,4 @@
-import { Box, IconButton, useTheme, Avatar, Button, Typography } from "@mui/material";
+import { Box, IconButton, useTheme, Avatar, Button } from "@mui/material";
 import { useContext, useState } from "react";
 import { ColorModeContext } from "../../theme";
 import { UserContext } from "../../context/UserContext";
@@ -89,17 +89,6 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
             >
               <MenuOutlinedIcon fontSize="medium" />
             </IconButton>
-            <Typography
-              variant="h5"
-              sx={{
-                fontSize: { xs: "1rem", sm: "1.1rem" },
-                fontWeight: 800,
-                lineHeight: 1.2,
-                whiteSpace: "nowrap",
-              }}
-            >
-              YT Manage App
-            </Typography>
           </Box>
           <Box display="flex" alignItems="center">
             <Button
