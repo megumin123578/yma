@@ -75,6 +75,41 @@ def _load_token_credentials(token_name: str):
     return creds
 
 
+def _fetch_selected_channel_metadata(creds, channel_id: Optional[str] = None) -> dict:
+    yt = build("youtube", "v3", credentials=creds)
+    if channel_id:
+        resp = yt.channels().list(
+            part="snippet",
+            id=channel_id,
+            maxResults=1,
+        ).execute() or {}
+    else:
+        resp = yt.channels().list(
+            part="snippet",
+            mine=True,
+            maxResults=1,
+        ).execute() or {}
+
+    items = resp.get("items", [])
+    if not items:
+        raise HTTPException(status_code=400, detail="Channel not found for this token")
+
+    item = items[0]
+    snippet = item.get("snippet", {}) or {}
+    thumbs = snippet.get("thumbnails", {}) or {}
+    avatar = (
+        thumbs.get("medium", {}).get("url")
+        or thumbs.get("default", {}).get("url")
+        or thumbs.get("high", {}).get("url")
+        or ""
+    )
+    return {
+        "channel_id": item.get("id") or channel_id or "",
+        "title": snippet.get("title", "") or "",
+        "avatar": avatar,
+    }
+
+
 def _build_oauth_flow() -> Flow:
     if not OAUTH_CLIENT_ID or not OAUTH_CLIENT_SECRET:
         raise HTTPException(
@@ -798,22 +833,58 @@ def set_token_channel(
         raise HTTPException(status_code=400, detail="channel_id is required")
 
     creds = _load_token_credentials(safe_name)
-    yt = build("youtube", "v3", credentials=creds)
-    resp = yt.channels().list(part="snippet", id=channel_id, maxResults=1).execute() or {}
-    items = resp.get("items", [])
-    if not items:
-        raise HTTPException(status_code=400, detail="Channel not found for this token")
-
-    title = items[0].get("snippet", {}).get("title", "")
-    owned.selected_channel_id = channel_id
-    owned.selected_channel_title = title
+    meta = _fetch_selected_channel_metadata(creds, channel_id=channel_id)
+    owned.selected_channel_id = meta["channel_id"] or channel_id
+    owned.selected_channel_title = meta["title"]
+    owned.selected_channel_avatar = meta["avatar"] or None
     owned.updated_at = datetime.utcnow()
     db.add(owned)
     db.commit()
     account_tag = os.path.splitext(safe_name)[0]
     _write_progress_file(account_tag, "queued", 0, "queued", "Queued after authorization")
     _kickoff_get_data(account_tag)
-    return {"ok": True, "selected_channel_id": channel_id, "selected_channel_title": title}
+    return {
+        "ok": True,
+        "selected_channel_id": owned.selected_channel_id,
+        "selected_channel_title": owned.selected_channel_title,
+        "selected_channel_avatar": owned.selected_channel_avatar,
+    }
+
+
+@router.post("/tokens/{token_name}/refresh-avatar")
+def refresh_token_avatar(
+    token_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    safe_name = _safe_token_filename(token_name)
+    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
+        raise HTTPException(status_code=400, detail="Invalid token filename")
+
+    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    q = db.query(UserCredential).filter(UserCredential.token_name == token_name)
+    if not is_admin:
+        q = q.filter(UserCredential.user_id == current_user.id)
+    owned = q.first()
+    if not owned:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    creds = _load_token_credentials(safe_name)
+    meta = _fetch_selected_channel_metadata(creds, channel_id=owned.selected_channel_id or None)
+
+    owned.selected_channel_id = meta["channel_id"] or owned.selected_channel_id
+    owned.selected_channel_title = meta["title"] or owned.selected_channel_title
+    owned.selected_channel_avatar = meta["avatar"] or None
+    owned.updated_at = datetime.utcnow()
+    db.add(owned)
+    db.commit()
+
+    return {
+        "ok": True,
+        "selected_channel_id": owned.selected_channel_id,
+        "selected_channel_title": owned.selected_channel_title,
+        "selected_channel_avatar": owned.selected_channel_avatar,
+    }
 
 
 @router.get("/tokens/{token_name}/progress")

@@ -42,6 +42,7 @@ import {
   runAllTokens,
   runTokenStage,
   runTokenFullBackfill,
+  refreshTokenAvatar,
   getOAuthState,
   listSchedules,
   createSchedule,
@@ -84,7 +85,6 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [runsError, setRunsError] = useState("");
   const [stoppingRunId, setStoppingRunId] = useState(null);
-  const [expandedRunIds, setExpandedRunIds] = useState(() => new Set());
   const [scheduleForm, setScheduleForm] = useState({
     time_of_day: "08:00",
   });
@@ -110,6 +110,7 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
     },
   };
   const progressTimersRef = useRef({});
+  const avatarRefreshQueueRef = useRef(new Set());
 
   const cleanError = (msg) => {
     if (!msg) return "";
@@ -198,7 +199,12 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
       try {
         const data = await listScheduleRuns(10);
         if (!canceled) {
-          setScheduleRuns(data?.items || []);
+          setScheduleRuns(
+            (data?.items || []).map((run) => ({
+              ...run,
+              status: normalizeRunStatus(run.status),
+            }))
+          );
         }
       } catch (err) {
         if (!canceled) {
@@ -221,6 +227,44 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
       clearInterval(intervalId);
     };
   }, [open, activeTab]);
+
+  useEffect(() => {
+    if (!open) {
+      avatarRefreshQueueRef.current = new Set();
+      return;
+    }
+    const missingAvatarToken = tokens.find((token) => {
+      if (typeof token !== "object") return false;
+      if (token.owned === false) return false;
+      const tokenName = token.name || "";
+      if (!tokenName) return false;
+      if ((token.avatar || "").trim()) return false;
+      if (avatarRefreshQueueRef.current.has(tokenName)) return false;
+      return true;
+    });
+    if (!missingAvatarToken) return;
+
+    const tokenName = missingAvatarToken.name || "";
+    avatarRefreshQueueRef.current.add(tokenName);
+    let canceled = false;
+
+    const syncAvatar = async () => {
+      try {
+        await refreshTokenAvatar(tokenName);
+        if (!canceled) {
+          await loadTokens();
+        }
+      } catch {
+        // Ignore refresh failures and avoid retry loops for the same token.
+      }
+    };
+
+    syncAvatar();
+
+    return () => {
+      canceled = true;
+    };
+  }, [open, tokens, loadTokens]);
 
   useEffect(() => {
     if (!authUrl || !oauthState) return;
@@ -366,7 +410,6 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
       setStatus({ type: "error", message });
     }
   };
-
 
   const loadTokenProgress = async (tokenName) => {
     try {
@@ -552,8 +595,25 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
     setRunsError("");
     try {
       await stopScheduleRun(runId);
+      setScheduleRuns((prev) =>
+        prev.map((run) =>
+          run.id === runId
+            ? {
+                ...run,
+                status: "stopped",
+                message: "Stopped by admin",
+                finished_at: run.finished_at || new Date().toISOString(),
+              }
+            : run
+        )
+      );
       const data = await listScheduleRuns(10);
-      setScheduleRuns(data?.items || []);
+      setScheduleRuns(
+        (data?.items || []).map((run) => ({
+          ...run,
+          status: normalizeRunStatus(run.status),
+        }))
+      );
     } catch (err) {
       const msg = err?.response?.data?.detail || "Failed to stop run.";
       setRunsError(msg);
@@ -612,15 +672,6 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
     return raw.replace(/_/g, " ");
   };
 
-  const toggleRunExpanded = (runId) => {
-    setExpandedRunIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(runId)) next.delete(runId);
-      else next.add(runId);
-      return next;
-    });
-  };
-
   const formatProgressStage = (stage) => {
     const key = String(stage || "").toLowerCase();
     const map = {
@@ -639,14 +690,19 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
   };
 
   const statusStyles = (status) => {
-    const lower = String(status || "").toLowerCase();
+    const lower = String(status || "").toLowerCase() === "stopping" ? "stopped" : String(status || "").toLowerCase();
     if (lower === "done") return { bg: "rgba(34,197,94,0.18)", fg: "#22c55e" };
     if (lower === "queued") return { bg: "rgba(245,158,11,0.18)", fg: "#f59e0b" };
     if (lower === "running") return { bg: "rgba(59,130,246,0.18)", fg: "#3b82f6" };
-    if (lower === "stopping") return { bg: "rgba(234,179,8,0.18)", fg: "#eab308" };
     if (lower === "stopped") return { bg: "rgba(148,163,184,0.28)", fg: "#94a3b8" };
     if (lower === "error") return { bg: "rgba(239,68,68,0.18)", fg: "#ef4444" };
     return { bg: "rgba(148,163,184,0.2)", fg: "#94a3b8" };
+  };
+
+  const normalizeRunStatus = (status) => {
+    const lower = String(status || "").toLowerCase();
+    if (lower === "stopping") return "stopped";
+    return lower || "unknown";
   };
 
   const visibleTokenCount = tokens.filter((token) => {
@@ -1520,13 +1576,12 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                       ) : (
                         <Box display="flex" flexDirection="column" gap={1}>
                           {scheduleRuns.map((run) => {
-                            const styles = statusStyles(run.status);
+                            const normalizedStatus = normalizeRunStatus(run.status);
+                            const styles = statusStyles(normalizedStatus);
                             const processed = run.processed ?? 0;
                             const total = run.total ?? 0;
                             const tokenName = formatTokenName(run.token_name);
                             const runType = formatRunType(run.run_type);
-                            const channelTitles = Array.isArray(run.channel_titles) ? run.channel_titles : [];
-                            const isExpanded = expandedRunIds.has(run.id);
                             return (
                               <Box
                                 key={run.id}
@@ -1557,7 +1612,7 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                                         color: styles.fg,
                                       }}
                                     >
-                                      {run.status || "unknown"}
+                                      {normalizedStatus}
                                     </Box>
                                     <Box display="flex" flexDirection="column" gap={0.25}>
                                       <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap">
@@ -1596,7 +1651,7 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                                     </Box>
                                   </Box>
                                   <Box display="flex" alignItems="center" gap={0.5}>
-                                    {(run.status === "running" || run.status === "queued") && (
+                                    {(normalizedStatus === "running" || normalizedStatus === "queued") && (
                                       <Button
                                         size="small"
                                         color="error"
@@ -1607,19 +1662,6 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                                         Stop
                                       </Button>
                                     )}
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => toggleRunExpanded(run.id)}
-                                      aria-label={isExpanded ? "Collapse run details" : "Expand run details"}
-                                      sx={{
-                                        border: `1px solid ${border}`,
-                                        color: isDark ? "#e9edf2" : undefined,
-                                        transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
-                                        transition: "transform 180ms ease",
-                                      }}
-                                    >
-                                      <ExpandMoreIcon fontSize="small" />
-                                    </IconButton>
                                   </Box>
                                 </Box>
                                 <Box
@@ -1637,7 +1679,7 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                                     )}`}
                                   </Typography>
                                 </Box>
-                                {run.status === "running" && total > 0 && (
+                                {normalizedStatus === "running" && total > 0 && (
                                   <Box
                                     sx={{
                                       height: 6,
@@ -1657,42 +1699,6 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
                                         transition: "width 200ms ease",
                                       }}
                                     />
-                                  </Box>
-                                )}
-                                {isExpanded && (
-                                  <Box
-                                    sx={{
-                                      mt: 0.5,
-                                      pt: 1,
-                                      borderTop: `1px solid ${border}`,
-                                    }}
-                                  >
-                                    <Typography variant="caption" color="text.secondary">
-                                      Channels
-                                    </Typography>
-                                    <Box display="flex" flexWrap="wrap" gap={0.5} mt={0.5}>
-                                      {channelTitles.length > 0 ? (
-                                        channelTitles.map((title, index) => (
-                                          <Box
-                                            key={`${run.id}-${title}-${index}`}
-                                            sx={{
-                                              px: 1,
-                                              py: 0.35,
-                                              borderRadius: 999,
-                                              fontSize: 12,
-                                              bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)",
-                                              color: isDark ? "#d6deea" : "rgba(15,23,42,0.78)",
-                                            }}
-                                          >
-                                            {title}
-                                          </Box>
-                                        ))
-                                      ) : (
-                                        <Typography variant="caption" color="text.secondary">
-                                          No channel names available.
-                                        </Typography>
-                                      )}
-                                    </Box>
                                   </Box>
                                 )}
                               </Box>
