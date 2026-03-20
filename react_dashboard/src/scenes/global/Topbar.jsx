@@ -1,4 +1,4 @@
-import { Box, IconButton, useTheme, Avatar, Button } from "@mui/material";
+import { Box, IconButton, useTheme, Avatar, Button, Typography } from "@mui/material";
 import { useContext, useState } from "react";
 import { ColorModeContext } from "../../theme";
 import { UserContext } from "../../context/UserContext";
@@ -10,7 +10,7 @@ import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
 
-const Topbar = ({ setIsSidebar, isMobile = false }) => {
+const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
   const theme = useTheme();
   // const colors = tokens(theme.palette.mode);
   const colorMode = useContext(ColorModeContext);
@@ -81,13 +81,26 @@ const Topbar = ({ setIsSidebar, isMobile = false }) => {
 
         {/* ICONS */}
         <Box display="flex" alignItems="center" justifyContent="space-between" width="100%">
-          {isMobile ? (
-            <IconButton size="medium" onClick={() => setIsSidebar?.((prev) => !prev)}>
+          <Box display="flex" alignItems="center">
+            <IconButton
+              size="medium"
+              onClick={() => setIsSidebar?.((prev) => !prev)}
+              sx={{ mr: 1 }}
+            >
               <MenuOutlinedIcon fontSize="medium" />
             </IconButton>
-          ) : (
-            <Box />
-          )}
+            <Typography
+              variant="h5"
+              sx={{
+                fontSize: { xs: "1rem", sm: "1.1rem" },
+                fontWeight: 800,
+                lineHeight: 1.2,
+                whiteSpace: "nowrap",
+              }}
+            >
+              YT Manage App
+            </Typography>
+          </Box>
           <Box display="flex" alignItems="center">
             <Button
               variant="contained"

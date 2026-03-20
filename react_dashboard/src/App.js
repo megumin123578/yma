@@ -1,4 +1,4 @@
-import { useState, useContext, useEffect } from "react";
+import { memo, useState, useContext, useEffect } from "react";
 import { Routes, Route, useLocation, Navigate } from "react-router-dom";
 import Topbar from "./scenes/global/Topbar";
 import Sidebar from "./scenes/global/Sidebar";
@@ -27,6 +27,123 @@ import PrivacyPage from "./scenes/privacy";
 import TermsPage from "./scenes/terms";
 import LandingPage from "./scenes/landing";
 
+const ProtectedRoute = memo(function ProtectedRoute({ children, user, loading }) {
+  if (loading) return null;
+  if (!user) return <Navigate to="/" replace />;
+  return children;
+});
+
+const AppRoutes = memo(function AppRoutes({ user, loading }) {
+  return (
+    <Routes>
+      {/* Auth */}
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/terms" element={<TermsPage />} />
+
+      {/* App */}
+      <Route
+        path="/dashboard"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <Dashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/content"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <Daily />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/traffic_source"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <TrafficSource />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/geography"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <GeographyScene />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/channel_compare"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <ChannelCompareScene />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/rivals"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <RivalsData />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/smmstore"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <SmmstoreScene />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="smmstore_analytics"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <SmmstoreAnalyticsScene />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/audience_analytics"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <AudienceAnalyticsScene />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reach"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <ReachAnalyticsScene />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/revenue"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <RevenueAnalyticsScene />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/config"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <ConfigPage />
+          </ProtectedRoute>
+        }
+      />
+    </Routes>
+  );
+});
 
 function App() {
   const theme = useTheme();
@@ -47,7 +164,7 @@ function App() {
   const isNoLayout = noLayoutRoutes.includes(location.pathname);
 
   useEffect(() => {
-    setIsSidebar(isMobile ? false : true);
+    setIsSidebar((prev) => (isMobile ? false : prev));
   }, [isMobile]);
 
   useEffect(() => {
@@ -55,12 +172,6 @@ function App() {
       setIsSidebar(false);
     }
   }, [location.pathname, isMobile]);
-
-  const ProtectedRoute = ({ children }) => {
-    if (loading) return null; // Wait for auth check
-    if (!user) return <Navigate to="/" replace />;
-    return children;
-  };
 
   return (
     <div className="app">
@@ -76,6 +187,7 @@ function App() {
         {!isNoLayout && (
           <Topbar
             setIsSidebar={setIsSidebar}
+            isSidebar={isSidebar}
             isMobile={isMobile}
           />
         )}
@@ -91,114 +203,7 @@ function App() {
           </Box>
         )}
 
-        <Routes>
-          {/* Auth */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/privacy" element={<PrivacyPage />} />
-          <Route path="/terms" element={<TermsPage />} />
-
-          {/* App */}
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/content"
-            element={
-              <ProtectedRoute>
-                <Daily />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/traffic_source"
-            element={
-              <ProtectedRoute>
-                <TrafficSource />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/geography"
-            element={
-              <ProtectedRoute>
-                <GeographyScene />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/channel_compare"
-            element={
-              <ProtectedRoute>
-                <ChannelCompareScene />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/rivals"
-            element={
-              <ProtectedRoute>
-                <RivalsData />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/smmstore"
-            element={
-              <ProtectedRoute>
-                <SmmstoreScene />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="smmstore_analytics"
-            element={
-              <ProtectedRoute>
-                <SmmstoreAnalyticsScene />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/audience_analytics"
-            element={
-              <ProtectedRoute>
-                <AudienceAnalyticsScene />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/reach"
-            element={
-              <ProtectedRoute>
-                <ReachAnalyticsScene />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/revenue"
-            element={
-              <ProtectedRoute>
-                <RevenueAnalyticsScene />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/config"
-            element={
-              <ProtectedRoute>
-                <ConfigPage />
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
+        <AppRoutes user={user} loading={loading} />
       </main>
     </div>
   );
