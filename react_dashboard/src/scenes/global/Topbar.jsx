@@ -1,13 +1,13 @@
-import { Box, IconButton, useTheme, Avatar } from "@mui/material";
+import { Box, IconButton, useTheme, Avatar, Button } from "@mui/material";
 import { useContext, useState } from "react";
 import { ColorModeContext } from "../../theme";
 import { UserContext } from "../../context/UserContext";
 import ProfileDialog from "../../components/dialogs/ProfileDialog";
-import CredentialsDialog from "../../components/dialogs/CredentialsDialog";
+import { uploadCredentials } from "../../services/userService";
 
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
-import SettingsIcon from '@mui/icons-material/Settings';
+import AddIcon from "@mui/icons-material/Add";
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
 
@@ -18,13 +18,27 @@ const Topbar = ({ setIsSidebar, isMobile = false }) => {
 
   const { user } = useContext(UserContext);
   const [openProfile, setOpenProfile] = useState(false);
-  const [openCredentials, setOpenCredentials] = useState(false);
+  const [addingChannel, setAddingChannel] = useState(false);
 
   // GUARD: chưa login
   const avatarSrc =
     user?.avatar && !user.avatar.startsWith("blob:")
       ? `${process.env.REACT_APP_API_URL || ""}${user.avatar}`
       : null;
+
+  const handleAddChannel = async () => {
+    if (addingChannel) return;
+    setAddingChannel(true);
+    try {
+      const data = await uploadCredentials("");
+      const nextUrl = data?.auth_url || "";
+      if (nextUrl) {
+        window.open(nextUrl, "_blank", "noopener");
+      }
+    } finally {
+      setAddingChannel(false);
+    }
+  };
 
   return (
     <>
@@ -48,9 +62,23 @@ const Topbar = ({ setIsSidebar, isMobile = false }) => {
             )}
           </IconButton>
 
-          <IconButton onClick={() => setOpenCredentials(true)}>
-            <SettingsIcon />
-          </IconButton>
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<AddIcon fontSize="small" />}
+            onClick={handleAddChannel}
+            disabled={addingChannel}
+            sx={{
+              mx: 1,
+              borderRadius: 999,
+              textTransform: "none",
+              fontWeight: 700,
+              minWidth: 0,
+              px: 1.5,
+            }}
+          >
+            Add Channel
+          </Button>
 
           {/* PROFILE */}
           <IconButton onClick={() => setOpenProfile(true)}>
@@ -65,14 +93,9 @@ const Topbar = ({ setIsSidebar, isMobile = false }) => {
       </Box>
 
       {/* PROFILE SETTING DIALOG */}
-      <ProfileDialog
+          <ProfileDialog
         open={openProfile}
         onClose={() => setOpenProfile(false)}
-      />
-
-      <CredentialsDialog
-        open={openCredentials}
-        onClose={() => setOpenCredentials(false)}
       />
     </>
   );

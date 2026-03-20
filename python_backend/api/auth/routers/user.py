@@ -14,7 +14,7 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from python_backend.api.auth.database import get_db
-from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup, RivalGroup, UserCredential
+from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup, RivalGroup, UserCredential, UserCredentialGroup
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
@@ -45,6 +45,18 @@ OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 PENDING_OAUTH = {}
 RECENT_OAUTH = {}
 _ADMIN_ENV_KEY = "ADMIN_USERNAME"
+_TOKEN_GROUP_COLORS = [
+    "#2563eb",
+    "#16a34a",
+    "#dc2626",
+    "#ea580c",
+    "#9333ea",
+    "#0891b2",
+    "#d97706",
+    "#db2777",
+    "#4f46e5",
+    "#0f766e",
+]
 
 
 def _safe_token_filename(name: str) -> str:
@@ -154,6 +166,22 @@ def _write_progress_file(account_tag: str, status: str, percent: int, stage: str
             json.dump(payload, f)
     except Exception:
         pass
+
+
+def _pick_token_group_color(db: Session, user_id: int, group_name: str) -> str:
+    existing = {
+        (row[0] or "").strip().lower()
+        for row in db.query(UserCredentialGroup.color)
+        .filter(UserCredentialGroup.user_id == user_id)
+        .all()
+        if (row[0] or "").strip()
+    }
+    for color in _TOKEN_GROUP_COLORS:
+        if color.lower() not in existing:
+            return color
+    seed = sum(ord(ch) for ch in (group_name or "group"))
+    hue = seed % 360
+    return f"hsl({hue}, 70%, 45%)"
 
 
 def _purge_postgres_account(account_tag: str) -> None:
@@ -591,6 +619,12 @@ def list_tokens(
 ):
     is_admin = (current_user.username or "").lower() in _get_admin_users()
     hidden = get_hidden_account_tags(db, current_user.id)
+    group_rows = db.query(UserCredentialGroup).all()
+    group_color_map = {
+        (row.user_id, row.group_name): (row.color or "")
+        for row in group_rows
+        if row.group_name
+    }
     labels = {}
     avatars = {}
     owned_names = set()
@@ -601,6 +635,7 @@ def list_tokens(
             UserCredential.selected_channel_title,
             UserCredential.account_tag,
             UserCredential.selected_channel_avatar,
+            UserCredential.group_name,
         )
         .filter(UserCredential.token_name.isnot(None))
         .all()
@@ -614,6 +649,16 @@ def list_tokens(
         row.token_name: (row.selected_channel_avatar or "")
         for row in rows
         if row.token_name
+    }
+    groups = {
+        row.token_name: (row.group_name or "")
+        for row in rows
+        if row.token_name
+    }
+    group_colors = {
+        row.token_name: group_color_map.get((row.user_id, row.group_name or ""), "")
+        for row in rows
+        if row.token_name and row.group_name
     }
     if is_admin:
         owned_names = {row.token_name for row in rows if row.token_name}
@@ -639,6 +684,8 @@ def list_tokens(
                 "hidden": base in hidden,
                 "label": labels.get(name, ""),
                 "avatar": avatars.get(name, ""),
+                "group_name": groups.get(name, ""),
+                "group_color": group_colors.get(name, ""),
                 "owned": name in owned_names,
             }
         )
@@ -649,6 +696,10 @@ def list_tokens(
 class TokenVisibilityUpdate(BaseModel):
     token: str
     hidden: bool
+
+
+class TokenGroupUpdate(BaseModel):
+    group_name: Optional[str] = None
 
 
 @router.post("/tokens/visibility")
@@ -686,6 +737,182 @@ def set_token_visibility(
             db.delete(row)
             db.commit()
     return {"ok": True, "hidden": payload.hidden}
+
+
+@router.get("/tokens/groups")
+def list_token_groups(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = (
+        db.query(UserCredentialGroup)
+        .filter(UserCredentialGroup.user_id == current_user.id)
+        .order_by(UserCredentialGroup.group_name.asc())
+        .all()
+    )
+    return {
+        "groups": [
+            {"group_name": row.group_name, "color": row.color or ""}
+            for row in rows
+        ]
+    }
+
+
+@router.post("/tokens/groups")
+def create_token_group(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    name = (payload.get("group_name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="group_name is required")
+    existing = (
+        db.query(UserCredentialGroup)
+        .filter(
+            UserCredentialGroup.user_id == current_user.id,
+            UserCredentialGroup.group_name == name,
+        )
+        .first()
+    )
+    if existing:
+        return {"ok": True, "group_name": name, "color": existing.color or ""}
+    color = _pick_token_group_color(db, current_user.id, name)
+    db.add(UserCredentialGroup(user_id=current_user.id, group_name=name, color=color))
+    db.commit()
+    return {"ok": True, "group_name": name, "color": color}
+
+
+@router.patch("/tokens/groups/{group_name}")
+def rename_token_group(
+    group_name: str,
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    current_name = (group_name or "").strip()
+    next_name = (payload.get("group_name") or "").strip()
+    if not current_name:
+        raise HTTPException(status_code=400, detail="group_name is required")
+    if not next_name:
+        raise HTTPException(status_code=400, detail="New group_name is required")
+    if current_name == next_name:
+        return {"ok": True, "group_name": next_name}
+    exists = (
+        db.query(UserCredentialGroup)
+        .filter(
+            UserCredentialGroup.user_id == current_user.id,
+            UserCredentialGroup.group_name == next_name,
+        )
+        .first()
+    )
+    if exists:
+        raise HTTPException(status_code=400, detail="Group name already exists")
+    row = (
+        db.query(UserCredentialGroup)
+        .filter(
+            UserCredentialGroup.user_id == current_user.id,
+            UserCredentialGroup.group_name == current_name,
+        )
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Group not found")
+    row.group_name = next_name
+    (
+        db.query(UserCredential)
+        .filter(
+            UserCredential.user_id == current_user.id,
+            UserCredential.group_name == current_name,
+        )
+        .update({"group_name": next_name}, synchronize_session=False)
+    )
+    db.add(row)
+    db.commit()
+    return {"ok": True, "group_name": next_name, "color": row.color or ""}
+
+
+@router.delete("/tokens/groups/{group_name}")
+def delete_token_group(
+    group_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    name = (group_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="group_name is required")
+    (
+        db.query(UserCredential)
+        .filter(
+            UserCredential.user_id == current_user.id,
+            UserCredential.group_name == name,
+        )
+        .update({"group_name": None}, synchronize_session=False)
+    )
+    deleted = (
+        db.query(UserCredentialGroup)
+        .filter(
+            UserCredentialGroup.user_id == current_user.id,
+            UserCredentialGroup.group_name == name,
+        )
+        .delete()
+    )
+    db.commit()
+    return {"ok": True, "deleted": deleted}
+
+
+@router.post("/tokens/{token_name}/group")
+def assign_token_group(
+    token_name: str,
+    payload: TokenGroupUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    safe_name = _safe_token_filename(token_name)
+    if safe_name != token_name or ".." in safe_name:
+        raise HTTPException(status_code=400, detail="Invalid token filename")
+    owned = (
+        db.query(UserCredential)
+        .filter(
+            UserCredential.user_id == current_user.id,
+            UserCredential.token_name == token_name,
+        )
+        .first()
+    )
+    if not owned:
+        raise HTTPException(status_code=404, detail="Token not found")
+    group_name = (payload.group_name or "").strip()
+    if group_name:
+        existing = (
+            db.query(UserCredentialGroup)
+            .filter(
+                UserCredentialGroup.user_id == current_user.id,
+                UserCredentialGroup.group_name == group_name,
+            )
+            .first()
+        )
+        if not existing:
+            color = _pick_token_group_color(db, current_user.id, group_name)
+            db.add(UserCredentialGroup(user_id=current_user.id, group_name=group_name, color=color))
+    owned.group_name = group_name or None
+    owned.updated_at = datetime.utcnow()
+    db.add(owned)
+    db.commit()
+    assigned = None
+    if owned.group_name:
+        assigned = (
+            db.query(UserCredentialGroup)
+            .filter(
+                UserCredentialGroup.user_id == current_user.id,
+                UserCredentialGroup.group_name == owned.group_name,
+            )
+            .first()
+        )
+    return {
+        "ok": True,
+        "group_name": owned.group_name,
+        "group_color": assigned.color if assigned else "",
+    }
 
 
 @router.post("/tokens/run-all")

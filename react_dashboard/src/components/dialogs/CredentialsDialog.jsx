@@ -17,9 +17,12 @@ import {
   Tab,
   Checkbox,
   Switch,
+  TextField,
+  Chip,
   useTheme,
   useMediaQuery,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { useCallback, useEffect, useRef, useState } from "react";
 import dayjs from "dayjs";
 import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
@@ -32,6 +35,9 @@ import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import CheckIcon from "@mui/icons-material/Check";
+import CloseIcon from "@mui/icons-material/Close";
 import {
   uploadCredentials,
   listTokens,
@@ -43,6 +49,10 @@ import {
   runTokenStage,
   runTokenFullBackfill,
   refreshTokenAvatar,
+  listTokenGroups,
+  createTokenGroup,
+  renameTokenGroup,
+  deleteTokenGroup,
   getOAuthState,
   listSchedules,
   createSchedule,
@@ -88,6 +98,11 @@ const CredentialsDialog = ({
   const [tokenView, setTokenView] = useState(defaultTokenView);
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
   const [menuTokenName, setMenuTokenName] = useState("");
+  const [tokenGroups, setTokenGroups] = useState([]);
+  const [groupDraft, setGroupDraft] = useState("");
+  const [editingGroupName, setEditingGroupName] = useState("");
+  const [editingGroupDraft, setEditingGroupDraft] = useState("");
+  const [savingGroup, setSavingGroup] = useState(false);
   const [schedules, setSchedules] = useState([]);
   const [scheduleRuns, setScheduleRuns] = useState([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
@@ -182,6 +197,27 @@ const CredentialsDialog = ({
     }
   }, []);
 
+  const loadTokenGroups = useCallback(async () => {
+    try {
+      const data = await listTokenGroups();
+      const groups = Array.isArray(data?.groups) ? data.groups : [];
+      setTokenGroups(
+        groups
+          .map((group) =>
+            typeof group === "string"
+              ? { group_name: group, color: "" }
+              : {
+                  group_name: group?.group_name || "",
+                  color: group?.color || "",
+                }
+          )
+          .filter((group) => group.group_name)
+      );
+    } catch {
+      setTokenGroups([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (open) {
       setStatus({ type: "", message: "" });
@@ -194,9 +230,10 @@ const CredentialsDialog = ({
       setActiveTab("add");
       setTokenView(defaultTokenView);
       loadTokens();
+      loadTokenGroups();
       loadSchedules();
     }
-  }, [open, loadSchedules, loadTokens, defaultTokenView]);
+  }, [open, loadSchedules, loadTokenGroups, loadTokens, defaultTokenView]);
 
   useEffect(() => {
     if (activeTab === "schedule") {
@@ -428,6 +465,66 @@ const CredentialsDialog = ({
       const message =
         err?.response?.data?.detail || "Update failed. Please try again.";
       setStatus({ type: "error", message });
+    }
+  };
+
+  const handleCreateTokenGroup = async () => {
+    const name = groupDraft.trim();
+    if (!name || savingGroup) return;
+    setSavingGroup(true);
+    try {
+      await createTokenGroup(name);
+      await loadTokenGroups();
+      setGroupDraft("");
+      setStatus({ type: "success", message: "Group created." });
+      notifyDataChanged();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to create group.";
+      setStatus({ type: "error", message });
+    } finally {
+      setSavingGroup(false);
+    }
+  };
+
+  const handleRenameTokenGroup = async (groupName) => {
+    const nextName = editingGroupDraft.trim();
+    if (!groupName || !nextName || savingGroup) return;
+    setSavingGroup(true);
+    try {
+      await renameTokenGroup(groupName, nextName);
+      await Promise.all([loadTokenGroups(), loadTokens()]);
+      setEditingGroupName("");
+      setEditingGroupDraft("");
+      setStatus({ type: "success", message: "Group renamed." });
+      notifyDataChanged();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to rename group.";
+      setStatus({ type: "error", message });
+    } finally {
+      setSavingGroup(false);
+    }
+  };
+
+  const handleDeleteTokenGroup = async (groupName) => {
+    if (!groupName || savingGroup) return;
+    setSavingGroup(true);
+    try {
+      await deleteTokenGroup(groupName);
+      await Promise.all([loadTokenGroups(), loadTokens()]);
+      if (editingGroupName === groupName) {
+        setEditingGroupName("");
+        setEditingGroupDraft("");
+      }
+      setStatus({ type: "success", message: "Group deleted." });
+      notifyDataChanged();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to delete group.";
+      setStatus({ type: "error", message });
+    } finally {
+      setSavingGroup(false);
     }
   };
 
@@ -832,8 +929,23 @@ const CredentialsDialog = ({
     const isHidden = typeof token === "string" ? false : !!token.hidden;
     const isOwned = typeof token === "string" ? true : token.owned !== false;
     const avatarSrc = typeof token === "object" ? token.avatar || "" : "";
+    const groupName = typeof token === "object" ? token.group_name || "" : "";
+    const groupColor = typeof token === "object" ? token.group_color || "" : "";
 
     if (layout === "card") {
+      const cardBg = groupColor
+        ? alpha(groupColor, isDark ? 0.16 : 0.1)
+        : isDark
+          ? "rgba(255,255,255,0.06)"
+          : "rgba(255,255,255,0.85)";
+      const cardBorder = groupColor
+        ? alpha(groupColor, isDark ? 0.42 : 0.26)
+        : border;
+      const cardHoverBg = groupColor
+        ? alpha(groupColor, isDark ? 0.22 : 0.14)
+        : isDark
+          ? "rgba(255,255,255,0.09)"
+          : "rgba(255,255,255,1)";
       return (
         <Box
           key={tokenName}
@@ -846,16 +958,21 @@ const CredentialsDialog = ({
             minHeight: 180,
             display: "flex",
             flexDirection: "column",
-            bgcolor: isDark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.85)",
+            bgcolor: cardBg,
             backdropFilter: "blur(12px)",
             WebkitBackdropFilter: "blur(12px)",
             transition: "all 200ms cubic-bezier(0.4, 0, 0.2, 1)",
             boxShadow: isDark ? "0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)" : "0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05)",
+            borderColor: cardBorder,
             "&:hover": {
               transform: "translateY(-4px)",
               boxShadow: isDark ? "0 10px 25px -5px rgba(0,0,0,0.3)" : "0 10px 25px -5px rgba(25,118,210,0.15)",
-              bgcolor: isDark ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,1)",
-              borderColor: isDark ? "rgba(125,224,210,0.4)" : "rgba(25,118,210,0.3)",
+              bgcolor: cardHoverBg,
+              borderColor: groupColor
+                ? alpha(groupColor, isDark ? 0.58 : 0.38)
+                : isDark
+                  ? "rgba(125,224,210,0.4)"
+                  : "rgba(25,118,210,0.3)",
             },
             opacity: isHidden ? 0.7 : 1,
             position: "relative",
@@ -923,6 +1040,17 @@ const CredentialsDialog = ({
                       View only
                     </Typography>
                   )}
+                  {!!groupName && (
+                    <Chip
+                      size="small"
+                      label={groupName}
+                      sx={{
+                        mt: 0.75,
+                        bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)",
+                        color: isDark ? "#e5e7eb" : "rgba(15,23,42,0.78)",
+                      }}
+                    />
+                  )}
                 </Box>
               </Box>
               
@@ -965,9 +1093,7 @@ const CredentialsDialog = ({
               </Box>
             </Box>
 
-            <Box mt={1.5} mb={2} flex={1}>
-              {renderTokenProgress(tokenName)}
-            </Box>
+            <Box mt={1.5} mb={2} flex={1}>{renderTokenProgress(tokenName)}</Box>
 
             <Box display="flex" alignItems="center" justifyContent="space-between" mt="auto">
               <Button
@@ -1060,14 +1186,29 @@ const CredentialsDialog = ({
             border: `1px solid ${border}`,
             borderRadius: 1,
             p: 1,
-            bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)",
+            bgcolor: groupColor
+              ? alpha(groupColor, isDark ? 0.14 : 0.1)
+              : isDark
+                ? "rgba(255,255,255,0.08)"
+                : "rgba(255,255,255,0.75)",
             backdropFilter: "blur(10px)",
             WebkitBackdropFilter: "blur(10px)",
             opacity: isHidden ? 0.5 : 1,
             transition: "opacity 220ms ease, border-color 180ms ease, background-color 180ms ease",
+            borderColor: groupColor
+              ? alpha(groupColor, isDark ? 0.38 : 0.24)
+              : border,
             "&:hover": {
-              bgcolor: isDark ? "rgba(255,255,255,0.12)" : "rgba(25,118,210,0.08)",
-              borderColor: isDark ? "rgba(255,255,255,0.2)" : "rgba(25,118,210,0.2)",
+              bgcolor: groupColor
+                ? alpha(groupColor, isDark ? 0.2 : 0.14)
+                : isDark
+                  ? "rgba(255,255,255,0.12)"
+                  : "rgba(25,118,210,0.08)",
+              borderColor: groupColor
+                ? alpha(groupColor, isDark ? 0.52 : 0.34)
+                : isDark
+                  ? "rgba(255,255,255,0.2)"
+                  : "rgba(25,118,210,0.2)",
               opacity: isHidden ? 0.6 : 1,
             },
             cursor: "grab",
@@ -1096,6 +1237,16 @@ const CredentialsDialog = ({
                 <Typography variant="caption" color="text.secondary">
                   View only
                 </Typography>
+              )}
+              {!!groupName && (
+                <Chip
+                  size="small"
+                  label={groupName}
+                  sx={{
+                    bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)",
+                    color: isDark ? "#e5e7eb" : "rgba(15,23,42,0.78)",
+                  }}
+                />
               )}
             </Box>
             {renderTokenControls(tokenName, displayName, isOwned, isHidden, "list")}
@@ -1189,6 +1340,7 @@ const CredentialsDialog = ({
             }}
           >
             <Tab value="add" label="Add channel" />
+            <Tab value="groups" label="Groups" />
             <Tab value="schedule" label="Schedule" />
             <Tab value="logs" label="Run logs" />
           </Tabs>
@@ -1290,8 +1442,6 @@ const CredentialsDialog = ({
                     </Box>
                   </Box>
                 )}
-
-                <Divider />
 
                 <Box
                   sx={{
@@ -1438,7 +1588,163 @@ const CredentialsDialog = ({
               </>
             ) : (
               <>
-                {activeTab === "schedule" ? (
+                {activeTab === "groups" ? (
+                  <Box
+                    sx={{
+                      bgcolor: panel,
+                      border: `1px solid ${border}`,
+                      borderRadius: 2,
+                      p: 2,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 1.5,
+                    }}
+                  >
+                    <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
+                      Manage groups
+                    </Typography>
+
+                    <Box display="flex" gap={1} flexWrap="wrap">
+                      <TextField
+                        size="small"
+                        label="New group"
+                        value={groupDraft}
+                        onChange={(event) => setGroupDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            handleCreateTokenGroup();
+                          }
+                        }}
+                        sx={{ minWidth: 220, flex: 1 }}
+                      />
+                      <Button
+                        variant="contained"
+                        onClick={handleCreateTokenGroup}
+                        disabled={!groupDraft.trim() || savingGroup}
+                        sx={shimmerSx}
+                      >
+                        Add group
+                      </Button>
+                    </Box>
+
+                    {tokenGroups.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        No groups yet.
+                      </Typography>
+                    ) : (
+                      <Box display="flex" flexDirection="column" gap={1}>
+                        {tokenGroups.map((group) => {
+                          const groupName = group.group_name;
+                          const isEditing = editingGroupName === groupName;
+                          return (
+                            <Box
+                              key={groupName}
+                              display="flex"
+                              alignItems="center"
+                              gap={1}
+                              flexWrap="wrap"
+                              sx={{
+                                p: 1,
+                                border: `1px solid ${group.color ? alpha(group.color, isDark ? 0.42 : 0.26) : border}`,
+                                borderRadius: 1.5,
+                                bgcolor: group.color
+                                  ? alpha(group.color, isDark ? 0.16 : 0.1)
+                                  : isDark
+                                    ? "rgba(255,255,255,0.04)"
+                                    : "rgba(255,255,255,0.72)",
+                              }}
+                            >
+                              {isEditing ? (
+                                <TextField
+                                  size="small"
+                                  value={editingGroupDraft}
+                                  onChange={(event) => setEditingGroupDraft(event.target.value)}
+                                  sx={{ minWidth: 220, flex: 1 }}
+                                />
+                              ) : (
+                                <Typography
+                                  variant="body2"
+                                  sx={{
+                                    fontWeight: 600,
+                                    color: isDark ? "#e5e7eb" : "rgba(15,23,42,0.78)",
+                                    flex: 1,
+                                    minWidth: 0,
+                                  }}
+                                >
+                                  {groupName}
+                                </Typography>
+                              )}
+                              <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap">
+                                {isEditing ? (
+                                  <>
+                                    <Tooltip title="Save group name">
+                                      <IconButton
+                                        size="small"
+                                        color="primary"
+                                        onClick={() => handleRenameTokenGroup(groupName)}
+                                        disabled={!editingGroupDraft.trim() || savingGroup}
+                                        sx={{
+                                          border: `1px solid ${border}`,
+                                          bgcolor: isDark ? "rgba(125,224,210,0.12)" : "rgba(25,118,210,0.08)",
+                                        }}
+                                      >
+                                        <CheckIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Cancel editing">
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => {
+                                          setEditingGroupName("");
+                                          setEditingGroupDraft("");
+                                        }}
+                                        sx={{
+                                          border: `1px solid ${border}`,
+                                        }}
+                                      >
+                                        <CloseIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </>
+                                ) : (
+                                  <Tooltip title="Rename group">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => {
+                                        setEditingGroupName(groupName);
+                                        setEditingGroupDraft(groupName);
+                                      }}
+                                      sx={{
+                                        border: `1px solid ${border}`,
+                                      }}
+                                    >
+                                      <EditOutlinedIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
+                                <Tooltip title="Delete group">
+                                  <IconButton
+                                    size="small"
+                                    color="error"
+                                    onClick={() => handleDeleteTokenGroup(groupName)}
+                                    disabled={savingGroup}
+                                    sx={{
+                                      border: `1px solid ${border}`,
+                                      bgcolor: "rgba(239,68,68,0.08)",
+                                    }}
+                                  >
+                                    <DeleteOutlineIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </Box>
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                    )}
+                  </Box>
+                ) : activeTab === "schedule" ? (
                   <Box
                     sx={{
                       bgcolor: panel,

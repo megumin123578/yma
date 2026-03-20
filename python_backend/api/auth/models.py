@@ -147,11 +147,24 @@ class UserCredential(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     account_tag = Column(String, nullable=False, index=True)
     token_name = Column(String, nullable=True)
+    group_name = Column(String, nullable=True, index=True)
     selected_channel_id = Column(String, nullable=True)
     selected_channel_title = Column(String, nullable=True)
     selected_channel_avatar = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class UserCredentialGroup(Base):
+    __tablename__ = "user_credential_groups"
+    __table_args__ = (
+        UniqueConstraint("user_id", "group_name", name="uq_user_credential_group_name"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    group_name = Column(String, nullable=False, index=True)
+    color = Column(String, nullable=True)
 
 
 class LiveCounterSnapshot(Base):

@@ -95,6 +95,37 @@ export const setTokenVisibility = async (tokenName, hidden) => {
   return res.data;
 };
 
+export const listTokenGroups = async () => {
+  const res = await api.get("/api/users/tokens/groups");
+  return res.data;
+};
+
+export const createTokenGroup = async (groupName) => {
+  const res = await api.post("/api/users/tokens/groups", {
+    group_name: groupName,
+  });
+  return res.data;
+};
+
+export const renameTokenGroup = async (groupName, nextGroupName) => {
+  const res = await api.patch(`/api/users/tokens/groups/${encodeURIComponent(groupName)}`, {
+    group_name: nextGroupName,
+  });
+  return res.data;
+};
+
+export const deleteTokenGroup = async (groupName) => {
+  const res = await api.delete(`/api/users/tokens/groups/${encodeURIComponent(groupName)}`);
+  return res.data;
+};
+
+export const assignTokenGroup = async (tokenName, groupName) => {
+  const res = await api.post(`/api/users/tokens/${encodeURIComponent(tokenName)}/group`, {
+    group_name: groupName || null,
+  });
+  return res.data;
+};
+
 
 export const listSchedules = async () => {
   const res = await api.get("/api/users/schedules");

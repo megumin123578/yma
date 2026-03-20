@@ -101,6 +101,50 @@ def ensure_user_smmstore_column():
 ensure_user_smmstore_column()
 
 
+def ensure_user_credential_group_column():
+    with engine.begin() as conn:
+        columns = conn.exec_driver_sql("PRAGMA table_info(user_credentials)").fetchall()
+        has_column = any(row[1] == "group_name" for row in columns)
+        if not has_column:
+            conn.exec_driver_sql(
+                "ALTER TABLE user_credentials ADD COLUMN group_name VARCHAR"
+            )
+
+
+ensure_user_credential_group_column()
+
+
+def ensure_user_credential_groups_table():
+    with engine.begin() as conn:
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS user_credential_groups (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                group_name VARCHAR NOT NULL,
+                color VARCHAR
+            );
+        """)
+        columns = conn.exec_driver_sql("PRAGMA table_info(user_credential_groups)").fetchall()
+        has_color = any(row[1] == "color" for row in columns)
+        if not has_color:
+            conn.exec_driver_sql(
+                "ALTER TABLE user_credential_groups ADD COLUMN color VARCHAR"
+            )
+        conn.exec_driver_sql("""
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_user_credential_group_name
+            ON user_credential_groups (user_id, group_name);
+        """)
+        conn.exec_driver_sql("""
+            INSERT OR IGNORE INTO user_credential_groups (user_id, group_name)
+            SELECT user_id, group_name
+            FROM user_credentials
+            WHERE group_name IS NOT NULL AND TRIM(group_name) != '';
+        """)
+
+
+ensure_user_credential_groups_table()
+
+
 def ensure_rival_channel_avatar_column():
     with engine.begin() as conn:
         columns = conn.exec_driver_sql("PRAGMA table_info(rival_channels)").fetchall()
