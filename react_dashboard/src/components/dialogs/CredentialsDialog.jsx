@@ -52,7 +52,15 @@ import {
   stopScheduleRun,
 } from "../../services/userService";
 
-const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "list" }) => {
+export const CREDENTIALS_CHANGED_EVENT = "credentials-data-changed";
+
+const CredentialsDialog = ({
+  open,
+  onClose,
+  inline = false,
+  defaultTokenView = "list",
+  onDataChanged,
+}) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isDark = theme.palette.mode === "dark";
@@ -111,6 +119,13 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
   };
   const progressTimersRef = useRef({});
   const avatarRefreshQueueRef = useRef(new Set());
+
+  const notifyDataChanged = useCallback(() => {
+    onDataChanged?.();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent(CREDENTIALS_CHANGED_EVENT));
+    }
+  }, [onDataChanged]);
 
   const cleanError = (msg) => {
     if (!msg) return "";
@@ -349,11 +364,14 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
       (progress.status === "done" || (progress.percent >= 100 && progress.status !== "error"));
     if (!shouldReload) return;
     setAutoReloaded(true);
-    const timer = setTimeout(() => {
-      window.location.reload();
+    const timer = setTimeout(async () => {
+      await loadTokens();
+      notifyDataChanged();
+      setLatestTokenName("");
+      setStatus({ type: "success", message: "Channel synced." });
     }, 800);
     return () => clearTimeout(timer);
-  }, [progress.status, progress.percent, autoReloaded]);
+  }, [progress.status, progress.percent, autoReloaded, loadTokens, notifyDataChanged]);
 
   const handleStartOAuth = async () => {
     const targetName = "";
@@ -393,6 +411,7 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
     try {
       await deleteToken(tokenName);
       await loadTokens();
+      notifyDataChanged();
     } catch (err) {
       const message =
         err?.response?.data?.detail || "Delete failed. Please try again.";
@@ -404,6 +423,7 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
     try {
       await setTokenVisibility(tokenName, !checked);
       await loadTokens();
+      notifyDataChanged();
     } catch (err) {
       const message =
         err?.response?.data?.detail || "Update failed. Please try again.";
@@ -640,7 +660,7 @@ const CredentialsDialog = ({ open, onClose, inline = false, defaultTokenView = "
 
   const handleDone = () => {
     onClose();
-    window.location.reload();
+    notifyDataChanged();
   };
 
   useEffect(() => {
