@@ -240,6 +240,18 @@ const VideoList = () => {
             estimated: Number(row?.estimated_revenue || 0),
         }));
     }, [revenueRows]);
+    const revenueXAxisTicks = useMemo(() => {
+        const days = revenueChartData
+            .map((row) => row.day)
+            .filter(Boolean);
+        if (!days.length) return [];
+        if (overviewRange !== "28d") return days;
+
+        return days.filter((day, index) => {
+            if (index === 0 || index === days.length - 1) return true;
+            return index % 2 === 0;
+        });
+    }, [overviewRange, revenueChartData]);
     const subscribersXAxisTicks = useMemo(() => {
         const days = subscribersSummary.chart
             .map((row) => row.day)
@@ -1001,9 +1013,10 @@ const VideoList = () => {
                                                         />
                                                         <XAxis
                                                             dataKey="day"
+                                                            ticks={revenueXAxisTicks}
                                                             tickFormatter={formatDateMonth}
                                                             tick={{ fontSize: 11 }}
-                                                            interval="preserveStartEnd"
+                                                            interval={0}
                                                             allowDuplicatedCategory={false}
                                                         />
                                                         <YAxis
