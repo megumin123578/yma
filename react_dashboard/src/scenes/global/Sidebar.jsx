@@ -1,5 +1,7 @@
 import { ProSidebar, Menu, MenuItem} from "react-pro-sidebar";
 import { Box, Typography, useTheme } from "@mui/material";
+import { alpha } from "@mui/material/styles";
+import { useContext } from "react";
 import { Link, useLocation } from "react-router-dom";
 import "react-pro-sidebar/dist/css/styles.css";
 import { tokens } from "../../theme";
@@ -16,6 +18,7 @@ import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 // import FileUploadIcon from "@mui/icons-material/FileUpload";
 import WebhookIcon from '@mui/icons-material/Webhook';
 import SettingsIcon from "@mui/icons-material/Settings";
+import { UserContext } from "../../context/UserContext";
 
 const Item = ({ title, to, icon, isActive, onClick }) => {
   const theme = useTheme();
@@ -64,6 +67,7 @@ const SectionLabel = ({ children, isCollapsed }) => {
 const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
   const theme = useTheme();
   const location = useLocation();
+  const { user } = useContext(UserContext);
   const pathname = location.pathname || "/dashboard";
   const desktopSidebarWidth = 280;
   const sidebarWidth = isMobile
@@ -81,6 +85,11 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
       setIsSidebar?.(false);
     }
   };
+
+  const sidebarAvatarSrc =
+    user?.avatar && !user.avatar.startsWith("blob:")
+      ? `${process.env.REACT_APP_API_URL || ""}${user.avatar}`
+      : "../../assets/user.jpg";
 
   return (
     <>
@@ -223,8 +232,55 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
     >
       <ProSidebar collapsed={false}>
         <Menu iconShape="square">
+          <Box px="18px" pt="12px" pb="8px">
+            <Box
+              sx={{
+                px: 1.25,
+                py: 1.25,
+              }}
+            >
+              <Box display="flex" justifyContent="center">
+                <Box
+                  component="img"
+                  alt="profile-user"
+                  src={sidebarAvatarSrc}
+                  sx={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: "50%",
+                    objectFit: "cover",
+                    flexShrink: 0,
+                    border: `2px solid ${alpha(
+                      theme.palette.mode === "dark" ? "#7de0d2" : "#2563eb",
+                      0.28
+                    )}`,
+                    boxShadow: `0 10px 24px ${alpha(
+                      theme.palette.mode === "dark" ? "#000000" : "#1e3a8a",
+                      0.16
+                    )}`,
+                  }}
+                />
+              </Box>
+              <Typography
+                color={theme.palette.mode === "dark" ? "#f8fafc" : "#0f172a"}
+                sx={{
+                  mt: 1,
+                  fontSize: "0.92rem",
+                  fontWeight: 700,
+                  lineHeight: 1.2,
+                  textAlign: "center",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {user?.name || "Admin"}
+              </Typography>
+            </Box>
+          </Box>
+
           {/* MENU */}
-          <Box paddingLeft="6px" paddingRight="6px" pt="8px" pb="8px">
+          <Box paddingLeft="6px" paddingRight="6px" pt="4px" pb="8px">
             <Item
               title="Dashboard"
               to="/dashboard"
