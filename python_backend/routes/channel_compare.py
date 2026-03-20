@@ -1,4 +1,5 @@
 # routes/channel_compare.py
+import os
 from datetime import date, timedelta
 from typing import List
 
@@ -11,10 +12,12 @@ from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
+from python_backend.api.auth.models import UserCredential
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.module_trafficsource import sanitize_filename
 
 router = APIRouter(prefix="/api/channel_compare", tags=["channel_compare"])
+TOKEN_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "token"))
 
 
 class CompareRequest(BaseModel):
@@ -31,6 +34,27 @@ _ALLOWED_METRICS = {
     "averageViewPercentage",
     "engagedViews",
 }
+
+
+def _existing_account_tags(db: Session):
+    rows = (
+        db.query(UserCredential.account_tag, UserCredential.token_name)
+        .filter(
+            UserCredential.account_tag.isnot(None),
+            UserCredential.token_name.isnot(None),
+        )
+        .all()
+    )
+    tags = set()
+    for row in rows:
+        account_tag = sanitize_filename((row.account_tag or "").strip())
+        token_name = (row.token_name or "").strip()
+        if not account_tag or not token_name:
+            continue
+        token_path = os.path.join(TOKEN_DIR, token_name)
+        if os.path.exists(token_path):
+            tags.add(account_tag)
+    return tags
 
 
 def _agg_range(start: date, end: date):
@@ -123,6 +147,8 @@ def compare_rank(
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}
         items = [r for r in items if r.get("accountTag") not in hidden_all]
+    existing_tags = _existing_account_tags(db)
+    items = [r for r in items if sanitize_filename(r.get("accountTag") or "") in existing_tags]
 
     return {
         "start": req.start.isoformat(),

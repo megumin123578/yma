@@ -597,6 +597,8 @@ const ChannelCompare = () => {
                     sx={{
                       px: 1.25,
                       py: 0.75,
+                      minWidth: 220,
+                      maxWidth: 320,
                       borderRadius: 1,
                       boxShadow: 3,
                       bgcolor: isDark
@@ -606,7 +608,9 @@ const ChannelCompare = () => {
                       fontSize: 13,
                     }}
                   >
-                    <div style={{ fontWeight: 700 }}>{data.channelLabel || data.channel}</div>
+                    <div style={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+                      {data.channelLabel || data.channel}
+                    </div>
                     <div>Value: {formatNumber(data.value)}</div>
                     {Number.isFinite(data.deltaPct) && (
                       <div>Change: {data.deltaPct.toFixed(1)}%</div>
