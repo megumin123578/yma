@@ -23,7 +23,7 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dayjs from "dayjs";
 import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -104,6 +104,9 @@ const CredentialsDialog = ({
   const [editingGroupName, setEditingGroupName] = useState("");
   const [editingGroupDraft, setEditingGroupDraft] = useState("");
   const [savingGroup, setSavingGroup] = useState(false);
+  const [runSelectedMode, setRunSelectedMode] = useState(false);
+  const [selectedTokenNames, setSelectedTokenNames] = useState([]);
+  const [runningSelected, setRunningSelected] = useState(false);
   const [schedules, setSchedules] = useState([]);
   const [scheduleRuns, setScheduleRuns] = useState([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
@@ -283,6 +286,8 @@ const CredentialsDialog = ({
       setAutoReloaded(false);
       setActiveTab("add");
       setTokenView(defaultTokenView);
+      setRunSelectedMode(false);
+      setSelectedTokenNames([]);
       loadTokens();
       loadTokenGroups();
       loadSchedules();
@@ -949,6 +954,76 @@ const CredentialsDialog = ({
     if (typeof token === "string") return true;
     return !token.hidden && token.owned !== false;
   }).length;
+  const visibleOwnedTokenNames = useMemo(
+    () =>
+      tokens
+        .filter((token) => {
+          if (typeof token === "string") return true;
+          return !token.hidden && token.owned !== false;
+        })
+        .map((token) => (typeof token === "string" ? token : token?.name || ""))
+        .filter(Boolean),
+    [tokens]
+  );
+
+  useEffect(() => {
+    setSelectedTokenNames((prev) =>
+      prev.filter((tokenName) => visibleOwnedTokenNames.includes(tokenName))
+    );
+  }, [tokens, visibleOwnedTokenNames]);
+
+  const toggleSelectedToken = (tokenName, checked) => {
+    setSelectedTokenNames((prev) => {
+      if (checked) {
+        return prev.includes(tokenName) ? prev : [...prev, tokenName];
+      }
+      return prev.filter((name) => name !== tokenName);
+    });
+  };
+
+  const handleToggleRunSelectedMode = () => {
+    setRunSelectedMode((prev) => {
+      const next = !prev;
+      if (!next) {
+        setSelectedTokenNames([]);
+      }
+      return next;
+    });
+  };
+
+  const handleConfirmRunSelected = async () => {
+    if (!selectedTokenNames.length || runningSelected) return;
+    setRunningSelected(true);
+    try {
+      await Promise.all(selectedTokenNames.map((tokenName) => runToken(tokenName)));
+      writeRunAllBatch(selectedTokenNames);
+      setTokenProgress((prev) => {
+        const next = { ...prev };
+        selectedTokenNames.forEach((tokenName) => {
+          next[tokenName] = {
+            status: "queued",
+            percent: 0,
+            stage: "queued",
+            message: "",
+          };
+        });
+        return next;
+      });
+      selectedTokenNames.forEach((tokenName) => startProgressPolling(tokenName));
+      setStatus({
+        type: "success",
+        message: `Queued ${selectedTokenNames.length} selected channel(s).`,
+      });
+      setRunSelectedMode(false);
+      setSelectedTokenNames([]);
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to start selected refresh.";
+      setStatus({ type: "error", message });
+    } finally {
+      setRunningSelected(false);
+    }
+  };
 
   const renderTokenControls = (tokenName, displayName, isOwned, isHidden, layout = "list") => (
     <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap">
@@ -1054,6 +1129,7 @@ const CredentialsDialog = ({
     const avatarSrc = typeof token === "object" ? token.avatar || "" : "";
     const groupName = typeof token === "object" ? token.group_name || "" : "";
     const groupColor = typeof token === "object" ? token.group_color || "" : "";
+    const isSelected = selectedTokenNames.includes(tokenName);
 
     if (layout === "card") {
       const cardBg = groupColor
@@ -1103,6 +1179,28 @@ const CredentialsDialog = ({
             justifyContent: "space-between",
           }}
         >
+          {runSelectedMode && isOwned && !isHidden && (
+            <Box
+              sx={{
+                position: "absolute",
+                top: 10,
+                left: 10,
+                zIndex: 2,
+                borderRadius: 999,
+                bgcolor: isDark ? "rgba(15,23,42,0.72)" : "rgba(255,255,255,0.88)",
+              }}
+            >
+              <Checkbox
+                size="small"
+                checked={isSelected}
+                onChange={(event) => toggleSelectedToken(tokenName, event.target.checked)}
+                sx={{
+                  color: isDark ? "#7ed6ff" : accent,
+                  "&.Mui-checked": { color: isDark ? "#7de0d2" : accent },
+                }}
+              />
+            </Box>
+          )}
           {isHidden && (
             <Box
               sx={{
@@ -1288,6 +1386,17 @@ const CredentialsDialog = ({
           ...(dragOverTokenName === tokenName ? { transform: "translateY(6px)" } : {}),
         }}
       >
+        {runSelectedMode && isOwned && !isHidden && (
+          <Checkbox
+            size="small"
+            checked={isSelected}
+            onChange={(event) => toggleSelectedToken(tokenName, event.target.checked)}
+            sx={{
+              color: isDark ? "#7ed6ff" : accent,
+              "&.Mui-checked": { color: isDark ? "#43c2ff" : accent },
+            }}
+          />
+        )}
         <Tooltip title="Drag to reorder tokens when you switch to List view.">
           <IconButton
             size="small"
@@ -1627,6 +1736,29 @@ const CredentialsDialog = ({
                       </Box>
                     </Tooltip>
                     <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                      <Tooltip title={runSelectedMode ? "Exit selected-run mode." : "Choose specific visible channels to run."}>
+                        <Button
+                          size="small"
+                          variant={runSelectedMode ? "contained" : "outlined"}
+                          startIcon={<CheckIcon fontSize="small" />}
+                          onClick={handleToggleRunSelectedMode}
+                          disabled={loadingTokens || runningSelected || visibleOwnedTokenNames.length === 0}
+                          sx={{
+                            ...shimmerSx,
+                            borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
+                            color: runSelectedMode ? "#fff" : isDark ? "#e9edf2" : undefined,
+                            bgcolor: runSelectedMode ? accent : undefined,
+                            "&:hover": runSelectedMode
+                              ? {
+                                  bgcolor: accent,
+                                  opacity: 0.92,
+                                }
+                              : undefined,
+                          }}
+                        >
+                          Run selected
+                        </Button>
+                      </Tooltip>
                       <Tooltip title="Run all visible tokens using the normal incremental content sync.">
                         <Button
                           size="small"
@@ -2148,6 +2280,61 @@ const CredentialsDialog = ({
               </>
             )}
           </Box>
+          <Fade in={runSelectedMode && selectedTokenNames.length > 0} unmountOnExit>
+            <Box
+              sx={{
+                position: "fixed",
+                right: { xs: 12, sm: 20 },
+                bottom: { xs: 16, sm: 24 },
+                zIndex: 3000,
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+                px: 1.25,
+                py: 1,
+                borderRadius: 999,
+                border: `1px solid ${isDark ? "rgba(125,224,210,0.24)" : "rgba(25,118,210,0.14)"}`,
+                bgcolor: isDark ? "rgba(17,24,39,0.94)" : "rgba(255,255,255,0.98)",
+                boxShadow: isDark
+                  ? "0 16px 40px rgba(0,0,0,0.45)"
+                  : "0 16px 40px rgba(15,23,42,0.16)",
+                backdropFilter: "blur(14px)",
+                WebkitBackdropFilter: "blur(14px)",
+                animation: "runSelectedFloatUp 220ms ease-out",
+                "@keyframes runSelectedFloatUp": {
+                  "0%": {
+                    opacity: 0,
+                    transform: "translateY(16px) scale(0.98)",
+                  },
+                  "100%": {
+                    opacity: 1,
+                    transform: "translateY(0) scale(1)",
+                  },
+                },
+              }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                {selectedTokenNames.length} selected
+              </Typography>
+              <Button
+                size="small"
+                variant="contained"
+                color="success"
+                startIcon={<PlayArrowIcon fontSize="small" />}
+                onClick={handleConfirmRunSelected}
+                disabled={runningSelected}
+                sx={{
+                  ...shimmerSx,
+                  borderRadius: 999,
+                  px: 1.5,
+                  textTransform: "none",
+                  fontWeight: 700,
+                }}
+              >
+                Confirm
+              </Button>
+            </Box>
+          </Fade>
       </DialogContent>
       {!inline && (
         <DialogActions>
