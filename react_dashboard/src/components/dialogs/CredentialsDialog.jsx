@@ -1585,68 +1585,48 @@ const CredentialsDialog = ({
                   }}
                 >
                   <Box display="flex" alignItems="center" justifyContent="space-between">
-                    <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
-                      Tokens
-                    </Typography>
+                    <Tooltip
+                      title={
+                        tokenView === "card"
+                          ? "Switch to List view. List view exposes drag handles so you can reorder tokens."
+                          : "Switch to Cards view. Compact cards are better for quick scanning."
+                      }
+                    >
+                      <Box display="flex" alignItems="center" gap={0.75}>
+                        <Typography
+                          variant="caption"
+                          sx={{ color: tokenView === "card" ? accent : "text.secondary", fontWeight: 700 }}
+                        >
+                          Cards
+                        </Typography>
+                        <Switch
+                          checked={tokenView === "list"}
+                          onChange={() => setTokenView((prev) => (prev === "card" ? "list" : "card"))}
+                          size="small"
+                          sx={{
+                            mx: 0.25,
+                            "& .MuiSwitch-switchBase.Mui-checked": {
+                              color: accent,
+                            },
+                            "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": {
+                              bgcolor: accent,
+                              opacity: 1,
+                            },
+                            "& .MuiSwitch-track": {
+                              bgcolor: isDark ? "rgba(255,255,255,0.25)" : "rgba(15,23,42,0.18)",
+                              opacity: 1,
+                            },
+                          }}
+                        />
+                        <Typography
+                          variant="caption"
+                          sx={{ color: tokenView === "list" ? accent : "text.secondary", fontWeight: 700 }}
+                        >
+                          List
+                        </Typography>
+                      </Box>
+                    </Tooltip>
                     <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
-                      <Tooltip title="Compact cards for scanning. Good as the default view on Config.">
-                        <Box
-                          sx={{
-                            display: "inline-flex",
-                            p: 0.25,
-                            borderRadius: 999,
-                            border: `1px solid ${border}`,
-                            bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.55)",
-                          }}
-                        >
-                          <Button
-                            size="small"
-                            onClick={() => setTokenView("card")}
-                            sx={{
-                              minWidth: 64,
-                              borderRadius: 999,
-                              px: 1.25,
-                              py: 0.4,
-                              color: tokenView === "card" ? "#fff" : "text.secondary",
-                              bgcolor: tokenView === "card" ? accent : "transparent",
-                              "&:hover": {
-                                bgcolor: tokenView === "card" ? accent : "rgba(255,255,255,0.08)",
-                              },
-                            }}
-                          >
-                            Cards
-                          </Button>
-                        </Box>
-                      </Tooltip>
-                      <Tooltip title="List view exposes drag handles so you can reorder tokens.">
-                        <Box
-                          sx={{
-                            display: "inline-flex",
-                            p: 0.25,
-                            borderRadius: 999,
-                            border: `1px solid ${border}`,
-                            bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.55)",
-                          }}
-                        >
-                          <Button
-                            size="small"
-                            onClick={() => setTokenView("list")}
-                            sx={{
-                              minWidth: 64,
-                              borderRadius: 999,
-                              px: 1.25,
-                              py: 0.4,
-                              color: tokenView === "list" ? "#fff" : "text.secondary",
-                              bgcolor: tokenView === "list" ? accent : "transparent",
-                              "&:hover": {
-                                bgcolor: tokenView === "list" ? accent : "rgba(255,255,255,0.08)",
-                              },
-                            }}
-                          >
-                            List
-                          </Button>
-                        </Box>
-                      </Tooltip>
                       <Tooltip title="Run all visible tokens using the normal incremental content sync.">
                         <Button
                           size="small"
