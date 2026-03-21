@@ -504,7 +504,29 @@ def credentials_callback(
     if not channel_id:
         raise HTTPException(status_code=400, detail="No YouTube channel found for this account")
 
-    if pending.get("auto_name"):
+    duplicate_query = db.query(UserCredential).filter(UserCredential.selected_channel_id == channel_id)
+    if cred_row is not None:
+        duplicate_query = duplicate_query.filter(UserCredential.id != cred_row.id)
+    duplicate_channel_row = duplicate_query.order_by(UserCredential.id.asc()).first()
+    reused_existing_channel = duplicate_channel_row is not None
+
+    if duplicate_channel_row is not None:
+        canonical_tag = duplicate_channel_row.account_tag or sanitize_filename(title) or account_tag
+        canonical_token_name = duplicate_channel_row.token_name or f"{canonical_tag}.pickle"
+        canonical_token_path = os.path.join(TOKEN_DIR, canonical_token_name)
+
+        if os.path.abspath(token_path) != os.path.abspath(canonical_token_path):
+            try:
+                os.replace(token_path, canonical_token_path)
+            except Exception:
+                pass
+        token_name = canonical_token_name
+        account_tag = canonical_tag
+        cred_row.token_name = None
+        db.delete(cred_row)
+        cred_row = duplicate_channel_row
+
+    if pending.get("auto_name") and not reused_existing_channel:
         new_tag = sanitize_filename(title) or account_tag
         if new_tag:
             existing = (
@@ -554,8 +576,10 @@ def credentials_callback(
     if cred_row is None:
         raise HTTPException(status_code=400, detail="OAuth state is missing the user credential record")
 
-    cred_row.selected_channel_id = channel_id
-    cred_row.selected_channel_title = title
+    meta = _fetch_selected_channel_metadata(flow.credentials, channel_id=channel_id)
+    cred_row.selected_channel_id = meta["channel_id"] or channel_id
+    cred_row.selected_channel_title = meta["title"] or title
+    cred_row.selected_channel_avatar = meta["avatar"] or cred_row.selected_channel_avatar
     cred_row.account_tag = account_tag
     cred_row.token_name = token_name
     cred_row.updated_at = datetime.utcnow()
@@ -634,6 +658,7 @@ def list_tokens(
             UserCredential.user_id,
             UserCredential.selected_channel_title,
             UserCredential.account_tag,
+            UserCredential.selected_channel_id,
             UserCredential.selected_channel_avatar,
             UserCredential.group_name,
         )
@@ -645,11 +670,23 @@ def list_tokens(
         for row in rows
         if row.token_name
     }
-    avatars = {
-        row.token_name: (row.selected_channel_avatar or "")
-        for row in rows
-        if row.token_name
-    }
+    avatar_by_token_name = {}
+    avatar_by_channel_id = {}
+    for row in rows:
+        avatar = (row.selected_channel_avatar or "").strip()
+        if avatar and row.selected_channel_id and row.selected_channel_id not in avatar_by_channel_id:
+            avatar_by_channel_id[row.selected_channel_id] = avatar
+        if avatar and row.token_name and row.token_name not in avatar_by_token_name:
+            avatar_by_token_name[row.token_name] = avatar
+    avatars = {}
+    for row in rows:
+        if not row.token_name:
+            continue
+        avatars[row.token_name] = (
+            (row.selected_channel_avatar or "").strip()
+            or avatar_by_channel_id.get(row.selected_channel_id or "", "")
+            or avatar_by_token_name.get(row.token_name, "")
+        )
     groups = {
         row.token_name: (row.group_name or "")
         for row in rows
@@ -1376,6 +1413,98 @@ def stop_schedule_run(
     db.add(row)
     db.commit()
     return {"ok": True, "status": row.status}
+
+
+@router.post("/schedules/runs/{run_id}/continue")
+def continue_schedule_run(
+    run_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    row = (
+        db.query(UserScheduleRun)
+        .filter(UserScheduleRun.id == run_id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    token_names = _run_token_names_from_row(row)
+    if not token_names and row.schedule_id:
+        schedule_row = (
+            db.query(UserSchedule)
+            .filter(UserSchedule.id == row.schedule_id)
+            .first()
+        )
+        if schedule_row and schedule_row.token_name:
+            token_names = [schedule_row.token_name]
+        elif schedule_row:
+            token_names = sorted(
+                {
+                    token_name
+                    for (token_name,) in (
+                        db.query(UserCredential.token_name)
+                        .filter(
+                            UserCredential.user_id == schedule_row.user_id,
+                            UserCredential.token_name.isnot(None),
+                        )
+                        .all()
+                    )
+                    if token_name
+                }
+            )
+    if not token_names:
+        raise HTTPException(status_code=400, detail="Run has no tokens to continue")
+
+    existing_token_names = []
+    for token_name in token_names:
+        safe_name = _safe_token_filename(token_name)
+        token_path = os.path.join(TOKEN_DIR, safe_name)
+        if os.path.exists(token_path):
+            existing_token_names.append(safe_name)
+
+    if not existing_token_names:
+        raise HTTPException(status_code=400, detail="No token files available to continue")
+
+    new_run = UserScheduleRun(
+        user_id=row.user_id,
+        schedule_id=row.schedule_id,
+        token_name=existing_token_names[0] if len(existing_token_names) == 1 else None,
+        token_names=json.dumps(existing_token_names),
+        run_type=f"continue:{row.run_type or 'manual'}",
+        status="queued",
+        started_at=datetime.utcnow(),
+        processed=0,
+        total=max(row.total or 0, len(existing_token_names)),
+        message=f"Continued from run #{row.id}",
+    )
+    db.add(new_run)
+    db.commit()
+    db.refresh(new_run)
+
+    if len(existing_token_names) == 1:
+        account_tag = os.path.splitext(existing_token_names[0])[0]
+        _write_progress_file(account_tag, "queued", 0, "queued", f"Continued from run #{row.id}")
+        _kickoff_get_data(account_tag, env_extra={"SCHEDULE_RUN_ID": str(new_run.id)})
+    else:
+        for token_name in existing_token_names:
+            account_tag = os.path.splitext(token_name)[0]
+            _write_progress_file(account_tag, "queued", 0, "queued", f"Continued from run #{row.id}")
+        _kickoff_get_data(
+            "",
+            env_extra={
+                "SCHEDULE_RUN_ID": str(new_run.id),
+                "RUN_TOKEN_NAMES": json.dumps(existing_token_names),
+            },
+        )
+
+    return {
+        "ok": True,
+        "run_id": new_run.id,
+        "status": new_run.status,
+        "token_names": existing_token_names,
+    }
 
 
 @router.post("/schedules")

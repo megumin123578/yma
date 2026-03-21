@@ -60,6 +60,7 @@ import {
   deleteSchedule,
   listScheduleRuns,
   stopScheduleRun,
+  continueScheduleRun,
 } from "../../services/userService";
 
 export const CREDENTIALS_CHANGED_EVENT = "credentials-data-changed";
@@ -108,6 +109,7 @@ const CredentialsDialog = ({
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [runsError, setRunsError] = useState("");
   const [stoppingRunId, setStoppingRunId] = useState(null);
+  const [continuingRunId, setContinuingRunId] = useState(null);
   const [scheduleForm, setScheduleForm] = useState({
     time_of_day: "08:00",
   });
@@ -739,6 +741,28 @@ const CredentialsDialog = ({
     }
   };
 
+  const handleContinueRun = async (runId) => {
+    setContinuingRunId(runId);
+    setRunsError("");
+    try {
+      await continueScheduleRun(runId);
+      const data = await listScheduleRuns(10);
+      setScheduleRuns(
+        (data?.items || []).map((run) => ({
+          ...run,
+          status: normalizeRunStatus(run.status),
+        }))
+      );
+      setStatus({ type: "success", message: "Run continued." });
+    } catch (err) {
+      const msg = err?.response?.data?.detail || "Failed to continue run.";
+      setRunsError(msg);
+      setStatus({ type: "error", message: msg });
+    } finally {
+      setContinuingRunId(null);
+    }
+  };
+
   const requestDeleteToken = (tokenName) => {
     setPendingDelete(tokenName);
     setConfirmOpen(true);
@@ -1339,7 +1363,7 @@ const CredentialsDialog = ({
               },
             }}
           >
-            <Tab value="add" label="Add channel" />
+            <Tab value="add" label="Manage Channel" />
             <Tab value="groups" label="Groups" />
             <Tab value="schedule" label="Schedule" />
             <Tab value="logs" label="Run logs" />
@@ -1986,6 +2010,34 @@ const CredentialsDialog = ({
                                         sx={shimmerSx}
                                       >
                                         Stop
+                                      </Button>
+                                    )}
+                                    {(normalizedStatus === "stopped" || normalizedStatus === "error") && (
+                                      <Button
+                                        size="small"
+                                        variant="contained"
+                                        onClick={() => handleContinueRun(run.id)}
+                                        disabled={continuingRunId === run.id}
+                                        sx={{
+                                          ...shimmerSx,
+                                          textTransform: "none",
+                                          fontWeight: 800,
+                                          borderRadius: 999,
+                                          px: 1.25,
+                                          color: "#fff",
+                                          bgcolor: isDark ? "#2b8a7b" : "#1976d2",
+                                          boxShadow: isDark
+                                            ? "0 10px 22px rgba(43,138,123,0.28)"
+                                            : "0 10px 22px rgba(25,118,210,0.22)",
+                                          "&:hover": {
+                                            bgcolor: isDark ? "#247468" : "#1565c0",
+                                            boxShadow: isDark
+                                              ? "0 14px 26px rgba(43,138,123,0.34)"
+                                              : "0 14px 26px rgba(25,118,210,0.28)",
+                                          },
+                                        }}
+                                      >
+                                        Continue
                                       </Button>
                                     )}
                                   </Box>
