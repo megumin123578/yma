@@ -63,6 +63,7 @@ import {
 } from "../../services/userService";
 
 export const CREDENTIALS_CHANGED_EVENT = "credentials-data-changed";
+const RUN_ALL_PROGRESS_STORAGE_KEY = "credentials.runAllProgressTokens";
 
 const CredentialsDialog = ({
   open,
@@ -134,6 +135,8 @@ const CredentialsDialog = ({
   };
   const progressTimersRef = useRef({});
   const avatarRefreshQueueRef = useRef(new Set());
+  const runAllBatchRef = useRef([]);
+  const hydratedProgressOnceRef = useRef(false);
 
   const notifyDataChanged = useCallback(() => {
     onDataChanged?.();
@@ -172,6 +175,56 @@ const CredentialsDialog = ({
     } catch {
       // ignore storage errors
     }
+  };
+
+  const readRunAllBatch = () => {
+    try {
+      const raw = localStorage.getItem(RUN_ALL_PROGRESS_STORAGE_KEY);
+      const parsed = JSON.parse(raw || "[]");
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const writeRunAllBatch = (tokenNames) => {
+    const next = Array.isArray(tokenNames) ? [...new Set(tokenNames.filter(Boolean))] : [];
+    runAllBatchRef.current = next;
+    try {
+      if (next.length) {
+        localStorage.setItem(RUN_ALL_PROGRESS_STORAGE_KEY, JSON.stringify(next));
+      } else {
+        localStorage.removeItem(RUN_ALL_PROGRESS_STORAGE_KEY);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const isTerminalProgressStatus = (status) =>
+    ["done", "error", "stopped"].includes(String(status || "").toLowerCase());
+
+  const isVisibleHydratedProgress = (entry, isRunAllToken = false) => {
+    const status = String(entry?.status || "").toLowerCase();
+    if (!status || status === "idle") return false;
+    if (isRunAllToken) return true;
+    return status === "queued" || status === "running";
+  };
+
+  const reconcileRunAllProgress = (nextProgress) => {
+    const batch = runAllBatchRef.current;
+    if (!batch.length) return nextProgress;
+    const allTerminal = batch.every((tokenName) => {
+      const entry = nextProgress[tokenName];
+      return entry && isTerminalProgressStatus(entry.status);
+    });
+    if (!allTerminal) return nextProgress;
+    const cleaned = { ...nextProgress };
+    batch.forEach((tokenName) => {
+      delete cleaned[tokenName];
+    });
+    writeRunAllBatch([]);
+    return cleaned;
   };
 
   const loadTokens = useCallback(async () => {
@@ -220,6 +273,7 @@ const CredentialsDialog = ({
 
   useEffect(() => {
     if (open) {
+      hydratedProgressOnceRef.current = false;
       setStatus({ type: "", message: "" });
       setUploading(false);
       setAuthUrl("");
@@ -283,6 +337,7 @@ const CredentialsDialog = ({
   useEffect(() => {
     if (!open) {
       avatarRefreshQueueRef.current = new Set();
+      hydratedProgressOnceRef.current = false;
       return;
     }
     const missingAvatarToken = tokens.find((token) => {
@@ -317,6 +372,19 @@ const CredentialsDialog = ({
       canceled = true;
     };
   }, [open, tokens, loadTokens]);
+
+  // Hydrate visible progress from backend progress files when the dialog reopens.
+  useEffect(() => {
+    if (!open || !tokens.length || hydratedProgressOnceRef.current) return;
+    hydratedProgressOnceRef.current = true;
+    const ownedTokens = tokens.filter((token) => {
+      if (typeof token === "string") return true;
+      return token.owned !== false;
+    });
+    hydrateTokenProgress(ownedTokens);
+    // hydrateTokenProgress intentionally stays outside deps to avoid rerunning on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, tokens]);
 
   useEffect(() => {
     if (!authUrl || !oauthState) return;
@@ -531,20 +599,65 @@ const CredentialsDialog = ({
   const loadTokenProgress = async (tokenName) => {
     try {
       const data = await getTokenProgress(tokenName);
-      setTokenProgress((prev) => ({
-        ...prev,
-        [tokenName]: {
-          status: data?.status || "idle",
-          percent: data?.percent ?? 0,
-          stage: data?.stage || "",
-          message: data?.message || "",
-        },
-      }));
-      return data?.status === "done" || data?.status === "error";
+      const nextEntry = {
+        status: data?.status || "idle",
+        percent: data?.percent ?? 0,
+        stage: data?.stage || "",
+        message: data?.message || "",
+      };
+      setTokenProgress((prev) =>
+        reconcileRunAllProgress({
+          ...prev,
+          [tokenName]: nextEntry,
+        })
+      );
+      return isTerminalProgressStatus(nextEntry.status);
     } catch {
       return false;
     }
   };
+
+  async function hydrateTokenProgress(tokenItems) {
+    const ownedTokenNames = tokenItems
+      .map((token) => (typeof token === "string" ? token : token?.name || ""))
+      .filter(Boolean);
+    if (!ownedTokenNames.length) return;
+
+    const storedBatch = readRunAllBatch().filter((tokenName) => ownedTokenNames.includes(tokenName));
+    writeRunAllBatch(storedBatch);
+
+    const results = await Promise.all(
+      ownedTokenNames.map(async (tokenName) => {
+        try {
+          const data = await getTokenProgress(tokenName);
+          return {
+            tokenName,
+            entry: {
+              status: data?.status || "idle",
+              percent: data?.percent ?? 0,
+              stage: data?.stage || "",
+              message: data?.message || "",
+            },
+          };
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    const hydrated = {};
+    results.forEach((item) => {
+      if (!item) return;
+      const isRunAllToken = runAllBatchRef.current.includes(item.tokenName);
+      if (!isVisibleHydratedProgress(item.entry, isRunAllToken)) return;
+      hydrated[item.tokenName] = item.entry;
+      if (!isTerminalProgressStatus(item.entry.status)) {
+        startProgressPolling(item.tokenName);
+      }
+    });
+
+    setTokenProgress((prev) => reconcileRunAllProgress({ ...prev, ...hydrated }));
+  }
 
   const handleRunToken = async (tokenName) => {
     try {
@@ -570,6 +683,7 @@ const CredentialsDialog = ({
       const data = await runAllTokens();
       const tokenNames = Array.isArray(data?.token_names) ? data.token_names : [];
       if (tokenNames.length) {
+        writeRunAllBatch(tokenNames);
         setTokenProgress((prev) => {
           const next = { ...prev };
           tokenNames.forEach((tokenName) => {
@@ -768,6 +882,15 @@ const CredentialsDialog = ({
     progressTimersRef.current = {};
     setTokenProgress({});
   }, [open]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(progressTimersRef.current).forEach((timerId) => {
+        clearInterval(timerId);
+      });
+      progressTimersRef.current = {};
+    };
+  }, []);
 
   const formatRunTime = (value) =>
     value ? dayjs(value).format("DD/MM HH:mm") : "--";
