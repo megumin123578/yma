@@ -60,7 +60,6 @@ import {
   deleteSchedule,
   listScheduleRuns,
   stopScheduleRun,
-  continueScheduleRun,
 } from "../../services/userService";
 
 export const CREDENTIALS_CHANGED_EVENT = "credentials-data-changed";
@@ -109,7 +108,6 @@ const CredentialsDialog = ({
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [runsError, setRunsError] = useState("");
   const [stoppingRunId, setStoppingRunId] = useState(null);
-  const [continuingRunId, setContinuingRunId] = useState(null);
   const [scheduleForm, setScheduleForm] = useState({
     time_of_day: "08:00",
   });
@@ -741,28 +739,6 @@ const CredentialsDialog = ({
     }
   };
 
-  const handleContinueRun = async (runId) => {
-    setContinuingRunId(runId);
-    setRunsError("");
-    try {
-      await continueScheduleRun(runId);
-      const data = await listScheduleRuns(10);
-      setScheduleRuns(
-        (data?.items || []).map((run) => ({
-          ...run,
-          status: normalizeRunStatus(run.status),
-        }))
-      );
-      setStatus({ type: "success", message: "Run continued." });
-    } catch (err) {
-      const msg = err?.response?.data?.detail || "Failed to continue run.";
-      setRunsError(msg);
-      setStatus({ type: "error", message: msg });
-    } finally {
-      setContinuingRunId(null);
-    }
-  };
-
   const requestDeleteToken = (tokenName) => {
     setPendingDelete(tokenName);
     setConfirmOpen(true);
@@ -794,7 +770,7 @@ const CredentialsDialog = ({
   }, [open]);
 
   const formatRunTime = (value) =>
-    value ? dayjs(value).format("MMM D, HH:mm") : "--";
+    value ? dayjs(value).format("DD/MM HH:mm") : "--";
 
   const formatTokenName = (value) => {
     if (!value) return "All tokens";
@@ -1932,6 +1908,7 @@ const CredentialsDialog = ({
                             const total = run.total ?? 0;
                             const tokenName = formatTokenName(run.token_name);
                             const runType = formatRunType(run.run_type);
+                            const runMessage = cleanError(run.message);
                             return (
                               <Box
                                 key={run.id}
@@ -1993,14 +1970,14 @@ const CredentialsDialog = ({
                                           {runType}
                                         </Box>
                                       </Box>
-                                      {cleanError(run.message) && cleanError(run.message).toLowerCase() !== "completed" && (
-                                        <Typography variant="body2">
-                                          {cleanError(run.message)}
-                                        </Typography>
-                                      )}
                                     </Box>
                                   </Box>
-                                  <Box display="flex" alignItems="center" gap={0.5}>
+                                  <Box display="flex" alignItems="center" gap={0.75} flexWrap="wrap" justifyContent="flex-end">
+                                    <Typography variant="caption" color="text.secondary">
+                                      {`${formatRunTime(run.started_at)} -> ${formatRunTime(
+                                        run.finished_at
+                                      )}`}
+                                    </Typography>
                                     {(normalizedStatus === "running" || normalizedStatus === "queued") && (
                                       <Button
                                         size="small"
@@ -2012,34 +1989,6 @@ const CredentialsDialog = ({
                                         Stop
                                       </Button>
                                     )}
-                                    {(normalizedStatus === "stopped" || normalizedStatus === "error") && (
-                                      <Button
-                                        size="small"
-                                        variant="contained"
-                                        onClick={() => handleContinueRun(run.id)}
-                                        disabled={continuingRunId === run.id}
-                                        sx={{
-                                          ...shimmerSx,
-                                          textTransform: "none",
-                                          fontWeight: 800,
-                                          borderRadius: 999,
-                                          px: 1.25,
-                                          color: "#fff",
-                                          bgcolor: isDark ? "#2b8a7b" : "#1976d2",
-                                          boxShadow: isDark
-                                            ? "0 10px 22px rgba(43,138,123,0.28)"
-                                            : "0 10px 22px rgba(25,118,210,0.22)",
-                                          "&:hover": {
-                                            bgcolor: isDark ? "#247468" : "#1565c0",
-                                            boxShadow: isDark
-                                              ? "0 14px 26px rgba(43,138,123,0.34)"
-                                              : "0 14px 26px rgba(25,118,210,0.28)",
-                                          },
-                                        }}
-                                      >
-                                        Continue
-                                      </Button>
-                                    )}
                                   </Box>
                                 </Box>
                                 <Box
@@ -2048,14 +1997,20 @@ const CredentialsDialog = ({
                                   justifyContent="space-between"
                                   gap={1}
                                 >
-                                  <Typography variant="caption" color="text.secondary">
-                                    {`Accounts: ${processed}/${total}`}
-                                  </Typography>
-                                  <Typography variant="caption" color="text.secondary">
-                                    {`${formatRunTime(run.started_at)} -> ${formatRunTime(
-                                      run.finished_at
-                                    )}`}
-                                  </Typography>
+                                  {normalizedStatus !== "running" && normalizedStatus !== "queued" ? (
+                                    <Typography variant="caption" color="text.secondary">
+                                      {`Accounts: ${processed}/${total}`}
+                                    </Typography>
+                                  ) : (
+                                    <Box />
+                                  )}
+                                  {runMessage && runMessage.toLowerCase() !== "completed" ? (
+                                    <Typography variant="body2" color="text.secondary">
+                                      {runMessage}
+                                    </Typography>
+                                  ) : (
+                                    <Box />
+                                  )}
                                 </Box>
                                 {normalizedStatus === "running" && total > 0 && (
                                   <Box
