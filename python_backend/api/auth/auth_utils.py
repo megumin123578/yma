@@ -1,15 +1,26 @@
 from datetime import datetime, timedelta
+import os
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 
+from python_backend.config import load_env
 from python_backend.api.auth.models import User  
 from typing import Optional
 from python_backend.api.auth.database import get_db
 from sqlalchemy.orm import Session
 
-SECRET_KEY = "CHANGE_ME_SECRET_KEY"
+load_env()
+
+def _require_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+SECRET_KEY = _require_env("SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 #Expire in 24h
 

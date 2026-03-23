@@ -1,1 +1,4 @@
 python_backend/progress/     
+.env
+.env.*
+!.env.example

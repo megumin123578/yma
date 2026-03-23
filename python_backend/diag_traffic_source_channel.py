@@ -30,10 +30,9 @@ def main() -> int:
     load_env()
     account_tag = sys.argv[1] if len(sys.argv) > 1 else "Thomas___Friends_World"
 
-    pg_url = os.getenv(
-        "PG_URL",
-        "postgresql+psycopg2://postgres:V!etdu1492003@localhost:5432/analytics",
-    )
+    pg_url = os.getenv("PG_URL", "").strip()
+    if not pg_url:
+        raise RuntimeError("Missing required environment variable: PG_URL")
     admin_usernames = os.getenv("ADMIN_USERNAME", "admin")
     auth_db_path = Path(__file__).resolve().parent.parent / "auth.db"
 

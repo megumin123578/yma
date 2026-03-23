@@ -3,10 +3,13 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-PG_URL = os.getenv(
-    "PG_URL",
-    "postgresql+psycopg2://postgres:V!etdu1492003@localhost:5432/analytics"
-)
+from python_backend.config import load_env
+
+load_env()
+
+PG_URL = os.getenv("PG_URL", "").strip()
+if not PG_URL:
+    raise RuntimeError("Missing required environment variable: PG_URL")
 
 # Engine
 engine = create_engine(
