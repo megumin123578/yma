@@ -1,5 +1,4 @@
 import os
-import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 
@@ -11,6 +10,10 @@ try:
     from python_backend.module_trafficsource import sanitize_filename
 except ModuleNotFoundError:
     from module_trafficsource import sanitize_filename
+try:
+    from python_backend.progress_state import write_progress
+except ModuleNotFoundError:
+    from progress_state import write_progress
 
 
 def _date_range_from_env() -> Tuple[str, str]:
@@ -21,36 +24,6 @@ def _date_range_from_env() -> Tuple[str, str]:
         start_date = end_date - timedelta(days=max(days - 1, 0))
         return start_date.isoformat(), end_date.isoformat()
     return "2005-02-14", datetime.utcnow().date().isoformat()
-
-
-def _progress_path(account_tag: str) -> str:
-    progress_dir = os.path.join("python_backend", "progress")
-    os.makedirs(progress_dir, exist_ok=True)
-    return os.path.join(progress_dir, f"{account_tag}.json")
-
-
-def _write_progress(
-    account_tag: str,
-    stage: str,
-    percent: int,
-    status: str,
-    message: str = "",
-) -> None:
-    payload = {
-        "account_tag": account_tag,
-        "stage": stage,
-        "percent": percent,
-        "status": status,
-        "message": message,
-        "updated_at": datetime.utcnow().isoformat() + "Z",
-    }
-    try:
-        with open(_progress_path(account_tag), "w", encoding="utf-8") as f:
-            json.dump(payload, f)
-    except Exception:
-        pass
-
-
 def _ensure_reach_table(conn) -> None:
     conn.execute(
         text(
@@ -190,7 +163,7 @@ def fetch_reach(
 
         if total > 0:
             percent = 90 + int((idx_row / total) * 4)
-            _write_progress(
+            write_progress(
                 account_tag,
                 "reach",
                 percent,

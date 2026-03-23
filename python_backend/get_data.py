@@ -6,6 +6,10 @@ import sqlite3
 import time
 import tempfile
 from datetime import datetime
+try:
+    from python_backend.progress_state import write_progress
+except ModuleNotFoundError:
+    from progress_state import write_progress
 from module_trafficsource import *
 from module_content import *
 from module_overall import *
@@ -59,30 +63,10 @@ def _resolve_token_list(raw_value: str):
         pass
     return [_resolve_token_file(item.strip()) for item in raw_value.split(",") if item.strip()]
 
-
-def _progress_path(account_tag: str) -> str:
-    progress_dir = os.path.join("python_backend", "progress")
-    os.makedirs(progress_dir, exist_ok=True)
-    return os.path.join(progress_dir, f"{account_tag}.json")
-
-
 def _lock_path() -> str:
     lock_dir = os.path.join(tempfile.gettempdir(), "yt_manage_app")
     os.makedirs(lock_dir, exist_ok=True)
     return os.path.join(lock_dir, "get_data.lock")
-
-
-def _write_progress(account_tag: str, stage: str, percent: int, status: str, message: str = "") -> None:
-    payload = {
-        "account_tag": account_tag,
-        "stage": stage,
-        "percent": percent,
-        "status": status,
-        "message": message,
-        "updated_at": datetime.utcnow().isoformat() + "Z",
-    }
-    with open(_progress_path(account_tag), "w", encoding="utf-8") as f:
-        json.dump(payload, f)
 
 
 def _run_db_path() -> str:
@@ -174,7 +158,7 @@ def _stop_requested() -> bool:
 def _raise_if_stop_requested(account_tag: str, stage: str) -> None:
     if not _stop_requested():
         return
-    _write_progress(account_tag, stage, 0, "stopped", "Stopped by admin")
+    write_progress(account_tag, stage, 0, "stopped", "Stopped by admin")
     _update_schedule_run("stopped", 0, 0, "Stopped by admin")
     raise RuntimeError("Stop requested")
 
@@ -234,11 +218,11 @@ class _RunLock:
                 self.handle.flush()
                 return self
             if self.account_tag:
-                _write_progress(self.account_tag, "queued", 0, "queued", wait_message)
+                write_progress(self.account_tag, "queued", 0, "queued", wait_message)
             _update_schedule_run("queued", None, None, wait_message)
             if _stop_requested():
                 if self.account_tag:
-                    _write_progress(self.account_tag, "stopped", 0, "stopped", "Stopped by admin")
+                    write_progress(self.account_tag, "stopped", 0, "stopped", "Stopped by admin")
                 _update_schedule_run("stopped", None, None, "Stopped by admin")
                 raise RuntimeError("Stop requested")
             time.sleep(poll_seconds)
@@ -252,7 +236,7 @@ def _run_for_credential(cred_file: str) -> None:
     account_tag = os.path.splitext(os.path.basename(cred_file))[0]
     channel_id = _get_selected_channel_id(account_tag)
     if not channel_id:
-        _write_progress(
+        write_progress(
             account_tag,
             "waiting_channel",
             0,
@@ -264,7 +248,7 @@ def _run_for_credential(cred_file: str) -> None:
     if stage:
         _raise_if_stop_requested(account_tag, "stopped")
         _update_schedule_run("running", 0, 1, f"Starting {stage}")
-        _write_progress(account_tag, stage, 10, "running", f"Starting {stage}")
+        write_progress(account_tag, stage, 10, "running", f"Starting {stage}")
         if stage == "content":
             process_content(cred_file, channel_id=channel_id)
         elif stage == "content_full":
@@ -301,25 +285,25 @@ def _run_for_credential(cred_file: str) -> None:
             raise RuntimeError(f"Unsupported stage: {stage}")
         _raise_if_stop_requested(account_tag, "stopped")
         _update_schedule_run("running", 1, 1, f"Completed {stage}")
-        _write_progress(account_tag, "done", 100, "done", f"Completed {stage}")
+        write_progress(account_tag, "done", 100, "done", f"Completed {stage}")
         return
     _raise_if_stop_requested(account_tag, "stopped")
-    _write_progress(account_tag, "traffic_source", 5, "running", "Starting traffic source")
+    write_progress(account_tag, "traffic_source", 5, "running", "Starting traffic source")
     _update_schedule_run("running", 0, 6, "Traffic source")
     process_one(cred_file, channel_id=channel_id)
     _update_schedule_run("running", 1, 6, "Traffic source")
     _raise_if_stop_requested(account_tag, "stopped")
-    _write_progress(account_tag, "content", 35, "running", "Starting content fetch")
+    write_progress(account_tag, "content", 35, "running", "Starting content fetch")
     _update_schedule_run("running", 1, 6, "Content")
     process_content(cred_file, channel_id=channel_id)
     _update_schedule_run("running", 2, 6, "Content")
     _raise_if_stop_requested(account_tag, "stopped")
-    _write_progress(account_tag, "overview", 60, "running", "Starting overview")
+    write_progress(account_tag, "overview", 60, "running", "Starting overview")
     _update_schedule_run("running", 2, 6, "Overview")
     process_overall(cred_file, channel_id=channel_id)
     _update_schedule_run("running", 3, 6, "Overview")
     _raise_if_stop_requested(account_tag, "stopped")
-    _write_progress(account_tag, "audience", 80, "running", "Starting audience analytics")
+    write_progress(account_tag, "audience", 80, "running", "Starting audience analytics")
     _update_schedule_run("running", 3, 7, "Audience")
     pg_url = os.getenv("PG_URL")
     if not pg_url:
@@ -328,21 +312,21 @@ def _run_for_credential(cred_file: str) -> None:
     run_audience_analytics(creds, account_tag, pg_url, channel_id=channel_id)
     _update_schedule_run("running", 4, 7, "Audience")
     _raise_if_stop_requested(account_tag, "stopped")
-    _write_progress(account_tag, "reach", 90, "running", "Starting reach analytics")
+    write_progress(account_tag, "reach", 90, "running", "Starting reach analytics")
     _update_schedule_run("running", 4, 7, "Reach")
     run_reach_analytics(creds, account_tag, pg_url, channel_id=channel_id)
     _update_schedule_run("running", 5, 7, "Reach")
     _raise_if_stop_requested(account_tag, "stopped")
-    _write_progress(account_tag, "revenue", 95, "running", "Starting revenue analytics")
+    write_progress(account_tag, "revenue", 95, "running", "Starting revenue analytics")
     _update_schedule_run("running", 5, 7, "Revenue")
     run_revenue_analytics(creds, account_tag, pg_url, channel_id=channel_id)
     _update_schedule_run("running", 6, 7, "Revenue")
     _raise_if_stop_requested(account_tag, "stopped")
-    _write_progress(account_tag, "subscribers", 98, "running", "Starting subscriber analytics")
+    write_progress(account_tag, "subscribers", 98, "running", "Starting subscriber analytics")
     _update_schedule_run("running", 6, 7, "Subscribers")
     run_channel_daily(creds, account_tag, pg_url, channel_id=channel_id)
     _update_schedule_run("running", 7, 7, "Subscribers")
-    _write_progress(account_tag, "done", 100, "done", "Completed")
+    write_progress(account_tag, "done", 100, "done", "Completed")
 
 
 def main():
@@ -360,7 +344,7 @@ def main():
         token_path = os.path.join(TOKEN_FOLDER, cred_file)
         account_tag = os.path.splitext(os.path.basename(cred_file))[0]
         if not os.path.exists(token_path):
-            _write_progress(account_tag, "error", 0, "error", "Token not found")
+            write_progress(account_tag, "error", 0, "error", "Token not found")
             print(f"Token not found: {cred_file}")
             return
         try:
@@ -370,10 +354,10 @@ def main():
                 _update_schedule_run("done", 1, 1, "Completed")
         except Exception as e:
             if str(e) == "Stop requested":
-                _write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")
+                write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")
                 _update_schedule_run("stopped", 0, 1, "Stopped by admin")
                 return
-            _write_progress(account_tag, "error", 0, "error", str(e))
+            write_progress(account_tag, "error", 0, "error", str(e))
             _update_schedule_run("error", 0, 1, str(e))
             raise
         return
@@ -398,10 +382,10 @@ def main():
                 _update_schedule_run("running", ok, total, f"Processed {ok}/{total}")
             except Exception as e:
                 if str(e) == "Stop requested":
-                    _write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")
+                    write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")
                     _update_schedule_run("stopped", ok, total, "Stopped by admin")
                     break
-                _write_progress(account_tag, "error", 0, "error", str(e))
+                write_progress(account_tag, "error", 0, "error", str(e))
                 _update_schedule_run("error", ok, total, str(e))
                 break
         if ok == total:

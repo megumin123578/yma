@@ -1,7 +1,6 @@
 import os
-import json
 import re
-import time
+import json
 import pickle
 import subprocess
 import sys
@@ -18,9 +17,10 @@ from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
-from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun
+from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun, TokenProgress
 from python_backend.api.auth.visibility import get_hidden_account_tags
 from python_backend.module_trafficsource import SCOPES, sanitize_filename
+from python_backend.progress_state import write_progress
 from pydantic import BaseModel
 from datetime import datetime
 
@@ -31,9 +31,6 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 TOKEN_DIR = "python_backend/token"
 os.makedirs(TOKEN_DIR, exist_ok=True)
-
-PROGRESS_DIR = "python_backend/progress"
-os.makedirs(PROGRESS_DIR, exist_ok=True)
 
 OAUTH_REDIRECT_URL = os.getenv(
     "OAUTH_REDIRECT_URL",
@@ -150,23 +147,6 @@ def _require_admin(current_user: User) -> None:
 def _get_admin_users() -> set:
     raw = os.getenv(_ADMIN_ENV_KEY, "admin")
     return {u.strip().lower() for u in raw.split(",") if u.strip()}
-
-
-def _write_progress_file(account_tag: str, status: str, percent: int, stage: str, message: str = "") -> None:
-    payload = {
-        "account_tag": account_tag,
-        "status": status,
-        "percent": percent,
-        "stage": stage,
-        "message": message,
-        "updated_at": time.time(),
-    }
-    try:
-        with open(os.path.join(PROGRESS_DIR, f"{account_tag}.json"), "w", encoding="utf-8") as f:
-            json.dump(payload, f)
-    except Exception:
-        pass
-
 
 def _pick_token_group_color(db: Session, user_id: int, group_name: str) -> str:
     existing = {
@@ -390,13 +370,6 @@ def start_oauth(
     auto_name = True
     account_tag = f"pending_{current_user.id}_{int(time.time() * 1000)}"
 
-    progress_path = os.path.join(PROGRESS_DIR, f"{account_tag}.json")
-    if os.path.exists(progress_path):
-        try:
-            os.remove(progress_path)
-        except Exception:
-            pass
-
     cred_row = (
         db.query(UserCredential)
         .filter(
@@ -563,13 +536,6 @@ def credentials_callback(
                     os.replace(old_token_path, new_token_path)
                 except Exception:
                     pass
-            old_progress = os.path.join(PROGRESS_DIR, f"{account_tag}.json")
-            new_progress = os.path.join(PROGRESS_DIR, f"{new_tag}.json")
-            if os.path.exists(old_progress):
-                try:
-                    os.replace(old_progress, new_progress)
-                except Exception:
-                    pass
             account_tag = new_tag
             token_name = new_token_name
 
@@ -592,7 +558,7 @@ def credentials_callback(
         "updated_at": time.time(),
     }
     PENDING_OAUTH.pop(state, None)
-    _write_progress_file(account_tag, "queued", 0, "queued", "Queued after authorization")
+    write_progress(account_tag, "queued", 0, "queued", "Queued after authorization")
     _kickoff_get_data(account_tag)
 
     return f"""
@@ -728,6 +694,35 @@ def list_tokens(
         )
     files.sort(key=lambda x: x["name"])
     return {"tokens": files}
+
+
+@router.get("/tokens/progress")
+def list_token_progress(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    q = db.query(TokenProgress)
+    if not is_admin:
+        q = q.filter(TokenProgress.user_id == current_user.id)
+    rows = q.order_by(TokenProgress.updated_at.desc(), TokenProgress.id.desc()).all()
+    return {
+        "items": [
+            {
+                "token_name": row.token_name,
+                "account_tag": row.account_tag,
+                "run_id": row.run_id or "",
+                "status": row.status,
+                "percent": row.percent,
+                "stage": row.stage or "",
+                "message": row.message or "",
+                "updated_at": row.updated_at.isoformat() + "Z" if row.updated_at else "",
+                "started_at": row.started_at.isoformat() + "Z" if row.started_at else "",
+                "finished_at": row.finished_at.isoformat() + "Z" if row.finished_at else "",
+            }
+            for row in rows
+        ]
+    }
 
 
 class TokenVisibilityUpdate(BaseModel):
@@ -995,7 +990,7 @@ def run_all_tokens(
 
     for token_name in token_names:
         account_tag = os.path.splitext(token_name)[0]
-        _write_progress_file(account_tag, "queued", 0, "queued", "Queued manual refresh")
+        write_progress(account_tag, "queued", 0, "queued", "Queued manual refresh")
 
     run = UserScheduleRun(
         user_id=current_user.id,
@@ -1105,7 +1100,7 @@ def set_token_channel(
     db.add(owned)
     db.commit()
     account_tag = os.path.splitext(safe_name)[0]
-    _write_progress_file(account_tag, "queued", 0, "queued", "Queued after authorization")
+    write_progress(account_tag, "queued", 0, "queued", "Queued after authorization")
     _kickoff_get_data(account_tag)
     return {
         "ok": True,
@@ -1169,14 +1164,27 @@ def get_token_progress(
     owned = q.first()
     if not owned:
         raise HTTPException(status_code=404, detail="Token not found")
-    progress_path = os.path.join(PROGRESS_DIR, f"{account_tag}.json")
-    if not os.path.exists(progress_path):
-        return {"status": "idle", "percent": 0}
-    try:
-        with open(progress_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        raise HTTPException(status_code=500, detail="Failed to read progress")
+    progress_row = (
+        db.query(TokenProgress)
+        .filter(
+            TokenProgress.user_id == owned.user_id,
+            TokenProgress.token_name == token_name,
+        )
+        .first()
+    )
+    if progress_row:
+        return {
+            "account_tag": progress_row.account_tag,
+            "status": progress_row.status,
+            "percent": progress_row.percent,
+            "stage": progress_row.stage or "",
+            "message": progress_row.message or "",
+            "run_id": progress_row.run_id or "",
+            "updated_at": progress_row.updated_at.isoformat() + "Z" if progress_row.updated_at else "",
+            "started_at": progress_row.started_at.isoformat() + "Z" if progress_row.started_at else "",
+            "finished_at": progress_row.finished_at.isoformat() + "Z" if progress_row.finished_at else "",
+        }
+    return {"status": "idle", "percent": 0}
 
 
 @router.post("/tokens/{token_name}/run")
@@ -1202,7 +1210,7 @@ def run_token(
     if not os.path.exists(token_path):
         raise HTTPException(status_code=404, detail="Token not found")
 
-    _write_progress_file(account_tag, "queued", 0, "queued", "Manual refresh")
+    write_progress(account_tag, "queued", 0, "queued", "Manual refresh")
     run = UserScheduleRun(
         user_id=owned.user_id,
         schedule_id=None,
@@ -1254,7 +1262,7 @@ def run_token_stage(
         raise HTTPException(status_code=404, detail="Token not found")
 
     account_tag = os.path.splitext(safe_name)[0]
-    _write_progress_file(account_tag, "queued", 0, "queued", f"Manual {stage}")
+    write_progress(account_tag, "queued", 0, "queued", f"Manual {stage}")
     run = UserScheduleRun(
         user_id=owned.user_id,
         schedule_id=None,
@@ -1303,12 +1311,6 @@ def delete_token(
     )
     if not owned:
         raise HTTPException(status_code=404, detail="Token not found")
-    progress_path = os.path.join(PROGRESS_DIR, f"{base_name}.json")
-    if os.path.exists(progress_path):
-        try:
-            os.remove(progress_path)
-        except Exception:
-            pass
     db.query(UserHiddenChannel).filter(
         UserHiddenChannel.user_id == current_user.id,
         UserHiddenChannel.account_tag == base_name,

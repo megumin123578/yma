@@ -1,6 +1,5 @@
 import os
 import sqlite3
-import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -9,6 +8,10 @@ from googleapiclient.errors import HttpError
 from sqlalchemy import create_engine, text
 
 from module_trafficsource import sanitize_filename
+try:
+    from python_backend.progress_state import write_progress
+except ModuleNotFoundError:
+    from progress_state import write_progress
 
 
 def _date_range_from_env() -> Tuple[str, str]:
@@ -100,36 +103,6 @@ def _ensure_retention_table(conn) -> None:
             """
         )
     )
-
-
-def _progress_path(account_tag: str) -> str:
-    progress_dir = os.path.join("python_backend", "progress")
-    os.makedirs(progress_dir, exist_ok=True)
-    return os.path.join(progress_dir, f"{account_tag}.json")
-
-
-def _write_progress(
-    account_tag: str,
-    stage: str,
-    percent: int,
-    status: str,
-    message: str = "",
-) -> None:
-    payload = {
-        "account_tag": account_tag,
-        "stage": stage,
-        "percent": percent,
-        "status": status,
-        "message": message,
-        "updated_at": datetime.utcnow().isoformat() + "Z",
-    }
-    try:
-        with open(_progress_path(account_tag), "w", encoding="utf-8") as f:
-            json.dump(payload, f)
-    except Exception:
-        pass
-
-
 def _auth_db_path() -> str:
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     return os.getenv("AUTH_DB_PATH", os.path.join(repo_root, "auth.db"))
@@ -505,7 +478,7 @@ def run_audience_analytics(
             raise RuntimeError("Stop requested")
         if total_videos > 0:
             percent = 80 + int((idx / total_videos) * 9)
-            _write_progress(
+            write_progress(
                 account_tag,
                 "audience",
                 percent,

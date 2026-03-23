@@ -1,6 +1,9 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, Text, DateTime
 from datetime import datetime, timezone, timedelta
-from python_backend.api.auth.database import Base
+try:
+    from python_backend.api.auth.database import Base
+except ModuleNotFoundError:
+    from api.auth.database import Base
 
 
 SAIGON_TZ = timezone(timedelta(hours=7))
@@ -135,6 +138,26 @@ class UserScheduleRun(Base):
     processed = Column(Integer, nullable=False, default=0)
     total = Column(Integer, nullable=False, default=0)
     message = Column(Text, nullable=True)
+
+
+class TokenProgress(Base):
+    __tablename__ = "token_progress"
+    __table_args__ = (
+        UniqueConstraint("user_id", "token_name", name="uq_token_progress_user_token"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_name = Column(String, nullable=False, index=True)
+    account_tag = Column(String, nullable=False, index=True)
+    run_id = Column(String, nullable=True, index=True)
+    status = Column(String, nullable=False, index=True)
+    stage = Column(String, nullable=True)
+    percent = Column(Integer, nullable=False, default=0)
+    message = Column(Text, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 
 class UserCredential(Base):

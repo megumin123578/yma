@@ -7,9 +7,7 @@ from python_backend.config import load_env
 load_env()
 
 from python_backend.api.auth.database import engine, Base
-from sqlalchemy import text, create_engine
 from python_backend.api.auth import models
-import os
 from python_backend.routes.traffic_timeseries import router as ts_router
 from python_backend.routes.geography import router as geo_router
 from python_backend.routes.content import router as content_router
@@ -47,6 +45,44 @@ app.add_middleware(
 
 
 Base.metadata.create_all(bind=engine)
+
+
+def ensure_token_progress_table():
+    with engine.begin() as conn:
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS token_progress (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                token_name VARCHAR NOT NULL,
+                account_tag VARCHAR NOT NULL,
+                run_id VARCHAR,
+                status VARCHAR NOT NULL,
+                stage VARCHAR,
+                percent INTEGER NOT NULL DEFAULT 0,
+                message TEXT,
+                started_at DATETIME,
+                finished_at DATETIME,
+                updated_at DATETIME NOT NULL
+            );
+        """)
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_token_progress_user_token ON token_progress(user_id, token_name);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_token_progress_user ON token_progress(user_id);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_token_progress_token ON token_progress(token_name);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_token_progress_run ON token_progress(run_id);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_token_progress_updated ON token_progress(updated_at);"
+        )
+
+
+ensure_token_progress_table()
 
 def ensure_video_live_counter_snapshots_channel_name():
     with engine.begin() as conn:
@@ -269,22 +305,6 @@ def ensure_smmstore_scheduled_orders_table():
 
 
 ensure_smmstore_scheduled_orders_table()
-
-def drop_geography_daily_table():
-    pg_url = os.getenv("PG_URL")
-    if not pg_url:
-        return
-    try:
-        pg_engine = create_engine(pg_url, future=True)
-        with pg_engine.begin() as conn:
-            conn.execute(text("DROP TABLE IF EXISTS geography_daily"))
-    except Exception:
-        pass
-
-
-drop_geography_daily_table()
-
-
 def ensure_user_schedules_nullable_token():
     with engine.begin() as conn:
         conn.exec_driver_sql("""

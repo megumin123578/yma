@@ -54,6 +54,11 @@ export const getTokenProgress = async (tokenName) => {
   return res.data;
 };
 
+export const listTokenProgress = async () => {
+  const res = await api.get("/api/users/tokens/progress");
+  return res.data;
+};
+
 export const runToken = async (tokenName) => {
   const res = await api.post(`/api/users/tokens/${encodeURIComponent(tokenName)}/run`);
   return res.data;

@@ -42,7 +42,7 @@ import {
   uploadCredentials,
   listTokens,
   deleteToken,
-  getTokenProgress,
+  listTokenProgress,
   setTokenVisibility,
   runToken,
   runAllTokens,
@@ -63,7 +63,6 @@ import {
 } from "../../services/userService";
 
 export const CREDENTIALS_CHANGED_EVENT = "credentials-data-changed";
-const RUN_ALL_PROGRESS_STORAGE_KEY = "credentials.runAllProgressTokens";
 
 const CredentialsDialog = ({
   open,
@@ -83,14 +82,12 @@ const CredentialsDialog = ({
   const [uploading, setUploading] = useState(false);
   const [authUrl, setAuthUrl] = useState("");
   const [oauthState, setOauthState] = useState("");
-  const [latestTokenName, setLatestTokenName] = useState("");
   const [tokens, setTokens] = useState([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
   const [runningAll, setRunningAll] = useState(false);
   const [, setTokenSyncing] = useState(false);
   const [tokenProgress, setTokenProgress] = useState({});
-  const [progress, setProgress] = useState({ status: "idle", percent: 0, stage: "" });
-  const [autoReloaded, setAutoReloaded] = useState(false);
+  const [tokenUpdatedAtMap, setTokenUpdatedAtMap] = useState({});
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState("");
   const [activeTab, setActiveTab] = useState("add");
@@ -136,10 +133,9 @@ const CredentialsDialog = ({
       transform: "translateX(260%)",
     },
   };
-  const progressTimersRef = useRef({});
   const avatarRefreshQueueRef = useRef(new Set());
-  const runAllBatchRef = useRef([]);
   const hydratedProgressOnceRef = useRef(false);
+  const progress = { status: "idle", percent: 0, stage: "", message: "" };
 
   const notifyDataChanged = useCallback(() => {
     onDataChanged?.();
@@ -180,32 +176,66 @@ const CredentialsDialog = ({
     }
   };
 
-  const readRunAllBatch = () => {
-    try {
-      const raw = localStorage.getItem(RUN_ALL_PROGRESS_STORAGE_KEY);
-      const parsed = JSON.parse(raw || "[]");
-      return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-    } catch {
-      return [];
-    }
-  };
+  const isProgressFromToday = useCallback((updatedAt) => {
+    const value = String(updatedAt || "").trim();
+    if (!value) return false;
+    const parsed = dayjs(value);
+    return parsed.isValid() && parsed.isSame(dayjs(), "day");
+  }, []);
 
-  const writeRunAllBatch = (tokenNames) => {
-    const next = Array.isArray(tokenNames) ? [...new Set(tokenNames.filter(Boolean))] : [];
-    runAllBatchRef.current = next;
-    try {
-      if (next.length) {
-        localStorage.setItem(RUN_ALL_PROGRESS_STORAGE_KEY, JSON.stringify(next));
-      } else {
-        localStorage.removeItem(RUN_ALL_PROGRESS_STORAGE_KEY);
+  const isProgressCompleteToday = useCallback(
+    (entry) => {
+      const percent = Number(entry?.percent ?? 0);
+      if (!Number.isFinite(percent) || percent < 100) return false;
+      return isProgressFromToday(entry?.updated_at);
+    },
+    [isProgressFromToday]
+  );
+
+  const normalizeDailyProgressEntry = useCallback(
+    (entry) => {
+      if (isProgressCompleteToday(entry)) {
+        return entry;
       }
-    } catch {
-      // ignore storage errors
-    }
-  };
+      const percent = Number(entry?.percent ?? 0);
+      if (Number.isFinite(percent) && percent >= 100) {
+        return {
+          ...entry,
+          status: "queued",
+          percent: 0,
+          stage: "queued",
+          message: "Not run today yet",
+        };
+      }
+      return entry;
+    },
+    [isProgressCompleteToday]
+  );
 
-  const isTerminalProgressStatus = (status) =>
-    ["done", "error", "stopped"].includes(String(status || "").toLowerCase());
+  const toProgressEntry = useCallback(
+    (data) => ({
+      status: data?.status || "idle",
+      percent: data?.percent ?? 0,
+      stage: data?.stage || "",
+      message: data?.message || "",
+      updated_at: data?.updated_at || "",
+      run_id: data?.run_id || "",
+    }),
+    []
+  );
+
+  const buildLatestProgressByToken = useCallback(
+    (items) => {
+      const latest = new Map();
+      (Array.isArray(items) ? items : []).forEach((item) => {
+        const tokenName = String(item?.token_name || "").trim();
+        if (!tokenName || latest.has(tokenName)) return;
+        latest.set(tokenName, toProgressEntry(item));
+      });
+      return latest;
+    },
+    [toProgressEntry]
+  );
 
   const isVisibleHydratedProgress = (entry, isRunAllToken = false) => {
     const status = String(entry?.status || "").toLowerCase();
@@ -214,21 +244,45 @@ const CredentialsDialog = ({
     return status === "queued" || status === "running";
   };
 
-  const reconcileRunAllProgress = (nextProgress) => {
-    const batch = runAllBatchRef.current;
-    if (!batch.length) return nextProgress;
-    const allTerminal = batch.every((tokenName) => {
-      const entry = nextProgress[tokenName];
-      return entry && isTerminalProgressStatus(entry.status);
+  const getProgressRunId = useCallback((entry) => {
+    const raw = String(entry?.run_id || "").trim();
+    return raw || "";
+  }, []);
+
+  const getIncompleteRunIds = useCallback((progressMap) => {
+    const runState = new Map();
+    Object.values(progressMap || {}).forEach((entry) => {
+      const runId = getProgressRunId(entry);
+      if (!runId) return;
+      const state = runState.get(runId) || { hasEntries: false, allComplete: true };
+      state.hasEntries = true;
+      state.allComplete = state.allComplete && isProgressCompleteToday(entry);
+      runState.set(runId, state);
     });
-    if (!allTerminal) return nextProgress;
-    const cleaned = { ...nextProgress };
-    batch.forEach((tokenName) => {
-      delete cleaned[tokenName];
+    return new Set(
+      Array.from(runState.entries())
+        .filter(([, state]) => state.hasEntries && !state.allComplete)
+        .map(([runId]) => runId)
+    );
+  }, [getProgressRunId, isProgressCompleteToday]);
+
+  const reconcileRunProgress = useCallback((nextProgress) => {
+    const incompleteRunIds = getIncompleteRunIds(nextProgress);
+    const cleaned = {};
+    Object.entries(nextProgress || {}).forEach(([tokenName, entry]) => {
+      const runId = getProgressRunId(entry);
+      if (runId) {
+        if (incompleteRunIds.has(runId) || !isProgressCompleteToday(entry)) {
+          cleaned[tokenName] = entry;
+        }
+        return;
+      }
+      if (isVisibleHydratedProgress(entry, false)) {
+        cleaned[tokenName] = entry;
+      }
     });
-    writeRunAllBatch([]);
     return cleaned;
-  };
+  }, [getIncompleteRunIds, getProgressRunId, isProgressCompleteToday]);
 
   const loadTokens = useCallback(async () => {
     setLoadingTokens(true);
@@ -281,9 +335,6 @@ const CredentialsDialog = ({
       setUploading(false);
       setAuthUrl("");
       setOauthState("");
-      setLatestTokenName("");
-      setProgress({ status: "idle", percent: 0, stage: "" });
-      setAutoReloaded(false);
       setActiveTab("add");
       setTokenView(defaultTokenView);
       setRunSelectedMode(false);
@@ -378,7 +429,7 @@ const CredentialsDialog = ({
     };
   }, [open, tokens, loadTokens]);
 
-  // Hydrate visible progress from backend progress files when the dialog reopens.
+  // Hydrate visible token progress from the backend DB when the dialog reopens.
   useEffect(() => {
     if (!open || !tokens.length || hydratedProgressOnceRef.current) return;
     hydratedProgressOnceRef.current = true;
@@ -400,10 +451,11 @@ const CredentialsDialog = ({
       try {
         const data = await getOAuthState(oauthState);
         if (data?.ready && data?.token_name) {
-          setLatestTokenName(data.token_name);
           setOauthState("");
           setTokenSyncing(false);
           await loadTokens();
+          notifyDataChanged();
+          setStatus({ type: "success", message: "Channel synced." });
           return true;
         }
       } catch {
@@ -425,63 +477,7 @@ const CredentialsDialog = ({
     poll();
 
     return () => clearInterval(intervalId);
-  }, [authUrl, oauthState, loadTokens, setTokenSyncing]);
-
-  useEffect(() => {
-    if (!latestTokenName) return;
-    let canceled = false;
-
-    const pollProgress = async () => {
-      try {
-        const data = await getTokenProgress(latestTokenName);
-        if (!canceled) {
-          setProgress({
-            status: data?.status || "idle",
-            percent: data?.percent ?? 0,
-            stage: data?.stage || "",
-            message: data?.message || "",
-          });
-        }
-        if (data?.status === "done" || data?.status === "error") {
-          return true;
-        }
-      } catch (err) {
-        if (!canceled) {
-          setProgress({ status: "idle", percent: 0, stage: "" });
-        }
-      }
-      return false;
-    };
-
-    const intervalId = setInterval(async () => {
-      const done = await pollProgress();
-      if (done) {
-        clearInterval(intervalId);
-      }
-    }, 2000);
-
-    pollProgress();
-
-    return () => {
-      canceled = true;
-      clearInterval(intervalId);
-    };
-  }, [latestTokenName]);
-
-  useEffect(() => {
-    const shouldReload =
-      !autoReloaded &&
-      (progress.status === "done" || (progress.percent >= 100 && progress.status !== "error"));
-    if (!shouldReload) return;
-    setAutoReloaded(true);
-    const timer = setTimeout(async () => {
-      await loadTokens();
-      notifyDataChanged();
-      setLatestTokenName("");
-      setStatus({ type: "success", message: "Channel synced." });
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [progress.status, progress.percent, autoReloaded, loadTokens, notifyDataChanged]);
+  }, [authUrl, oauthState, loadTokens, notifyDataChanged, setTokenSyncing]);
 
   const handleStartOAuth = async () => {
     const targetName = "";
@@ -489,8 +485,6 @@ const CredentialsDialog = ({
 
     setUploading(true);
     setStatus({ type: "", message: "" });
-    setProgress({ status: "idle", percent: 0, stage: "" });
-    setAutoReloaded(false);
 
     try {
       const data = await uploadCredentials(targetName);
@@ -601,77 +595,76 @@ const CredentialsDialog = ({
     }
   };
 
-  const loadTokenProgress = async (tokenName) => {
-    try {
-      const data = await getTokenProgress(tokenName);
-      const nextEntry = {
-        status: data?.status || "idle",
-        percent: data?.percent ?? 0,
-        stage: data?.stage || "",
-        message: data?.message || "",
-      };
-      setTokenProgress((prev) =>
-        reconcileRunAllProgress({
-          ...prev,
-          [tokenName]: nextEntry,
-        })
-      );
-      return isTerminalProgressStatus(nextEntry.status);
-    } catch {
-      return false;
-    }
-  };
-
-  async function hydrateTokenProgress(tokenItems) {
+  const hydrateTokenProgress = useCallback(async (tokenItems) => {
     const ownedTokenNames = tokenItems
       .map((token) => (typeof token === "string" ? token : token?.name || ""))
       .filter(Boolean);
     if (!ownedTokenNames.length) return;
-
-    const storedBatch = readRunAllBatch().filter((tokenName) => ownedTokenNames.includes(tokenName));
-    writeRunAllBatch(storedBatch);
-
-    const results = await Promise.all(
-      ownedTokenNames.map(async (tokenName) => {
-        try {
-          const data = await getTokenProgress(tokenName);
-          return {
-            tokenName,
-            entry: {
-              status: data?.status || "idle",
-              percent: data?.percent ?? 0,
-              stage: data?.stage || "",
-              message: data?.message || "",
-            },
-          };
-        } catch {
-          return null;
-        }
-      })
-    );
-
-    const hydrated = {};
-    results.forEach((item) => {
-      if (!item) return;
-      const isRunAllToken = runAllBatchRef.current.includes(item.tokenName);
-      if (!isVisibleHydratedProgress(item.entry, isRunAllToken)) return;
-      hydrated[item.tokenName] = item.entry;
-      if (!isTerminalProgressStatus(item.entry.status)) {
-        startProgressPolling(item.tokenName);
-      }
+    let items = [];
+    try {
+      const data = await listTokenProgress();
+      items = Array.isArray(data?.items) ? data.items : [];
+    } catch {
+      items = [];
+    }
+    const progressByToken = buildLatestProgressByToken(items);
+    setTokenUpdatedAtMap(() => {
+      const next = {};
+      progressByToken.forEach((entry, tokenName) => {
+        next[tokenName] = entry?.updated_at || "";
+      });
+      return next;
     });
 
-    setTokenProgress((prev) => reconcileRunAllProgress({ ...prev, ...hydrated }));
-  }
+    const hydrated = {};
+    const normalizedEntries = {};
+    ownedTokenNames.forEach((tokenName) => {
+      normalizedEntries[tokenName] = normalizeDailyProgressEntry(
+        progressByToken.get(tokenName) || toProgressEntry(null)
+      );
+    });
+    const incompleteRunIds = getIncompleteRunIds(normalizedEntries);
+    ownedTokenNames.forEach((tokenName) => {
+      const nextEntry = normalizedEntries[tokenName];
+      const runId = getProgressRunId(nextEntry);
+      const keepVisibleForRun = !!runId && incompleteRunIds.has(runId);
+      if (!isVisibleHydratedProgress(nextEntry, keepVisibleForRun)) return;
+      hydrated[tokenName] = nextEntry;
+    });
+
+    setTokenProgress((prev) => reconcileRunProgress({ ...prev, ...hydrated }));
+  }, [
+    buildLatestProgressByToken,
+    getIncompleteRunIds,
+    getProgressRunId,
+    normalizeDailyProgressEntry,
+    reconcileRunProgress,
+    toProgressEntry,
+  ]);
+
+  useEffect(() => {
+    if (!open || !tokens.length) return;
+    hydrateTokenProgress(tokens);
+    const intervalId = setInterval(() => {
+      hydrateTokenProgress(tokens);
+    }, 5000);
+    return () => clearInterval(intervalId);
+  }, [open, tokens, hydrateTokenProgress]);
 
   const handleRunToken = async (tokenName) => {
     try {
-      await runToken(tokenName);
+      const data = await runToken(tokenName);
       setTokenProgress((prev) => ({
         ...prev,
-        [tokenName]: { status: "queued", percent: 0, stage: "queued", message: "" },
+        [tokenName]: {
+          status: "queued",
+          percent: 0,
+          stage: "queued",
+          message: "",
+          run_id: String(data?.run_id || ""),
+          updated_at: new Date().toISOString(),
+        },
       }));
-      startProgressPolling(tokenName);
       setStatus({ type: "success", message: "Refresh queued." });
     } catch (err) {
       const message =
@@ -688,7 +681,6 @@ const CredentialsDialog = ({
       const data = await runAllTokens();
       const tokenNames = Array.isArray(data?.token_names) ? data.token_names : [];
       if (tokenNames.length) {
-        writeRunAllBatch(tokenNames);
         setTokenProgress((prev) => {
           const next = { ...prev };
           tokenNames.forEach((tokenName) => {
@@ -697,11 +689,12 @@ const CredentialsDialog = ({
               percent: 0,
               stage: "queued",
               message: "",
+              run_id: String(data?.run_id || ""),
+              updated_at: new Date().toISOString(),
             };
           });
           return next;
         });
-        tokenNames.forEach((tokenName) => startProgressPolling(tokenName));
       }
       setStatus({
         type: "success",
@@ -731,12 +724,18 @@ const CredentialsDialog = ({
   const handleRunTokenStage = async (stage) => {
     if (!menuTokenName) return;
     try {
-      await runTokenStage(menuTokenName, stage);
+      const data = await runTokenStage(menuTokenName, stage);
       setTokenProgress((prev) => ({
         ...prev,
-        [menuTokenName]: { status: "queued", percent: 0, stage: "queued", message: "" },
+        [menuTokenName]: {
+          status: "queued",
+          percent: 0,
+          stage: "queued",
+          message: "",
+          run_id: String(data?.run_id || ""),
+          updated_at: new Date().toISOString(),
+        },
       }));
-      startProgressPolling(menuTokenName);
       setStatus({ type: "success", message: `Refresh queued (${stage}).` });
     } catch (err) {
       const message =
@@ -750,12 +749,18 @@ const CredentialsDialog = ({
   const handleRunFullBackfill = async () => {
     if (!menuTokenName) return;
     try {
-      await runTokenFullBackfill(menuTokenName);
+      const data = await runTokenFullBackfill(menuTokenName);
       setTokenProgress((prev) => ({
         ...prev,
-        [menuTokenName]: { status: "queued", percent: 0, stage: "queued", message: "" },
+        [menuTokenName]: {
+          status: "queued",
+          percent: 0,
+          stage: "queued",
+          message: "",
+          run_id: String(data?.run_id || ""),
+          updated_at: new Date().toISOString(),
+        },
       }));
-      startProgressPolling(menuTokenName);
       setStatus({ type: "success", message: "Full backfill queued." });
     } catch (err) {
       const message =
@@ -764,21 +769,6 @@ const CredentialsDialog = ({
     } finally {
       closeTokenMenu();
     }
-  };
-
-  const startProgressPolling = (tokenName) => {
-    const existing = progressTimersRef.current[tokenName];
-    if (existing) {
-      clearInterval(existing);
-    }
-    const intervalId = setInterval(async () => {
-      const done = await loadTokenProgress(tokenName);
-      if (done) {
-        clearInterval(intervalId);
-        delete progressTimersRef.current[tokenName];
-      }
-    }, 2000);
-    progressTimersRef.current[tokenName] = intervalId;
   };
 
   const handleScheduleField = (field, value) => {
@@ -881,24 +871,19 @@ const CredentialsDialog = ({
 
   useEffect(() => {
     if (open) return;
-    Object.values(progressTimersRef.current).forEach((timerId) => {
-      clearInterval(timerId);
-    });
-    progressTimersRef.current = {};
     setTokenProgress({});
+    setTokenUpdatedAtMap({});
   }, [open]);
-
-  useEffect(() => {
-    return () => {
-      Object.values(progressTimersRef.current).forEach((timerId) => {
-        clearInterval(timerId);
-      });
-      progressTimersRef.current = {};
-    };
-  }, []);
 
   const formatRunTime = (value) =>
     value ? dayjs(value).format("DD/MM HH:mm") : "--";
+
+  const formatTokenUpdatedAt = useCallback((value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "--";
+    const parsed = dayjs(raw);
+    return parsed.isValid() ? parsed.format("DD/MM - HH:mm") : "--";
+  }, []);
 
   const formatTokenName = (value) => {
     if (!value) return "All tokens";
@@ -995,21 +980,21 @@ const CredentialsDialog = ({
     if (!selectedTokenNames.length || runningSelected) return;
     setRunningSelected(true);
     try {
-      await Promise.all(selectedTokenNames.map((tokenName) => runToken(tokenName)));
-      writeRunAllBatch(selectedTokenNames);
+      const results = await Promise.all(selectedTokenNames.map((tokenName) => runToken(tokenName)));
       setTokenProgress((prev) => {
         const next = { ...prev };
-        selectedTokenNames.forEach((tokenName) => {
+        selectedTokenNames.forEach((tokenName, index) => {
           next[tokenName] = {
             status: "queued",
             percent: 0,
             stage: "queued",
             message: "",
+            run_id: String(results[index]?.run_id || ""),
+            updated_at: new Date().toISOString(),
           };
         });
         return next;
       });
-      selectedTokenNames.forEach((tokenName) => startProgressPolling(tokenName));
       setStatus({
         type: "success",
         message: `Queued ${selectedTokenNames.length} selected channel(s).`,
@@ -1130,6 +1115,7 @@ const CredentialsDialog = ({
     const groupName = typeof token === "object" ? token.group_name || "" : "";
     const groupColor = typeof token === "object" ? token.group_color || "" : "";
     const isSelected = selectedTokenNames.includes(tokenName);
+    const tokenUpdatedAt = tokenUpdatedAtMap[tokenName] || tokenProgress[tokenName]?.updated_at || "";
 
     if (layout === "card") {
       const cardBg = groupColor
@@ -1317,6 +1303,15 @@ const CredentialsDialog = ({
             <Box mt={1.5} mb={2} flex={1}>{renderTokenProgress(tokenName)}</Box>
 
             <Box display="flex" alignItems="center" justifyContent="space-between" mt="auto">
+              <Typography
+                variant="caption"
+                sx={{
+                  color: isDark ? "rgba(233,237,242,0.72)" : "text.secondary",
+                  pr: 1,
+                }}
+              >
+                Updated {formatTokenUpdatedAt(tokenUpdatedAt)}
+              </Typography>
               <Button
                 size="small"
                 variant="contained"
@@ -1625,7 +1620,7 @@ const CredentialsDialog = ({
                   </Tooltip>
                 </Box>
 
-                {progress.status === "idle" && status.message && (
+                {status.message && (
                   <Typography
                     variant="body2"
                     color={
@@ -1637,9 +1632,6 @@ const CredentialsDialog = ({
                     {cleanError(status.message)}
                   </Typography>
                 )}
-
-                {null}
-
                 {progress.status !== "idle" && (
                   <Box display="flex" flexDirection="column" gap={0.5}>
                     <Box display="flex" alignItems="center" justifyContent="space-between">

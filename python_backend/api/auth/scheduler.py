@@ -12,12 +12,14 @@ from sqlalchemy import text
 from python_backend.api.auth.database import SessionLocal
 from python_backend.api.auth.models import (
     LiveCounterSnapshot,
+    TokenProgress,
     VideoLiveCounterSnapshot,
     UserCredential,
     UserSchedule,
     UserScheduleRun,
 )
 from python_backend.db import engine as analytics_engine
+from python_backend.progress_state import write_progress
 
 
 _STOP_EVENT = Event()
@@ -27,8 +29,13 @@ _LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS = int(
     os.getenv("LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS", str(24 * 60 * 60))
 )
 _LIVE_COUNTER_RETENTION_DAYS = int(os.getenv("LIVE_COUNTER_RETENTION_DAYS", "7"))
+_TOKEN_PROGRESS_RETENTION_DAYS = int(os.getenv("TOKEN_PROGRESS_RETENTION_DAYS", "10"))
 _LAST_LIVE_COUNTER_SNAPSHOT_AT = None
+_LAST_TOKEN_PROGRESS_CLEANUP_AT = None
 SAIGON_TZ = timezone(timedelta(hours=7))
+_TOKEN_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "token")
+)
 
 
 def _now_saigon_naive() -> datetime:
@@ -63,6 +70,25 @@ def _kickoff_get_data(account_tag: Optional[str], env_extra: Optional[dict] = No
         )
     except Exception as e:
         print(f"[WARN] Failed to start get_data.py: {e}")
+
+
+def _list_schedulable_token_names() -> list[str]:
+    if not os.path.isdir(_TOKEN_DIR):
+        return []
+    return sorted(
+        name
+        for name in os.listdir(_TOKEN_DIR)
+        if name.lower().endswith(".pickle")
+        and os.path.isfile(os.path.join(_TOKEN_DIR, name))
+    )
+
+
+def _resolve_schedule_token_names(schedule: UserSchedule) -> list[str]:
+    token_name = (schedule.token_name or "").strip()
+    if token_name:
+        token_path = os.path.join(_TOKEN_DIR, token_name)
+        return [token_name] if os.path.exists(token_path) else []
+    return _list_schedulable_token_names()
 
 
 def _parse_time_of_day(value: str):
@@ -112,6 +138,32 @@ def _should_capture_live_counters(now: datetime) -> bool:
         return False
     _LAST_LIVE_COUNTER_SNAPSHOT_AT = now
     return True
+
+
+def _should_cleanup_token_progress(now: datetime) -> bool:
+    global _LAST_TOKEN_PROGRESS_CLEANUP_AT
+    if _TOKEN_PROGRESS_RETENTION_DAYS <= 0:
+        return False
+    if _LAST_TOKEN_PROGRESS_CLEANUP_AT is None:
+        _LAST_TOKEN_PROGRESS_CLEANUP_AT = now
+        return True
+    elapsed = (now - _LAST_TOKEN_PROGRESS_CLEANUP_AT).total_seconds()
+    if elapsed < 24 * 60 * 60:
+        return False
+    _LAST_TOKEN_PROGRESS_CLEANUP_AT = now
+    return True
+
+
+def _cleanup_token_progress(db, now: datetime) -> None:
+    if _TOKEN_PROGRESS_RETENTION_DAYS <= 0:
+        return
+    cutoff = now - timedelta(days=_TOKEN_PROGRESS_RETENTION_DAYS)
+    (
+        db.query(TokenProgress)
+        .filter(TokenProgress.updated_at < cutoff)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
 
 
 def _get_youtube_api_keys() -> list[str]:
@@ -361,11 +413,9 @@ def _run_loop():
             for row in rows:
                 if not _should_run(row, now):
                     continue
-                token_base = os.path.splitext(os.path.basename(row.token_name or ""))[0]
-                if token_base:
-                    token_path = os.path.join("python_backend", "token", f"{token_base}.pickle")
-                    if not os.path.exists(token_path):
-                        continue
+                token_names = _resolve_schedule_token_names(row)
+                if not token_names:
+                    continue
                 row.last_run_at = now
                 row.updated_at = now
                 db.add(row)
@@ -399,13 +449,21 @@ def _run_loop():
                             synchronize_session=False
                         )
                         db.commit()
+                for token_name in token_names:
+                    account_tag = os.path.splitext(os.path.basename(token_name))[0]
+                    try:
+                        write_progress(account_tag, "queued", 0, "queued", "Queued by scheduler")
+                    except Exception as e:
+                        print(f"[WARN] failed to write schedule progress for {account_tag}: {e}")
                 _kickoff_get_data(
-                    token_base or None,
+                    os.path.splitext(os.path.basename(token_names[0]))[0] if len(token_names) == 1 else None,
                     env_extra={"SCHEDULE_RUN_ID": str(run.id)},
                 )
             snapshot_now = _now_saigon_naive()
             if _should_capture_live_counters(snapshot_now):
                 _capture_live_counter_snapshots(db, snapshot_now)
+            if _should_cleanup_token_progress(snapshot_now):
+                _cleanup_token_progress(db, snapshot_now)
         except Exception as e:
             print(f"[WARN] scheduler loop failed: {e}")
         finally:
@@ -417,7 +475,6 @@ def _run_loop():
             print(f"[WARN] smmstore scheduler failed: {e}")
 
         _STOP_EVENT.wait(30)
-
 
 def start_scheduler():
     global _THREAD
