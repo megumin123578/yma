@@ -39,6 +39,30 @@ export const updateProfile = async (payload) => {
   return mapUser(res.data);
 };
 
+export const listAdminUsers = async () => {
+  const res = await api.get("/api/users/admin/users");
+  return res.data;
+};
+
+export const resetAdminUserPassword = async (userId, newPassword) => {
+  const res = await api.post(`/api/users/admin/users/${userId}/reset-password`, {
+    new_password: newPassword,
+  });
+  return res.data;
+};
+
+export const updateAdminUserRole = async (userId, isAdmin) => {
+  const res = await api.post(`/api/users/admin/users/${userId}/admin`, {
+    is_admin: isAdmin,
+  });
+  return res.data;
+};
+
+export const deleteAdminUser = async (userId) => {
+  const res = await api.delete(`/api/users/admin/users/${userId}`);
+  return res.data;
+};
+
 export const listTokens = async () => {
   const res = await api.get("/api/users/tokens");
   return res.data;
@@ -66,6 +90,13 @@ export const runToken = async (tokenName) => {
 
 export const runAllTokens = async () => {
   const res = await api.post("/api/users/tokens/run-all");
+  return res.data;
+};
+
+export const runSelectedTokens = async (tokenNames) => {
+  const res = await api.post("/api/users/tokens/run-selected", {
+    token_names: tokenNames,
+  });
   return res.data;
 };
 

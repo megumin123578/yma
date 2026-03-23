@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, Text, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, Text, DateTime, Boolean
 from datetime import datetime, timezone, timedelta
 try:
     from python_backend.api.auth.database import Base
@@ -21,6 +21,21 @@ class User(Base):
     name = Column(String, nullable=True)
     avatar_url = Column(String, nullable=True)
     smmstore_api_key = Column(String, nullable=True)
+    is_admin = Column(Boolean, nullable=False, default=False)
+
+
+class PasswordChangeRequest(Base):
+    __tablename__ = "password_change_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    requested_by = Column(String, nullable=False, index=True)
+    new_password_hash = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="pending", index=True)
+    admin_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    admin_username = Column(String, nullable=True)
+    requested_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    decided_at = Column(DateTime, nullable=True, index=True)
 
 
 class RivalChannel(Base):

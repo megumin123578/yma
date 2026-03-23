@@ -40,6 +40,7 @@ def _write_progress_db(
 ) -> None:
     db = SessionLocal()
     try:
+        is_complete = status == "done" and int(percent or 0) >= 100
         cred = (
             db.query(UserCredential)
             .filter(UserCredential.account_tag == account_tag)
@@ -63,6 +64,7 @@ def _write_progress_db(
                 token_name=cred.token_name,
                 account_tag=account_tag,
                 started_at=now if status in {"queued", "running"} else None,
+                updated_at=now if is_complete else datetime.utcfromtimestamp(0),
             )
         row.account_tag = account_tag
         row.run_id = run_id
@@ -72,11 +74,9 @@ def _write_progress_db(
         row.message = message
         if row.started_at is None and status in {"queued", "running"}:
             row.started_at = now
-        if status in {"done", "error", "stopped", "empty"}:
+        if is_complete:
             row.finished_at = now
-        else:
-            row.finished_at = None
-        row.updated_at = now
+            row.updated_at = now
         db.add(row)
         db.commit()
     except Exception:

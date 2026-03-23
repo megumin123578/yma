@@ -14,10 +14,10 @@ from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup, RivalGroup, UserCredential, UserCredentialGroup
-from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional
+from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional, hash_password
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
-from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun, TokenProgress
+from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun, TokenProgress, PasswordChangeRequest, SmmstoreAnalyticsCache, SmmstoreScheduledOrder, LiveCounterSnapshot, VideoLiveCounterSnapshot
 from python_backend.api.auth.visibility import get_hidden_account_tags
 from python_backend.module_trafficsource import SCOPES, sanitize_filename
 from python_backend.progress_state import write_progress
@@ -140,13 +140,23 @@ def _build_oauth_flow() -> Flow:
 
 
 def _require_admin(current_user: User) -> None:
-    if (current_user.username or "").lower() not in _get_admin_users():
+    if not _is_admin_user(current_user):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
 def _get_admin_users() -> set:
     raw = os.getenv(_ADMIN_ENV_KEY, "admin")
     return {u.strip().lower() for u in raw.split(",") if u.strip()}
+
+
+def _is_env_admin_username(username: str | None) -> bool:
+    return (username or "").lower() in _get_admin_users()
+
+
+def _is_admin_user(user: User | None) -> bool:
+    if not user:
+        return False
+    return bool(getattr(user, "is_admin", False) or _is_env_admin_username(user.username))
 
 def _pick_token_group_color(db: Session, user_id: int, group_name: str) -> str:
     existing = {
@@ -607,7 +617,7 @@ def list_tokens(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    is_admin = _is_admin_user(current_user)
     hidden = get_hidden_account_tags(db, current_user.id)
     group_rows = db.query(UserCredentialGroup).all()
     group_color_map = {
@@ -701,7 +711,7 @@ def list_token_progress(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    is_admin = _is_admin_user(current_user)
     q = db.query(TokenProgress)
     if not is_admin:
         q = q.filter(TokenProgress.user_id == current_user.id)
@@ -952,7 +962,7 @@ def run_all_tokens(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    is_admin = _is_admin_user(current_user)
     token_names = []
     if is_admin:
         if os.path.exists(TOKEN_DIR):
@@ -1120,7 +1130,7 @@ def refresh_token_avatar(
     if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
         raise HTTPException(status_code=400, detail="Invalid token filename")
 
-    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    is_admin = _is_admin_user(current_user)
     q = db.query(UserCredential).filter(UserCredential.token_name == token_name)
     if not is_admin:
         q = q.filter(UserCredential.user_id == current_user.id)
@@ -1157,7 +1167,7 @@ def get_token_progress(
         raise HTTPException(status_code=400, detail="Invalid token filename")
 
     account_tag = os.path.splitext(safe_name)[0]
-    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    is_admin = _is_admin_user(current_user)
     q = db.query(UserCredential).filter(UserCredential.token_name == token_name)
     if not is_admin:
         q = q.filter(UserCredential.user_id == current_user.id)
@@ -1198,7 +1208,7 @@ def run_token(
         raise HTTPException(status_code=400, detail="Invalid token filename")
 
     account_tag = os.path.splitext(safe_name)[0]
-    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    is_admin = _is_admin_user(current_user)
     q = db.query(UserCredential).filter(UserCredential.token_name == token_name)
     if not is_admin:
         q = q.filter(UserCredential.user_id == current_user.id)
@@ -1234,6 +1244,91 @@ class RunStagePayload(BaseModel):
     stage: str
 
 
+class RunSelectedTokensPayload(BaseModel):
+    token_names: List[str]
+
+
+@router.post("/tokens/run-selected")
+def run_selected_tokens(
+    payload: RunSelectedTokensPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    requested_token_names = [
+        _safe_token_filename(str(name or "").strip())
+        for name in (payload.token_names or [])
+    ]
+    requested_token_names = [
+        name
+        for name in requested_token_names
+        if name
+        and ".." not in name
+        and name.lower().endswith(".pickle")
+    ]
+    requested_token_names = sorted(set(requested_token_names))
+    if not requested_token_names:
+        raise HTTPException(status_code=400, detail="No tokens selected")
+
+    is_admin = _is_admin_user(current_user)
+    token_names = []
+    if is_admin:
+        for token_name in requested_token_names:
+            token_path = os.path.join(TOKEN_DIR, token_name)
+            if os.path.exists(token_path):
+                token_names.append(token_name)
+    else:
+        hidden = get_hidden_account_tags(db, current_user.id)
+        rows = (
+            db.query(UserCredential.token_name, UserCredential.account_tag)
+            .filter(
+                UserCredential.user_id == current_user.id,
+                UserCredential.token_name.in_(requested_token_names),
+            )
+            .all()
+        )
+        for row in rows:
+            if not row.token_name:
+                continue
+            if (row.account_tag or "") in hidden:
+                continue
+            token_path = os.path.join(TOKEN_DIR, row.token_name)
+            if not os.path.exists(token_path):
+                continue
+            token_names.append(row.token_name)
+        token_names = sorted(set(token_names))
+
+    if not token_names:
+        raise HTTPException(status_code=400, detail="No selected tokens available to run")
+
+    for token_name in token_names:
+        account_tag = os.path.splitext(token_name)[0]
+        write_progress(account_tag, "queued", 0, "queued", "Queued manual refresh")
+
+    run = UserScheduleRun(
+        user_id=current_user.id,
+        schedule_id=None,
+        token_name=None,
+        token_names=json.dumps(token_names),
+        run_type="manual_selected",
+        status="queued",
+        started_at=datetime.utcnow(),
+        processed=0,
+        total=len(token_names),
+        message=f"Queued manual refresh for {len(token_names)} selected token(s)",
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    _kickoff_get_data(
+        "",
+        env_extra={
+            "SCHEDULE_RUN_ID": str(run.id),
+            "RUN_TOKEN_NAMES": json.dumps(token_names),
+        },
+    )
+    return {"ok": True, "run_id": run.id, "token_names": token_names}
+
+
 @router.post("/tokens/{token_name}/run-stage")
 def run_token_stage(
     token_name: str,
@@ -1249,7 +1344,7 @@ def run_token_stage(
     if stage not in {"content", "content_full", "overview", "audience", "reach", "traffic_source", "revenue", "subscribers"}:
         raise HTTPException(status_code=400, detail="Invalid stage")
 
-    is_admin = (current_user.username or "").lower() in _get_admin_users()
+    is_admin = _is_admin_user(current_user)
     q = db.query(UserCredential).filter(UserCredential.token_name == token_name)
     if not is_admin:
         q = q.filter(UserCredential.user_id == current_user.id)
@@ -1291,33 +1386,32 @@ def delete_token(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin(current_user)
     safe_name = _safe_token_filename(token_name)
     if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
         raise HTTPException(status_code=400, detail="Invalid token filename")
 
-    token_path = os.path.join(TOKEN_DIR, safe_name)
-    if not os.path.exists(token_path):
-        raise HTTPException(status_code=404, detail="Token not found")
-
-    os.remove(token_path)
-    base_name = os.path.splitext(safe_name)[0]
-    owned = (
+    row = (
         db.query(UserCredential)
         .filter(
-            UserCredential.user_id == current_user.id,
             UserCredential.token_name == token_name,
         )
         .first()
     )
-    if not owned:
+    if not row:
         raise HTTPException(status_code=404, detail="Token not found")
+    token_path = os.path.join(TOKEN_DIR, safe_name)
+    base_name = os.path.splitext(safe_name)[0]
+    if os.path.exists(token_path):
+        os.remove(token_path)
     db.query(UserHiddenChannel).filter(
-        UserHiddenChannel.user_id == current_user.id,
         UserHiddenChannel.account_tag == base_name,
     ).delete()
     db.query(UserCredential).filter(
-        UserCredential.user_id == current_user.id,
         UserCredential.token_name == token_name,
+    ).delete()
+    db.query(TokenProgress).filter(
+        TokenProgress.token_name == token_name,
     ).delete()
     db.commit()
     _purge_postgres_account(base_name)
@@ -1363,7 +1457,7 @@ def list_schedule_runs(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    is_admin = bool(current_user and (current_user.username or "").lower() in _get_admin_users())
+    is_admin = _is_admin_user(current_user)
     if not is_admin:
         raise HTTPException(status_code=403, detail="Permission Denied")
     rows = (
@@ -1490,9 +1584,126 @@ def delete_schedule(
     db.commit()
     return {"ok": True}
 
+
+@router.get("/admin/users")
+def admin_list_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    rows = db.query(User).order_by(User.username.asc(), User.id.asc()).all()
+    return {
+        "items": [
+            {
+                "id": row.id,
+                "username": row.username,
+                "name": row.name or "",
+                "is_admin": _is_admin_user(row),
+                "is_admin_via_env": _is_env_admin_username(row.username),
+                "avatar_url": row.avatar_url or "",
+            }
+            for row in rows
+        ]
+    }
+
+
+@router.post("/admin/users/{user_id}/reset-password")
+def admin_reset_user_password(
+    user_id: int,
+    payload: schemas.AdminResetPasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    user_row = db.query(User).filter(User.id == user_id).first()
+    if not user_row:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not (payload.new_password or "").strip():
+        raise HTTPException(status_code=400, detail="New password is required")
+
+    user_row.password = hash_password(payload.new_password)
+    db.add(user_row)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/admin/users/{user_id}/admin")
+def admin_update_user_role(
+    user_id: int,
+    payload: schemas.AdminUserRoleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    user_row = db.query(User).filter(User.id == user_id).first()
+    if not user_row:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user_row.id == current_user.id and not payload.is_admin:
+        raise HTTPException(status_code=400, detail="You cannot revoke your own admin access")
+    if _is_env_admin_username(user_row.username) and not payload.is_admin:
+        raise HTTPException(status_code=400, detail="This environment admin cannot be revoked here")
+
+    user_row.is_admin = bool(payload.is_admin)
+    db.add(user_row)
+    db.commit()
+    db.refresh(user_row)
+    return {
+        "ok": True,
+        "user": {
+            "id": user_row.id,
+            "username": user_row.username,
+            "name": user_row.name or "",
+            "is_admin": _is_admin_user(user_row),
+            "is_admin_via_env": _is_env_admin_username(user_row.username),
+            "avatar_url": user_row.avatar_url or "",
+        },
+    }
+
+
+@router.delete("/admin/users/{user_id}")
+def admin_delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    user_row = db.query(User).filter(User.id == user_id).first()
+    if not user_row:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user_row.id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    if _is_env_admin_username(user_row.username):
+        raise HTTPException(status_code=400, detail="This environment admin cannot be deleted here")
+
+    db.query(PasswordChangeRequest).filter(PasswordChangeRequest.user_id == user_row.id).delete()
+    db.query(UserHiddenChannel).filter(UserHiddenChannel.user_id == user_row.id).delete()
+    db.query(UserScheduleRun).filter(UserScheduleRun.user_id == user_row.id).delete()
+    db.query(UserSchedule).filter(UserSchedule.user_id == user_row.id).delete()
+    db.query(TokenProgress).filter(TokenProgress.user_id == user_row.id).delete()
+    db.query(UserCredentialGroup).filter(UserCredentialGroup.user_id == user_row.id).delete()
+    db.query(UserCredential).filter(UserCredential.user_id == user_row.id).delete()
+    db.query(RivalChannelGroup).filter(RivalChannelGroup.user_id == user_row.id).delete()
+    db.query(RivalChannel).filter(RivalChannel.user_id == user_row.id).delete()
+    db.query(RivalGroup).filter(RivalGroup.user_id == user_row.id).delete()
+    db.query(SmmstoreScheduledOrder).filter(SmmstoreScheduledOrder.user_id == user_row.id).delete()
+    db.query(SmmstoreAnalyticsCache).filter(SmmstoreAnalyticsCache.user_id == user_row.id).delete()
+    db.query(VideoLiveCounterSnapshot).filter(VideoLiveCounterSnapshot.user_id == user_row.id).delete()
+    db.query(LiveCounterSnapshot).filter(LiveCounterSnapshot.user_id == user_row.id).delete()
+    db.delete(user_row)
+    db.commit()
+    return {"ok": True}
+
+
 @router.get("/me", response_model=UserMe)
 def get_me(current_user: User = Depends(get_current_user)):
-    return current_user
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "name": current_user.name,
+        "avatar_url": current_user.avatar_url,
+        "smmstore_api_key": current_user.smmstore_api_key,
+        "is_admin": _is_admin_user(current_user),
+    }
 
 
 @router.put("/profile", response_model=UserMe)
@@ -1510,7 +1721,14 @@ def update_profile(
     db.commit()
     db.refresh(current_user)
 
-    return current_user
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "name": current_user.name,
+        "avatar_url": current_user.avatar_url,
+        "smmstore_api_key": current_user.smmstore_api_key,
+        "is_admin": _is_admin_user(current_user),
+    }
 
 
 @router.get("/rivals", response_model=List[schemas.RivalChannelOut])

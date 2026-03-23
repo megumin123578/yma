@@ -155,13 +155,18 @@ const ChangePasswordDialog = ({ open, onClose }) => {
             variant="body2"
             color={subtitleColor}
           >
-            Choose a strong password to protect your account
+            Submit a password change request. The new password is applied only after admin approval.
           </Typography>
         </DialogTitle>
 
         <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
           <Box display="flex" flexDirection="column" gap={2} mt={1}>
             {error && <Alert severity="error">{error}</Alert>}
+            {success && (
+              <Alert severity="success">
+                Password change request submitted. Wait for admin approval.
+              </Alert>
+            )}
 
             {/* CURRENT */}
             <TextField

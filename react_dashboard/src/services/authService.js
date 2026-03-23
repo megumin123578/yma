@@ -27,42 +27,26 @@ export const logout = () => {
   
 };
 
-// ================= FORGOT PASSWORD =================
-export const forgot = (username) => {
-  return axios.post(`${API_URL}/forgot-password`, { username });
-};
-
-export const resetPassword = (username, newPassword) => {
-  return axios.post(`${API_URL}/reset-password`, {
-    username,
-    new_password: newPassword,
-  });
-};
-
 // ================= CHANGE PASSWORD =================
 export const changePassword = async (currentPassword, newPassword) => {
-  const token = localStorage.getItem("access_token");
-
-  if (!token) {
-    throw new Error("Not authenticated");
-  }
-
-  const res = await fetch(`${API_URL}/change-password`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      current_password: currentPassword,
-      new_password: newPassword,
-    }),
+  const res = await api.post(`${API_URL}/change-password`, {
+    current_password: currentPassword,
+    new_password: newPassword,
   });
+  return res.data;
+};
 
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.detail || "Change password failed");
-  }
+export const listPasswordChangeRequests = async () => {
+  const res = await api.get(`${API_URL}/password-change-requests`);
+  return res.data;
+};
 
-  return res.json();
+export const approvePasswordChangeRequest = async (requestId) => {
+  const res = await api.post(`${API_URL}/password-change-requests/${requestId}/approve`);
+  return res.data;
+};
+
+export const rejectPasswordChangeRequest = async (requestId) => {
+  const res = await api.post(`${API_URL}/password-change-requests/${requestId}/reject`);
+  return res.data;
 };

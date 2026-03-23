@@ -23,7 +23,7 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import dayjs from "dayjs";
 import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -46,6 +46,7 @@ import {
   setTokenVisibility,
   runToken,
   runAllTokens,
+  runSelectedTokens,
   runTokenStage,
   runTokenFullBackfill,
   refreshTokenAvatar,
@@ -61,7 +62,10 @@ import {
   listScheduleRuns,
   stopScheduleRun,
 } from "../../services/userService";
+import { UserContext } from "../../context/UserContext";
+import ManageUserRequests from "../ManageUserRequests";
 
+import { getApiBase } from "../../config";
 export const CREDENTIALS_CHANGED_EVENT = "credentials-data-changed";
 
 const CredentialsDialog = ({
@@ -72,8 +76,10 @@ const CredentialsDialog = ({
   onDataChanged,
 }) => {
   const theme = useTheme();
+  const { user } = useContext(UserContext);
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isDark = theme.palette.mode === "dark";
+  const isAdmin = !!user?.is_admin;
   const surface = isDark ? "rgba(17, 24, 39, 0.72)" : "rgba(255,255,255,0.82)";
   const panel = isDark ? "rgba(20, 28, 40, 0.55)" : "rgba(255,255,255,0.7)";
   const border = isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.08)";
@@ -137,6 +143,16 @@ const CredentialsDialog = ({
   const hydratedProgressOnceRef = useRef(false);
   const progress = { status: "idle", percent: 0, stage: "", message: "" };
 
+  const resolveAvatarSrc = useCallback((value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (/^https?:\/\//i.test(raw)) return raw;
+    const base = getApiBase() || "";
+    const cleanBase = base.endsWith("/") ? base.slice(0, -1) : base;
+    const cleanRaw = raw.startsWith("/") ? raw : `/${raw}`;
+    return `${cleanBase}${cleanRaw}`;
+  }, []);
+
   const notifyDataChanged = useCallback(() => {
     onDataChanged?.();
     if (typeof window !== "undefined") {
@@ -183,13 +199,21 @@ const CredentialsDialog = ({
     return parsed.isValid() && parsed.isSame(dayjs(), "day");
   }, []);
 
+  const getCompletedUpdatedAt = useCallback((entry) => {
+    const finishedAt = String(entry?.finished_at || "").trim();
+    if (finishedAt) return finishedAt;
+    const percent = Number(entry?.percent ?? 0);
+    if (!Number.isFinite(percent) || percent < 100) return "";
+    return String(entry?.updated_at || "").trim();
+  }, []);
+
   const isProgressCompleteToday = useCallback(
     (entry) => {
       const percent = Number(entry?.percent ?? 0);
       if (!Number.isFinite(percent) || percent < 100) return false;
-      return isProgressFromToday(entry?.updated_at);
+      return isProgressFromToday(getCompletedUpdatedAt(entry));
     },
-    [isProgressFromToday]
+    [getCompletedUpdatedAt, isProgressFromToday]
   );
 
   const normalizeDailyProgressEntry = useCallback(
@@ -219,6 +243,7 @@ const CredentialsDialog = ({
       stage: data?.stage || "",
       message: data?.message || "",
       updated_at: data?.updated_at || "",
+      finished_at: data?.finished_at || "",
       run_id: data?.run_id || "",
     }),
     []
@@ -611,7 +636,7 @@ const CredentialsDialog = ({
     setTokenUpdatedAtMap(() => {
       const next = {};
       progressByToken.forEach((entry, tokenName) => {
-        next[tokenName] = entry?.updated_at || "";
+        next[tokenName] = getCompletedUpdatedAt(entry);
       });
       return next;
     });
@@ -635,6 +660,7 @@ const CredentialsDialog = ({
     setTokenProgress((prev) => reconcileRunProgress({ ...prev, ...hydrated }));
   }, [
     buildLatestProgressByToken,
+    getCompletedUpdatedAt,
     getIncompleteRunIds,
     getProgressRunId,
     normalizeDailyProgressEntry,
@@ -662,7 +688,8 @@ const CredentialsDialog = ({
           stage: "queued",
           message: "",
           run_id: String(data?.run_id || ""),
-          updated_at: new Date().toISOString(),
+          updated_at: "",
+          finished_at: "",
         },
       }));
       setStatus({ type: "success", message: "Refresh queued." });
@@ -690,7 +717,8 @@ const CredentialsDialog = ({
               stage: "queued",
               message: "",
               run_id: String(data?.run_id || ""),
-              updated_at: new Date().toISOString(),
+              updated_at: "",
+              finished_at: "",
             };
           });
           return next;
@@ -733,7 +761,8 @@ const CredentialsDialog = ({
           stage: "queued",
           message: "",
           run_id: String(data?.run_id || ""),
-          updated_at: new Date().toISOString(),
+          updated_at: "",
+          finished_at: "",
         },
       }));
       setStatus({ type: "success", message: `Refresh queued (${stage}).` });
@@ -758,7 +787,8 @@ const CredentialsDialog = ({
           stage: "queued",
           message: "",
           run_id: String(data?.run_id || ""),
-          updated_at: new Date().toISOString(),
+          updated_at: "",
+          finished_at: "",
         },
       }));
       setStatus({ type: "success", message: "Full backfill queued." });
@@ -894,6 +924,7 @@ const CredentialsDialog = ({
     const raw = String(value || "").trim();
     if (!raw) return "run";
     if (raw === "manual_all") return "manual all";
+    if (raw === "manual_selected") return "manual selected";
     if (raw === "manual_single") return "manual";
     if (raw.startsWith("manual_stage:")) {
       return `stage: ${raw.split(":").slice(1).join(":")}`;
@@ -980,24 +1011,26 @@ const CredentialsDialog = ({
     if (!selectedTokenNames.length || runningSelected) return;
     setRunningSelected(true);
     try {
-      const results = await Promise.all(selectedTokenNames.map((tokenName) => runToken(tokenName)));
+      const data = await runSelectedTokens(selectedTokenNames);
+      const queuedTokenNames = Array.isArray(data?.token_names) ? data.token_names : selectedTokenNames;
       setTokenProgress((prev) => {
         const next = { ...prev };
-        selectedTokenNames.forEach((tokenName, index) => {
+        queuedTokenNames.forEach((tokenName) => {
           next[tokenName] = {
             status: "queued",
             percent: 0,
             stage: "queued",
             message: "",
-            run_id: String(results[index]?.run_id || ""),
-            updated_at: new Date().toISOString(),
+            run_id: String(data?.run_id || ""),
+            updated_at: "",
+            finished_at: "",
           };
         });
         return next;
       });
       setStatus({
         type: "success",
-        message: `Queued ${selectedTokenNames.length} selected channel(s).`,
+        message: `Queued ${queuedTokenNames.length} selected channel(s).`,
       });
       setRunSelectedMode(false);
       setSelectedTokenNames([]);
@@ -1015,7 +1048,10 @@ const CredentialsDialog = ({
       <Button
         size="small"
         variant="outlined"
-        onClick={(event) => openTokenMenu(event, tokenName)}
+        onClick={(event) => {
+          event.stopPropagation();
+          openTokenMenu(event, tokenName);
+        }}
         disabled={!isOwned}
         sx={{
           ...shimmerSx,
@@ -1033,7 +1069,10 @@ const CredentialsDialog = ({
         <Tooltip title="Delete this token">
           <IconButton
             size="small"
-            onClick={() => requestDeleteToken(tokenName)}
+            onClick={(event) => {
+              event.stopPropagation();
+              requestDeleteToken(tokenName);
+            }}
             disabled={!isOwned}
             sx={{
               p: 0.35,
@@ -1053,7 +1092,10 @@ const CredentialsDialog = ({
         <Button
           size="small"
           color="error"
-          onClick={() => requestDeleteToken(tokenName)}
+          onClick={(event) => {
+            event.stopPropagation();
+            requestDeleteToken(tokenName);
+          }}
           disabled={!isOwned}
           sx={shimmerSx}
         >
@@ -1066,6 +1108,7 @@ const CredentialsDialog = ({
             size="small"
             checked={!isHidden}
             onChange={(event) => handleToggleToken(tokenName, event.target.checked)}
+            onClick={(event) => event.stopPropagation()}
             sx={{
               color: isDark ? "#7ed6ff" : undefined,
               "&.Mui-checked": { color: isDark ? "#43c2ff" : undefined },
@@ -1111,11 +1154,16 @@ const CredentialsDialog = ({
       (tokenName.toLowerCase().endsWith(".pickle") ? tokenName.slice(0, -7) : tokenName);
     const isHidden = typeof token === "string" ? false : !!token.hidden;
     const isOwned = typeof token === "string" ? true : token.owned !== false;
-    const avatarSrc = typeof token === "object" ? token.avatar || "" : "";
+    const avatarSrc = typeof token === "object" ? resolveAvatarSrc(token.avatar) : "";
     const groupName = typeof token === "object" ? token.group_name || "" : "";
     const groupColor = typeof token === "object" ? token.group_color || "" : "";
     const isSelected = selectedTokenNames.includes(tokenName);
     const tokenUpdatedAt = tokenUpdatedAtMap[tokenName] || tokenProgress[tokenName]?.updated_at || "";
+    const canToggleSelectedFromCard = runSelectedMode && isOwned && !isHidden;
+    const handleSelectFromCard = () => {
+      if (!canToggleSelectedFromCard) return;
+      toggleSelectedToken(tokenName, !isSelected);
+    };
 
     if (layout === "card") {
       const cardBg = groupColor
@@ -1134,6 +1182,7 @@ const CredentialsDialog = ({
       return (
         <Box
           key={tokenName}
+          onClick={handleSelectFromCard}
           sx={{
             width: "100%",
             maxWidth: 440,
@@ -1163,6 +1212,7 @@ const CredentialsDialog = ({
             position: "relative",
             overflow: "hidden",
             justifyContent: "space-between",
+            cursor: canToggleSelectedFromCard ? "pointer" : "default",
           }}
         >
           {runSelectedMode && isOwned && !isHidden && (
@@ -1180,6 +1230,7 @@ const CredentialsDialog = ({
                 size="small"
                 checked={isSelected}
                 onChange={(event) => toggleSelectedToken(tokenName, event.target.checked)}
+                onClick={(event) => event.stopPropagation()}
                 sx={{
                   color: isDark ? "#7ed6ff" : accent,
                   "&.Mui-checked": { color: isDark ? "#7de0d2" : accent },
@@ -1265,7 +1316,10 @@ const CredentialsDialog = ({
                 <Tooltip title={isHidden ? "Hidden. Click to show." : "Visible. Click to hide."}>
                   <IconButton
                     size="small"
-                    onClick={() => handleToggleToken(tokenName, isHidden)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleToggleToken(tokenName, isHidden);
+                    }}
                     disabled={!isOwned}
                     sx={{
                       p: 0.5,
@@ -1283,7 +1337,10 @@ const CredentialsDialog = ({
                 <Tooltip title="Delete this token">
                   <IconButton
                     size="small"
-                    onClick={() => requestDeleteToken(tokenName)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      requestDeleteToken(tokenName);
+                    }}
                     disabled={!isOwned}
                     sx={{
                       p: 0.5,
@@ -1315,7 +1372,10 @@ const CredentialsDialog = ({
               <Button
                 size="small"
                 variant="contained"
-                onClick={(event) => openTokenMenu(event, tokenName)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openTokenMenu(event, tokenName);
+                }}
                 disabled={!isOwned}
                 startIcon={<PlayArrowIcon />}
                 endIcon={<ExpandMoreIcon fontSize="small" />}
@@ -1349,6 +1409,7 @@ const CredentialsDialog = ({
         display="flex"
         alignItems="center"
         gap={1}
+        onClick={handleSelectFromCard}
         draggable
         onDragStart={() => setDragTokenName(tokenName)}
         onDragEnd={() => {
@@ -1379,6 +1440,7 @@ const CredentialsDialog = ({
           transition: "transform 180ms ease, background-color 180ms ease",
           ...(dragTokenName === tokenName ? { transform: "scale(1.01)" } : {}),
           ...(dragOverTokenName === tokenName ? { transform: "translateY(6px)" } : {}),
+          cursor: canToggleSelectedFromCard ? "pointer" : "default",
         }}
       >
         {runSelectedMode && isOwned && !isHidden && (
@@ -1386,6 +1448,7 @@ const CredentialsDialog = ({
             size="small"
             checked={isSelected}
             onChange={(event) => toggleSelectedToken(tokenName, event.target.checked)}
+            onClick={(event) => event.stopPropagation()}
             sx={{
               color: isDark ? "#7ed6ff" : accent,
               "&.Mui-checked": { color: isDark ? "#43c2ff" : accent },
@@ -1570,6 +1633,7 @@ const CredentialsDialog = ({
             <Tab value="groups" label="Groups" />
             <Tab value="schedule" label="Schedule" />
             <Tab value="logs" label="Run logs" />
+            {isAdmin && <Tab value="manage-user" label="Manage User" />}
           </Tabs>
 
         <Box display="flex" flexDirection="column" gap={2} flex={1} sx={{ overflowY: "auto", pr: 1.5, py: 0.5 }}>
@@ -1971,6 +2035,8 @@ const CredentialsDialog = ({
                       </Box>
                     )}
                   </Box>
+                ) : activeTab === "manage-user" ? (
+                  <ManageUserRequests active={activeTab === "manage-user"} />
                 ) : activeTab === "schedule" ? (
                   <Box
                     sx={{

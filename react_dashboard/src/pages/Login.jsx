@@ -258,27 +258,6 @@ const Login = () => {
                   },
                 }}
               />
-
-              <Box textAlign="right" mt={1} mb={3}>
-                <Button
-                  component={Link}
-                  to="/forgot-password"
-                  variant="text"
-                  size="small"
-                  sx={{
-                    color: isDark ? "#38bdf8" : "#6366f1",
-                    textTransform: "none",
-                    fontWeight: 500,
-                    "&:hover": {
-                      backgroundColor: "transparent",
-                      textDecoration: "underline",
-                    },
-                  }}
-                >
-                  Forgot password?
-                </Button>
-              </Box>
-
               <Button
                 type="submit"
                 variant="contained"

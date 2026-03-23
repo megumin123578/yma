@@ -84,6 +84,19 @@ def ensure_token_progress_table():
 
 ensure_token_progress_table()
 
+
+def ensure_users_is_admin_column():
+    with engine.begin() as conn:
+        cols = conn.exec_driver_sql("PRAGMA table_info(users)").fetchall()
+        col_names = {str(row[1]).lower() for row in cols}
+        if "is_admin" not in col_names:
+            conn.exec_driver_sql(
+                "ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"
+            )
+
+
+ensure_users_is_admin_column()
+
 def ensure_video_live_counter_snapshots_channel_name():
     with engine.begin() as conn:
         cols = conn.exec_driver_sql(

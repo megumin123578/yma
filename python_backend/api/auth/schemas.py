@@ -31,6 +31,7 @@ class UserResponse(BaseModel):
     name: Optional[str] = None
     avatar_url: Optional[str] = None
     smmstore_api_key: Optional[str] = None
+    is_admin: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -45,6 +46,7 @@ class UserMe(BaseModel):
     name: Optional[str] = None
     avatar_url: Optional[str] = None
     smmstore_api_key: Optional[str] = None
+    is_admin: bool = False
 
     class Config:
         from_attributes = True
@@ -53,6 +55,29 @@ class UserMe(BaseModel):
 class UserProfileUpdate(BaseModel):
     name: Optional[str] = None
     smmstore_api_key: Optional[str] = None
+
+
+class PasswordChangeRequestOut(BaseModel):
+    id: int
+    user_id: int
+    requested_by: str
+    status: str
+    admin_user_id: Optional[int] = None
+    admin_username: Optional[str] = None
+    requested_at: Optional[str] = None
+    decided_at: Optional[str] = None
+
+
+class PasswordChangeDecision(BaseModel):
+    action: str
+
+
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str
+
+
+class AdminUserRoleUpdate(BaseModel):
+    is_admin: bool
 
 
 class RivalChannelCreate(BaseModel):

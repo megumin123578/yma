@@ -7,7 +7,6 @@ import Daily from "./scenes/content";
 import TrafficSource from "./scenes/traffic_source";
 import LoginPage from "./scenes/login";
 import RegisterPage from "./scenes/register";
-import ForgotPasswordPage from "./scenes/forgot_password";
 import SmmstoreScene from "./scenes/smmstore";
 import ChannelCompareScene from "./scenes/channel_compare";
 import RivalsData from "./scenes/rivals";
@@ -41,7 +40,6 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/terms" element={<TermsPage />} />
 
@@ -158,7 +156,6 @@ function App() {
     "/",
     "/login",
     "/register",
-    "/forgot-password",
     "/privacy",
     "/terms",
   ];
