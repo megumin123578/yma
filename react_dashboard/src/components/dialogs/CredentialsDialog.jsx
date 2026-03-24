@@ -514,14 +514,13 @@ const CredentialsDialog = ({
   }, [authUrl, oauthState, loadTokens, notifyDataChanged, setTokenSyncing]);
 
   const handleStartOAuth = async () => {
-    const targetName = "";
     if (uploading) return;
 
     setUploading(true);
     setStatus({ type: "", message: "" });
 
     try {
-      const data = await uploadCredentials(targetName);
+      const data = await uploadCredentials();
       const nextUrl = data?.auth_url || "";
       const nextState = data?.state || "";
       setAuthUrl(nextUrl);

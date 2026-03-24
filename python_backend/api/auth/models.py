@@ -175,6 +175,27 @@ class TokenProgress(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 
+class OAuthState(Base):
+    __tablename__ = "oauth_states"
+    __table_args__ = (
+        UniqueConstraint("state", name="uq_oauth_state"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    state = Column(String, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    account_tag = Column(String, nullable=False)
+    auto_name = Column(Boolean, nullable=False, default=True)
+    status = Column(String, nullable=False, default="pending", index=True)
+    token_name = Column(String, nullable=True)
+    final_account_tag = Column(String, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    completed_at = Column(DateTime, nullable=True, index=True)
+    consumed_at = Column(DateTime, nullable=True, index=True)
+
+
 class UserCredential(Base):
     __tablename__ = "user_credentials"
     __table_args__ = (

@@ -73,9 +73,15 @@ def _run_db_path() -> str:
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     return os.getenv("AUTH_DB_PATH", os.path.join(repo_root, "auth.db"))
 
+
+def _connect_auth_db():
+    conn = sqlite3.connect(_run_db_path(), timeout=30)
+    conn.execute("PRAGMA busy_timeout = 30000")
+    return conn
+
 def _get_selected_channel_id(account_tag: str) -> str:
     try:
-        conn = sqlite3.connect(_run_db_path())
+        conn = _connect_auth_db()
         cur = conn.cursor()
         cur.execute(
             """
@@ -112,7 +118,7 @@ def _update_schedule_run(status: str, processed=None, total=None, message: str =
     if not run_id:
         return
     try:
-        conn = sqlite3.connect(_run_db_path())
+        conn = _connect_auth_db()
         cur = conn.cursor()
         finished_at = None
         if status in {"done", "error", "empty", "stopped"}:
@@ -140,7 +146,7 @@ def _stop_requested() -> bool:
     if not run_id:
         return False
     try:
-        conn = sqlite3.connect(_run_db_path())
+        conn = _connect_auth_db()
         cur = conn.cursor()
         cur.execute(
             "SELECT status FROM user_schedule_runs WHERE id = ?",

@@ -4,6 +4,7 @@ import json
 import pickle
 import subprocess
 import sys
+import time
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import HTMLResponse
@@ -17,12 +18,12 @@ from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional, hash_password
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
-from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun, TokenProgress, PasswordChangeRequest, SmmstoreAnalyticsCache, SmmstoreScheduledOrder, LiveCounterSnapshot, VideoLiveCounterSnapshot
+from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun, TokenProgress, PasswordChangeRequest, SmmstoreAnalyticsCache, SmmstoreScheduledOrder, LiveCounterSnapshot, VideoLiveCounterSnapshot, OAuthState
 from python_backend.api.auth.visibility import get_hidden_account_tags
 from python_backend.module_trafficsource import SCOPES, sanitize_filename
 from python_backend.progress_state import write_progress
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -38,10 +39,8 @@ OAUTH_REDIRECT_URL = os.getenv(
 )
 OAUTH_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
-
-PENDING_OAUTH = {}
-RECENT_OAUTH = {}
 _ADMIN_ENV_KEY = "ADMIN_USERNAME"
+_OAUTH_STATE_TTL_MINUTES = int(os.getenv("OAUTH_STATE_TTL_MINUTES", "15"))
 _TOKEN_GROUP_COLORS = [
     "#2563eb",
     "#16a34a",
@@ -54,6 +53,45 @@ _TOKEN_GROUP_COLORS = [
     "#4f46e5",
     "#0f766e",
 ]
+
+
+def _oauth_success_html() -> str:
+    return """
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Authorized</title>
+    <style>
+      body { font-family: Arial, sans-serif; padding: 24px; background: #0f172a; color: #e2e8f0; }
+      .card { max-width: 520px; margin: 40px auto; background: #111827; padding: 24px; border-radius: 12px; border: 1px solid #334155; }
+      h1 { font-size: 18px; margin: 0 0 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Channel connected.</h1>
+      <p>Data sync is now running on the server.</p>
+    </div>
+  </body>
+</html>
+"""
+
+
+def _oauth_state_response(row: OAuthState) -> dict:
+    return {
+        "ready": row.status == "completed",
+        "token_name": row.token_name,
+        "account_tag": row.final_account_tag or row.account_tag,
+    }
+
+
+def _mark_oauth_state_failed(db: Session, row: OAuthState, message: str) -> None:
+    row.status = "failed"
+    row.error_message = message
+    row.completed_at = datetime.utcnow()
+    db.add(row)
+    db.commit()
 
 
 def _safe_token_filename(name: str) -> str:
@@ -366,17 +404,11 @@ def upload_avatar(
     return {"avatarUrl": avatar_url}
 
 
-class OAuthStartPayload(BaseModel):
-    account_tag: str
-
-
 @router.post("/credentials")
 def start_oauth(
-    payload: OAuthStartPayload,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    account_tag_raw = (payload.account_tag or "").strip()
     auto_name = True
     account_tag = f"pending_{current_user.id}_{int(time.time() * 1000)}"
 
@@ -409,12 +441,19 @@ def start_oauth(
         prompt="consent",
         include_granted_scopes="false",
     )
-    PENDING_OAUTH[state] = {
-        "created_at": time.time(),
-        "user_id": current_user.id,
-        "account_tag": account_tag,
-        "auto_name": auto_name,
-    }
+    now = datetime.utcnow()
+    db.add(
+        OAuthState(
+            state=state,
+            user_id=current_user.id,
+            account_tag=account_tag,
+            auto_name=auto_name,
+            status="pending",
+            created_at=now,
+            expires_at=now + timedelta(minutes=_OAUTH_STATE_TTL_MINUTES),
+        )
+    )
+    db.commit()
 
     return {"account_tag": "", "auth_url": auth_url, "state": state}
 
@@ -426,18 +465,32 @@ def credentials_callback(
     error: str = "",
     db: Session = Depends(get_db),
 ):
+    row = db.query(OAuthState).filter(OAuthState.state == state).first()
     if error:
+        if row:
+            _mark_oauth_state_failed(db, row, f"Authorization failed: {error}")
         raise HTTPException(status_code=400, detail=f"Authorization failed: {error}")
 
-    pending = PENDING_OAUTH.get(state)
-    if not pending:
+    if not row:
         raise HTTPException(status_code=400, detail="Invalid or expired state")
+    now = datetime.utcnow()
+    if row.status == "completed":
+        return _oauth_success_html()
+    if row.expires_at and row.expires_at < now:
+        row.status = "expired"
+        row.completed_at = now
+        db.add(row)
+        db.commit()
+        raise HTTPException(status_code=400, detail="Invalid or expired state")
+    if row.status == "failed":
+        raise HTTPException(status_code=400, detail=row.error_message or "OAuth flow failed")
 
-    account_tag = pending.get("account_tag") or ""
+    account_tag = row.account_tag or ""
     flow = _build_oauth_flow()
     try:
         flow.fetch_token(code=code)
     except Exception as e:
+        _mark_oauth_state_failed(db, row, f"Failed to fetch token: {e}")
         raise HTTPException(status_code=400, detail=f"Failed to fetch token: {e}")
 
     token_filename = f"{account_tag}.pickle"
@@ -446,7 +499,7 @@ def credentials_callback(
     with open(token_path, "wb") as f:
         pickle.dump(flow.credentials, f)
 
-    user_id = pending.get("user_id")
+    user_id = row.user_id
     cred_row = None
     if user_id is not None:
         cred_row = (
@@ -481,10 +534,9 @@ def credentials_callback(
                 )
                 .first()
             )
-    pending["token_name"] = token_filename
-    pending["account_tag"] = account_tag
     channel_id, title = _pick_primary_channel(flow.credentials)
     if not channel_id:
+        _mark_oauth_state_failed(db, row, "No YouTube channel found for this account")
         raise HTTPException(status_code=400, detail="No YouTube channel found for this account")
 
     duplicate_query = db.query(UserCredential).filter(UserCredential.selected_channel_id == channel_id)
@@ -509,7 +561,7 @@ def credentials_callback(
         db.delete(cred_row)
         cred_row = duplicate_channel_row
 
-    if pending.get("auto_name") and not reused_existing_channel:
+    if row.auto_name and not reused_existing_channel:
         new_tag = sanitize_filename(title) or account_tag
         if new_tag:
             existing = (
@@ -550,6 +602,7 @@ def credentials_callback(
             token_name = new_token_name
 
     if cred_row is None:
+        _mark_oauth_state_failed(db, row, "OAuth state is missing the user credential record")
         raise HTTPException(status_code=400, detail="OAuth state is missing the user credential record")
 
     meta = _fetch_selected_channel_metadata(flow.credentials, channel_id=channel_id)
@@ -560,55 +613,33 @@ def credentials_callback(
     cred_row.token_name = token_name
     cred_row.updated_at = datetime.utcnow()
     db.add(cred_row)
+    row.status = "completed"
+    row.token_name = token_name
+    row.final_account_tag = account_tag
+    row.error_message = None
+    row.consumed_at = row.consumed_at or now
+    row.completed_at = datetime.utcnow()
+    db.add(row)
     db.commit()
-
-    RECENT_OAUTH[state] = {
-        "token_name": token_name,
-        "account_tag": account_tag,
-        "updated_at": time.time(),
-    }
-    PENDING_OAUTH.pop(state, None)
     write_progress(account_tag, "queued", 0, "queued", "Queued after authorization")
     _kickoff_get_data(account_tag)
 
-    return f"""
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>Authorized</title>
-    <style>
-      body {{ font-family: Arial, sans-serif; padding: 24px; background: #0f172a; color: #e2e8f0; }}
-      .card {{ max-width: 520px; margin: 40px auto; background: #111827; padding: 24px; border-radius: 12px; border: 1px solid #334155; }}
-      h1 {{ font-size: 18px; margin: 0 0 12px; }}
-    </style>
-  </head>
-  <body>
-    <div class="card">
-      <h1>Channel connected.</h1>
-      <p>Data sync is now running on the server.</p>
-    </div>
-  </body>
-</html>
-"""
+    return _oauth_success_html()
 
 
 @router.get("/credentials/state/{state}")
-def oauth_state(state: str):
-    pending = PENDING_OAUTH.get(state)
-    if pending:
-        return {
-            "ready": False,
-            "token_name": pending.get("token_name"),
-            "account_tag": pending.get("account_tag"),
-        }
-    recent = RECENT_OAUTH.pop(state, None)
-    if recent:
-        return {
-            "ready": True,
-            "token_name": recent.get("token_name"),
-            "account_tag": recent.get("account_tag"),
-        }
+def oauth_state(state: str, db: Session = Depends(get_db)):
+    row = db.query(OAuthState).filter(OAuthState.state == state).first()
+    if not row:
+        return {"ready": False}
+    if row.expires_at and row.expires_at < datetime.utcnow() and row.status == "pending":
+        row.status = "expired"
+        row.completed_at = datetime.utcnow()
+        db.add(row)
+        db.commit()
+        return {"ready": False}
+    if row.status == "completed":
+        return _oauth_state_response(row)
     return {"ready": False}
 
 

@@ -50,7 +50,7 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
     if (addingChannel) return;
     setAddingChannel(true);
     try {
-      const data = await uploadCredentials("");
+      const data = await uploadCredentials();
       const nextUrl = data?.auth_url || "";
       if (nextUrl) {
         window.open(nextUrl, "_blank", "noopener");

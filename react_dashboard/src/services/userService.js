@@ -18,9 +18,9 @@ export const uploadAvatar = (file) => {
   return api.post("/api/users/avatar", formData);
 };
 
-export const uploadCredentials = (accountTag) => {
+export const uploadCredentials = () => {
   return api
-    .post("/api/users/credentials", { account_tag: accountTag })
+    .post("/api/users/credentials")
     .then((res) => res.data);
 };
 

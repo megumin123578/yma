@@ -51,7 +51,7 @@ def _kickoff_get_data(account_tag: Optional[str], env_extra: Optional[dict] = No
             os.path.join(os.path.dirname(__file__), "..", "..", "..", "python_backend", "get_data.py")
         )
     repo_root = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
+        os.path.join(os.path.dirname(__file__), "..", "..", "..")
     )
     if not os.path.exists(script_path):
         print(f"[WARN] get_data.py not found: {script_path}")
@@ -424,8 +424,8 @@ def _run_loop():
                 run = UserScheduleRun(
                     user_id=row.user_id,
                     schedule_id=row.id,
-                    token_name=row.token_name,
-                    token_names=json.dumps([row.token_name]) if row.token_name else None,
+                    token_name=token_names[0] if len(token_names) == 1 else None,
+                    token_names=json.dumps(token_names),
                     run_type="scheduled",
                     status="queued",
                     started_at=now,
