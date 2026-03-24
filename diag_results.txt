@@ -1,8 +1,0 @@
-SUCCESS: Views (Day)
-SUCCESS: Subscribers (No Dim)
-SUCCESS: Subscribers (Day)
-FAILED : Subscribers (Video) -> 400: The query is not supported. Check the documentation at https://developers.google.com/youtube/analytics/v2/available_reports for a list of supported queries.
-FAILED : Impressions (No Dim) -> 400: The query is not supported. Check the documentation at https://developers.google.com/youtube/analytics/v2/available_reports for a list of supported queries.
-FAILED : Impressions (Video) -> 400: The query is not supported. Check the documentation at https://developers.google.com/youtube/analytics/v2/available_reports for a list of supported queries.
-FAILED : Impressions (Day) -> 400: The query is not supported. Check the documentation at https://developers.google.com/youtube/analytics/v2/available_reports for a list of supported queries.
-SUCCESS: Subscribers (Video) - 10 IDs
