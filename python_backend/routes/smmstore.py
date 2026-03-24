@@ -45,6 +45,20 @@ def require_key(user: User) -> str:
     return key
 
 
+def _error_text(exc: Exception) -> str:
+    if isinstance(exc, HTTPException):
+        detail = exc.detail
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+        return f"HTTP {exc.status_code}"
+    message = str(exc).strip()
+    return message or exc.__class__.__name__
+
+
+def _log_submit_event(level: str, message: str) -> None:
+    print(f"[SMMSTORE][{level}] {message}")
+
+
 @router.post("/balance")
 def balance(current_user: User = Depends(get_current_user)):
     key = require_key(current_user)
@@ -65,20 +79,126 @@ class OrderCreate(BaseModel):
     interval: Optional[str] = None
 
 
+def _normalize_order_inputs(
+    service: str,
+    link: str,
+    quantity: str,
+    runs: Optional[str] = None,
+    interval: Optional[str] = None,
+) -> tuple[str, str, str, Optional[str], Optional[str]]:
+    clean_service = (service or "").strip()
+    clean_link = (link or "").strip()
+    clean_quantity = str(quantity or "").strip()
+
+    if not clean_service:
+        raise HTTPException(status_code=400, detail="service is required")
+    if not clean_link:
+        raise HTTPException(status_code=400, detail="link is required")
+    try:
+        qty_num = int(float(clean_quantity))
+    except Exception:
+        raise HTTPException(status_code=400, detail="quantity must be a number")
+    if qty_num <= 0:
+        raise HTTPException(status_code=400, detail="quantity must be greater than 0")
+    if not clean_link.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="link must start with http:// or https://")
+
+    clean_runs = (runs or "").strip()
+    clean_interval = (interval or "").strip()
+    if bool(clean_runs) != bool(clean_interval):
+        raise HTTPException(
+            status_code=400,
+            detail="runs and interval are required together for drip-feed orders",
+        )
+    if clean_runs and clean_interval:
+        try:
+            runs_num = int(clean_runs)
+            interval_num = int(clean_interval)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="runs and interval must be integers",
+            )
+        if runs_num <= 0 or interval_num <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="runs and interval must be greater than 0",
+            )
+        clean_runs = str(runs_num)
+        clean_interval = str(interval_num)
+
+    return (
+        clean_service,
+        clean_link,
+        str(qty_num),
+        clean_runs or None,
+        clean_interval or None,
+    )
+
+
 @router.post("/order")
-def create_order(payload: OrderCreate, current_user: User = Depends(get_current_user)):
+def create_order(
+    payload: OrderCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     key = require_key(current_user)
+    service, link, quantity, runs, interval = _normalize_order_inputs(
+        payload.service,
+        payload.link,
+        payload.quantity,
+        payload.runs,
+        payload.interval,
+    )
     params = {
         "action": "add",
-        "service": payload.service,
-        "link": payload.link,
-        "quantity": payload.quantity,
+        "service": service,
+        "link": link,
+        "quantity": quantity,
     }
-    if payload.runs:
-        params["runs"] = payload.runs
-    if payload.interval:
-        params["interval"] = payload.interval
-    return smm_request(key, params)
+    if runs:
+        params["runs"] = runs
+    if interval:
+        params["interval"] = interval
+    try:
+        resp = smm_request(key, params)
+        remote_id = str(resp.get("order") or "").strip()
+        if remote_id:
+            now = datetime.utcnow()
+            row = SmmstoreScheduledOrder(
+                user_id=current_user.id,
+                run_at=now,
+                service=service,
+                link=link,
+                quantity=quantity,
+                runs=runs,
+                interval=interval,
+                status="submitted",
+                remote_order_id=remote_id,
+                submitted_at=now,
+                charge=str(resp.get("charge") or ""),
+                remains=str(resp.get("remains") or resp.get("remain") or ""),
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(row)
+            db.commit()
+            _log_submit_event(
+                "OK",
+                f"direct submit user={current_user.username} service={service} quantity={quantity} order_id={remote_id}",
+            )
+        else:
+            _log_submit_event(
+                "FAIL",
+                f"direct submit user={current_user.username} service={service} quantity={quantity} error={resp.get('error') or 'Missing order id'}",
+            )
+        return resp
+    except Exception as exc:
+        _log_submit_event(
+            "FAIL",
+            f"direct submit user={current_user.username} service={service} quantity={quantity} error={_error_text(exc)}",
+        )
+        raise
 
 
 class OrderStatus(BaseModel):
@@ -131,34 +251,28 @@ def create_scheduled_order(
     db: Session = Depends(get_db),
 ):
     require_key(current_user)
-
-    service = (payload.service or "").strip()
-    link = (payload.link or "").strip()
-    quantity = str(payload.quantity or "").strip()
-
-    if not service:
-        raise HTTPException(status_code=400, detail="service is required")
-    if not link:
-        raise HTTPException(status_code=400, detail="link is required")
-    try:
-        qty_num = int(float(quantity))
-    except Exception:
-        raise HTTPException(status_code=400, detail="quantity must be a number")
-    if qty_num <= 0:
-        raise HTTPException(status_code=400, detail="quantity must be greater than 0")
+    service, link, quantity, runs, interval = _normalize_order_inputs(
+        payload.service,
+        payload.link,
+        payload.quantity,
+        payload.runs,
+        payload.interval,
+    )
 
     run_at = payload.run_at
     if run_at.tzinfo is not None:
         run_at = run_at.astimezone().replace(tzinfo=None)
+    if run_at < datetime.utcnow():
+        raise HTTPException(status_code=400, detail="run_at must be in the future")
 
     row = SmmstoreScheduledOrder(
         user_id=current_user.id,
         run_at=run_at,
         service=service,
         link=link,
-        quantity=str(qty_num),
-        runs=(payload.runs or "").strip() or None,
-        interval=(payload.interval or "").strip() or None,
+        quantity=quantity,
+        runs=runs or None,
+        interval=interval or None,
         status="queued",
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
@@ -166,6 +280,10 @@ def create_scheduled_order(
     db.add(row)
     db.commit()
     db.refresh(row)
+    _log_submit_event(
+        "QUEUED",
+        f"scheduled submit user={current_user.username} service={service} quantity={quantity} run_at={row.run_at.isoformat()} schedule_id={row.id}",
+    )
     return {"ok": True, "item": _serialize_scheduled_order(row)}
 
 
@@ -230,6 +348,10 @@ def process_due_smmstore_orders(limit: int = 20) -> None:
                 order_row.updated_at = datetime.utcnow()
                 db.add(order_row)
                 db.commit()
+                _log_submit_event(
+                    "FAIL",
+                    f"scheduled execution user={user_row.username} schedule_id={order_row.id} service={order_row.service} quantity={order_row.quantity} error=Missing SMM API key",
+                )
                 continue
 
             params = {
@@ -249,14 +371,26 @@ def process_due_smmstore_orders(limit: int = 20) -> None:
                 if not remote_id:
                     order_row.status = "failed"
                     order_row.last_error = str(resp.get("error") or "Missing order id")
+                    _log_submit_event(
+                        "FAIL",
+                        f"scheduled execution user={user_row.username} schedule_id={order_row.id} service={order_row.service} quantity={order_row.quantity} error={order_row.last_error}",
+                    )
                 else:
                     order_row.remote_order_id = remote_id
                     order_row.status = "submitted"
                     order_row.submitted_at = datetime.utcnow()
                     order_row.last_error = None
+                    _log_submit_event(
+                        "OK",
+                        f"scheduled execution user={user_row.username} schedule_id={order_row.id} service={order_row.service} quantity={order_row.quantity} order_id={remote_id}",
+                    )
             except Exception as exc:
                 order_row.status = "failed"
-                order_row.last_error = str(exc)
+                order_row.last_error = _error_text(exc)
+                _log_submit_event(
+                    "FAIL",
+                    f"scheduled execution user={user_row.username} schedule_id={order_row.id} service={order_row.service} quantity={order_row.quantity} error={order_row.last_error}",
+                )
 
             order_row.attempts = int(order_row.attempts or 0) + 1
             order_row.updated_at = datetime.utcnow()

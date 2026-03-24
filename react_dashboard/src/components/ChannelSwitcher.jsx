@@ -15,9 +15,9 @@ import YouTubeIcon from "@mui/icons-material/YouTube";
 import { listTokens, setTokenVisibility } from "../services/userService";
 
 export const CHANNEL_SWITCHER_SX = {
-  minWidth: { xs: "100%", sm: 250 },
-  flex: "0 1 292px",
-  maxWidth: 336,
+  minWidth: { xs: "100%", sm: 270 },
+  flex: "0 1 312px",
+  maxWidth: 356,
 };
 
 const defaultGetValue = (option) => String(option?.value ?? "");

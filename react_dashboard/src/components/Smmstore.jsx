@@ -2,13 +2,16 @@ import {
   Box,
   Button,
   Chip,
+  Checkbox,
   FormControl,
+  FormControlLabel,
   IconButton,
   InputLabel,
   MenuItem,
   Paper,
   Select,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -224,8 +227,9 @@ const Smmstore = () => {
   const [showSuggestions, setShowSuggestions] = useState(false);
 
   const [link, setLink] = useState("");
-  const [quantity, setQuantity] = useState("1000");
+  const [quantity, setQuantity] = useState("");
 
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [runDate, setRunDate] = useState(() => dayjs());
   const [runTime, setRunTime] = useState(() => dayjs());
 
@@ -235,7 +239,26 @@ const Smmstore = () => {
 
   const [orders, setOrders] = useState([]);
   const [orderError, setOrderError] = useState("");
+  const [submittingOrder, setSubmittingOrder] = useState(false);
   const [loadingServices, setLoadingServices] = useState(false);
+
+  const toErrorMessage = useCallback((value) => {
+    if (!value) return "Request failed";
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) {
+      return value.map((item) => toErrorMessage(item)).filter(Boolean).join(", ");
+    }
+    if (typeof value === "object") {
+      if (typeof value.msg === "string" && value.msg.trim()) return value.msg;
+      if (typeof value.detail === "string" && value.detail.trim()) return value.detail;
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return "Request failed";
+      }
+    }
+    return String(value);
+  }, []);
 
   const apiRequest = useCallback(
     async (endpoint, payload, signal) => {
@@ -254,15 +277,17 @@ const Smmstore = () => {
         });
         const data = await resp.json();
         if (!resp.ok) {
-          return { error: data?.detail || data?.error || "Request failed" };
+          return {
+            error: toErrorMessage(data?.detail || data?.error || "Request failed"),
+          };
         }
         return data;
       } catch (err) {
         if (err?.name === "AbortError") return { error: "aborted" };
-        return { error: err?.message || "Request failed" };
+        return { error: toErrorMessage(err?.message || "Request failed") };
       }
     },
-    [hasKey]
+    [hasKey, toErrorMessage]
   );
 
   const apiGet = useCallback(
@@ -278,15 +303,17 @@ const Smmstore = () => {
         });
         const data = await resp.json();
         if (!resp.ok) {
-          return { error: data?.detail || data?.error || "Request failed" };
+          return {
+            error: toErrorMessage(data?.detail || data?.error || "Request failed"),
+          };
         }
         return data;
       } catch (err) {
         if (err?.name === "AbortError") return { error: "aborted" };
-        return { error: err?.message || "Request failed" };
+        return { error: toErrorMessage(err?.message || "Request failed") };
       }
     },
-    []
+    [toErrorMessage]
   );
 
   const apiDelete = useCallback(
@@ -301,14 +328,16 @@ const Smmstore = () => {
         });
         const data = await resp.json();
         if (!resp.ok) {
-          return { error: data?.detail || data?.error || "Request failed" };
+          return {
+            error: toErrorMessage(data?.detail || data?.error || "Request failed"),
+          };
         }
         return data;
       } catch (err) {
-        return { error: err?.message || "Request failed" };
+        return { error: toErrorMessage(err?.message || "Request failed") };
       }
     },
-    []
+    [toErrorMessage]
   );
 
   const fetchBalance = useCallback(
@@ -473,25 +502,54 @@ const Smmstore = () => {
     if (!hasKey) return setOrderError("Missing API key. Set it in Profile.");
     if (!service) return setOrderError("Please select a service.");
     if (!link.trim()) return setOrderError("Please enter a link.");
+    if (!/^https?:\/\//i.test(link.trim())) {
+      return setOrderError("Link must start with http:// or https://.");
+    }
     if (!quantity || Number(quantity) <= 0)
       return setOrderError("Quantity must be greater than 0.");
+    if (dripFeed) {
+      if (!runs || !dripInterval) {
+        return setOrderError("Runs and interval are required for drip-feed.");
+      }
+      if (!Number.isInteger(Number(runs)) || !Number.isInteger(Number(dripInterval))) {
+        return setOrderError("Runs and interval must be whole numbers.");
+      }
+      if (Number(runs) <= 0 || Number(dripInterval) <= 0) {
+        return setOrderError("Runs and interval must be greater than 0.");
+      }
+    }
 
     const runAt = buildRunAt();
+    if (scheduleEnabled && runAt.getTime() <= Date.now()) {
+      return setOrderError("Run time must be in the future.");
+    }
     const payload = {
-      service: serviceIdMap[service] || service.split(" - ")[0]?.trim(),
+      service: String(
+        serviceIdMap[service] || service.split(" - ")[0]?.trim() || ""
+      ),
       link: link.trim(),
       quantity: String(quantity),
-      run_at: runAt.toISOString(),
       runs: dripFeed ? String(runs || "") : null,
       interval: dripFeed ? String(dripInterval || "") : null,
     };
 
-    const resp = await apiRequest("/api/smmstore/schedule-order", payload);
-    if (resp?.error) {
-      setOrderError(resp.error);
-      return;
+    setSubmittingOrder(true);
+    try {
+      const endpoint = scheduleEnabled
+        ? "/api/smmstore/schedule-order"
+        : "/api/smmstore/order";
+      const requestPayload = scheduleEnabled
+        ? { ...payload, run_at: runAt.toISOString() }
+        : payload;
+      const resp = await apiRequest(endpoint, requestPayload);
+      if (resp?.error) {
+        setOrderError(resp.error);
+        return;
+      }
+      await Promise.all([fetchScheduledOrders(), fetchBalance()]);
+    } finally {
+      setSubmittingOrder(false);
     }
-    await fetchScheduledOrders();
   }, [
     apiRequest,
     buildRunAt,
@@ -501,8 +559,10 @@ const Smmstore = () => {
     link,
     quantity,
     runs,
+    scheduleEnabled,
     service,
     serviceIdMap,
+    fetchBalance,
     fetchScheduledOrders,
   ]);
 
@@ -573,12 +633,7 @@ const Smmstore = () => {
       {/* Form */}
       <Paper elevation={0} sx={cardSx}>
         <Stack spacing={2}>
-          {/* Service Selection */}
           <Stack spacing={1}>
-            <Typography variant="subtitle1" fontWeight="700">
-              Service Selection
-            </Typography>
-
             {/* Search + Category + Service (same row, responsive) */}
             <Stack
               direction={{ xs: "column", md: "row" }}
@@ -751,76 +806,103 @@ const Smmstore = () => {
 
           {/* Schedule */}
           <Stack spacing={1}>
-            <Typography variant="subtitle1" fontWeight="700">
-              Schedule
-            </Typography>
-            <LocalizationProvider dateAdapter={AdapterDayjs}>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                <DatePicker
-                  label="Run Date"
-                  value={runDate}
-                  onChange={(value) => setRunDate(value)}
-                  format="DD/MM/YYYY"
-                  slotProps={{
-                    textField: {
-                      size: "small",
-                      sx: { ...outlinedFieldSx, minWidth: 240, flex: 1 },
-                      InputLabelProps: { sx: inputLabelSx },
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={scheduleEnabled}
+                  onChange={(event) => setScheduleEnabled(event.target.checked)}
+                  sx={{
+                    color:
+                      theme.palette.mode === "dark"
+                        ? "rgba(148,163,184,0.9)"
+                        : "rgba(71,85,105,0.9)",
+                    "&.Mui-checked": {
+                      color:
+                        theme.palette.mode === "dark"
+                          ? "#38bdf8"
+                          : theme.palette.primary.main,
+                    },
+                    "&:hover": {
+                      backgroundColor:
+                        theme.palette.mode === "dark"
+                          ? "rgba(56,189,248,0.12)"
+                          : "rgba(14,165,233,0.12)",
                     },
                   }}
                 />
-                <TimePicker
-                  label="Time"
-                  value={runTime}
-                  onChange={(value) => setRunTime(value)}
-                  ampm={false}
-                  slotProps={{
-                    textField: {
-                      size: "small",
-                      sx: { ...outlinedFieldSx, minWidth: 200, flex: 1 },
-                      InputLabelProps: { sx: inputLabelSx },
-                    },
-                    actionBar: {
-                      sx: {
-                        "& .MuiButton-root": {
-                          color:
-                            theme.palette.mode === "dark"
-                              ? theme.palette.common.white
-                              : "inherit",
+              }
+              label={
+                <Typography variant="subtitle1" fontWeight="700">
+                  Schedule
+                </Typography>
+              }
+              sx={{ width: "fit-content", m: 0 }}
+            />
+            {scheduleEnabled ? (
+              <LocalizationProvider dateAdapter={AdapterDayjs}>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                  <DatePicker
+                    label="Run Date"
+                    value={runDate}
+                    onChange={(value) => setRunDate(value)}
+                    format="DD/MM/YYYY"
+                    slotProps={{
+                      textField: {
+                        size: "small",
+                        sx: { ...outlinedFieldSx, minWidth: 240, flex: 1 },
+                        InputLabelProps: { sx: inputLabelSx },
+                      },
+                    }}
+                  />
+                  <TimePicker
+                    label="Time"
+                    value={runTime}
+                    onChange={(value) => setRunTime(value)}
+                    ampm={false}
+                    slotProps={{
+                      textField: {
+                        size: "small",
+                        sx: { ...outlinedFieldSx, minWidth: 200, flex: 1 },
+                        InputLabelProps: { sx: inputLabelSx },
+                      },
+                      actionBar: {
+                        sx: {
+                          "& .MuiButton-root": {
+                            color:
+                              theme.palette.mode === "dark"
+                                ? theme.palette.common.white
+                                : "inherit",
+                          },
                         },
                       },
-                    },
-                    popper: {
-                      sx: {
-                        "& .MuiPickersActionBar-root .MuiButton-root": {
-                          color:
-                            theme.palette.mode === "dark"
-                              ? theme.palette.common.white
-                              : "inherit",
+                      popper: {
+                        sx: {
+                          "& .MuiPickersActionBar-root .MuiButton-root": {
+                            color:
+                              theme.palette.mode === "dark"
+                                ? theme.palette.common.white
+                                : "inherit",
+                          },
                         },
                       },
-                    },
-                    dialog: {
-                      sx: {
-                        "& .MuiPickersActionBar-root .MuiButton-root": {
-                          color:
-                            theme.palette.mode === "dark"
-                              ? theme.palette.common.white
-                              : "inherit",
+                      dialog: {
+                        sx: {
+                          "& .MuiPickersActionBar-root .MuiButton-root": {
+                            color:
+                              theme.palette.mode === "dark"
+                                ? theme.palette.common.white
+                                : "inherit",
+                          },
                         },
                       },
-                    },
-                  }}
-                />
-              </Stack>
-            </LocalizationProvider>
+                    }}
+                  />
+                </Stack>
+              </LocalizationProvider>
+            ) : null}
           </Stack>
 
-          {/* Order Details */}
           <Stack spacing={1}>
-            <Typography variant="subtitle1" fontWeight="700">
-              Order Details
-            </Typography>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                 <TextField
                   label="Link"
@@ -846,39 +928,68 @@ const Smmstore = () => {
           <Stack
             direction="row"
             spacing={2}
-            alignItems="center"
+            alignItems="flex-end"
             flexWrap="wrap"
             justifyContent="space-between"
+            sx={{ mb: 2.5 }}
           >
-            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-              <Button
-                variant={dripFeed ? "contained" : "outlined"}
-                color={dripFeed ? "success" : "error"}
-                onClick={() => setDripFeed((prev) => !prev)}
-                size="small"
+            <Stack
+              direction="row"
+              spacing={2}
+              alignItems="flex-end"
+              flexWrap="wrap"
+              sx={{ minHeight: 56 }}
+            >
+              <Box
                 sx={{
-                  transition: "transform 160ms ease, box-shadow 160ms ease",
-                  ...(dripFeed
-                    ? {
-                        backgroundColor: "rgba(34,197,94,0.18)",
-                        color:
-                          theme.palette.mode === "dark" ? "#86efac" : "#166534",
-                        "&:hover": {
-                          backgroundColor: "rgba(34,197,94,0.28)",
-                        },
-                      }
-                    : {}),
-                  "&:hover": {
-                    transform: "translateY(-1px)",
-                    boxShadow:
-                      theme.palette.mode === "dark"
-                        ? "0 6px 16px rgba(2,6,23,0.35)"
-                        : "0 6px 16px rgba(15,23,42,0.15)",
-                  },
+                  minWidth: 72,
+                  height: 40,
+                  position: "relative",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
-                Drip-Feed {dripFeed ? "On" : "Off"}
-              </Button>
+                <Switch
+                  checked={dripFeed}
+                  onChange={(event) => setDripFeed(event.target.checked)}
+                  color="success"
+                  sx={{
+                    "& .MuiSwitch-thumb": {
+                      backgroundColor: "#ffffff",
+                      boxShadow:
+                        theme.palette.mode === "dark"
+                          ? "0 2px 8px rgba(2,6,23,0.4)"
+                          : "0 2px 8px rgba(15,23,42,0.22)",
+                    },
+                  }}
+                />
+                <Typography
+                  variant="body2"
+                  textAlign="center"
+                  sx={{
+                    position: "absolute",
+                    top: "100%",
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    mt: 0.1,
+                    fontSize: "0.72rem",
+                    fontWeight: 700,
+                    letterSpacing: "0.04em",
+                    textTransform: "uppercase",
+                    color:
+                      dripFeed
+                        ? theme.palette.mode === "dark"
+                          ? "#86efac"
+                          : "#166534"
+                        : theme.palette.text.secondary,
+                    transition: "color 180ms ease",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Drip-Feed
+                </Typography>
+              </Box>
               {dripFeed && (
                 <>
                   <TextField
@@ -900,14 +1011,15 @@ const Smmstore = () => {
                 </>
               )}
             </Stack>
-            <Button
+              <Button
               variant="contained"
               color="secondary"
               onClick={submitOrder}
-              disabled={!hasKey || loadingServices}
+              disabled={!hasKey || loadingServices || submittingOrder}
               sx={{
                 width: 180,
                 ml: "auto",
+                alignSelf: "flex-end",
                 position: "relative",
                 overflow: "hidden",
                 transition:
@@ -935,7 +1047,7 @@ const Smmstore = () => {
                 },
               }}
             >
-              Submit
+              {submittingOrder ? "Submitting..." : "Submit"}
             </Button>
           </Stack>
 
@@ -1004,12 +1116,19 @@ const Smmstore = () => {
                   </TableCell>
                   <TableCell>{order.quantity}</TableCell>
                   <TableCell>
-                    <Chip
-                      label={order.status || "Unknown"}
-                      size="small"
-                      color={getStatusColor(order.status)}
-                      variant={order.status ? "filled" : "outlined"}
-                    />
+                    <Stack spacing={0.5} alignItems="flex-start">
+                      <Chip
+                        label={order.status || "Unknown"}
+                        size="small"
+                        color={getStatusColor(order.status)}
+                        variant={order.status ? "filled" : "outlined"}
+                      />
+                      {order.error ? (
+                        <Typography variant="caption" color="error">
+                          {order.error}
+                        </Typography>
+                      ) : null}
+                    </Stack>
                   </TableCell>
                   <TableCell align="right">
                     <IconButton
