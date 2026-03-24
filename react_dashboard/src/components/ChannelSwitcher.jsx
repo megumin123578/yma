@@ -1,6 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import { Autocomplete, Avatar, Box, TextField, Typography } from "@mui/material";
+import {
+  Autocomplete,
+  Avatar,
+  Box,
+  Checkbox,
+  CircularProgress,
+  Divider,
+  Paper,
+  TextField,
+  Typography,
+  useTheme,
+} from "@mui/material";
 import YouTubeIcon from "@mui/icons-material/YouTube";
+import { listTokens, setTokenVisibility } from "../services/userService";
 
 export const CHANNEL_SWITCHER_SX = {
   minWidth: { xs: "100%", sm: 280 },
@@ -8,33 +20,49 @@ export const CHANNEL_SWITCHER_SX = {
   maxWidth: 420,
 };
 
-const loadRecentChannels = (storageKey) => {
-  if (!storageKey || typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(storageKey);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
-  } catch {
-    return [];
-  }
-};
-
-const saveRecentChannels = (storageKey, items) => {
-  if (!storageKey || typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(
-      storageKey,
-      JSON.stringify(Array.from(new Set((items || []).map(String).filter(Boolean))).slice(0, 5))
-    );
-  } catch {
-    // Ignore localStorage errors and keep the switcher functional.
-  }
-};
-
 const defaultGetValue = (option) => String(option?.value ?? "");
 const defaultGetLabel = (option) => String(option?.label ?? option?.value ?? "");
 const defaultGetAvatar = (option) => option?.avatar || "";
 const defaultGetMeta = () => "";
+const normalizeTokenValue = (value) => String(value || "").replace(/\.pickle$/i, "").trim();
+
+let tokenInventoryCache = null;
+let tokenInventoryPromise = null;
+
+const loadTokenInventory = async () => {
+  if (tokenInventoryCache) return tokenInventoryCache;
+  if (tokenInventoryPromise) return tokenInventoryPromise;
+
+  tokenInventoryPromise = listTokens()
+    .then((data) => {
+      const items = Array.isArray(data?.tokens) ? data.tokens : [];
+      tokenInventoryCache = items
+        .map((item) => {
+          const tokenName = String(item?.name || "").trim();
+          const value = normalizeTokenValue(tokenName);
+          if (!value) return null;
+          return {
+            tokenName,
+            value,
+            label: String(item?.label || value),
+            avatar: item?.avatar || "",
+            hidden: !!item?.hidden,
+            owned: item?.owned !== false,
+          };
+        })
+        .filter(Boolean);
+      return tokenInventoryCache;
+    })
+    .catch(() => {
+      tokenInventoryCache = [];
+      return tokenInventoryCache;
+    })
+    .finally(() => {
+      tokenInventoryPromise = null;
+    });
+
+  return tokenInventoryPromise;
+};
 
 const ChannelSwitcher = ({
   options,
@@ -51,7 +79,12 @@ const ChannelSwitcher = ({
   getOptionAvatar = defaultGetAvatar,
   getOptionMeta = defaultGetMeta,
 }) => {
-  const [recentChannels, setRecentChannels] = useState(() => loadRecentChannels(recentStorageKey));
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+  const [showHidden, setShowHidden] = useState(false);
+  const [tokenInventory, setTokenInventory] = useState([]);
+  const [visibilityReady, setVisibilityReady] = useState(false);
+  const [pendingValues, setPendingValues] = useState({});
 
   const normalizedOptions = useMemo(
     () =>
@@ -65,37 +98,162 @@ const ChannelSwitcher = ({
     [options, getOptionAvatar, getOptionLabel, getOptionMeta, getOptionValue]
   );
 
-  const selectedOption = useMemo(
-    () => normalizedOptions.find((option) => option.value === String(value || "")) || null,
-    [normalizedOptions, value]
-  );
+  useEffect(() => {
+    let active = true;
+    loadTokenInventory().then((items) => {
+      if (!active) return;
+      setTokenInventory(items);
+      setVisibilityReady(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
-    if (!recentStorageKey || !value) return;
-    setRecentChannels((current) => {
-      const next = [String(value), ...current.filter((item) => item !== String(value))].slice(0, 5);
-      saveRecentChannels(recentStorageKey, next);
-      return next;
+    const handleVisibilityChanged = (event) => {
+      const nextValue = normalizeTokenValue(event?.detail?.value);
+      if (!nextValue) return;
+      setTokenInventory((current) =>
+        current.map((item) =>
+          item.value === nextValue ? { ...item, hidden: !!event?.detail?.hidden } : item
+        )
+      );
+    };
+    window.addEventListener("token-visibility-changed", handleVisibilityChanged);
+    return () => window.removeEventListener("token-visibility-changed", handleVisibilityChanged);
+  }, []);
+
+  const inventoryByValue = useMemo(
+    () => new Map(tokenInventory.filter((item) => item.owned).map((item) => [item.value, item])),
+    [tokenInventory]
+  );
+
+  const mergedOptions = useMemo(() => {
+    const base = normalizedOptions.map((option) => {
+      const inventory = inventoryByValue.get(option.value);
+      const hidden =
+        Object.prototype.hasOwnProperty.call(pendingValues, option.value)
+          ? pendingValues[option.value]
+          : !!inventory?.hidden;
+      return {
+        ...option,
+        tokenName: inventory?.tokenName || "",
+        hidden,
+      };
     });
-  }, [recentStorageKey, value]);
+
+    const knownValues = new Set(base.map((option) => option.value));
+    tokenInventory.forEach((item) => {
+      if (!item.owned || knownValues.has(item.value)) return;
+      const hidden =
+        Object.prototype.hasOwnProperty.call(pendingValues, item.value)
+          ? pendingValues[item.value]
+          : !!item.hidden;
+      base.push({
+        raw: { value: item.value, label: item.label, avatar: item.avatar },
+        value: item.value,
+        label: item.label,
+        avatar: item.avatar,
+        meta: "",
+        tokenName: item.tokenName,
+        hidden,
+      });
+    });
+
+    return base;
+  }, [inventoryByValue, normalizedOptions, pendingValues, tokenInventory]);
+
+  const selectedOption = useMemo(
+    () => mergedOptions.find((option) => option.value === String(value || "")) || null,
+    [mergedOptions, value]
+  );
+
+  const hiddenOptions = useMemo(
+    () => mergedOptions.filter((option) => option.hidden),
+    [mergedOptions]
+  );
+
+  const visibleOptions = useMemo(
+    () => mergedOptions.filter((option) => !option.hidden),
+    [mergedOptions]
+  );
 
   const groupedOptions = useMemo(() => {
-    if (!recentStorageKey) return normalizedOptions;
-    const recentRank = new Map(recentChannels.map((item, index) => [item, index]));
-    const recent = [];
-    const others = [];
+    const visible = visibleOptions.map((option) => ({ ...option, group: "Channels" }));
+    const hidden = showHidden
+      ? hiddenOptions.map((option) => ({ ...option, group: "Hidden" }))
+      : [];
+    return [...visible, ...hidden];
+  }, [hiddenOptions, showHidden, visibleOptions]);
 
-    normalizedOptions.forEach((option) => {
-      if (recentRank.has(option.value)) {
-        recent.push({ ...option, group: "Recent" });
-      } else {
-        others.push({ ...option, group: "All channels" });
+  const handleToggleVisibility = async (event, option, nextVisible) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!option?.tokenName) return;
+
+    const nextHidden = !nextVisible;
+    setPendingValues((current) => ({
+      ...current,
+      [option.value]: nextHidden,
+      [`${option.value}:saving`]: true,
+    }));
+
+    try {
+      await setTokenVisibility(option.tokenName, nextHidden);
+      setTokenInventory((current) =>
+        current.map((item) =>
+          item.value === option.value ? { ...item, hidden: nextHidden } : item
+        )
+      );
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("token-visibility-changed", {
+            detail: { value: option.value, hidden: nextHidden },
+          })
+        );
       }
-    });
+    } catch {
+      setPendingValues((current) => {
+        const next = { ...current };
+        delete next[option.value];
+        return next;
+      });
+    } finally {
+      setPendingValues((current) => {
+        const next = { ...current };
+        delete next[option.value];
+        delete next[`${option.value}:saving`];
+        return next;
+      });
+    }
+  };
 
-    recent.sort((a, b) => recentRank.get(a.value) - recentRank.get(b.value));
-    return [...recent, ...others];
-  }, [normalizedOptions, recentChannels, recentStorageKey]);
+  const renderDropdownPaper = (paperProps) => (
+    <Paper {...paperProps}>
+      {paperProps.children}
+      {visibilityReady && hiddenOptions.length ? (
+        <>
+          <Divider />
+          <Box
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setShowHidden((current) => !current)}
+            sx={{
+              px: 1.5,
+              py: 1.25,
+              cursor: "pointer",
+              color: "text.secondary",
+              fontSize: 13,
+              fontWeight: 700,
+              "&:hover": { bgcolor: "action.hover" },
+            }}
+          >
+            {showHidden ? "Hide hidden" : `Show hidden (${hiddenOptions.length})`}
+          </Box>
+        </>
+      ) : null}
+    </Paper>
+  );
 
   return (
     <Box sx={sx || CHANNEL_SWITCHER_SX}>
@@ -106,8 +264,9 @@ const ChannelSwitcher = ({
         noOptionsText={noOptionsText}
         clearIcon={null}
         getOptionLabel={(option) => option?.label || ""}
-        groupBy={recentStorageKey ? (option) => option.group || "All channels" : undefined}
+        groupBy={(option) => option.group || "Channels"}
         isOptionEqualToValue={(option, current) => option?.value === current?.value}
+        PaperComponent={renderDropdownPaper}
         filterOptions={(items, state) => {
           const query = state.inputValue.trim().toLowerCase();
           if (!query) return items;
@@ -169,13 +328,61 @@ const ChannelSwitcher = ({
           />
         )}
         renderOption={(props, option) => (
-          <Box component="li" {...props} sx={{ display: "flex", alignItems: "center", gap: 1.25, py: 1 }}>
+          <Box
+            component="li"
+            {...props}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0.75,
+              py: 1,
+              pl: 0.5,
+              opacity: option.hidden ? 0.72 : 1,
+            }}
+          >
+            {option.tokenName ? (
+              <Checkbox
+                checked={!option.hidden}
+                size="small"
+                sx={{
+                  ml: -0.5,
+                  mr: 0,
+                  p: 0.5,
+                  color: isDark ? "rgba(226,232,240,0.82)" : "rgba(15,23,42,0.48)",
+                  "&.Mui-checked": {
+                    color: isDark ? "#7dd3fc" : "#1976d2",
+                  },
+                  "&.Mui-disabled": {
+                    color: isDark ? "rgba(148,163,184,0.45)" : "rgba(148,163,184,0.75)",
+                  },
+                  "& .MuiSvgIcon-root": {
+                    filter: isDark ? "drop-shadow(0 0 4px rgba(125,211,252,0.18))" : "none",
+                  },
+                }}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={(event) => handleToggleVisibility(event, option, option.hidden)}
+                disabled={!!pendingValues[`${option.value}:saving`]}
+              />
+            ) : (
+              <Box sx={{ width: 30 }} />
+            )}
             <Avatar src={option.avatar} alt={option.label} sx={{ width: 30, height: 30 }} />
             <Box sx={{ minWidth: 0, flex: 1 }}>
               <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
                 {option.label}
               </Typography>
+              {option.hidden ? (
+                <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                  Hidden
+                </Typography>
+              ) : null}
             </Box>
+            {pendingValues[`${option.value}:saving`] ? (
+              <CircularProgress size={14} sx={{ mr: 0.5 }} />
+            ) : null}
             {option.meta ? (
               <Box
                 sx={{
