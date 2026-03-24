@@ -15,9 +15,9 @@ import YouTubeIcon from "@mui/icons-material/YouTube";
 import { listTokens, setTokenVisibility } from "../services/userService";
 
 export const CHANNEL_SWITCHER_SX = {
-  minWidth: { xs: "100%", sm: 280 },
-  flex: "1 1 320px",
-  maxWidth: 420,
+  minWidth: { xs: "100%", sm: 250 },
+  flex: "0 1 292px",
+  maxWidth: 336,
 };
 
 const defaultGetValue = (option) => String(option?.value ?? "");
@@ -72,7 +72,7 @@ const ChannelSwitcher = ({
   placeholder = "Search by channel name",
   sx,
   size = "small",
-  recentStorageKey,
+  disabled = false,
   noOptionsText = "No channels found",
   getOptionValue = defaultGetValue,
   getOptionLabel = defaultGetLabel,
@@ -261,6 +261,7 @@ const ChannelSwitcher = ({
         size={size}
         options={groupedOptions}
         value={selectedOption}
+        disabled={disabled}
         noOptionsText={noOptionsText}
         clearIcon={null}
         getOptionLabel={(option) => option?.label || ""}
@@ -292,10 +293,10 @@ const ChannelSwitcher = ({
                     <Avatar
                       src={selectedOption.avatar}
                       alt={selectedOption.label}
-                      sx={{ width: 22, height: 22, mr: 1 }}
+                      sx={{ width: 22, height: 22, mr: 0.5 }}
                     />
                   ) : (
-                    <YouTubeIcon sx={{ fontSize: 18, color: "text.secondary", mr: 1 }} />
+                    <YouTubeIcon sx={{ fontSize: 18, color: "text.secondary", mr: 0.5 }} />
                   )}
                   {params.InputProps.startAdornment}
                 </>

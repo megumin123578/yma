@@ -370,7 +370,6 @@ const AudienceAnalytics = () => {
           value={accountTag}
           onChange={(option) => setAccountTag(option?.value || "")}
           sx={CHANNEL_SWITCHER_SX}
-          recentStorageKey="audienceAnalytics.recentChannels"
           getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
           getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
         />

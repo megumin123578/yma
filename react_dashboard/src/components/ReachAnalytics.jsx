@@ -244,7 +244,6 @@ const ReachAnalytics = () => {
             value={accounts.some((acct) => acct.value === accountTag) ? accountTag : ""}
             onChange={(option) => setAccountTag(option?.value || "")}
           sx={CHANNEL_SWITCHER_SX}
-          recentStorageKey="reachAnalytics.recentChannels"
           getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
           getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
         />

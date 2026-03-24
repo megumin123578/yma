@@ -263,7 +263,6 @@ const RevenueAnalytics = () => {
           value={channel}
           onChange={(option) => setChannel(option?.value || "")}
           sx={CHANNEL_SWITCHER_SX}
-          recentStorageKey="revenue.recentChannels"
           getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
           getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
         />

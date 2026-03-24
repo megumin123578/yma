@@ -5,8 +5,6 @@ import {
   Box,
   Stack,
   Typography,
-  Avatar,
-  Autocomplete,
   Table,
   TableBody,
   TableCell,
@@ -18,12 +16,10 @@ import {
   Select,
   MenuItem,
   Divider,
-  TextField,
 } from "@mui/material";
 import { motion, AnimatePresence } from "framer-motion";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import CalendarMonthIcon from "@mui/icons-material/CalendarMonth";
-import YouTubeIcon from "@mui/icons-material/YouTube";
 import PieChartIcon from "@mui/icons-material/PieChart";
 import TimelineIcon from "@mui/icons-material/Timeline";
 
@@ -44,7 +40,7 @@ import {
   getChannelAvatarMap,
   getChannelRevenueMap,
 } from "./Module";
-import { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
+import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 
 import dayjs from "dayjs";
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
@@ -101,7 +97,6 @@ const normalizeTrafficSourcePeriod = (value) =>
   TRAFFIC_SOURCE_PERIOD_VALUES.has(value) ? value : "last28";
 
 const FILTERS_STORAGE_KEY = "trafficSource.filters";
-const RECENT_CHANNELS_STORAGE_KEY = "trafficSource.recentChannels";
 const TRAFFIC_SOURCE_COLORS = [
   "#3b82f6",
   "#ef4444",
@@ -151,34 +146,6 @@ const loadStoredFilters = () => {
   } catch (e) {
     return null;
   }
-};
-
-const loadRecentChannels = () => {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(RECENT_CHANNELS_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
-  } catch (e) {
-    return [];
-  }
-};
-
-const saveRecentChannels = (items) => {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(
-      RECENT_CHANNELS_STORAGE_KEY,
-      JSON.stringify(Array.from(new Set((items || []).map(String).filter(Boolean))).slice(0, 5))
-    );
-  } catch (e) { }
-};
-
-const formatChannelDate = (value, withTime = false) => {
-  if (!value) return "";
-  const parsed = dayjs(value);
-  if (!parsed.isValid()) return "";
-  return parsed.format(withTime ? "DD MMM YYYY, HH:mm" : "DD MMM YYYY");
 };
 
 const TrafficLineChart = ({
@@ -322,7 +289,6 @@ const TrafficSourceChart = () => {
   const [channels, setChannels] = useState([]);
   const [channelAvatarMap, setChannelAvatarMap] = useState({});
   const [channelRevenueMap, setChannelRevenueMap] = useState({});
-  const [recentChannels, setRecentChannels] = useState(() => loadRecentChannels());
   const [channel, setChannel] = useState(() => loadStoredFilters()?.channel || "");
 
   const authHeaders = useMemo(() => {
@@ -429,11 +395,6 @@ const TrafficSourceChart = () => {
 
   useEffect(() => {
     if (!channel) return;
-    setRecentChannels((current) => {
-      const next = [channel, ...current.filter((item) => item !== channel)].slice(0, 5);
-      saveRecentChannels(next);
-      return next;
-    });
     setStoredSharedChannelId(channel, "trafficSource.selectedChannelId");
   }, [channel]);
 
@@ -531,34 +492,6 @@ const TrafficSourceChart = () => {
     const selected = channels.find((item) => item.value === channel);
     return selected?.label || channel || "No channel selected";
   }, [channels, channel]);
-
-  const orderedChannelOptions = useMemo(() => {
-    const recentRank = new Map(recentChannels.map((value, index) => [String(value), index]));
-    const recent = [];
-    const others = [];
-
-    channels.forEach((item) => {
-      if (recentRank.has(String(item.value))) {
-        recent.push({ ...item, group: "Recent", meta: channelRevenueMap[item.value] || "" });
-      } else {
-        others.push({ ...item, group: "All channels", meta: channelRevenueMap[item.value] || "" });
-      }
-    });
-
-    recent.sort((a, b) => recentRank.get(String(a.value)) - recentRank.get(String(b.value)));
-    return [...recent, ...others];
-  }, [channels, recentChannels, channelRevenueMap]);
-
-  const currentChannelMeta = useMemo(
-    () => channels.find((item) => item.value === channel) || null,
-    [channels, channel]
-  );
-
-  const getChannelAvatar = useCallback(
-    (channelValue, fallbackAvatar = "") =>
-      channelAvatarMap[channelValue] || fallbackAvatar || "",
-    [channelAvatarMap]
-  );
 
   useEffect(() => {
     if (!channel) return;
@@ -832,112 +765,14 @@ const TrafficSourceChart = () => {
       <Stack spacing={2}>
         {/* SELECTORS */}
         <Stack direction="row" alignItems="center" spacing={2} sx={{ flexWrap: "wrap", rowGap: 2 }}>
-          <Box sx={CHANNEL_SWITCHER_SX}>
-            <Autocomplete
-              size="small"
-              disableClearable
-              options={orderedChannelOptions}
-              value={currentChannelMeta}
-              isOptionEqualToValue={(option, value) => option?.value === value?.value}
-              groupBy={(option) => option.group || "All channels"}
-              filterOptions={(options, state) => {
-                const query = state.inputValue.trim().toLowerCase();
-                if (!query) return options;
-                return options.filter((option) =>
-                  [option.label, option.value, formatChannelDate(option.lastDataDate)]
-                    .filter(Boolean)
-                    .join(" ")
-                    .toLowerCase()
-                    .includes(query)
-                );
-              }}
-              noOptionsText="No channels found"
-              onChange={(_, nextValue) => {
-                if (nextValue?.value) setChannel(nextValue.value);
-              }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="Channel"
-                  placeholder="Search by channel name"
-                  InputProps={{
-                    ...params.InputProps,
-                    startAdornment: (
-                      <>
-                        {currentChannelMeta ? (
-                          <Avatar
-                            src={getChannelAvatar(currentChannelMeta.value, currentChannelMeta.avatar)}
-                            alt={currentChannelMeta.label}
-                            sx={{ width: 22, height: 22, mr: 1 }}
-                          />
-                        ) : (
-                          <YouTubeIcon sx={{ fontSize: 18, color: "text.secondary", mr: 1 }} />
-                        )}
-                        {params.InputProps.startAdornment}
-                      </>
-                    ),
-                    endAdornment: (
-                      <>
-                        {orderedChannelOptions.find((item) => item.value === channel)?.meta ? (
-                          <Box
-                            sx={{
-                              mr: 0.25,
-                              px: 0.5,
-                              py: 0.15,
-                              borderRadius: 999,
-                              fontSize: 11,
-                              fontWeight: 800,
-                              lineHeight: 1,
-                              color: "success.main",
-                              bgcolor: "rgba(46, 125, 50, 0.12)",
-                              border: "1px solid",
-                              borderColor: "rgba(46, 125, 50, 0.2)",
-                            }}
-                            >
-                            {orderedChannelOptions.find((item) => item.value === channel)?.meta}
-                          </Box>
-                        ) : null}
-                        {params.InputProps.endAdornment}
-                      </>
-                    ),
-                  }}
-                />
-              )}
-              renderOption={(props, option) => (
-                <Box component="li" {...props} sx={{ display: "flex", alignItems: "center", gap: 1.25, py: 1 }}>
-                  <Avatar
-                    src={getChannelAvatar(option.value, option.avatar)}
-                    alt={option.label}
-                    sx={{ width: 30, height: 30 }}
-                  />
-                  <Box sx={{ minWidth: 0, flex: 1 }}>
-                    <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
-                      {option.label}
-                    </Typography>
-                  </Box>
-                  {option.meta ? (
-                    <Box
-                      sx={{
-                        minWidth: 20,
-                        px: 0.75,
-                        py: 0.25,
-                        borderRadius: 999,
-                        fontSize: 12,
-                        fontWeight: 800,
-                        lineHeight: 1,
-                        color: "success.main",
-                        bgcolor: "rgba(46, 125, 50, 0.12)",
-                        border: "1px solid",
-                        borderColor: "rgba(46, 125, 50, 0.2)",
-                      }}
-                    >
-                      {option.meta}
-                    </Box>
-                  ) : null}
-                </Box>
-              )}
-            />
-          </Box>
+          <ChannelSwitcher
+            options={channels}
+            value={channel}
+            onChange={(option) => setChannel(option?.value || "")}
+            sx={CHANNEL_SWITCHER_SX}
+            getOptionAvatar={(option) => channelAvatarMap[option?.value] || option?.avatar || ""}
+            getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
+          />
 
           <FormControl size="small" sx={{ minWidth: 140 }}>
             <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>

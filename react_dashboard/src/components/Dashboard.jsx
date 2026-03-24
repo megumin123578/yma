@@ -727,25 +727,29 @@ const VideoList = () => {
             <Box
                 mb={2}
                 display="flex"
-                alignItems="center"
+                alignItems={{ xs: "stretch", md: "center" }}
                 justifyContent="space-between"
                 flexWrap="wrap"
                 gap={2}
             >
-                <Box display="flex" alignItems="center" gap={2}>
-                    {loadingChannels ? (
-                        <CircularProgress size={20} />
-                    ) : (
-                        <ChannelSwitcher
-                            options={channels}
-                            value={selectedChannel}
-                            onChange={(option) => setSelectedChannel(option?.value || "")}
-                            sx={CHANNEL_SWITCHER_SX}
-                            recentStorageKey="dashboard.recentChannels"
-                            getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
-                            getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
-                        />
-                    )}
+                <Box
+                    display="flex"
+                    alignItems={{ xs: "stretch", sm: "center" }}
+                    gap={2}
+                    flexWrap="wrap"
+                    sx={{ width: { xs: "100%", lg: "auto" }, flex: "1 1 520px" }}
+                >
+                    <ChannelSwitcher
+                        options={channels}
+                        value={selectedChannel}
+                        onChange={(option) => setSelectedChannel(option?.value || "")}
+                        sx={CHANNEL_SWITCHER_SX}
+                        disabled={loadingChannels}
+                        placeholder={loadingChannels ? "Loading channels..." : "Search by channel name"}
+                        noOptionsText={loadingChannels ? "Loading channels..." : "No channels found"}
+                        getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
+                        getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
+                    />
 
                     <TextField
                         select
@@ -753,7 +757,7 @@ const VideoList = () => {
                         label="Date range"
                         value={overviewRange}
                         onChange={(e) => setOverviewRange(e.target.value)}
-                        sx={{ minWidth: 160 }}
+                        sx={{ minWidth: { xs: "100%", sm: 160 } }}
                     >
                         {OVERVIEW_RANGES.map((range) => (
                             <MenuItem key={range.value} value={range.value}>

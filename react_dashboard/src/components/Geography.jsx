@@ -311,7 +311,6 @@ const GeographyChart = ({ isDashboard = false }) => {
               if (option?.label) setChannelLabelFallback(option.label);
             }}
             sx={CHANNEL_SWITCHER_SX}
-            recentStorageKey="geography.recentChannels"
             getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
             getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
             getOptionLabel={(option) =>

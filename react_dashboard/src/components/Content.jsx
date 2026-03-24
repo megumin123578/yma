@@ -1632,7 +1632,6 @@ const ContentAnalytics = () => {
           value={channelList.some((c) => c.id === channelId) ? channelId : ""}
           onChange={(option) => setChannelId(option?.value || "")}
           sx={CHANNEL_SWITCHER_SX}
-          recentStorageKey="content.recentChannels"
           getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
         />
 
