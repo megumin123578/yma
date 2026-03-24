@@ -1431,8 +1431,10 @@ class ScheduleUpdate(BaseModel):
 @router.get("/schedules")
 def list_schedules(
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Permission Denied")
     rows = (
         db.query(UserSchedule)
         .order_by(UserSchedule.id.desc())

@@ -111,6 +111,7 @@ const CredentialsDialog = ({
   const [selectedTokenNames, setSelectedTokenNames] = useState([]);
   const [runningSelected, setRunningSelected] = useState(false);
   const [schedules, setSchedules] = useState([]);
+  const [schedulesError, setSchedulesError] = useState("");
   const [scheduleRuns, setScheduleRuns] = useState([]);
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [runsError, setRunsError] = useState("");
@@ -324,13 +325,21 @@ const CredentialsDialog = ({
   }, []);
 
   const loadSchedules = useCallback(async () => {
+    if (!isAdmin) {
+      setSchedules([]);
+      setSchedulesError("Permission Denied");
+      return;
+    }
     try {
+      setSchedulesError("");
       const data = await listSchedules();
       setSchedules(data?.items || []);
     } catch (err) {
       setSchedules([]);
+      const msg = err?.response?.data?.detail || "Permission Denied";
+      setSchedulesError(msg);
     }
-  }, []);
+  }, [isAdmin]);
 
   const loadTokenGroups = useCallback(async () => {
     try {
@@ -2050,127 +2059,139 @@ const CredentialsDialog = ({
                       Schedule
                     </Typography>
                     <Box display="flex" flexDirection="column" gap={2} mt={1}>
-                      {status.message && (
-                        <Typography
-                          variant="body2"
-                          color={
-                            status.type === "error"
-                              ? theme.palette.error.main
-                              : theme.palette.success.main
-                          }
-                        >
-                          {cleanError(status.message)}
-                        </Typography>
-                      )}
-                      <LocalizationProvider dateAdapter={AdapterDayjs}>
-                        <TimePicker
-                          label="Time"
-                          value={
-                            scheduleForm.time_of_day
-                              ? dayjs(`2000-01-01T${scheduleForm.time_of_day}`)
-                              : null
-                          }
-                          onChange={(value) => {
-                            if (!value || !value.isValid?.()) return;
-                            handleScheduleField("time_of_day", value.format("HH:mm"));
-                          }}
-                          ampm={false}
-                          minutesStep={5}
-                          localeText={{ cancelButtonLabel: "X" }}
-                          slotProps={{
-                            textField: { size: "small" },
-                            popper: {
-                              sx: {
-                                "& .MuiPaper-root": {
-                                  bgcolor: isDark ? "rgba(16,22,32,0.96)" : "#ffffff",
-                                  border: `1px solid ${border}`,
-                                  borderRadius: 2,
-                                  boxShadow: isDark
-                                    ? "0 18px 40px rgba(0,0,0,0.6)"
-                                    : "0 16px 32px rgba(15,23,42,0.15)",
-                                },
-                                "& .MuiPickersLayout-root": {
-                                  color: isDark ? "#e5e7eb" : "#111827",
-                                },
-                                "& .MuiMultiSectionDigitalClock-root": {
-                                  justifyContent: "space-between",
-                                  gap: 1,
-                                  p: 1,
-                                },
-                                "& .MuiMultiSectionDigitalClock-section": {
-                                  flex: 1,
-                                  minWidth: 120,
-                                  borderRadius: 1,
-                                  background: isDark ? "rgba(255,255,255,0.04)" : "rgba(15,23,42,0.03)",
-                                },
-                                "& .MuiDigitalClock-item": {
-                                  color: isDark ? "#cbd5f5" : "#1f2937",
-                                  borderRadius: 1,
-                                },
-                                "& .MuiDigitalClock-item.Mui-selected": {
-                                  bgcolor: isDark ? "rgba(125,224,210,0.25)" : "rgba(25,118,210,0.15)",
-                                  color: isDark ? "#eafff9" : "#0b1f3b",
-                                },
-                                "& .MuiPickersToolbar-root": {
-                                  color: isDark ? "#e5e7eb" : "#111827",
-                                },
-                                "& .MuiDialogActions-root button": {
-                                  color: isDark ? "#ffffff" : "#111827",
-                                },
-                              },
-                            },
-                          }}
-                        />
-                      </LocalizationProvider>
-
-                      <Button variant="contained" onClick={handleCreateSchedule} sx={shimmerSx}>
-                        Save Schedule
-                      </Button>
-
-                      <Divider />
-
-                      {schedules.length === 0 ? (
+                      {!isAdmin ? (
                         <Typography variant="body2" color="text.secondary">
-                          No schedules yet.
+                          Permission Denied
+                        </Typography>
+                      ) : schedulesError ? (
+                        <Typography variant="body2" color="text.secondary">
+                          {cleanError(schedulesError)}
                         </Typography>
                       ) : (
-                        <Box display="flex" flexDirection="column" gap={1}>
-                          {schedules.map((s) => (
-                            <Box
-                              key={s.id}
-                              display="flex"
-                              alignItems="center"
-                              justifyContent="space-between"
-                              sx={{
-                                border: `1px solid ${border}`,
-                                borderRadius: 1,
-                                p: 1,
-                                bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)",
-                              }}
+                        <>
+                          {status.message && (
+                            <Typography
+                              variant="body2"
+                              color={
+                                status.type === "error"
+                                  ? theme.palette.error.main
+                                  : theme.palette.success.main
+                              }
                             >
-                              <Box display="flex" flexDirection="column">
-                                <Typography variant="body2">
-                                  {`Daily at ${s.time_of_day || "--:--"}`}
-                                </Typography>
-                              </Box>
-                              <Box display="flex" alignItems="center" gap={1}>
-                                <Switch
-                                  size="small"
-                                  checked={!!s.enabled}
-                                  onChange={(e) => handleScheduleToggle(s.id, e.target.checked)}
-                                />
-                                <Button
-                                  size="small"
-                                  color="error"
-                                  onClick={() => handleDeleteSchedule(s.id)}
-                                  sx={shimmerSx}
+                              {cleanError(status.message)}
+                            </Typography>
+                          )}
+                          <LocalizationProvider dateAdapter={AdapterDayjs}>
+                            <TimePicker
+                              label="Time"
+                              value={
+                                scheduleForm.time_of_day
+                                  ? dayjs(`2000-01-01T${scheduleForm.time_of_day}`)
+                                  : null
+                              }
+                              onChange={(value) => {
+                                if (!value || !value.isValid?.()) return;
+                                handleScheduleField("time_of_day", value.format("HH:mm"));
+                              }}
+                              ampm={false}
+                              minutesStep={5}
+                              localeText={{ cancelButtonLabel: "X" }}
+                              slotProps={{
+                                textField: { size: "small" },
+                                popper: {
+                                  sx: {
+                                    "& .MuiPaper-root": {
+                                      bgcolor: isDark ? "rgba(16,22,32,0.96)" : "#ffffff",
+                                      border: `1px solid ${border}`,
+                                      borderRadius: 2,
+                                      boxShadow: isDark
+                                        ? "0 18px 40px rgba(0,0,0,0.6)"
+                                        : "0 16px 32px rgba(15,23,42,0.15)",
+                                    },
+                                    "& .MuiPickersLayout-root": {
+                                      color: isDark ? "#e5e7eb" : "#111827",
+                                    },
+                                    "& .MuiMultiSectionDigitalClock-root": {
+                                      justifyContent: "space-between",
+                                      gap: 1,
+                                      p: 1,
+                                    },
+                                    "& .MuiMultiSectionDigitalClock-section": {
+                                      flex: 1,
+                                      minWidth: 120,
+                                      borderRadius: 1,
+                                      background: isDark ? "rgba(255,255,255,0.04)" : "rgba(15,23,42,0.03)",
+                                    },
+                                    "& .MuiDigitalClock-item": {
+                                      color: isDark ? "#cbd5f5" : "#1f2937",
+                                      borderRadius: 1,
+                                    },
+                                    "& .MuiDigitalClock-item.Mui-selected": {
+                                      bgcolor: isDark ? "rgba(125,224,210,0.25)" : "rgba(25,118,210,0.15)",
+                                      color: isDark ? "#eafff9" : "#0b1f3b",
+                                    },
+                                    "& .MuiPickersToolbar-root": {
+                                      color: isDark ? "#e5e7eb" : "#111827",
+                                    },
+                                    "& .MuiDialogActions-root button": {
+                                      color: isDark ? "#ffffff" : "#111827",
+                                    },
+                                  },
+                                },
+                              }}
+                            />
+                          </LocalizationProvider>
+
+                          <Button variant="contained" onClick={handleCreateSchedule} sx={shimmerSx}>
+                            Save Schedule
+                          </Button>
+
+                          <Divider />
+
+                          {schedules.length === 0 ? (
+                            <Typography variant="body2" color="text.secondary">
+                              No schedules yet.
+                            </Typography>
+                          ) : (
+                            <Box display="flex" flexDirection="column" gap={1}>
+                              {schedules.map((s) => (
+                                <Box
+                                  key={s.id}
+                                  display="flex"
+                                  alignItems="center"
+                                  justifyContent="space-between"
+                                  sx={{
+                                    border: `1px solid ${border}`,
+                                    borderRadius: 1,
+                                    p: 1,
+                                    bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.75)",
+                                  }}
                                 >
-                                  Delete
-                                </Button>
-                              </Box>
+                                  <Box display="flex" flexDirection="column">
+                                    <Typography variant="body2">
+                                      {`Daily at ${s.time_of_day || "--:--"}`}
+                                    </Typography>
+                                  </Box>
+                                  <Box display="flex" alignItems="center" gap={1}>
+                                    <Switch
+                                      size="small"
+                                      checked={!!s.enabled}
+                                      onChange={(e) => handleScheduleToggle(s.id, e.target.checked)}
+                                    />
+                                    <Button
+                                      size="small"
+                                      color="error"
+                                      onClick={() => handleDeleteSchedule(s.id)}
+                                      sx={shimmerSx}
+                                    >
+                                      Delete
+                                    </Button>
+                                  </Box>
+                                </Box>
+                              ))}
                             </Box>
-                          ))}
-                        </Box>
+                          )}
+                        </>
                       )}
                     </Box>
                   </Box>

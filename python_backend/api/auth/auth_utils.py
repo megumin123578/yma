@@ -20,9 +20,22 @@ def _require_env(name: str) -> str:
     return value
 
 
+def _get_int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"Environment variable {name} must be an integer") from exc
+    if value <= 0:
+        raise RuntimeError(f"Environment variable {name} must be greater than 0")
+    return value
+
+
 SECRET_KEY = _require_env("SECRET_KEY")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 #Expire in 24h
+ACCESS_TOKEN_EXPIRE_MINUTES = _get_int_env("ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24 * 7)
 
 pwd_context = CryptContext(
     schemes=["argon2"],
