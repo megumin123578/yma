@@ -480,9 +480,14 @@ def start_scheduler():
     global _THREAD
     if _THREAD and _THREAD.is_alive():
         return
+    _STOP_EVENT.clear()
     _THREAD = Thread(target=_run_loop, daemon=True)
     _THREAD.start()
 
 
 def stop_scheduler():
+    global _THREAD
     _STOP_EVENT.set()
+    if _THREAD and _THREAD.is_alive():
+        _THREAD.join(timeout=5)
+    _THREAD = None

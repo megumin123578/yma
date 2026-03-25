@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,6 +10,7 @@ from python_backend.config import load_env
 load_env()
 
 from python_backend.api.auth.routers import auth, user
+from python_backend.api.auth.scheduler import start_scheduler, stop_scheduler
 from python_backend.bootstrap import initialize_app_state
 from python_backend.routes.audience import router as audience_router
 from python_backend.routes.channel_compare import router as channel_compare_router
@@ -22,10 +24,22 @@ from python_backend.routes.traffic_timeseries import router as ts_router
 from python_backend.routes.youtube import router as youtube_router
 
 
+def _scheduler_enabled() -> bool:
+    value = os.getenv("ENABLE_BACKGROUND_SCHEDULER", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     initialize_app_state()
-    yield
+    should_start_scheduler = _scheduler_enabled()
+    if should_start_scheduler:
+        start_scheduler()
+    try:
+        yield
+    finally:
+        if should_start_scheduler:
+            stop_scheduler()
 
 
 app = FastAPI(lifespan=lifespan)
