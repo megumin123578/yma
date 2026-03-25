@@ -13,7 +13,7 @@ from googleapiclient.discovery import build
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
-from python_backend.api.auth.models import LiveCounterSnapshot, UserCredential
+from python_backend.api.auth.models import LiveCounterSnapshot, SAIGON_TZ, UserCredential
 from python_backend.module_trafficsource import sanitize_filename
 from python_backend.module_trafficsource import create_token_from_credentials
 from python_backend.module_geography import fetch_geography, load_geography_from_postgres, save_geography_to_postgres
@@ -43,6 +43,34 @@ def _allowed_or_hidden_blocked(current_user, db, account_tag: str) -> bool:
         if account_tag in hidden_all:
             return True
     return False
+
+
+def _now_saigon_naive() -> datetime:
+    return datetime.now(SAIGON_TZ).replace(tzinfo=None)
+
+
+def _serialize_saigon_naive(value: Optional[datetime]) -> Optional[str]:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=SAIGON_TZ)
+    return value.isoformat()
+
+
+def _resolve_live_counter_window(
+    hours: Optional[int],
+    minutes: Optional[int],
+) -> tuple[timedelta, str, int]:
+    if hours is not None and minutes is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Use either hours or minutes, not both",
+        )
+    if hours is None and minutes is None:
+        hours = 24
+    if hours is not None:
+        return timedelta(hours=hours), "hours", hours
+    return timedelta(minutes=minutes), "minutes", minutes
 
 
 def _load_credential_path(account_tag: str) -> Optional[str]:
@@ -565,14 +593,16 @@ def live_counters(
 @router.get("/live_counters/history")
 def live_counters_history(
     accountTag: str,
-    hours: int = Query(24, ge=1, le=168),
+    hours: Optional[int] = Query(None, ge=1, le=168),
+    minutes: Optional[int] = Query(None, ge=1, le=10080),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
     if _allowed_or_hidden_blocked(current_user, db, accountTag):
         return {"rows": []}
 
-    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    window_delta, window_unit, window_value = _resolve_live_counter_window(hours, minutes)
+    cutoff = _now_saigon_naive() - window_delta
     rows = (
         db.query(LiveCounterSnapshot)
         .filter(
@@ -592,12 +622,120 @@ def live_counters_history(
             max_view_count = max(max_view_count, view_count)
         normalized_rows.append(
             {
-                "capturedAt": row.captured_at.isoformat() + "Z" if row.captured_at else None,
+                "capturedAt": _serialize_saigon_naive(row.captured_at),
                 "subscriberCount": row.subscriber_count,
                 "viewCount": max_view_count,
                 "videoCount": row.video_count,
             }
         )
     return {
+        "window": {
+            "unit": window_unit,
+            "value": window_value,
+            "minutes": int(window_delta.total_seconds() // 60),
+        },
         "rows": normalized_rows
+    }
+
+
+@router.get("/live_counters/summary")
+def live_counters_summary(
+    accountTag: str,
+    hours: Optional[int] = Query(None, ge=1, le=168),
+    minutes: Optional[int] = Query(None, ge=1, le=10080),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    if _allowed_or_hidden_blocked(current_user, db, accountTag):
+        return {
+            "window": None,
+            "windowViews": None,
+            "currentViewCount": None,
+            "baselineViewCount": None,
+            "capturedAt": None,
+            "baselineCapturedAt": None,
+            "sampleCount": 0,
+            "hasData": False,
+            "hasFullWindow": False,
+        }
+
+    window_delta, window_unit, window_value = _resolve_live_counter_window(hours, minutes)
+    cutoff = _now_saigon_naive() - window_delta
+
+    latest_row = (
+        db.query(LiveCounterSnapshot)
+        .filter(LiveCounterSnapshot.account_tag == accountTag)
+        .order_by(LiveCounterSnapshot.captured_at.desc(), LiveCounterSnapshot.id.desc())
+        .first()
+    )
+    if not latest_row or not latest_row.captured_at or latest_row.captured_at < cutoff:
+        return {
+            "window": {
+                "unit": window_unit,
+                "value": window_value,
+                "minutes": int(window_delta.total_seconds() // 60),
+            },
+            "windowViews": None,
+            "currentViewCount": int(latest_row.view_count or 0) if latest_row else None,
+            "baselineViewCount": None,
+            "capturedAt": _serialize_saigon_naive(latest_row.captured_at) if latest_row else None,
+            "baselineCapturedAt": None,
+            "sampleCount": 0,
+            "hasData": False,
+            "hasFullWindow": False,
+        }
+
+    baseline_row = (
+        db.query(LiveCounterSnapshot)
+        .filter(
+            LiveCounterSnapshot.account_tag == accountTag,
+            LiveCounterSnapshot.captured_at <= cutoff,
+        )
+        .order_by(LiveCounterSnapshot.captured_at.desc(), LiveCounterSnapshot.id.desc())
+        .first()
+    )
+    window_rows = (
+        db.query(LiveCounterSnapshot)
+        .filter(
+            LiveCounterSnapshot.account_tag == accountTag,
+            LiveCounterSnapshot.captured_at >= cutoff,
+        )
+        .order_by(LiveCounterSnapshot.captured_at.asc(), LiveCounterSnapshot.id.asc())
+        .all()
+    )
+    if not baseline_row:
+        return {
+            "window": {
+                "unit": window_unit,
+                "value": window_value,
+                "minutes": int(window_delta.total_seconds() // 60),
+            },
+            "windowViews": None,
+            "currentViewCount": int(latest_row.view_count or 0),
+            "baselineViewCount": None,
+            "capturedAt": _serialize_saigon_naive(latest_row.captured_at),
+            "baselineCapturedAt": None,
+            "sampleCount": len(window_rows),
+            "hasData": True,
+            "hasFullWindow": False,
+        }
+
+    current_view_count = int(latest_row.view_count or 0)
+    baseline_view_count = int(baseline_row.view_count or 0)
+    window_views = max(0, current_view_count - baseline_view_count)
+
+    return {
+        "window": {
+            "unit": window_unit,
+            "value": window_value,
+            "minutes": int(window_delta.total_seconds() // 60),
+        },
+        "windowViews": window_views,
+        "currentViewCount": current_view_count,
+        "baselineViewCount": baseline_view_count,
+        "capturedAt": _serialize_saigon_naive(latest_row.captured_at),
+        "baselineCapturedAt": _serialize_saigon_naive(baseline_row.captured_at),
+        "sampleCount": len(window_rows),
+        "hasData": True,
+        "hasFullWindow": True,
     }

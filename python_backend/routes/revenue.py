@@ -68,6 +68,7 @@ def list_channels(
     range: str = Query("lifetime"),
     startDate: date = Query(None),
     endDate: date = Query(None),
+    include_hidden: bool = Query(False),
 ):
     pg_url = os.getenv("PG_URL")
     if not pg_url:
@@ -105,7 +106,8 @@ def list_channels(
     ]
     if allowed is not None:
         items = [item for item in items if item["value"] in allowed]
-    items = _filter_hidden(items, hidden)
+    if not include_hidden:
+        items = _filter_hidden(items, hidden)
     items = [item for item in items if _load_credential_path(item["value"])]
     label_map = {}
     if items:

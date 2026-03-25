@@ -25,8 +25,9 @@ from python_backend.progress_state import write_progress
 _STOP_EVENT = Event()
 _THREAD = None
 _RUNS_MAX = int(os.getenv("SCHEDULE_RUNS_MAX", "200"))
+# Keep snapshots frequent enough for 60-minute view windows while still allowing env overrides.
 _LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS = int(
-    os.getenv("LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS", str(24 * 60 * 60))
+    os.getenv("LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS", str(15 * 60))
 )
 _LIVE_COUNTER_RETENTION_DAYS = int(os.getenv("LIVE_COUNTER_RETENTION_DAYS", "7"))
 _TOKEN_PROGRESS_RETENTION_DAYS = int(os.getenv("TOKEN_PROGRESS_RETENTION_DAYS", "10"))

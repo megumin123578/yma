@@ -61,6 +61,7 @@ import {
   deleteSchedule,
   listScheduleRuns,
   stopScheduleRun,
+  resumeScheduleRun,
 } from "../../services/userService";
 import { UserContext } from "../../context/UserContext";
 import ManageUserRequests from "../ManageUserRequests";
@@ -116,6 +117,7 @@ const CredentialsDialog = ({
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [runsError, setRunsError] = useState("");
   const [stoppingRunId, setStoppingRunId] = useState(null);
+  const [resumingRunId, setResumingRunId] = useState(null);
   const [scheduleForm, setScheduleForm] = useState({
     time_of_day: "08:00",
   });
@@ -139,6 +141,10 @@ const CredentialsDialog = ({
     "&:hover:before": {
       transform: "translateX(260%)",
     },
+  };
+  const resumeButtonSx = {
+    ...shimmerSx,
+    color: isDark ? "#7dd3fc" : "#1976d2",
   };
   const avatarRefreshQueueRef = useRef(new Set());
   const hydratedProgressOnceRef = useRef(false);
@@ -883,6 +889,26 @@ const CredentialsDialog = ({
       setRunsError(msg);
     } finally {
       setStoppingRunId(null);
+    }
+  };
+
+  const handleResumeRun = async (runId) => {
+    setResumingRunId(runId);
+    setRunsError("");
+    try {
+      await resumeScheduleRun(runId);
+      const data = await listScheduleRuns(10);
+      setScheduleRuns(
+        (data?.items || []).map((run) => ({
+          ...run,
+          status: normalizeRunStatus(run.status),
+        }))
+      );
+    } catch (err) {
+      const msg = err?.response?.data?.detail || "Failed to resume run.";
+      setRunsError(msg);
+    } finally {
+      setResumingRunId(null);
     }
   };
 
@@ -2285,12 +2311,8 @@ const CredentialsDialog = ({
                                       </Box>
                                     </Box>
                                   </Box>
-                                  <Box display="flex" alignItems="center" gap={0.75} flexWrap="wrap" justifyContent="flex-end">
-                                    <Typography variant="caption" color="text.secondary">
-                                      {`${formatRunTime(run.started_at)} -> ${formatRunTime(
-                                        run.finished_at
-                                      )}`}
-                                    </Typography>
+                                  <Box display="flex" flexDirection="column" alignItems="flex-end" gap={0.5}>
+                                    <Box display="flex" alignItems="center" gap={0.75} flexWrap="wrap" justifyContent="flex-end">
                                     {(normalizedStatus === "running" || normalizedStatus === "queued") && (
                                       <Button
                                         size="small"
@@ -2302,6 +2324,22 @@ const CredentialsDialog = ({
                                         Stop
                                       </Button>
                                     )}
+                                    {normalizedStatus !== "running" && normalizedStatus !== "queued" && (
+                                      <Button
+                                        size="small"
+                                        onClick={() => handleResumeRun(run.id)}
+                                        disabled={resumingRunId === run.id}
+                                        sx={resumeButtonSx}
+                                      >
+                                        Resume
+                                      </Button>
+                                    )}
+                                    </Box>
+                                    <Typography variant="caption" color="text.secondary">
+                                      {`${formatRunTime(run.started_at)} -> ${formatRunTime(
+                                        run.finished_at
+                                      )}`}
+                                    </Typography>
                                   </Box>
                                 </Box>
                                 <Box

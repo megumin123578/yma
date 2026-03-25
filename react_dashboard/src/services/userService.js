@@ -194,3 +194,8 @@ export const stopScheduleRun = async (runId) => {
   const res = await api.post(`/api/users/schedules/runs/${runId}/stop`);
   return res.data;
 };
+
+export const resumeScheduleRun = async (runId) => {
+  const res = await api.post(`/api/users/schedules/runs/${runId}/resume`);
+  return res.data;
+};

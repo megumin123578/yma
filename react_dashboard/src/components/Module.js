@@ -211,6 +211,7 @@ export async function getChannelRevenueMap(range = "lifetime") {
   if (channelRevenuePromise[cacheKey]) return channelRevenuePromise[cacheKey];
 
   const params = { range: cacheKey };
+  params.include_hidden = true;
 
   const promise = api
     .get("/api/revenue/channels", { params })

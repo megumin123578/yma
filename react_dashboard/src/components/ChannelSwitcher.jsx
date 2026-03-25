@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Autocomplete,
   Avatar,
@@ -12,6 +12,8 @@ import {
   useTheme,
 } from "@mui/material";
 import YouTubeIcon from "@mui/icons-material/YouTube";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import { listTokens, setTokenVisibility } from "../services/userService";
 
 export const CHANNEL_SWITCHER_SX = {
@@ -82,9 +84,16 @@ const ChannelSwitcher = ({
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const [showHidden, setShowHidden] = useState(false);
+  const [open, setOpen] = useState(false);
   const [tokenInventory, setTokenInventory] = useState([]);
   const [visibilityReady, setVisibilityReady] = useState(false);
   const [pendingValues, setPendingValues] = useState({});
+  const [stickyHiddenValues, setStickyHiddenValues] = useState([]);
+  const [orderedValues, setOrderedValues] = useState([]);
+  const listboxRef = useRef(null);
+  const restoreScrollTopRef = useRef(null);
+  const restoreFramesRef = useRef(0);
+  const restoreTimeoutRef = useRef(null);
 
   const normalizedOptions = useMemo(
     () =>
@@ -125,7 +134,7 @@ const ChannelSwitcher = ({
   }, []);
 
   const inventoryByValue = useMemo(
-    () => new Map(tokenInventory.filter((item) => item.owned).map((item) => [item.value, item])),
+    () => new Map(tokenInventory.map((item) => [item.value, item])),
     [tokenInventory]
   );
 
@@ -145,24 +154,29 @@ const ChannelSwitcher = ({
 
     const knownValues = new Set(base.map((option) => option.value));
     tokenInventory.forEach((item) => {
-      if (!item.owned || knownValues.has(item.value)) return;
+      if (knownValues.has(item.value)) return;
+      const rawOption = {
+        value: item.value,
+        label: item.label,
+        avatar: item.avatar,
+      };
       const hidden =
         Object.prototype.hasOwnProperty.call(pendingValues, item.value)
           ? pendingValues[item.value]
           : !!item.hidden;
       base.push({
-        raw: { value: item.value, label: item.label, avatar: item.avatar },
+        raw: rawOption,
         value: item.value,
         label: item.label,
         avatar: item.avatar,
-        meta: "",
+        meta: getOptionMeta(rawOption),
         tokenName: item.tokenName,
         hidden,
       });
     });
 
     return base;
-  }, [inventoryByValue, normalizedOptions, pendingValues, tokenInventory]);
+  }, [getOptionMeta, inventoryByValue, normalizedOptions, pendingValues, tokenInventory]);
 
   const selectedOption = useMemo(
     () => mergedOptions.find((option) => option.value === String(value || "")) || null,
@@ -174,25 +188,86 @@ const ChannelSwitcher = ({
     [mergedOptions]
   );
 
-  const visibleOptions = useMemo(
-    () => mergedOptions.filter((option) => !option.hidden),
-    [mergedOptions]
+  const groupedOptions = useMemo(
+    () => {
+      const orderIndex = new Map(
+        orderedValues.map((optionValue, index) => [optionValue, index])
+      );
+      return mergedOptions
+        .filter(
+          (option) =>
+            showHidden || !option.hidden || stickyHiddenValues.includes(option.value)
+        )
+        .sort((a, b) => {
+          const aIndex = orderIndex.get(a.value);
+          const bIndex = orderIndex.get(b.value);
+          if (aIndex == null && bIndex == null) return 0;
+          if (aIndex == null) return 1;
+          if (bIndex == null) return -1;
+          return aIndex - bIndex;
+        })
+        .map((option) => ({ ...option }));
+    },
+    [mergedOptions, orderedValues, showHidden, stickyHiddenValues]
   );
 
-  const groupedOptions = useMemo(() => {
-    const visible = visibleOptions.map((option) => ({ ...option, group: "Channels" }));
-    const hidden = showHidden
-      ? hiddenOptions.map((option) => ({ ...option, group: "Hidden" }))
-      : [];
-    return [...visible, ...hidden];
-  }, [hiddenOptions, showHidden, visibleOptions]);
+  useEffect(() => {
+    setOrderedValues((current) => {
+      if (current.length) return current;
+      return mergedOptions.map((option) => option.value);
+    });
+  }, [mergedOptions]);
+
+  useLayoutEffect(() => {
+    if (restoreScrollTopRef.current == null || !listboxRef.current) return;
+    const nextScrollTop = restoreScrollTopRef.current;
+    listboxRef.current.scrollTop = nextScrollTop;
+    let frameId = 0;
+    const keepRestoring = () => {
+      if (!listboxRef.current || restoreScrollTopRef.current == null) return;
+      listboxRef.current.scrollTop = restoreScrollTopRef.current;
+      if (restoreFramesRef.current > 0) {
+        restoreFramesRef.current -= 1;
+        frameId = window.requestAnimationFrame(keepRestoring);
+        return;
+      }
+      restoreScrollTopRef.current = null;
+    };
+    frameId = window.requestAnimationFrame(keepRestoring);
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      if (restoreTimeoutRef.current) {
+        window.clearTimeout(restoreTimeoutRef.current);
+        restoreTimeoutRef.current = null;
+      }
+    };
+  }, [groupedOptions, pendingValues, tokenInventory]);
 
   const handleToggleVisibility = async (event, option, nextVisible) => {
     event.preventDefault();
     event.stopPropagation();
     if (!option?.tokenName) return;
 
+    restoreScrollTopRef.current = listboxRef.current?.scrollTop ?? null;
+    restoreFramesRef.current = 24;
+    if (restoreTimeoutRef.current) {
+      window.clearTimeout(restoreTimeoutRef.current);
+    }
+    restoreTimeoutRef.current = window.setTimeout(() => {
+      if (listboxRef.current && restoreScrollTopRef.current != null) {
+        listboxRef.current.scrollTop = restoreScrollTopRef.current;
+      }
+      restoreTimeoutRef.current = null;
+    }, 250);
     const nextHidden = !nextVisible;
+    if (open && nextHidden && !showHidden) {
+      setStickyHiddenValues((current) =>
+        current.includes(option.value) ? current : [...current, option.value]
+      );
+    }
+    if (!nextHidden) {
+      setStickyHiddenValues((current) => current.filter((value) => value !== option.value));
+    }
     setPendingValues((current) => ({
       ...current,
       [option.value]: nextHidden,
@@ -214,6 +289,9 @@ const ChannelSwitcher = ({
         );
       }
     } catch {
+      if (nextHidden) {
+        setStickyHiddenValues((current) => current.filter((value) => value !== option.value));
+      }
       setPendingValues((current) => {
         const next = { ...current };
         delete next[option.value];
@@ -236,19 +314,47 @@ const ChannelSwitcher = ({
         <>
           <Divider />
           <Box
-            onMouseDown={(event) => event.preventDefault()}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
             onClick={() => setShowHidden((current) => !current)}
             sx={{
-              px: 1.5,
-              py: 1.25,
+              px: 1.25,
+              py: 0.85,
+              display: "flex",
+              alignItems: "center",
+              gap: 0.5,
               cursor: "pointer",
-              color: "text.secondary",
-              fontSize: 13,
-              fontWeight: 700,
               "&:hover": { bgcolor: "action.hover" },
             }}
           >
-            {showHidden ? "Hide hidden" : `Show hidden (${hiddenOptions.length})`}
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 24,
+                height: 24,
+                color: isDark ? "rgba(226,232,240,0.82)" : "rgba(15,23,42,0.6)",
+              }}
+            >
+              {showHidden ? (
+                <ExpandLessIcon fontSize="small" />
+              ) : (
+                <ExpandMoreIcon fontSize="small" />
+              )}
+            </Box>
+            <Typography
+              variant="body2"
+              sx={{
+                color: "text.secondary",
+                fontSize: 13,
+                fontWeight: 700,
+              }}
+            >
+              {showHidden ? "Hide hidden" : `Show hidden (${hiddenOptions.length})`}
+            </Typography>
           </Box>
         </>
       ) : null}
@@ -258,16 +364,30 @@ const ChannelSwitcher = ({
   return (
     <Box sx={sx || CHANNEL_SWITCHER_SX}>
       <Autocomplete
+        open={open}
         size={size}
         options={groupedOptions}
         value={selectedOption}
         disabled={disabled}
         noOptionsText={noOptionsText}
         clearIcon={null}
+        ListboxProps={{
+          ref: listboxRef,
+        }}
         getOptionLabel={(option) => option?.label || ""}
-        groupBy={(option) => option.group || "Channels"}
         isOptionEqualToValue={(option, current) => option?.value === current?.value}
         PaperComponent={renderDropdownPaper}
+        onOpen={() => setOpen(true)}
+        onClose={() => {
+          setOpen(false);
+          setOrderedValues(
+            mergedOptions
+              .slice()
+              .sort((a, b) => Number(a.hidden) - Number(b.hidden))
+              .map((option) => option.value)
+          );
+          setStickyHiddenValues([]);
+        }}
         filterOptions={(items, state) => {
           const query = state.inputValue.trim().toLowerCase();
           if (!query) return items;
@@ -338,17 +458,16 @@ const ChannelSwitcher = ({
               gap: 0.75,
               py: 1,
               pl: 0.5,
-              opacity: option.hidden ? 0.72 : 1,
             }}
           >
             {option.tokenName ? (
               <Checkbox
                 checked={!option.hidden}
-                size="small"
+                size="medium"
                 sx={{
                   ml: -0.5,
                   mr: 0,
-                  p: 0.5,
+                  p: 0.75,
                   color: isDark ? "rgba(226,232,240,0.82)" : "rgba(15,23,42,0.48)",
                   "&.Mui-checked": {
                     color: isDark ? "#7dd3fc" : "#1976d2",
@@ -357,6 +476,7 @@ const ChannelSwitcher = ({
                     color: isDark ? "rgba(148,163,184,0.45)" : "rgba(148,163,184,0.75)",
                   },
                   "& .MuiSvgIcon-root": {
+                    fontSize: 22,
                     filter: isDark ? "drop-shadow(0 0 4px rgba(125,211,252,0.18))" : "none",
                   },
                 }}
@@ -370,16 +490,32 @@ const ChannelSwitcher = ({
             ) : (
               <Box sx={{ width: 30 }} />
             )}
-            <Avatar src={option.avatar} alt={option.label} sx={{ width: 30, height: 30 }} />
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography variant="body2" sx={{ fontWeight: 700 }} noWrap>
+            <Avatar
+              src={option.avatar}
+              alt={option.label}
+              sx={{
+                width: 30,
+                height: 30,
+                opacity: option.hidden ? 0.58 : 1,
+              }}
+            />
+            <Box
+              sx={{
+                minWidth: 0,
+                flex: 1,
+              }}
+            >
+              <Typography
+                variant="body2"
+                sx={{
+                  fontWeight: 700,
+                  color: option.hidden ? "text.secondary" : "text.primary",
+                  opacity: option.hidden ? 0.82 : 1,
+                }}
+                noWrap
+              >
                 {option.label}
               </Typography>
-              {option.hidden ? (
-                <Typography variant="caption" sx={{ color: "text.secondary" }}>
-                  Hidden
-                </Typography>
-              ) : null}
             </Box>
             {pendingValues[`${option.value}:saving`] ? (
               <CircularProgress size={14} sx={{ mr: 0.5 }} />
@@ -394,10 +530,11 @@ const ChannelSwitcher = ({
                   fontSize: 12,
                   fontWeight: 800,
                   lineHeight: 1,
-                  color: "success.main",
-                  bgcolor: "rgba(46, 125, 50, 0.12)",
+                  color: option.hidden ? "text.secondary" : "success.main",
+                  bgcolor: option.hidden ? "action.hover" : "rgba(46, 125, 50, 0.12)",
                   border: "1px solid",
-                  borderColor: "rgba(46, 125, 50, 0.2)",
+                  borderColor: option.hidden ? "divider" : "rgba(46, 125, 50, 0.2)",
+                  opacity: option.hidden ? 0.78 : 1,
                 }}
               >
                 {option.meta}
