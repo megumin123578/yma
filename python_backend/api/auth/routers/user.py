@@ -196,13 +196,11 @@ def _is_admin_user(user: User | None) -> bool:
         return False
     return bool(getattr(user, "is_admin", False) or _is_env_admin_username(user.username))
 
-def _pick_token_group_color(db: Session, user_id: int, group_name: str) -> str:
+def _pick_token_group_color(group_name: str, existing_colors: Optional[set[str]] = None) -> str:
     existing = {
-        (row[0] or "").strip().lower()
-        for row in db.query(UserCredentialGroup.color)
-        .filter(UserCredentialGroup.user_id == user_id)
-        .all()
-        if (row[0] or "").strip()
+        (color or "").strip().lower()
+        for color in (existing_colors or set())
+        if (color or "").strip()
     }
     for color in _TOKEN_GROUP_COLORS:
         if color.lower() not in existing:
@@ -210,6 +208,41 @@ def _pick_token_group_color(db: Session, user_id: int, group_name: str) -> str:
     seed = sum(ord(ch) for ch in (group_name or "group"))
     hue = seed % 360
     return f"hsl({hue}, 70%, 45%)"
+
+
+def _get_global_token_group_color_map(db: Session) -> dict[str, str]:
+    rows = (
+        db.query(UserCredentialGroup.group_name, UserCredentialGroup.color)
+        .order_by(UserCredentialGroup.id.asc())
+        .all()
+    )
+    color_by_group: dict[str, str] = {}
+    used_colors: set[str] = set()
+
+    for row in rows:
+        name = (row.group_name or "").strip()
+        color = (row.color or "").strip()
+        if not name or name in color_by_group:
+            continue
+        if color:
+            color_by_group[name] = color
+            used_colors.add(color.lower())
+
+    assigned_names = {
+        (row[0] or "").strip()
+        for row in db.query(UserCredential.group_name)
+        .filter(UserCredential.group_name.isnot(None))
+        .all()
+        if (row[0] or "").strip()
+    }
+    for name in sorted(assigned_names, key=str.lower):
+        if name in color_by_group:
+            continue
+        color = _pick_token_group_color(name, used_colors)
+        color_by_group[name] = color
+        used_colors.add(color.lower())
+
+    return color_by_group
 
 
 def _purge_postgres_account(account_tag: str) -> None:
@@ -650,12 +683,7 @@ def list_tokens(
 ):
     is_admin = _is_admin_user(current_user)
     hidden = get_hidden_account_tags(db, current_user.id)
-    group_rows = db.query(UserCredentialGroup).all()
-    group_color_map = {
-        (row.user_id, row.group_name): (row.color or "")
-        for row in group_rows
-        if row.group_name
-    }
+    group_color_map = _get_global_token_group_color_map(db)
     labels = {}
     avatars = {}
     owned_names = set()
@@ -694,15 +722,18 @@ def list_tokens(
             or avatar_by_channel_id.get(row.selected_channel_id or "", "")
             or avatar_by_token_name.get(row.token_name, "")
         )
-    groups = {
-        row.token_name: (row.group_name or "")
-        for row in rows
-        if row.token_name
-    }
+    groups = {}
+    for row in rows:
+        if not row.token_name:
+            continue
+        next_group = (row.group_name or "").strip()
+        current_group = groups.get(row.token_name, "")
+        if next_group or not current_group:
+            groups[row.token_name] = next_group
     group_colors = {
-        row.token_name: group_color_map.get((row.user_id, row.group_name or ""), "")
-        for row in rows
-        if row.token_name and row.group_name
+        token_name: group_color_map.get(group_name, "")
+        for token_name, group_name in groups.items()
+        if group_name
     }
     if is_admin:
         owned_names = {row.token_name for row in rows if row.token_name}
@@ -817,16 +848,12 @@ def list_token_groups(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    rows = (
-        db.query(UserCredentialGroup)
-        .filter(UserCredentialGroup.user_id == current_user.id)
-        .order_by(UserCredentialGroup.group_name.asc())
-        .all()
-    )
+    _require_admin(current_user)
+    color_by_group = _get_global_token_group_color_map(db)
     return {
         "groups": [
-            {"group_name": row.group_name, "color": row.color or ""}
-            for row in rows
+            {"group_name": name, "color": color_by_group[name]}
+            for name in sorted(color_by_group.keys(), key=str.lower)
         ]
     }
 
@@ -837,20 +864,14 @@ def create_token_group(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin(current_user)
     name = (payload.get("group_name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="group_name is required")
-    existing = (
-        db.query(UserCredentialGroup)
-        .filter(
-            UserCredentialGroup.user_id == current_user.id,
-            UserCredentialGroup.group_name == name,
-        )
-        .first()
-    )
-    if existing:
-        return {"ok": True, "group_name": name, "color": existing.color or ""}
-    color = _pick_token_group_color(db, current_user.id, name)
+    color_by_group = _get_global_token_group_color_map(db)
+    if name in color_by_group:
+        return {"ok": True, "group_name": name, "color": color_by_group[name]}
+    color = _pick_token_group_color(name, set(color.lower() for color in color_by_group.values()))
     db.add(UserCredentialGroup(user_id=current_user.id, group_name=name, color=color))
     db.commit()
     return {"ok": True, "group_name": name, "color": color}
@@ -863,6 +884,7 @@ def rename_token_group(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin(current_user)
     current_name = (group_name or "").strip()
     next_name = (payload.get("group_name") or "").strip()
     if not current_name:
@@ -871,38 +893,30 @@ def rename_token_group(
         raise HTTPException(status_code=400, detail="New group_name is required")
     if current_name == next_name:
         return {"ok": True, "group_name": next_name}
-    exists = (
-        db.query(UserCredentialGroup)
-        .filter(
-            UserCredentialGroup.user_id == current_user.id,
-            UserCredentialGroup.group_name == next_name,
-        )
-        .first()
-    )
-    if exists:
+    color_by_group = _get_global_token_group_color_map(db)
+    if next_name in color_by_group:
         raise HTTPException(status_code=400, detail="Group name already exists")
-    row = (
-        db.query(UserCredentialGroup)
-        .filter(
-            UserCredentialGroup.user_id == current_user.id,
-            UserCredentialGroup.group_name == current_name,
-        )
-        .first()
-    )
-    if not row:
+    color = color_by_group.get(current_name, "")
+    if not color:
         raise HTTPException(status_code=404, detail="Group not found")
-    row.group_name = next_name
+    rows = (
+        db.query(UserCredentialGroup)
+        .filter(UserCredentialGroup.group_name == current_name)
+        .all()
+    )
+    for row in rows:
+        row.group_name = next_name
+        row.color = color
+        db.add(row)
+    if not rows:
+        db.add(UserCredentialGroup(user_id=current_user.id, group_name=next_name, color=color))
     (
         db.query(UserCredential)
-        .filter(
-            UserCredential.user_id == current_user.id,
-            UserCredential.group_name == current_name,
-        )
+        .filter(UserCredential.group_name == current_name)
         .update({"group_name": next_name}, synchronize_session=False)
     )
-    db.add(row)
     db.commit()
-    return {"ok": True, "group_name": next_name, "color": row.color or ""}
+    return {"ok": True, "group_name": next_name, "color": color}
 
 
 @router.delete("/tokens/groups/{group_name}")
@@ -911,23 +925,21 @@ def delete_token_group(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin(current_user)
     name = (group_name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="group_name is required")
+    color_by_group = _get_global_token_group_color_map(db)
+    if name not in color_by_group:
+        raise HTTPException(status_code=404, detail="Group not found")
     (
         db.query(UserCredential)
-        .filter(
-            UserCredential.user_id == current_user.id,
-            UserCredential.group_name == name,
-        )
+        .filter(UserCredential.group_name == name)
         .update({"group_name": None}, synchronize_session=False)
     )
     deleted = (
         db.query(UserCredentialGroup)
-        .filter(
-            UserCredentialGroup.user_id == current_user.id,
-            UserCredentialGroup.group_name == name,
-        )
+        .filter(UserCredentialGroup.group_name == name)
         .delete()
     )
     db.commit()
@@ -941,6 +953,7 @@ def assign_token_group(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_admin(current_user)
     safe_name = _safe_token_filename(token_name)
     if safe_name != token_name or ".." in safe_name:
         raise HTTPException(status_code=400, detail="Invalid token filename")
@@ -955,36 +968,29 @@ def assign_token_group(
     if not owned:
         raise HTTPException(status_code=404, detail="Token not found")
     group_name = (payload.group_name or "").strip()
+    color_by_group = _get_global_token_group_color_map(db)
+    group_color = color_by_group.get(group_name, "") if group_name else ""
     if group_name:
-        existing = (
-            db.query(UserCredentialGroup)
-            .filter(
-                UserCredentialGroup.user_id == current_user.id,
-                UserCredentialGroup.group_name == group_name,
+        if not group_color:
+            group_color = _pick_token_group_color(
+                group_name,
+                set(color.lower() for color in color_by_group.values()),
             )
-            .first()
+            db.add(UserCredentialGroup(user_id=current_user.id, group_name=group_name, color=group_color))
+    now = datetime.utcnow()
+    (
+        db.query(UserCredential)
+        .filter(UserCredential.token_name == token_name)
+        .update(
+            {"group_name": group_name or None, "updated_at": now},
+            synchronize_session=False,
         )
-        if not existing:
-            color = _pick_token_group_color(db, current_user.id, group_name)
-            db.add(UserCredentialGroup(user_id=current_user.id, group_name=group_name, color=color))
-    owned.group_name = group_name or None
-    owned.updated_at = datetime.utcnow()
-    db.add(owned)
+    )
     db.commit()
-    assigned = None
-    if owned.group_name:
-        assigned = (
-            db.query(UserCredentialGroup)
-            .filter(
-                UserCredentialGroup.user_id == current_user.id,
-                UserCredentialGroup.group_name == owned.group_name,
-            )
-            .first()
-        )
     return {
         "ok": True,
-        "group_name": owned.group_name,
-        "group_color": assigned.color if assigned else "",
+        "group_name": group_name or None,
+        "group_color": group_color,
     }
 
 

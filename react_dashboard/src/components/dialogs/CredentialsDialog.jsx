@@ -365,6 +365,10 @@ const CredentialsDialog = ({
   }, [isAdmin]);
 
   const loadTokenGroups = useCallback(async () => {
+    if (!isAdmin) {
+      setTokenGroups([]);
+      return;
+    }
     try {
       const data = await listTokenGroups();
       const groups = Array.isArray(data?.groups) ? data.groups : [];
@@ -383,7 +387,7 @@ const CredentialsDialog = ({
     } catch {
       setTokenGroups([]);
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     if (open) {
@@ -397,19 +401,37 @@ const CredentialsDialog = ({
       setRunSelectedMode(false);
       setSelectedTokenNames([]);
       loadTokens();
-      loadTokenGroups();
-      loadSchedules();
+      if (isAdmin) {
+        loadTokenGroups();
+        loadSchedules();
+      } else {
+        setTokenGroups([]);
+        setSchedules([]);
+        setSchedulesError("");
+        setScheduleRuns([]);
+        setRunsError("");
+      }
     }
-  }, [open, loadSchedules, loadTokenGroups, loadTokens, defaultTokenView]);
+  }, [open, loadSchedules, loadTokenGroups, loadTokens, defaultTokenView, isAdmin]);
 
   useEffect(() => {
-    if (activeTab === "schedule") {
-      loadSchedules();
+    if (
+      isAdmin ||
+      !["groups", "schedule", "logs", "manage-user"].includes(activeTab)
+    ) {
+      return;
     }
-  }, [activeTab, loadSchedules]);
+    setActiveTab("add");
+  }, [activeTab, isAdmin]);
 
   useEffect(() => {
-    if (!open || activeTab !== "logs") return;
+    if (isAdmin && activeTab === "schedule") {
+      loadSchedules();
+    }
+  }, [activeTab, isAdmin, loadSchedules]);
+
+  useEffect(() => {
+    if (!open || !isAdmin || activeTab !== "logs") return;
     let canceled = false;
 
     const loadRuns = async () => {
@@ -445,7 +467,7 @@ const CredentialsDialog = ({
       canceled = true;
       clearInterval(intervalId);
     };
-  }, [open, activeTab]);
+  }, [open, activeTab, isAdmin]);
 
   useEffect(() => {
     if (!open) {
@@ -1681,9 +1703,9 @@ const CredentialsDialog = ({
             }}
           >
             <Tab value="add" label="Manage Channel" />
-            <Tab value="groups" label="Groups" />
-            <Tab value="schedule" label="Schedule" />
-            <Tab value="logs" label="Run logs" />
+            {isAdmin && <Tab value="groups" label="Groups" />}
+            {isAdmin && <Tab value="schedule" label="Schedule" />}
+            {isAdmin && <Tab value="logs" label="Run logs" />}
             {isAdmin && <Tab value="manage-user" label="Manage User" />}
           </Tabs>
 
@@ -1942,10 +1964,6 @@ const CredentialsDialog = ({
                       gap: 1.5,
                     }}
                   >
-                    <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
-                      Manage groups
-                    </Typography>
-
                     <Box display="flex" gap={1} flexWrap="wrap">
                       <TextField
                         size="small"
