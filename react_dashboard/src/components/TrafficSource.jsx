@@ -136,6 +136,12 @@ const makeTrafficSourceColorMap = (ids, useDark = false) => {
   return palette;
 };
 
+const formatTrafficSourceLabel = (value) => {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  return text.replace(/_/g, " ");
+};
+
 const loadStoredFilters = () => {
   if (typeof window === "undefined") return null;
   try {
@@ -528,7 +534,9 @@ const TrafficSourceChart = () => {
     const src = Array.isArray(tsData) ? tsData : [];
     const rawRows = src.map((d, i) => {
       const id = d.id ?? d.label ?? d.insightTrafficSourceType ?? `item-${i}`;
-      const label = d.label ?? d.insightTrafficSourceType ?? `item-${i}`;
+      const label = formatTrafficSourceLabel(
+        d.label ?? d.insightTrafficSourceType ?? `item-${i}`
+      );
       const views = n(d.views);
       const emw = n(d.estimatedMinutesWatched);
       const avgDur = n(d.averageViewDuration);
@@ -578,7 +586,7 @@ const TrafficSourceChart = () => {
 
   const getSourceDisplayName = useCallback((id) => {
     const r = rows.find(x => String(x.id) === String(id));
-    return r?.label || id;
+    return r?.label || formatTrafficSourceLabel(id);
   }, [rows]);
 
   const seriesIdsForPalette = useMemo(() => {
