@@ -730,8 +730,13 @@ const ContentAnalytics = () => {
   const [channelMetrics, setChannelMetrics] = useState(null);
 
   const chartRef = useRef(null);
+  const hoverTooltipRef = useRef(null);
 
   const [hoverSlice, setHoverSlice] = useState(null);
+  const [hoverTooltipLayout, setHoverTooltipLayout] = useState({
+    tooltipWidth: 0,
+    chartWidth: 0,
+  });
 
 
 
@@ -1608,6 +1613,161 @@ const ContentAnalytics = () => {
 
   }, []);
 
+  useEffect(() => {
+
+    if (chartType !== "line" || !hoverSlice) {
+
+      setHoverTooltipLayout((current) =>
+
+        current.tooltipWidth === 0 && current.chartWidth === 0
+
+          ? current
+
+          : { tooltipWidth: 0, chartWidth: 0 }
+
+      );
+
+      return undefined;
+
+    }
+
+
+
+    const measure = () => {
+
+      const tooltipWidth = hoverTooltipRef.current?.offsetWidth || 0;
+
+      const chartWidth = chartRef.current?.clientWidth || 0;
+
+      setHoverTooltipLayout((current) => {
+
+        if (
+
+          current.tooltipWidth === tooltipWidth &&
+
+          current.chartWidth === chartWidth
+
+        ) {
+
+          return current;
+
+        }
+
+        return { tooltipWidth, chartWidth };
+
+      });
+
+    };
+
+
+
+    measure();
+
+    const frameId = window.requestAnimationFrame(measure);
+
+    let resizeObserver;
+
+
+
+    if (typeof ResizeObserver !== "undefined") {
+
+      resizeObserver = new ResizeObserver(measure);
+
+      if (chartRef.current) resizeObserver.observe(chartRef.current);
+
+      if (hoverTooltipRef.current) resizeObserver.observe(hoverTooltipRef.current);
+
+    } else {
+
+      window.addEventListener("resize", measure);
+
+    }
+
+
+
+    return () => {
+
+      window.cancelAnimationFrame(frameId);
+
+      resizeObserver?.disconnect();
+
+      window.removeEventListener("resize", measure);
+
+    };
+
+  }, [chartType, hoverSlice]);
+
+
+
+  const hoverTooltipPosition = useMemo(() => {
+
+    if (chartType !== "line" || !hoverSlice) return null;
+
+
+
+    const anchorX = chartPaddingPx + LINE_MARGIN.left + hoverSlice.x;
+
+    const chartWidth =
+
+      hoverTooltipLayout.chartWidth || chartRef.current?.clientWidth || 0;
+
+    const tooltipWidth =
+
+      hoverTooltipLayout.tooltipWidth ||
+
+      Math.min(360, Math.max(280, chartWidth ? chartWidth - 24 : 320));
+
+    const edgePadding = 12;
+
+    const pointerGap = 14;
+
+
+
+    let x = anchorX - tooltipWidth / 2;
+
+
+
+    if (chartWidth > 0) {
+      const centeredLeft = x;
+
+      const centeredRight = x + tooltipWidth;
+
+
+
+      if (centeredLeft < edgePadding) {
+        x = Math.min(
+
+          Math.max(edgePadding, anchorX + pointerGap),
+
+          Math.max(edgePadding, chartWidth - tooltipWidth - edgePadding)
+
+        );
+
+      } else if (centeredRight > chartWidth - edgePadding) {
+        x = Math.max(
+
+          edgePadding,
+
+          Math.min(
+
+            anchorX - tooltipWidth - pointerGap,
+
+            chartWidth - tooltipWidth - edgePadding
+
+          )
+
+        );
+
+      }
+
+    }
+
+
+
+    return { x };
+
+  }, [LINE_MARGIN.left, chartPaddingPx, chartType, hoverSlice, hoverTooltipLayout]);
+
 
 
   /* ================================
@@ -1835,16 +1995,18 @@ const ContentAnalytics = () => {
 
         {chartType === "line" && hoverSlice && (
           <Box
+            ref={hoverTooltipRef}
             sx={{
               position: "absolute",
               top: 10,
               left: 0,
-              transform: `translate3d(${chartPaddingPx + LINE_MARGIN.left + hoverSlice.x}px, 0, 0) translateX(-50%)`,
-              transition: "transform 140ms cubic-bezier(0.2, 0.9, 0.2, 1)",
+              transform: `translate3d(${hoverTooltipPosition?.x ?? 0}px, 0, 0)`,
+              transition: "transform 180ms cubic-bezier(0.22, 1, 0.36, 1)",
               willChange: "transform",
               pointerEvents: "none",
               zIndex: 20,
-              width: "min(360px, 92%)",
+              width: "max-content",
+              maxWidth: "min(360px, calc(100% - 24px))",
             }}
           >
             <Box

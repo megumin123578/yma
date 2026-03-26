@@ -102,6 +102,7 @@ const normalizeTrafficSourcePeriod = (value) =>
   TRAFFIC_SOURCE_PERIOD_VALUES.has(value) ? value : "last28";
 
 const FILTERS_STORAGE_KEY = "trafficSource.filters";
+const TRAFFIC_LINE_MARGIN = { top: 32, right: 8, bottom: 64, left: 56 };
 const TRAFFIC_SOURCE_COLORS = [
   "#3b82f6",
   "#ef4444",
@@ -241,7 +242,7 @@ const TrafficLineChart = ({
       debounceResize={150}
       data={data}
       colors={(serie) => colorMap[serie.id] || "#60a5fa"}
-      margin={{ top: 32, right: 8, bottom: 64, left: 56 }}
+      margin={TRAFFIC_LINE_MARGIN}
       xScale={{
         type: "time",
         format: "native",
@@ -281,7 +282,12 @@ const TrafficSourceChart = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const chartRef = useRef(null);
+  const hoverTooltipRef = useRef(null);
   const [hoverSlice, setHoverSlice] = useState(null);
+  const [hoverTooltipLayout, setHoverTooltipLayout] = useState({
+    tooltipWidth: 0,
+    chartWidth: 0,
+  });
 
   /* === Controls === */
   const [chartType, setChartType] = useState(() => loadStoredFilters()?.chartType || "pie");
@@ -741,6 +747,87 @@ const TrafficSourceChart = () => {
       : "0 18px 34px rgba(15,23,42,0.18)",
   }), [theme.palette.mode]);
 
+  useEffect(() => {
+    if (chartType !== "line" || !hoverSlice) {
+      setHoverTooltipLayout((current) => (
+        current.tooltipWidth === 0 && current.chartWidth === 0
+          ? current
+          : { tooltipWidth: 0, chartWidth: 0 }
+      ));
+      return undefined;
+    }
+
+    const measure = () => {
+      const tooltipWidth = hoverTooltipRef.current?.offsetWidth || 0;
+      const chartWidth = chartRef.current?.clientWidth || 0;
+      setHoverTooltipLayout((current) => {
+        if (
+          current.tooltipWidth === tooltipWidth &&
+          current.chartWidth === chartWidth
+        ) {
+          return current;
+        }
+        return { tooltipWidth, chartWidth };
+      });
+    };
+
+    measure();
+    const frameId = window.requestAnimationFrame(measure);
+
+    let resizeObserver;
+
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(measure);
+      if (chartRef.current) resizeObserver.observe(chartRef.current);
+      if (hoverTooltipRef.current) resizeObserver.observe(hoverTooltipRef.current);
+    } else {
+      window.addEventListener("resize", measure);
+    }
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [chartType, hoverSlice]);
+
+  const hoverTooltipPosition = useMemo(() => {
+    if (chartType !== "line" || !hoverSlice) return null;
+
+    const anchorX = TRAFFIC_LINE_MARGIN.left + hoverSlice.x;
+    const chartWidth =
+      hoverTooltipLayout.chartWidth || chartRef.current?.clientWidth || 0;
+    const tooltipWidth =
+      hoverTooltipLayout.tooltipWidth ||
+      Math.min(360, Math.max(280, chartWidth ? chartWidth - 24 : 320));
+    const edgePadding = 12;
+    const pointerGap = 14;
+
+    let x = anchorX - tooltipWidth / 2;
+
+    if (chartWidth > 0) {
+      const centeredLeft = x;
+      const centeredRight = x + tooltipWidth;
+
+      if (centeredLeft < edgePadding) {
+        x = Math.min(
+          Math.max(edgePadding, anchorX + pointerGap),
+          Math.max(edgePadding, chartWidth - tooltipWidth - edgePadding)
+        );
+      } else if (centeredRight > chartWidth - edgePadding) {
+        x = Math.max(
+          edgePadding,
+          Math.min(
+            anchorX - tooltipWidth - pointerGap,
+            chartWidth - tooltipWidth - edgePadding
+          )
+        );
+      }
+    }
+
+    return { x };
+  }, [chartType, hoverSlice, hoverTooltipLayout]);
+
   const hasChartData = useMemo(() => {
     if (chartType === "pie") return rows.length > 0;
     if (chartType === "line") return lineSeries.length > 0;
@@ -891,16 +978,18 @@ const TrafficSourceChart = () => {
 
           {chartType === "line" && hoverSlice && (
             <Box
+              ref={hoverTooltipRef}
               sx={{
                 position: "absolute",
                 top: 10,
                 left: 0,
-                transform: `translate3d(${56 + hoverSlice.x}px, 0, 0) translateX(-50%)`,
-                transition: "transform 140ms cubic-bezier(0.2, 0.9, 0.2, 1)",
+                transform: `translate3d(${hoverTooltipPosition?.x ?? 0}px, 0, 0)`,
+                transition: "transform 180ms cubic-bezier(0.22, 1, 0.36, 1)",
                 willChange: "transform",
                 pointerEvents: "none",
                 zIndex: 20,
-                width: "min(360px, 92%)",
+                width: "max-content",
+                maxWidth: "min(360px, calc(100% - 24px))",
               }}
             >
               <Box sx={{ ...chartTooltipSx }}>
