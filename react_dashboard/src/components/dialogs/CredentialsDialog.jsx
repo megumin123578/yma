@@ -67,6 +67,7 @@ import { UserContext } from "../../context/UserContext";
 import ManageUserRequests from "../ManageUserRequests";
 
 import { getApiBase } from "../../config";
+import { setStoredHiddenTokens } from "../../utils/tokenOrder";
 export const CREDENTIALS_CHANGED_EVENT = "credentials-data-changed";
 
 const CredentialsDialog = ({
@@ -177,17 +178,31 @@ const CredentialsDialog = ({
   };
 
   const applyTokenOrder = (items) => {
+    const moveHiddenTokensToBottom = (list) => {
+      const visible = [];
+      const hidden = [];
+      (Array.isArray(list) ? list : []).forEach((item) => {
+        const isHiddenItem = typeof item === "object" && item?.hidden;
+        if (isHiddenItem) {
+          hidden.push(item);
+        } else {
+          visible.push(item);
+        }
+      });
+      return [...visible, ...hidden];
+    };
+
     let order = [];
     try {
       order = JSON.parse(localStorage.getItem("tokens.order") || "[]");
     } catch {
       order = [];
     }
-    if (!order.length) return items;
+    if (!order.length) return moveHiddenTokensToBottom(items);
     const byName = new Map(items.map((t) => [t.name || t, t]));
     const ordered = order.map((name) => byName.get(name)).filter(Boolean);
     const remaining = items.filter((t) => !order.includes(t.name || t));
-    return [...ordered, ...remaining];
+    return moveHiddenTokensToBottom([...ordered, ...remaining]);
   };
 
   const saveTokenOrder = (items) => {
@@ -321,9 +336,11 @@ const CredentialsDialog = ({
     try {
       const data = await listTokens();
       const nextTokens = data?.tokens || [];
+      setStoredHiddenTokens(nextTokens);
       const ordered = applyTokenOrder(nextTokens);
       setTokens(ordered);
     } catch (err) {
+      setStoredHiddenTokens([]);
       setTokens([]);
     } finally {
       setLoadingTokens(false);
@@ -1466,7 +1483,7 @@ const CredentialsDialog = ({
             const [moved] = next.splice(from, 1);
             next.splice(to, 0, moved);
             saveTokenOrder(next);
-            return next;
+            return applyTokenOrder(next);
           });
           setDragOverTokenName("");
         }}

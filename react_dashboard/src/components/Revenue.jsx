@@ -26,6 +26,7 @@ import { tokens } from "../theme";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import { sortByStoredTokenOrder } from "../utils/tokenOrder";
 
 const RANGE_OPTIONS = [
   { value: "7d", label: "Last 7 days" },
@@ -83,15 +84,16 @@ const RevenueAnalytics = () => {
             };
           })
           .filter((item) => item.value);
+        const finalChannels = sortByStoredTokenOrder(items, (item) => item.value);
         if (!stop) {
-          setChannels(items);
-          if (!items.length) {
+          setChannels(finalChannels);
+          if (!finalChannels.length) {
             setChannel("");
           } else {
             const preferredChannel =
               getStoredSharedChannelId("revenue.selectedChannelId") || channel;
-            if (!preferredChannel || !items.some((c) => c.value === preferredChannel)) {
-              setChannel(items[0].value);
+            if (!preferredChannel || !finalChannels.some((c) => c.value === preferredChannel)) {
+              setChannel(finalChannels[0].value);
             } else if (preferredChannel !== channel) {
               setChannel(preferredChannel);
             }

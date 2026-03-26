@@ -10,8 +10,6 @@ import {
   useTheme,
 } from "@mui/material";
 import TimelineIcon from "@mui/icons-material/Timeline";
-import BoltIcon from "@mui/icons-material/Bolt";
-import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -24,6 +22,8 @@ import {
 import api from "../services/api";
 import { tokens } from "../theme";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
+import { getChannelAvatarMap } from "./Module";
+import { sortByStoredTokenOrder } from "../utils/tokenOrder";
 import {
   getStoredSharedChannelId,
   listenSharedChannelId,
@@ -92,37 +92,6 @@ const buildChartRows = (rows, mode) => {
   });
 };
 
-const SummaryCard = ({ title, value, subtitle, icon, colors }) => (
-  <Paper
-    elevation={0}
-    sx={{
-      p: 1.8,
-      borderRadius: 2.5,
-      border: "1px solid",
-      borderColor: "divider",
-      background: `linear-gradient(135deg, ${colors.cardFrom} 0%, ${colors.cardTo} 100%)`,
-      minHeight: 112,
-      display: "flex",
-      flexDirection: "column",
-      justifyContent: "space-between",
-      boxShadow: colors.shadow,
-    }}
-  >
-    <Stack direction="row" justifyContent="space-between" alignItems="center">
-      <Typography variant="body2" color="text.secondary">
-        {title}
-      </Typography>
-      {icon}
-    </Stack>
-    <Typography variant="h3" fontWeight={800} lineHeight={1}>
-      {value}
-    </Typography>
-    <Typography variant="body2" color="text.secondary">
-      {subtitle}
-    </Typography>
-  </Paper>
-);
-
 const ChartPanel = ({ title, subtitle, summary, rows, mode, colors, sx }) => {
   const chartRows = useMemo(() => buildChartRows(rows, mode), [rows, mode]);
 
@@ -158,27 +127,6 @@ const ChartPanel = ({ title, subtitle, summary, rows, mode, colors, sx }) => {
           </Alert>
         ) : null}
 
-        <Grid container spacing={1.5}>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <SummaryCard
-              title="Window views"
-              value={summary?.hasFullWindow ? formatCompact(summary?.windowViews) : "-"}
-              subtitle={summary?.hasFullWindow ? "" : "Waiting for more history"}
-              icon={<BoltIcon color="primary" />}
-              colors={colors}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <SummaryCard
-              title="Last snapshot"
-              value={summary?.capturedAt ? formatAxisLabel(summary.capturedAt, "minutes") : "-"}
-              subtitle={summary?.capturedAt ? formatDateTime(summary.capturedAt) : "No snapshot"}
-              icon={<AccessTimeIcon color="primary" />}
-              colors={colors}
-            />
-          </Grid>
-        </Grid>
-
         <Box sx={{ height: { xs: 220, md: 250 } }}>
           {chartRows.length === 0 ? (
             <Box
@@ -201,7 +149,7 @@ const ChartPanel = ({ title, subtitle, summary, rows, mode, colors, sx }) => {
                 <XAxis
                   dataKey="label"
                   minTickGap={mode === "minutes" ? 14 : 26}
-                  tick={{ fontSize: 10, fill: colors.axisText }}
+                  tick={false}
                 />
                 <YAxis
                   tick={{ fontSize: 10, fill: colors.axisText }}
@@ -274,6 +222,7 @@ const LiveViews = () => {
   );
 
   const [channels, setChannels] = useState([]);
+  const [channelAvatarMap, setChannelAvatarMap] = useState({});
   const [selectedChannel, setSelectedChannel] = useState(() => {
     try {
       return getStoredSharedChannelId("liveViews.selectedChannelId", "overview.selectedChannelId");
@@ -298,9 +247,10 @@ const LiveViews = () => {
         setLoadingChannels(true);
         const res = await api.get("/api/video_overview/channels");
         const items = Array.isArray(res?.data?.items) ? res.data.items : [];
+        const finalChannels = sortByStoredTokenOrder(items, (item) => item.value);
         if (!active) return;
-        setChannels(items);
-        if (!items.length) {
+        setChannels(finalChannels);
+        if (!finalChannels.length) {
           setSelectedChannel("");
           return;
         }
@@ -308,8 +258,8 @@ const LiveViews = () => {
           const preferred =
             getStoredSharedChannelId("liveViews.selectedChannelId", "overview.selectedChannelId") ||
             current;
-          const exists = preferred && items.some((item) => item.value === preferred);
-          return exists ? preferred : items[0].value;
+          const exists = preferred && finalChannels.some((item) => item.value === preferred);
+          return exists ? preferred : finalChannels[0].value;
         });
       } catch (err) {
         if (!active) return;
@@ -337,6 +287,16 @@ const LiveViews = () => {
         return nextChannelId;
       });
     });
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    getChannelAvatarMap().then((map) => {
+      if (active) setChannelAvatarMap(map || {});
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -421,7 +381,7 @@ const LiveViews = () => {
             <Stack direction="row" spacing={1.2} alignItems="center">
               <TimelineIcon sx={{ color: palette.greenAccent[400] }} />
               <Typography variant="h5" fontWeight={800}>
-                Live Views Windows
+                Live Views
               </Typography>
             </Stack>
           </Stack>
@@ -434,6 +394,7 @@ const LiveViews = () => {
             disabled={loadingChannels}
             placeholder={loadingChannels ? "Loading channels..." : "Search by channel name"}
             noOptionsText={loadingChannels ? "Loading channels..." : "No channels found"}
+            getOptionAvatar={(option) => channelAvatarMap[option?.value] || option?.avatar || ""}
           />
         </Stack>
       </Paper>
@@ -469,7 +430,7 @@ const LiveViews = () => {
           <Grid container>
             <Grid size={{ xs: 12, lg: 6 }}>
               <ChartPanel
-                title="Views Last 40 Hours"
+                title="last 40 hours"
                 subtitle=""
                 summary={liveData.summary40h}
                 rows={liveData.history40h}
@@ -484,7 +445,7 @@ const LiveViews = () => {
             </Grid>
             <Grid size={{ xs: 12, lg: 6 }}>
               <ChartPanel
-                title="Views Last 60 Minutes"
+                title="last 60 minutes"
                 subtitle=""
                 summary={liveData.summary60m}
                 rows={liveData.history60m}

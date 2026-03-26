@@ -30,6 +30,7 @@ import api from "../services/api";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import { sortByStoredTokenOrder } from "../utils/tokenOrder";
 
 // ===== Helpers =====
 const n = (v) => Number(v) || 0;
@@ -162,7 +163,7 @@ const GeographyChart = ({ isDashboard = false }) => {
           const newStr = JSON.stringify(normalized.map(c => c.value));
 
           if (curStr !== newStr || !channelsRef.current.length) {
-            const final = normalized.sort((a, b) => a.label.localeCompare(b.label));
+            const final = sortByStoredTokenOrder(normalized, (item) => item.value);
             channelsRef.current = final;
             setChannels(final);
             if (channel) {

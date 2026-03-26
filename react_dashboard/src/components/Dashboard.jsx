@@ -21,7 +21,6 @@ import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import InsightsIcon from "@mui/icons-material/Insights";
-import TimelineIcon from "@mui/icons-material/Timeline";
 import CloseIcon from "@mui/icons-material/Close";
 import { ResponsiveChoropleth } from "@nivo/geo";
 import { tokens } from "../theme";
@@ -33,6 +32,7 @@ import { geoFeatures } from "../data/mockGeoFeatures";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import { sortByStoredTokenOrder } from "../utils/tokenOrder";
 import {
     ResponsiveContainer,
     BarChart,
@@ -294,24 +294,7 @@ const VideoList = () => {
                 const res = await api.get("/api/video_overview/channels");
                 const data = res.data;
                 const items = data.items || [];
-                const order = (() => {
-                    try {
-                        return JSON.parse(localStorage.getItem("tokens.order") || "[]");
-                    } catch {
-                        return [];
-                    }
-                })()
-                    .map((name) => String(name || "").replace(/\.pickle$/i, ""))
-                    .filter(Boolean);
-                const orderKey = (value) => String(value || "").toLowerCase();
-                const byId = new Map(items.map((c) => [orderKey(c.value), c]));
-                const ordered = order
-                    .map((name) => byId.get(orderKey(name)))
-                    .filter(Boolean);
-                const remaining = items.filter(
-                    (c) => !order.map(orderKey).includes(orderKey(c.value))
-                );
-                const finalChannels = [...ordered, ...remaining];
+                const finalChannels = sortByStoredTokenOrder(items, (item) => item.value);
                 setChannels(finalChannels);
                 if (finalChannels.length > 0) {
                     const preferredChannel =
@@ -773,29 +756,6 @@ const VideoList = () => {
                         ))}
                     </TextField>
 
-                    <Button
-                        variant="contained"
-                        startIcon={<TimelineIcon />}
-                        onClick={() => setLiveViewsOpen(true)}
-                        disabled={!selectedChannel}
-                        sx={{
-                            minWidth: { xs: "100%", sm: "auto" },
-                            borderRadius: 2.5,
-                            px: 2,
-                            textTransform: "none",
-                            fontWeight: 700,
-                            background:
-                                theme.palette.mode === "dark"
-                                    ? "linear-gradient(90deg, #0891b2 0%, #2563eb 100%)"
-                                    : "linear-gradient(90deg, #0284c7 0%, #1d4ed8 100%)",
-                            boxShadow:
-                                theme.palette.mode === "dark"
-                                    ? "0 12px 26px rgba(2,132,199,0.28)"
-                                    : "0 12px 24px rgba(37,99,235,0.22)",
-                        }}
-                    >
-                        Live Views
-                    </Button>
                 </Box>
 
                 {videos && videos.length > 0 && (

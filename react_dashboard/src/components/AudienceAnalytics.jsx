@@ -19,6 +19,7 @@ import api from "../services/api";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import { sortByStoredTokenOrder } from "../utils/tokenOrder";
 
 const formatRangeLabel = (range) => {
   if (!range?.start || !range?.end) return "No data";
@@ -66,25 +67,10 @@ const AudienceAnalytics = () => {
             };
           })
           .filter((item) => item.value);
-        const order = (() => {
-          try {
-            return JSON.parse(localStorage.getItem("tokens.order") || "[]");
-          } catch {
-            return [];
-          }
-        })()
-          .map((name) => (name || "").replace(/\.pickle$/i, ""))
-          .filter(Boolean);
-        const orderKey = (value) => String(value || "").toLowerCase();
-        const byName = new Map(nextAccounts.map((acct) => [orderKey(acct.value), acct]));
-        const ordered = order
-          .map((name) => byName.get(orderKey(name)))
-          .filter(Boolean);
-        const orderKeys = new Set(order.map(orderKey));
-        const remaining = nextAccounts.filter(
-          (acct) => !orderKeys.has(orderKey(acct.value))
+        const finalAccounts = sortByStoredTokenOrder(
+          nextAccounts,
+          (item) => item.value
         );
-        const finalAccounts = [...ordered, ...remaining];
         setAccounts(finalAccounts);
         setAccountTag((current) => {
           const preferredChannel =
@@ -94,7 +80,7 @@ const AudienceAnalytics = () => {
             !preferredChannel ||
             !finalAccounts.some((item) => item.value === preferredChannel)
           ) {
-            const next = ordered.length ? ordered[0] : finalAccounts[0];
+            const next = finalAccounts[0];
             return next?.value || "";
           }
           return preferredChannel;

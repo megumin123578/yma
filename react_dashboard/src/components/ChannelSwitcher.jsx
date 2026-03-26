@@ -188,6 +188,23 @@ const ChannelSwitcher = ({
     [mergedOptions]
   );
 
+  const buildOrderedValues = (items, currentOrder = []) => {
+    const currentIndex = new Map(
+      (Array.isArray(currentOrder) ? currentOrder : []).map((value, index) => [value, index])
+    );
+    const ordered = [...(Array.isArray(items) ? items : [])].sort((a, b) => {
+      const hiddenDiff = Number(!!a.hidden) - Number(!!b.hidden);
+      if (hiddenDiff !== 0) return hiddenDiff;
+      const aIndex = currentIndex.get(a.value);
+      const bIndex = currentIndex.get(b.value);
+      if (aIndex == null && bIndex == null) return 0;
+      if (aIndex == null) return 1;
+      if (bIndex == null) return -1;
+      return aIndex - bIndex;
+    });
+    return ordered.map((option) => option.value);
+  };
+
   const groupedOptions = useMemo(
     () => {
       const orderIndex = new Map(
@@ -213,8 +230,14 @@ const ChannelSwitcher = ({
 
   useEffect(() => {
     setOrderedValues((current) => {
-      if (current.length) return current;
-      return mergedOptions.map((option) => option.value);
+      const next = buildOrderedValues(mergedOptions, current);
+      if (
+        current.length === next.length &&
+        current.every((value, index) => value === next[index])
+      ) {
+        return current;
+      }
+      return next;
     });
   }, [mergedOptions]);
 
@@ -380,12 +403,7 @@ const ChannelSwitcher = ({
         onOpen={() => setOpen(true)}
         onClose={() => {
           setOpen(false);
-          setOrderedValues(
-            mergedOptions
-              .slice()
-              .sort((a, b) => Number(a.hidden) - Number(b.hidden))
-              .map((option) => option.value)
-          );
+          setOrderedValues((current) => buildOrderedValues(mergedOptions, current));
           setStickyHiddenValues([]);
         }}
         filterOptions={(items, state) => {

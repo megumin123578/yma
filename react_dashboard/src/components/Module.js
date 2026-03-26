@@ -572,6 +572,7 @@ export function formatDuration(value) {
 
   const trimmed = value.trim();
   if (!trimmed) return "";
+  if (trimmed === "P0D") return "";
 
   if (/^\d+(\.\d+)?$/.test(trimmed)) {
     return formatSecondsValue(trimmed);
