@@ -148,11 +148,6 @@ def get_revenue(
     safe_tag = sanitize_filename(accountTag)
     if allowed is not None and safe_tag not in allowed:
         return {"rows": [], "start_date": None, "end_date": None}
-    if current_user:
-        hidden = get_hidden_account_tags(db, current_user.id)
-        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
-        if safe_tag in hidden_all:
-            return {"rows": [], "start_date": None, "end_date": None}
 
     start_date, end_date = _range_to_dates(range)
     engine = create_engine(pg_url, future=True)

@@ -356,11 +356,6 @@ def content_list(
     allowed = get_allowed_account_tags(db, current_user)
     if allowed is not None and req.channelId not in allowed:
         return {"items": []}
-    if current_user:
-        hidden = get_hidden_account_tags(db, current_user.id)
-        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
-        if req.channelId in hidden_all:
-            return {"items": []}
     sql = """
     SELECT
         v.video_id      AS "videoId",
@@ -477,11 +472,6 @@ def content_timeseries(
     allowed = get_allowed_account_tags(db, current_user)
     if allowed is not None and req.channelId not in allowed:
         return {"items": []}
-    if current_user:
-        hidden = get_hidden_account_tags(db, current_user.id)
-        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
-        if req.channelId in hidden_all:
-            return {"items": []}
 
     cached = _load_timeseries_cache(req.channelId, req.start, req.end)
     if cached is not None:
@@ -636,9 +626,4 @@ def channel_metrics(
     allowed = get_allowed_account_tags(db, current_user)
     if allowed is not None and req.channelId not in allowed:
         return {"impressions": 0, "ctr": None, "supported": False}
-    if current_user:
-        hidden = get_hidden_account_tags(db, current_user.id)
-        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
-        if req.channelId in hidden_all:
-            return {"impressions": 0, "ctr": None, "supported": False}
     return _compute_channel_metrics_from_db(req.channelId, req.start, req.end)

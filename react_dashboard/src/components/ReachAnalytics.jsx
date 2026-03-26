@@ -22,7 +22,12 @@ import { formatNumber } from "./Module";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
-import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import {
+  getStoredSharedChannelId,
+  listenSharedChannelId,
+  resolvePreferredSharedChannelId,
+  setStoredSharedChannelId,
+} from "../utils/sharedChannel";
 
 const formatPct = (value) => {
   if (value === null || value === undefined) return "-";
@@ -111,16 +116,15 @@ const ReachAnalytics = () => {
         );
 
         setAccounts(finalAccounts);
-        if (!finalAccounts.length) {
-          setAccountTag("");
-        } else {
-          const preferredChannel =
-            getStoredSharedChannelId("reach.selectedChannelId") || accountTag;
-          if (!preferredChannel || !finalAccounts.some((a) => a.value === preferredChannel)) {
-            setAccountTag(finalAccounts[0].value);
-          } else if (preferredChannel !== accountTag) {
-            setAccountTag(preferredChannel);
-          }
+        const preferredChannel =
+          getStoredSharedChannelId("reach.selectedChannelId") || accountTag;
+        const nextChannel = resolvePreferredSharedChannelId(
+          preferredChannel,
+          finalAccounts,
+          (item) => item.value
+        );
+        if (nextChannel !== accountTag) {
+          setAccountTag(nextChannel);
         }
       } catch (err) {
         setAccounts([]);
@@ -241,7 +245,7 @@ const ReachAnalytics = () => {
         >
           <ChannelSwitcher
             options={accounts}
-            value={accounts.some((acct) => acct.value === accountTag) ? accountTag : ""}
+            value={accountTag}
             onChange={(option) => setAccountTag(option?.value || "")}
           sx={CHANNEL_SWITCHER_SX}
           getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}

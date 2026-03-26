@@ -29,7 +29,12 @@ import { geoFeatures } from "../data/mockGeoFeatures";
 import api from "../services/api";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
-import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import {
+  getStoredSharedChannelId,
+  listenSharedChannelId,
+  resolvePreferredSharedChannelId,
+  setStoredSharedChannelId,
+} from "../utils/sharedChannel";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
 
 // ===== Helpers =====
@@ -173,10 +178,19 @@ const GeographyChart = ({ isDashboard = false }) => {
             if (final.length) {
               const preferredChannel =
                 getStoredSharedChannelId("geography.selectedChannelId") || channel;
-              const selected =
-                final.find((item) => item.value === preferredChannel) || final[0];
-              setChannel(selected.value);
-              setChannelLabelFallback(selected.label);
+              const selected = final.find((item) => item.value === preferredChannel);
+              setChannel(
+                resolvePreferredSharedChannelId(
+                  preferredChannel,
+                  final,
+                  (item) => item.value
+                )
+              );
+              if (selected?.label) {
+                setChannelLabelFallback(selected.label);
+              } else if (!preferredChannel && final[0]?.label) {
+                setChannelLabelFallback(final[0].label);
+              }
             }
           }
         }

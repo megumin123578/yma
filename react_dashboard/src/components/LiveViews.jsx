@@ -27,6 +27,7 @@ import { sortByStoredTokenOrder } from "../utils/tokenOrder";
 import {
   getStoredSharedChannelId,
   listenSharedChannelId,
+  resolvePreferredSharedChannelId,
   setStoredSharedChannelId,
 } from "../utils/sharedChannel";
 
@@ -250,16 +251,15 @@ const LiveViews = () => {
         const finalChannels = sortByStoredTokenOrder(items, (item) => item.value);
         if (!active) return;
         setChannels(finalChannels);
-        if (!finalChannels.length) {
-          setSelectedChannel("");
-          return;
-        }
         setSelectedChannel((current) => {
           const preferred =
             getStoredSharedChannelId("liveViews.selectedChannelId", "overview.selectedChannelId") ||
             current;
-          const exists = preferred && finalChannels.some((item) => item.value === preferred);
-          return exists ? preferred : finalChannels[0].value;
+          return resolvePreferredSharedChannelId(
+            preferred,
+            finalChannels,
+            (item) => item.value
+          );
         });
       } catch (err) {
         if (!active) return;

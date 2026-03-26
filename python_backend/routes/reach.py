@@ -116,11 +116,6 @@ def get_reach(
     safe_tag = sanitize_filename(accountTag)
     if allowed is not None and safe_tag not in allowed:
         return {"rows": [], "start_date": None, "end_date": None}
-    if current_user:
-        hidden = get_hidden_account_tags(db, current_user.id)
-        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
-        if safe_tag in hidden_all:
-            return {"rows": [], "start_date": None, "end_date": None}
 
     engine = create_engine(pg_url, future=True)
     with engine.begin() as conn:
@@ -193,11 +188,6 @@ def reach_traffic_breakdown(
     safe_tag = sanitize_filename(accountTag)
     if allowed is not None and safe_tag not in allowed:
         return {"range": {"start": None, "end": None}, "external": [], "playlist": 0, "suggested": 0, "browse": 0}
-    if current_user:
-        hidden = get_hidden_account_tags(db, current_user.id)
-        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
-        if safe_tag in hidden_all:
-            return {"range": {"start": None, "end": None}, "external": [], "playlist": 0, "suggested": 0, "browse": 0}
 
     engine = create_engine(pg_url, future=True)
     with engine.begin() as conn:

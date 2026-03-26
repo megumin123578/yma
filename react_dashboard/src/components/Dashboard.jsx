@@ -31,7 +31,12 @@ import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { geoFeatures } from "../data/mockGeoFeatures";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
-import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import {
+    getStoredSharedChannelId,
+    listenSharedChannelId,
+    resolvePreferredSharedChannelId,
+    setStoredSharedChannelId,
+} from "../utils/sharedChannel";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
 import {
     ResponsiveContainer,
@@ -296,14 +301,13 @@ const VideoList = () => {
                 const items = data.items || [];
                 const finalChannels = sortByStoredTokenOrder(items, (item) => item.value);
                 setChannels(finalChannels);
-                if (finalChannels.length > 0) {
-                    const preferredChannel =
-                        getStoredSharedChannelId("overview.selectedChannelId") || selectedChannel;
-                    const exists =
-                        preferredChannel &&
-                        finalChannels.some((c) => c.value === preferredChannel);
-                    setSelectedChannel(exists ? preferredChannel : finalChannels[0].value);
-                }
+                setSelectedChannel((current) =>
+                    resolvePreferredSharedChannelId(
+                        getStoredSharedChannelId("overview.selectedChannelId") || current,
+                        finalChannels,
+                        (item) => item.value
+                    )
+                );
             } catch (err) {
                 console.error(err);
                 setError(

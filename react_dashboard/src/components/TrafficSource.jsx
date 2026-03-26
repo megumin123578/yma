@@ -48,7 +48,12 @@ import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 
 import { API_BASE } from "../config";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
-import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import {
+  getStoredSharedChannelId,
+  listenSharedChannelId,
+  resolvePreferredSharedChannelId,
+  setStoredSharedChannelId,
+} from "../utils/sharedChannel";
 
 const DATA_LAG_DAYS = 3;
 const LAG_PERIODS = new Set(["last7", "last28", "last90", "last365"]);
@@ -355,14 +360,11 @@ const TrafficSourceChart = () => {
           setChannel((current) => {
             const preferredChannel =
               getStoredSharedChannelId("trafficSource.selectedChannelId") || current;
-            if (!finalChannels.length) return "";
-            if (
-              !preferredChannel ||
-              !finalChannels.some((opt) => opt.value === preferredChannel)
-            ) {
-              return finalChannels[0].value;
-            }
-            return preferredChannel;
+            return resolvePreferredSharedChannelId(
+              preferredChannel,
+              finalChannels,
+              (item) => item.value
+            );
           });
         }
       } catch (e) {

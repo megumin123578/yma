@@ -25,7 +25,12 @@ import api from "../services/api";
 import { tokens } from "../theme";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
-import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import {
+  getStoredSharedChannelId,
+  listenSharedChannelId,
+  resolvePreferredSharedChannelId,
+  setStoredSharedChannelId,
+} from "../utils/sharedChannel";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
 
 const RANGE_OPTIONS = [
@@ -87,16 +92,15 @@ const RevenueAnalytics = () => {
         const finalChannels = sortByStoredTokenOrder(items, (item) => item.value);
         if (!stop) {
           setChannels(finalChannels);
-          if (!finalChannels.length) {
-            setChannel("");
-          } else {
-            const preferredChannel =
-              getStoredSharedChannelId("revenue.selectedChannelId") || channel;
-            if (!preferredChannel || !finalChannels.some((c) => c.value === preferredChannel)) {
-              setChannel(finalChannels[0].value);
-            } else if (preferredChannel !== channel) {
-              setChannel(preferredChannel);
-            }
+          const preferredChannel =
+            getStoredSharedChannelId("revenue.selectedChannelId") || channel;
+          const nextChannel = resolvePreferredSharedChannelId(
+            preferredChannel,
+            finalChannels,
+            (item) => item.value
+          );
+          if (nextChannel !== channel) {
+            setChannel(nextChannel);
           }
         }
       } catch (err) {

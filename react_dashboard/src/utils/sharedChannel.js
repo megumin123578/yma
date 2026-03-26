@@ -19,6 +19,17 @@ export const getStoredSharedChannelId = (...fallbackKeys) => {
   return "";
 };
 
+export const resolvePreferredSharedChannelId = (
+  preferredValue,
+  options,
+  getOptionValue = (option) => option?.value
+) => {
+  const preferred = String(preferredValue || "").trim();
+  if (preferred) return preferred;
+  if (!Array.isArray(options) || !options.length) return "";
+  return String(getOptionValue(options[0]) || "").trim();
+};
+
 export const setStoredSharedChannelId = (value, ...legacyKeys) => {
   if (typeof window === "undefined") return;
   try {

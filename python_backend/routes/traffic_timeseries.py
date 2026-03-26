@@ -151,11 +151,6 @@ def timeseries(
     allowed = get_allowed_account_tags(db, current_user)
     if allowed is not None and ch["account_tag"] not in allowed:
         return []
-    if current_user:
-        hidden = get_hidden_account_tags(db, current_user.id)
-        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
-        if ch["account_tag"] in hidden_all:
-            return []
     cond_channel = "AND channel_id = :channel_id" if ch["channel_id"] is not None else ""
 
     sql = text(f"""
@@ -209,11 +204,6 @@ def range_aggregate(
     allowed = get_allowed_account_tags(db, current_user)
     if allowed is not None and ch["account_tag"] not in allowed:
         return []
-    if current_user:
-        hidden = get_hidden_account_tags(db, current_user.id)
-        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
-        if ch["account_tag"] in hidden_all:
-            return []
     cond_channel = "AND channel_id = :channel_id" if ch["channel_id"] is not None else ""
 
     sql = text(f"""

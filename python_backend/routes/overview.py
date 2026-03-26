@@ -37,11 +37,6 @@ def _allowed_or_hidden_blocked(current_user, db, account_tag: str) -> bool:
     allowed = get_allowed_account_tags(db, current_user)
     if allowed is not None and account_tag not in allowed:
         return True
-    if current_user:
-        hidden = get_hidden_account_tags(db, current_user.id)
-        hidden_all = hidden | {sanitize_filename(t) for t in hidden}
-        if account_tag in hidden_all:
-            return True
     return False
 
 

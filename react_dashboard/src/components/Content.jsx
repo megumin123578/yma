@@ -41,7 +41,12 @@ import {
 
 import dayjs from "dayjs";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
-import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import {
+  getStoredSharedChannelId,
+  listenSharedChannelId,
+  resolvePreferredSharedChannelId,
+  setStoredSharedChannelId,
+} from "../utils/sharedChannel";
 
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 
@@ -797,14 +802,11 @@ const ContentAnalytics = () => {
         setChannelId((current) => {
           const preferredChannel =
             getStoredSharedChannelId("content.selectedChannelId") || current;
-          if (!finalChannels.length) return "";
-          if (
-            !preferredChannel ||
-            !finalChannels.some((c) => c.id === preferredChannel)
-          ) {
-            return finalChannels[0].id;
-          }
-          return preferredChannel;
+          return resolvePreferredSharedChannelId(
+            preferredChannel,
+            finalChannels,
+            (item) => item.id
+          );
         });
 
       } catch (err) {
@@ -1629,7 +1631,7 @@ const ContentAnalytics = () => {
             label: channelOption.title,
             avatar: channelOption.avatar,
           }))}
-          value={channelList.some((c) => c.id === channelId) ? channelId : ""}
+          value={channelId}
           onChange={(option) => setChannelId(option?.value || "")}
           sx={CHANNEL_SWITCHER_SX}
           getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}

@@ -18,7 +18,12 @@ import { ResponsiveLine } from "@nivo/line";
 import api from "../services/api";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
-import { getStoredSharedChannelId, listenSharedChannelId, setStoredSharedChannelId } from "../utils/sharedChannel";
+import {
+  getStoredSharedChannelId,
+  listenSharedChannelId,
+  resolvePreferredSharedChannelId,
+  setStoredSharedChannelId,
+} from "../utils/sharedChannel";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
 
 const formatRangeLabel = (range) => {
@@ -75,15 +80,11 @@ const AudienceAnalytics = () => {
         setAccountTag((current) => {
           const preferredChannel =
             getStoredSharedChannelId("audience.selectedChannelId") || current;
-          if (!finalAccounts.length) return "";
-          if (
-            !preferredChannel ||
-            !finalAccounts.some((item) => item.value === preferredChannel)
-          ) {
-            const next = finalAccounts[0];
-            return next?.value || "";
-          }
-          return preferredChannel;
+          return resolvePreferredSharedChannelId(
+            preferredChannel,
+            finalAccounts,
+            (item) => item.value
+          );
         });
       } catch (err) {
         setAccounts([]);

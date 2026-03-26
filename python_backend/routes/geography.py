@@ -98,35 +98,39 @@ def api_geography(
             k: v for k, v in CHANNEL_CREDENTIALS.items() if sanitize_filename(k) in allowed
         }
         CHANNEL_LABELS = {k: v for k, v in CHANNEL_LABELS.items() if k in CHANNEL_CREDENTIALS}
+    visible_channel_credentials = dict(CHANNEL_CREDENTIALS)
+    visible_channel_labels = dict(CHANNEL_LABELS)
     if current_user:
         hidden = get_hidden_account_tags(db, current_user.id)
         hidden_all = hidden | {sanitize_filename(t) for t in hidden}
-        CHANNEL_CREDENTIALS = {
+        visible_channel_credentials = {
             k: v for k, v in CHANNEL_CREDENTIALS.items() if k not in hidden_all
         }
-        CHANNEL_LABELS = {k: v for k, v in CHANNEL_LABELS.items() if k in CHANNEL_CREDENTIALS}
+        visible_channel_labels = {
+            k: v for k, v in CHANNEL_LABELS.items() if k in visible_channel_credentials
+        }
 
     if not channel:
-        available = list(CHANNEL_CREDENTIALS.keys())
+        available = list(visible_channel_credentials.keys())
         return {
             "start": None,
             "end": None,
             "channel": None,
             "rows": [],
             "availableChannels": [
-                {"value": tag, "label": CHANNEL_LABELS.get(tag, tag)} for tag in available
+                {"value": tag, "label": visible_channel_labels.get(tag, tag)} for tag in available
             ],
         }
 
     if channel not in CHANNEL_CREDENTIALS:
-        available = list(CHANNEL_CREDENTIALS.keys())
+        available = list(visible_channel_credentials.keys())
         return {
             "start": None,
             "end": None,
             "channel": channel,
             "rows": [],
             "availableChannels": [
-                {"value": tag, "label": CHANNEL_LABELS.get(tag, tag)} for tag in available
+                {"value": tag, "label": visible_channel_labels.get(tag, tag)} for tag in available
             ],
         }
 
@@ -142,8 +146,8 @@ def api_geography(
             "rows": [],
             "error": "invalid_credentials",
             "availableChannels": [
-                {"value": tag, "label": CHANNEL_LABELS.get(tag, tag)}
-                for tag in list(CHANNEL_CREDENTIALS.keys())
+                {"value": tag, "label": visible_channel_labels.get(tag, tag)}
+                for tag in list(visible_channel_credentials.keys())
             ],
         }
 
@@ -181,7 +185,7 @@ def api_geography(
         "channel": channel,
         "rows": rows,
         "availableChannels": [
-            {"value": tag, "label": CHANNEL_LABELS.get(tag, tag)}
-            for tag in list(CHANNEL_CREDENTIALS.keys())
+            {"value": tag, "label": visible_channel_labels.get(tag, tag)}
+            for tag in list(visible_channel_credentials.keys())
         ],
     }
