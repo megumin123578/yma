@@ -266,11 +266,7 @@ const ChannelSwitcher = ({
     };
   }, [groupedOptions, pendingValues, tokenInventory]);
 
-  const handleToggleVisibility = async (event, option, nextVisible) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (!option?.tokenName) return;
-
+  const prepareScrollRestore = () => {
     restoreScrollTopRef.current = listboxRef.current?.scrollTop ?? null;
     restoreFramesRef.current = 24;
     if (restoreTimeoutRef.current) {
@@ -282,6 +278,14 @@ const ChannelSwitcher = ({
       }
       restoreTimeoutRef.current = null;
     }, 250);
+  };
+
+  const handleToggleVisibility = async (event, option, nextVisible) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!option?.tokenName) return;
+
+    prepareScrollRestore();
     const nextHidden = !nextVisible;
     if (open && nextHidden && !showHidden) {
       setStickyHiddenValues((current) =>
@@ -330,6 +334,11 @@ const ChannelSwitcher = ({
     }
   };
 
+  const handleToggleShowHidden = () => {
+    prepareScrollRestore();
+    setShowHidden((current) => !current);
+  };
+
   const renderDropdownPaper = (paperProps) => (
     <Paper {...paperProps}>
       {paperProps.children}
@@ -341,7 +350,7 @@ const ChannelSwitcher = ({
               event.preventDefault();
               event.stopPropagation();
             }}
-            onClick={() => setShowHidden((current) => !current)}
+            onClick={handleToggleShowHidden}
             sx={{
               px: 1.25,
               py: 0.85,
