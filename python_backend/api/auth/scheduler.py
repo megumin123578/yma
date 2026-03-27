@@ -502,7 +502,7 @@ def _run_loop():
                     status="queued",
                     started_at=now,
                     processed=0,
-                    total=0,
+                    total=len(token_names),
                     message="Queued by scheduler",
                 )
                 db.add(run)
@@ -529,7 +529,10 @@ def _run_loop():
                         print(f"[WARN] failed to write schedule progress for {account_tag}: {e}")
                 _kickoff_get_data(
                     os.path.splitext(os.path.basename(token_names[0]))[0] if len(token_names) == 1 else None,
-                    env_extra={"SCHEDULE_RUN_ID": str(run.id)},
+                    env_extra={
+                        "SCHEDULE_RUN_ID": str(run.id),
+                        "RUN_TOKEN_NAMES": json.dumps(token_names),
+                    },
                 )
             snapshot_now = _now_saigon_naive()
             if _should_capture_live_counters(snapshot_now):

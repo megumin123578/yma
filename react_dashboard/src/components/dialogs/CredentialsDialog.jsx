@@ -48,7 +48,6 @@ import {
   runAllTokens,
   runSelectedTokens,
   runTokenStage,
-  runTokenFullBackfill,
   refreshTokenAvatar,
   listTokenGroups,
   createTokenGroup,
@@ -69,6 +68,49 @@ import ManageUserRequests from "../ManageUserRequests";
 import { getApiBase } from "../../config";
 import { setStoredHiddenTokens } from "../../utils/tokenOrder";
 export const CREDENTIALS_CHANGED_EVENT = "credentials-data-changed";
+
+const RUN_STAGE_LABELS = {
+  traffic_source: "Traffic Source",
+  geography: "Geography",
+  content: "Content",
+  content_full: "Content Full Backfill",
+  overview: "Overview",
+  audience: "Audience",
+  reach: "Reach",
+  revenue: "Revenue",
+  subscribers: "Subscribers",
+  queued: "Queued",
+  running: "Running",
+};
+
+const RUN_MENU_OPTIONS = [
+  { value: "content", label: "Run content", type: "stage" },
+  { value: "overview", label: "Run overview", type: "stage" },
+  { value: "traffic_source", label: "Run traffic source", type: "stage" },
+  { value: "audience", label: "Run audience", type: "stage" },
+  { value: "reach", label: "Run reach", type: "stage" },
+  { value: "revenue", label: "Run revenue", type: "stage" },
+  { value: "subscribers", label: "Run subscribers", type: "stage" },
+  { value: "incremental", label: "Run incremental", type: "incremental" },
+  { value: "content_full", label: "Run full backfill", type: "stage" },
+];
+
+const getStageLabel = (stage) => {
+  const key = String(stage || "").toLowerCase();
+  return Object.prototype.hasOwnProperty.call(RUN_STAGE_LABELS, key)
+    ? RUN_STAGE_LABELS[key]
+    : stage;
+};
+
+const isChannelProgressRunType = (runType) => {
+  const raw = String(runType || "").trim().toLowerCase();
+  return (
+    raw === "manual_all" ||
+    raw === "manual_selected" ||
+    raw === "scheduled" ||
+    raw.startsWith("manual_all_stage:")
+  );
+};
 
 const CredentialsDialog = ({
   open,
@@ -102,6 +144,7 @@ const CredentialsDialog = ({
   const [dragTokenName, setDragTokenName] = useState("");
   const [dragOverTokenName, setDragOverTokenName] = useState("");
   const [tokenView, setTokenView] = useState(defaultTokenView);
+  const [runAllAnchorEl, setRunAllAnchorEl] = useState(null);
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
   const [menuTokenName, setMenuTokenName] = useState("");
   const [tokenGroups, setTokenGroups] = useState([]);
@@ -755,10 +798,12 @@ const CredentialsDialog = ({
     }
   };
 
-  const handleRunAllTokens = async () => {
+  const handleRunAllTokens = async (stage = "") => {
+    const normalizedStage = String(stage || "").trim().toLowerCase();
+    closeRunAllMenu();
     setRunningAll(true);
     try {
-      const data = await runAllTokens();
+      const data = await runAllTokens(normalizedStage);
       const tokenNames = Array.isArray(data?.token_names) ? data.token_names : [];
       if (tokenNames.length) {
         setTokenProgress((prev) => {
@@ -777,11 +822,16 @@ const CredentialsDialog = ({
           return next;
         });
       }
+      const modeLabel = !normalizedStage
+        ? "incremental"
+        : normalizedStage === "content_full"
+          ? "full backfill"
+          : getStageLabel(normalizedStage).toLowerCase();
       setStatus({
         type: "success",
         message: tokenNames.length
-          ? `Queued ${tokenNames.length} channel(s).`
-          : "Refresh queued.",
+          ? `Queued ${tokenNames.length} channel(s) (${modeLabel}).`
+          : `Refresh queued (${modeLabel}).`,
       });
     } catch (err) {
       const message =
@@ -795,6 +845,14 @@ const CredentialsDialog = ({
   const openTokenMenu = (event, tokenName) => {
     setMenuAnchorEl(event.currentTarget);
     setMenuTokenName(tokenName);
+  };
+
+  const openRunAllMenu = (event) => {
+    setRunAllAnchorEl(event.currentTarget);
+  };
+
+  const closeRunAllMenu = () => {
+    setRunAllAnchorEl(null);
   };
 
   const closeTokenMenu = () => {
@@ -818,36 +876,14 @@ const CredentialsDialog = ({
           finished_at: "",
         },
       }));
-      setStatus({ type: "success", message: `Refresh queued (${stage}).` });
+      const modeLabel =
+        stage === "content_full"
+          ? "full backfill"
+          : getStageLabel(stage).toLowerCase();
+      setStatus({ type: "success", message: `Refresh queued (${modeLabel}).` });
     } catch (err) {
       const message =
         err?.response?.data?.detail || "Failed to start refresh.";
-      setStatus({ type: "error", message });
-    } finally {
-      closeTokenMenu();
-    }
-  };
-
-  const handleRunFullBackfill = async () => {
-    if (!menuTokenName) return;
-    try {
-      const data = await runTokenFullBackfill(menuTokenName);
-      setTokenProgress((prev) => ({
-        ...prev,
-        [menuTokenName]: {
-          status: "queued",
-          percent: 0,
-          stage: "queued",
-          message: "",
-          run_id: String(data?.run_id || ""),
-          updated_at: "",
-          finished_at: "",
-        },
-      }));
-      setStatus({ type: "success", message: "Full backfill queued." });
-    } catch (err) {
-      const message =
-        err?.response?.data?.detail || "Failed to start full backfill.";
       setStatus({ type: "error", message });
     } finally {
       closeTokenMenu();
@@ -997,30 +1033,20 @@ const CredentialsDialog = ({
     const raw = String(value || "").trim();
     if (!raw) return "run";
     if (raw === "manual_all") return "manual all";
+    if (raw.startsWith("manual_all_stage:")) {
+      return `manual all: ${getStageLabel(raw.split(":").slice(1).join(":"))}`;
+    }
     if (raw === "manual_selected") return "manual selected";
     if (raw === "manual_single") return "manual";
     if (raw.startsWith("manual_stage:")) {
-      return `stage: ${raw.split(":").slice(1).join(":")}`;
+      return `stage: ${getStageLabel(raw.split(":").slice(1).join(":"))}`;
     }
     if (raw === "scheduled") return "scheduled";
     return raw.replace(/_/g, " ");
   };
 
   const formatProgressStage = (stage) => {
-    const key = String(stage || "").toLowerCase();
-    const map = {
-      traffic_source: "Traffic Source",
-      geography: "Geography",
-      content: "Content",
-      overview: "Overview",
-      audience: "Audience",
-      reach: "Reach",
-      revenue: "Revenue",
-      subscribers: "Subscribers",
-      queued: "Queued",
-      running: "Running",
-    };
-    return Object.prototype.hasOwnProperty.call(map, key) ? map[key] : stage;
+    return getStageLabel(stage);
   };
 
   const statusStyles = (status) => {
@@ -1888,12 +1914,13 @@ const CredentialsDialog = ({
                           Run selected
                         </Button>
                       </Tooltip>
-                      <Tooltip title="Run all visible tokens using the normal incremental content sync.">
+                      <Tooltip title="Choose how to run all visible channels.">
                         <Button
                           size="small"
                           variant="outlined"
                           startIcon={<PlayArrowIcon fontSize="small" />}
-                          onClick={handleRunAllTokens}
+                          endIcon={<ExpandMoreIcon fontSize="small" />}
+                          onClick={openRunAllMenu}
                           disabled={loadingTokens || runningAll || visibleTokenCount === 0}
                           sx={{
                             ...shimmerSx,
@@ -2280,6 +2307,8 @@ const CredentialsDialog = ({
                             const styles = statusStyles(normalizedStatus);
                             const processed = run.processed ?? 0;
                             const total = run.total ?? 0;
+                            const hasChannelProgress =
+                              isChannelProgressRunType(run.run_type) && total > 0;
                             const tokenName = formatTokenName(run.token_name);
                             const runType = formatRunType(run.run_type);
                             const runMessage = cleanError(run.message);
@@ -2383,9 +2412,13 @@ const CredentialsDialog = ({
                                   justifyContent="space-between"
                                   gap={1}
                                 >
-                                  {normalizedStatus !== "running" && normalizedStatus !== "queued" ? (
+                                  {hasChannelProgress ? (
                                     <Typography variant="caption" color="text.secondary">
-                                      {`Accounts: ${processed}/${total}`}
+                                      {`Channels: ${processed}/${total}`}
+                                    </Typography>
+                                  ) : normalizedStatus !== "running" && normalizedStatus !== "queued" ? (
+                                    <Typography variant="caption" color="text.secondary">
+                                      {`Progress: ${processed}/${total}`}
                                     </Typography>
                                   ) : (
                                     <Box />
@@ -2532,36 +2565,44 @@ const CredentialsDialog = ({
         </DialogActions>
       </Dialog>
       <Menu
+        anchorEl={runAllAnchorEl}
+        open={Boolean(runAllAnchorEl)}
+        onClose={closeRunAllMenu}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+      >
+        {RUN_MENU_OPTIONS.map((option) => (
+          <MenuItem
+            key={`run-all-${option.value}`}
+            onClick={() =>
+              option.type === "incremental"
+                ? handleRunAllTokens("")
+                : handleRunAllTokens(option.value)
+            }
+          >
+            {option.label}
+          </MenuItem>
+        ))}
+      </Menu>
+      <Menu
         anchorEl={menuAnchorEl}
         open={Boolean(menuAnchorEl)}
         onClose={closeTokenMenu}
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
         transformOrigin={{ vertical: "top", horizontal: "right" }}
       >
-        <MenuItem onClick={() => handleRunTokenStage("content")}>
-          Run content
-        </MenuItem>
-        <MenuItem onClick={() => handleRunTokenStage("traffic_source")}>
-          Run traffic source
-        </MenuItem>
-        <MenuItem onClick={() => handleRunTokenStage("audience")}>
-          Run audience
-        </MenuItem>
-        <MenuItem onClick={() => handleRunTokenStage("reach")}>
-          Run reach
-        </MenuItem>
-        <MenuItem onClick={() => handleRunTokenStage("revenue")}>
-          Run revenue
-        </MenuItem>
-        <MenuItem onClick={() => handleRunTokenStage("subscribers")}>
-          Run subscribers
-        </MenuItem>
-        <MenuItem onClick={() => handleRunToken(menuTokenName)}>
-          Run incremental
-        </MenuItem>
-        <MenuItem onClick={handleRunFullBackfill}>
-          Run full backfill
-        </MenuItem>
+        {RUN_MENU_OPTIONS.map((option) => (
+          <MenuItem
+            key={`run-token-${option.value}`}
+            onClick={() =>
+              option.type === "incremental"
+                ? handleRunToken(menuTokenName)
+                : handleRunTokenStage(option.value)
+            }
+          >
+            {option.label}
+          </MenuItem>
+        ))}
       </Menu>
     </Shell>
   );

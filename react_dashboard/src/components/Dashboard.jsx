@@ -243,13 +243,31 @@ const VideoList = () => {
             estimated: sum(revenueRows, "estimated_revenue"),
             ad: sum(revenueRows, "ad_revenue"),
             gross: sum(revenueRows, "gross_revenue"),
-            rpmAvg: avg(revenueRows, "rpm"),
+            premium: sum(revenueRows, "estimated_red_partner_revenue"),
+            monetized: sum(revenueRows, "monetized_playbacks"),
+            adImpressions: sum(revenueRows, "ad_impressions"),
+            views: sum(revenueRows, "views"),
+            rpm:
+                sum(revenueRows, "views") > 0
+                    ? (sum(revenueRows, "estimated_revenue") * 1000) / sum(revenueRows, "views")
+                    : avg(revenueRows, "rpm"),
+            cpm:
+                sum(revenueRows, "ad_impressions") > 0
+                    ? (sum(revenueRows, "gross_revenue") * 1000) / sum(revenueRows, "ad_impressions")
+                    : avg(revenueRows, "cpm"),
+            playbackCpm:
+                sum(revenueRows, "monetized_playbacks") > 0
+                    ? (sum(revenueRows, "gross_revenue") * 1000) / sum(revenueRows, "monetized_playbacks")
+                    : avg(revenueRows, "playback_cpm"),
         };
     }, [revenueRows]);
     const revenueChartData = useMemo(() => {
         return (revenueRows || []).map((row) => ({
             day: row.day,
             estimated: Number(row?.estimated_revenue || 0),
+            ad: Number(row?.ad_revenue || 0),
+            gross: Number(row?.gross_revenue || 0),
+            premium: Number(row?.estimated_red_partner_revenue || 0),
         }));
     }, [revenueRows]);
     const revenueXAxisTicks = useMemo(() => {
@@ -561,6 +579,53 @@ const VideoList = () => {
     const pctColor = (value) =>
         value >= 0 ? "rgb(34,197,94)" : "rgb(239,68,68)";
     const formatPct = (value) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+    const revenueMetricCards = [
+        {
+            label: "Estimated Revenue",
+            value: formatCurrency(revenueSummary.estimated),
+            color: "#22c55e",
+        },
+        {
+            label: "Estimated Ad Revenue",
+            value: formatCurrency(revenueSummary.ad),
+            color: "#38bdf8",
+        },
+        {
+            label: "Gross Revenue",
+            value: formatCurrency(revenueSummary.gross),
+            color: "#a855f7",
+        },
+        {
+            label: "Premium Revenue",
+            value: formatCurrency(revenueSummary.premium),
+            color: "#f59e0b",
+        },
+        {
+            label: "Monetized Playbacks",
+            value: formatNumber(revenueSummary.monetized),
+            color: "#14b8a6",
+        },
+        {
+            label: "Ad Impressions",
+            value: formatNumber(revenueSummary.adImpressions),
+            color: "#6366f1",
+        },
+        {
+            label: "RPM",
+            value: formatCurrency(revenueSummary.rpm),
+            color: "#ef4444",
+        },
+        {
+            label: "CPM",
+            value: formatCurrency(revenueSummary.cpm),
+            color: "#64748b",
+        },
+        {
+            label: "Playback CPM",
+            value: formatCurrency(revenueSummary.playbackCpm),
+            color: "#ec4899",
+        },
+    ];
 
     const latestRowSx = {
         display: "grid",
@@ -964,40 +1029,70 @@ const VideoList = () => {
                                     </Typography>
                                 ) : (
                                     <>
-                                        <Stack spacing={1.5} alignItems="flex-end">
-                                            <Box display="flex" alignItems="baseline" gap={1.5} sx={{ textAlign: "left", minWidth: 100 }}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Estimated
-                                                </Typography>
-                                                <Typography variant="body2" fontWeight={600}>
-                                                    {formatCurrency(revenueSummary.estimated)}
-                                                </Typography>
-                                            </Box>
-                                            <Box display="flex" alignItems="baseline" gap={1.5} sx={{ textAlign: "left", minWidth: 100 }}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Ad revenue
-                                                </Typography>
-                                                <Typography variant="body2" fontWeight={600}>
-                                                    {formatCurrency(revenueSummary.ad)}
-                                                </Typography>
-                                            </Box>
-                                            <Box display="flex" alignItems="baseline" gap={1.5} sx={{ textAlign: "left", minWidth: 100 }}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Gross revenue
-                                                </Typography>
-                                                <Typography variant="body2" fontWeight={600}>
-                                                    {formatCurrency(revenueSummary.gross)}
-                                                </Typography>
-                                            </Box>
-                                            <Box display="flex" alignItems="baseline" gap={1.5} sx={{ textAlign: "left", minWidth: 100 }}>
-                                                <Typography variant="body2" color="text.secondary">
-                                                    Avg RPM
-                                                </Typography>
-                                                <Typography variant="body2" fontWeight={600}>
-                                                    {formatCurrency(revenueSummary.rpmAvg)}
-                                                </Typography>
-                                            </Box>
-                                        </Stack>
+                                        <Box
+                                            sx={{
+                                                display: "grid",
+                                                gridTemplateColumns: {
+                                                    xs: "1fr",
+                                                    sm: "1fr 1fr",
+                                                    lg: "repeat(3, minmax(0, 1fr))",
+                                                },
+                                                columnGap: 2,
+                                                rowGap: 0.5,
+                                                mb: 2,
+                                            }}
+                                        >
+                                            {revenueMetricCards.map((item) => (
+                                                <Box
+                                                    key={item.label}
+                                                    sx={{
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        justifyContent: "space-between",
+                                                        gap: 1.5,
+                                                        py: 1,
+                                                        borderBottom: "1px solid",
+                                                        borderColor:
+                                                            theme.palette.mode === "dark"
+                                                                ? "rgba(148,163,184,0.14)"
+                                                                : "rgba(15,23,42,0.08)",
+                                                    }}
+                                                >
+                                                    <Box
+                                                        sx={{
+                                                            display: "flex",
+                                                            alignItems: "center",
+                                                            gap: 1,
+                                                            minWidth: 0,
+                                                        }}
+                                                    >
+                                                        <Box
+                                                            sx={{
+                                                                width: 8,
+                                                                height: 8,
+                                                                borderRadius: "50%",
+                                                                bgcolor: item.color,
+                                                                flexShrink: 0,
+                                                            }}
+                                                        />
+                                                        <Typography
+                                                            variant="body2"
+                                                            color="text.secondary"
+                                                            sx={{ lineHeight: 1.35 }}
+                                                        >
+                                                            {item.label}
+                                                        </Typography>
+                                                    </Box>
+                                                    <Typography
+                                                        variant="body2"
+                                                        fontWeight={700}
+                                                        sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
+                                                    >
+                                                        {item.value}
+                                                    </Typography>
+                                                </Box>
+                                            ))}
+                                        </Box>
                                         {revenueChartData.length > 0 && (
                                             <Box mt={2} sx={{ ml: -3, minWidth: 0, width: "100%" }}>
                                                 <ResponsiveContainer width="100%" height={320} minWidth={0} minHeight={0}>
@@ -1023,9 +1118,9 @@ const VideoList = () => {
                                                             tick={{ fontSize: 11 }}
                                                         />
                                                         <Tooltip
-                                                            formatter={(value) => [
+                                                            formatter={(value, name) => [
                                                                 formatCurrency(value),
-                                                                "Estimated",
+                                                                name,
                                                             ]}
                                                             labelFormatter={formatDate}
                                                             contentStyle={chartTooltipStyles.contentStyle}
@@ -1034,6 +1129,31 @@ const VideoList = () => {
                                                         <Line
                                                             type="monotone"
                                                             dataKey="estimated"
+                                                            name="Estimated Revenue"
+                                                            stroke="#22c55e"
+                                                            strokeWidth={2}
+                                                            dot={false}
+                                                        />
+                                                        <Line
+                                                            type="monotone"
+                                                            dataKey="ad"
+                                                            name="Estimated Ad Revenue"
+                                                            stroke="#38bdf8"
+                                                            strokeWidth={2}
+                                                            dot={false}
+                                                        />
+                                                        <Line
+                                                            type="monotone"
+                                                            dataKey="gross"
+                                                            name="Gross Revenue"
+                                                            stroke="#a855f7"
+                                                            strokeWidth={2}
+                                                            dot={false}
+                                                        />
+                                                        <Line
+                                                            type="monotone"
+                                                            dataKey="premium"
+                                                            name="Premium Revenue"
                                                             stroke="#f59e0b"
                                                             strokeWidth={2}
                                                             dot={false}

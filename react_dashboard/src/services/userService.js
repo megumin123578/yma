@@ -88,8 +88,9 @@ export const runToken = async (tokenName) => {
   return res.data;
 };
 
-export const runAllTokens = async () => {
-  const res = await api.post("/api/users/tokens/run-all");
+export const runAllTokens = async (stage = "") => {
+  const payload = stage ? { stage } : {};
+  const res = await api.post("/api/users/tokens/run-all", payload);
   return res.data;
 };
 

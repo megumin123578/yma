@@ -951,6 +951,7 @@ const TrafficSourceChart = () => {
               activeOuterRadiusOffset={8}
               enableArcLabels={false}
               enableArcLinkLabels
+              arcLinkLabel={(datum) => formatTrafficSourceLabel(datum.label || datum.id)}
               arcLinkLabelsSkipAngle={10}
               arcLinkLabelsTextColor={theme.palette.text.primary}
               arcLinkLabelsThickness={2}

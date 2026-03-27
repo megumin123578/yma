@@ -13,7 +13,6 @@ import {
   Tooltip as MuiTooltip,
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import {
   ResponsiveContainer,
   LineChart,
@@ -60,68 +59,141 @@ const formatCurrency = (value) => {
   return `$${num.toFixed(2)}`;
 };
 
-const MiniMetricCard = ({ label, value, accent, helper, isCurrency = true }) => (
-  <Box
-    sx={{
-      p: 1.35,
-      borderRadius: 2.5,
-      backgroundColor: alpha(accent, 0.1),
-      border: `1px solid ${alpha(accent, 0.22)}`,
-      minHeight: 84,
-    }}
-  >
-    <Stack direction="row" spacing={0.75} alignItems="center">
-      <Typography variant="body2" color="text.secondary">
-        {label}
-      </Typography>
-      {helper ? (
-        <MuiTooltip title={helper} arrow placement="top">
-          <InfoOutlinedIcon
-            sx={{
-              fontSize: 15,
-              color: "text.secondary",
-              cursor: "help",
-              opacity: 0.75,
-            }}
-          />
-        </MuiTooltip>
-      ) : null}
-    </Stack>
-    <Typography variant="h6" fontWeight={800} mt={0.65}>
-      {isCurrency ? formatCurrency(value) : formatNumber(value)}
-    </Typography>
-  </Box>
-);
+const RevenueTooltip = ({ title, children }) => {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
 
-const MetricRow = ({ label, value, accent, isCurrency = true }) => (
-  <Box
-    sx={{
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 2,
-      py: 1.1,
-    }}
-  >
-    <Stack direction="row" spacing={1.2} alignItems="center">
-      <Box
-        sx={{
-          width: 10,
-          height: 10,
-          borderRadius: "50%",
-          backgroundColor: accent,
-          boxShadow: `0 0 0 5px ${alpha(accent, 0.16)}`,
-        }}
-      />
-      <Typography variant="body2" color="text.secondary">
-        {label}
+  if (!title) return children;
+
+  return (
+    <MuiTooltip
+      title={
+        <Box
+          sx={{
+            fontSize: 13.5,
+            lineHeight: 1.6,
+            letterSpacing: 0.1,
+          }}
+        >
+          {title}
+        </Box>
+      }
+      arrow
+      placement="top"
+      enterDelay={120}
+      slotProps={{
+        tooltip: {
+          sx: {
+            maxWidth: 420,
+            px: 1.5,
+            py: 1.25,
+            borderRadius: 2,
+            backgroundColor: isDark ? "rgba(15,23,42,0.98)" : "rgba(255,255,255,0.98)",
+            color: isDark ? "#e2e8f0" : "#0f172a",
+            border: `1px solid ${
+              isDark ? "rgba(148,163,184,0.28)" : "rgba(15,23,42,0.12)"
+            }`,
+            boxShadow: isDark
+              ? "0 18px 34px rgba(2,6,23,0.42)"
+              : "0 18px 34px rgba(15,23,42,0.14)",
+          },
+        },
+        arrow: {
+          sx: {
+            color: isDark ? "rgba(15,23,42,0.98)" : "rgba(255,255,255,0.98)",
+          },
+        },
+      }}
+    >
+      {children}
+    </MuiTooltip>
+  );
+};
+
+const MiniMetricCard = ({ label, value, accent, helper, isCurrency = true }) => {
+  const cardContent = (
+    <Box
+      sx={{
+        p: 1.35,
+        borderRadius: 2.5,
+        backgroundColor: alpha(accent, 0.1),
+        border: `1px solid ${alpha(accent, 0.22)}`,
+        minHeight: 84,
+        cursor: helper ? "help" : "default",
+        transition:
+          "transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease, border-color 180ms ease",
+        "&:hover": {
+          transform: "translateY(-3px)",
+          boxShadow: `0 14px 26px ${alpha(accent, 0.16)}`,
+          backgroundColor: alpha(accent, 0.14),
+          borderColor: alpha(accent, 0.34),
+        },
+      }}
+    >
+      <Stack direction="row" spacing={0.75} alignItems="center">
+        <Typography variant="body2" color="text.secondary">
+          {label}
+        </Typography>
+      </Stack>
+      <Typography variant="h6" fontWeight={800} mt={0.65}>
+        {isCurrency ? formatCurrency(value) : formatNumber(value)}
       </Typography>
-    </Stack>
-    <Typography variant="subtitle1" fontWeight={700}>
-      {isCurrency ? formatCurrency(value) : formatNumber(value)}
-    </Typography>
-  </Box>
-);
+    </Box>
+  );
+
+  if (!helper) return cardContent;
+
+  return <RevenueTooltip title={helper}>{cardContent}</RevenueTooltip>;
+};
+
+const MetricRow = ({ label, value, accent, helper, isCurrency = true }) => {
+  const rowContent = (
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 2,
+        px: 1,
+        py: 1.1,
+        mx: -1,
+        borderRadius: 2,
+        cursor: helper ? "pointer" : "default",
+        transition:
+          "transform 180ms ease, background-color 180ms ease, box-shadow 180ms ease",
+        "&:hover": helper
+          ? {
+              transform: "translateX(4px)",
+              backgroundColor: alpha(accent, 0.08),
+              boxShadow: `0 10px 22px ${alpha(accent, 0.12)}`,
+            }
+          : undefined,
+      }}
+    >
+      <Stack direction="row" spacing={1.2} alignItems="center">
+        <Box
+          sx={{
+            width: 10,
+            height: 10,
+            borderRadius: "50%",
+            backgroundColor: accent,
+            boxShadow: `0 0 0 5px ${alpha(accent, 0.16)}`,
+          }}
+        />
+        <Typography variant="body2" color="text.secondary">
+          {label}
+        </Typography>
+      </Stack>
+      <Typography variant="subtitle1" fontWeight={700}>
+        {isCurrency ? formatCurrency(value) : formatNumber(value)}
+      </Typography>
+    </Box>
+  );
+
+  if (!helper) return rowContent;
+
+  return <RevenueTooltip title={helper}>{rowContent}</RevenueTooltip>;
+};
 
 const RevenueAnalytics = () => {
   const theme = useTheme();
@@ -336,46 +408,66 @@ const RevenueAnalytics = () => {
       label: "Estimated Revenue",
       value: totals.estimated,
       accent: "#22c55e",
-      helper: "Primary revenue estimate",
+      helper:
+        "The total estimated net revenue from all Google-sold advertising sources as well as from non-advertising sources for the selected date range and region. This is a core metric and is subject to the Deprecation Policy. Estimated revenue metrics are subject to month-end adjustment and don't include partner-sold and partner-served advertising.",
     },
     {
-      label: "Ad Revenue",
+      label: "Estimated Ad Revenue",
       value: totals.ad,
       accent: "#38bdf8",
-      helper: "Direct ad earnings",
+      helper:
+        "The total estimated net revenue from all Google-sold advertising sources for the selected date range and region. Estimated revenue metrics are subject to month-end adjustment and don't include partner-sold and partner-served advertising.",
     },
     {
       label: "Gross Revenue",
       value: totals.gross,
       accent: "#a855f7",
-      helper: "Before deductions",
+      helper:
+        "The estimated gross revenue, in USD, from all Google-sold or DoubleClick-partner-sold advertising for the selected date range and region. Gross revenue is subject to month-end adjustment and does not include partner-served advertising. Gross revenue shouldn't be confused with estimated revenue, or net revenue, which factors in your share of ownership and revenue-sharing agreements.",
     },
     {
       label: "Premium Revenue",
       value: totals.premium,
       accent: "#f59e0b",
-      helper: "YouTube Premium share",
+      helper:
+        "The total estimated revenue earned from YouTube Premium (previously known as YouTube Red) subscriptions for the selected report dimensions. The metric's value reflects revenue from both music and non-music content and is subject to month-end adjustment.",
     },
     {
       label: "Monetized Playbacks",
       value: totals.monetized,
       accent: "#14b8a6",
-      helper: "Eligible revenue-generating plays",
+      helper:
+        "The number of instances when a viewer played your video and was shown at least one ad impression. A monetized playback is counted if a viewer is shown a preroll ad but quits watching the ad before your video ever starts. The expected estimated error for this figure is 2.0%.",
       isCurrency: false,
     },
     {
       label: "Ad Impressions",
       value: totals.adImpressions,
       accent: "#6366f1",
-      helper: "Served ad count",
+      helper: "The number of verified ad impressions served.",
       isCurrency: false,
     },
   ];
 
   const efficiencyMetrics = [
-    { label: "RPM", value: totals.rpm, accent: "#22c55e" },
-    { label: "CPM", value: totals.cpm, accent: "#38bdf8" },
-    { label: "Playback CPM", value: totals.playbackCpm, accent: "#f59e0b" },
+    {
+      label: "RPM",
+      value: totals.rpm,
+      accent: "#22c55e",
+      helper: "Estimated revenue per 1,000 views",
+    },
+    {
+      label: "CPM",
+      value: totals.cpm,
+      accent: "#38bdf8",
+      helper: "The estimated gross revenue per thousand ad impressions.",
+    },
+    {
+      label: "Playback CPM",
+      value: totals.playbackCpm,
+      accent: "#f59e0b",
+      helper: "The estimated gross revenue per thousand playbacks.",
+    },
   ];
 
   const cardSx = {
@@ -473,6 +565,7 @@ const RevenueAnalytics = () => {
                       label={item.label}
                       value={item.value}
                       accent={item.accent}
+                      helper={item.helper}
                     />
                   ))}
                 </Stack>
@@ -522,7 +615,7 @@ const RevenueAnalytics = () => {
                 <Line
                   type="monotone"
                   dataKey="ad"
-                  name="Ad Revenue"
+                  name="Estimated Ad Revenue"
                   stroke="#38bdf8"
                   strokeWidth={2}
                   dot={false}

@@ -53,6 +53,16 @@ _TOKEN_GROUP_COLORS = [
     "#4f46e5",
     "#0f766e",
 ]
+_ALLOWED_RUN_STAGES = {
+    "content",
+    "content_full",
+    "overview",
+    "audience",
+    "reach",
+    "traffic_source",
+    "revenue",
+    "subscribers",
+}
 
 
 def _oauth_success_html() -> str:
@@ -994,11 +1004,20 @@ def assign_token_group(
     }
 
 
+class RunAllTokensPayload(BaseModel):
+    stage: Optional[str] = None
+
+
 @router.post("/tokens/run-all")
 def run_all_tokens(
+    payload: Optional[RunAllTokensPayload] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    stage = ((payload.stage if payload else "") or "").strip().lower()
+    if stage and stage not in _ALLOWED_RUN_STAGES:
+        raise HTTPException(status_code=400, detail="Invalid stage")
+
     is_admin = _is_admin_user(current_user)
     token_names = []
     if is_admin:
@@ -1035,33 +1054,43 @@ def run_all_tokens(
     if not token_names:
         raise HTTPException(status_code=400, detail="No tokens available to run")
 
+    queued_progress_message = "Queued manual refresh" if not stage else f"Queued manual {stage}"
     for token_name in token_names:
         account_tag = os.path.splitext(token_name)[0]
-        write_progress(account_tag, "queued", 0, "queued", "Queued manual refresh")
+        write_progress(account_tag, "queued", 0, "queued", queued_progress_message)
+
+    run_type = "manual_all" if not stage else f"manual_all_stage:{stage}"
+    if not stage:
+        run_message = f"Queued manual refresh for {len(token_names)} token(s)"
+    else:
+        run_message = f"Queued manual {stage} for {len(token_names)} token(s)"
 
     run = UserScheduleRun(
         user_id=current_user.id,
         schedule_id=None,
         token_name=None,
         token_names=json.dumps(token_names),
-        run_type="manual_all",
+        run_type=run_type,
         status="queued",
         started_at=datetime.utcnow(),
         processed=0,
         total=len(token_names),
-        message=f"Queued manual refresh for {len(token_names)} token(s)",
+        message=run_message,
     )
     db.add(run)
     db.commit()
     db.refresh(run)
+    env_extra = {
+        "SCHEDULE_RUN_ID": str(run.id),
+        "RUN_TOKEN_NAMES": json.dumps(token_names),
+    }
+    if stage:
+        env_extra["RUN_STAGE"] = stage
     _kickoff_get_data(
         "",
-        env_extra={
-            "SCHEDULE_RUN_ID": str(run.id),
-            "RUN_TOKEN_NAMES": json.dumps(token_names),
-        },
+        env_extra=env_extra,
     )
-    return {"ok": True, "run_id": run.id, "token_names": token_names}
+    return {"ok": True, "run_id": run.id, "token_names": token_names, "stage": stage}
 
 
 @router.get("/tokens/{token_name}/channels")
@@ -1378,7 +1407,7 @@ def run_token_stage(
         raise HTTPException(status_code=400, detail="Invalid token filename")
 
     stage = (payload.stage or "").strip().lower()
-    if stage not in {"content", "content_full", "overview", "audience", "reach", "traffic_source", "revenue", "subscribers"}:
+    if stage not in _ALLOWED_RUN_STAGES:
         raise HTTPException(status_code=400, detail="Invalid stage")
 
     is_admin = _is_admin_user(current_user)
@@ -1608,6 +1637,29 @@ def resume_schedule_run(
         env_extra = {
             "RUN_TOKEN_NAMES": json.dumps(valid_token_names),
         }
+    elif run_type.startswith("manual_all_stage:"):
+        stage = run_type.split(":", 1)[1].strip().lower()
+        if stage not in _ALLOWED_RUN_STAGES:
+            raise HTTPException(status_code=400, detail="Run stage cannot be resumed")
+        for token_name in valid_token_names:
+            write_progress(os.path.splitext(token_name)[0], "queued", 0, "queued", f"Queued manual {stage}")
+        message = f"Queued manual {stage} for {len(valid_token_names)} token(s)"
+        new_run = UserScheduleRun(
+            user_id=current_user.id,
+            schedule_id=None,
+            token_name=None,
+            token_names=json.dumps(valid_token_names),
+            run_type=f"manual_all_stage:{stage}",
+            status="queued",
+            started_at=datetime.utcnow(),
+            processed=0,
+            total=len(valid_token_names),
+            message=message,
+        )
+        env_extra = {
+            "RUN_TOKEN_NAMES": json.dumps(valid_token_names),
+            "RUN_STAGE": stage,
+        }
     elif run_type == "manual_selected":
         for token_name in valid_token_names:
             write_progress(os.path.splitext(token_name)[0], "queued", 0, "queued", "Queued manual refresh")
@@ -1629,7 +1681,7 @@ def resume_schedule_run(
         }
     elif run_type.startswith("manual_stage:"):
         stage = run_type.split(":", 1)[1].strip().lower()
-        if stage not in {"content", "content_full", "overview", "audience", "reach", "traffic_source", "revenue", "subscribers"}:
+        if stage not in _ALLOWED_RUN_STAGES:
             raise HTTPException(status_code=400, detail="Run stage cannot be resumed")
         token_name = valid_token_names[0]
         account_tag = os.path.splitext(token_name)[0]

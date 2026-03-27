@@ -141,6 +141,10 @@ def _update_schedule_run(status: str, processed=None, total=None, message: str =
         pass
 
 
+def _has_aggregate_token_scope() -> bool:
+    return bool(_resolve_token_list(os.getenv("RUN_TOKEN_NAMES", "")))
+
+
 def _stop_requested() -> bool:
     run_id = os.getenv("SCHEDULE_RUN_ID")
     if not run_id:
@@ -240,6 +244,7 @@ class _RunLock:
 
 def _run_for_credential(cred_file: str) -> None:
     account_tag = os.path.splitext(os.path.basename(cred_file))[0]
+    aggregate_run = _has_aggregate_token_scope()
     channel_id = _get_selected_channel_id(account_tag)
     if not channel_id:
         write_progress(
@@ -253,7 +258,12 @@ def _run_for_credential(cred_file: str) -> None:
     stage = (os.getenv("RUN_STAGE") or "").strip().lower()
     if stage:
         _raise_if_stop_requested(account_tag, "stopped")
-        _update_schedule_run("running", 0, 1, f"Starting {stage}")
+        _update_schedule_run(
+            "running",
+            None if aggregate_run else 0,
+            None if aggregate_run else 1,
+            f"Starting {stage}{f' ({account_tag})' if aggregate_run else ''}",
+        )
         write_progress(account_tag, stage, 10, "running", f"Starting {stage}")
         if stage == "content":
             process_content(cred_file, channel_id=channel_id)
@@ -290,48 +300,123 @@ def _run_for_credential(cred_file: str) -> None:
         else:
             raise RuntimeError(f"Unsupported stage: {stage}")
         _raise_if_stop_requested(account_tag, "stopped")
-        _update_schedule_run("running", 1, 1, f"Completed {stage}")
+        _update_schedule_run(
+            "running",
+            None if aggregate_run else 1,
+            None if aggregate_run else 1,
+            f"Completed {stage}{f' ({account_tag})' if aggregate_run else ''}",
+        )
         write_progress(account_tag, "done", 100, "done", f"Completed {stage}")
         return
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "traffic_source", 5, "running", "Starting traffic source")
-    _update_schedule_run("running", 0, 6, "Traffic source")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 0,
+        None if aggregate_run else 6,
+        f"Traffic source{f' ({account_tag})' if aggregate_run else ''}",
+    )
     process_one(cred_file, channel_id=channel_id)
-    _update_schedule_run("running", 1, 6, "Traffic source")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 1,
+        None if aggregate_run else 6,
+        f"Traffic source{f' ({account_tag})' if aggregate_run else ''}",
+    )
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "content", 35, "running", "Starting content fetch")
-    _update_schedule_run("running", 1, 6, "Content")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 1,
+        None if aggregate_run else 6,
+        f"Content{f' ({account_tag})' if aggregate_run else ''}",
+    )
     process_content(cred_file, channel_id=channel_id)
-    _update_schedule_run("running", 2, 6, "Content")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 2,
+        None if aggregate_run else 6,
+        f"Content{f' ({account_tag})' if aggregate_run else ''}",
+    )
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "overview", 60, "running", "Starting overview")
-    _update_schedule_run("running", 2, 6, "Overview")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 2,
+        None if aggregate_run else 6,
+        f"Overview{f' ({account_tag})' if aggregate_run else ''}",
+    )
     process_overall(cred_file, channel_id=channel_id)
-    _update_schedule_run("running", 3, 6, "Overview")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 3,
+        None if aggregate_run else 6,
+        f"Overview{f' ({account_tag})' if aggregate_run else ''}",
+    )
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "audience", 80, "running", "Starting audience analytics")
-    _update_schedule_run("running", 3, 7, "Audience")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 3,
+        None if aggregate_run else 7,
+        f"Audience{f' ({account_tag})' if aggregate_run else ''}",
+    )
     pg_url = os.getenv("PG_URL")
     if not pg_url:
         raise RuntimeError("Missing PG_URL env var")
     creds = create_token_from_credentials(os.path.join(TOKEN_FOLDER, cred_file))
     run_audience_analytics(creds, account_tag, pg_url, channel_id=channel_id)
-    _update_schedule_run("running", 4, 7, "Audience")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 4,
+        None if aggregate_run else 7,
+        f"Audience{f' ({account_tag})' if aggregate_run else ''}",
+    )
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "reach", 90, "running", "Starting reach analytics")
-    _update_schedule_run("running", 4, 7, "Reach")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 4,
+        None if aggregate_run else 7,
+        f"Reach{f' ({account_tag})' if aggregate_run else ''}",
+    )
     run_reach_analytics(creds, account_tag, pg_url, channel_id=channel_id)
-    _update_schedule_run("running", 5, 7, "Reach")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 5,
+        None if aggregate_run else 7,
+        f"Reach{f' ({account_tag})' if aggregate_run else ''}",
+    )
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "revenue", 95, "running", "Starting revenue analytics")
-    _update_schedule_run("running", 5, 7, "Revenue")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 5,
+        None if aggregate_run else 7,
+        f"Revenue{f' ({account_tag})' if aggregate_run else ''}",
+    )
     run_revenue_analytics(creds, account_tag, pg_url, channel_id=channel_id)
-    _update_schedule_run("running", 6, 7, "Revenue")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 6,
+        None if aggregate_run else 7,
+        f"Revenue{f' ({account_tag})' if aggregate_run else ''}",
+    )
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "subscribers", 98, "running", "Starting subscriber analytics")
-    _update_schedule_run("running", 6, 7, "Subscribers")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 6,
+        None if aggregate_run else 7,
+        f"Subscribers{f' ({account_tag})' if aggregate_run else ''}",
+    )
     run_channel_daily(creds, account_tag, pg_url, channel_id=channel_id)
-    _update_schedule_run("running", 7, 7, "Subscribers")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 7,
+        None if aggregate_run else 7,
+        f"Subscribers{f' ({account_tag})' if aggregate_run else ''}",
+    )
     write_progress(account_tag, "done", 100, "done", "Completed")
 
 
@@ -378,14 +463,14 @@ def main():
     print(f"Processing {total} token(s)...")
     first_account_tag = os.path.splitext(os.path.basename(token_files[0]))[0]
     with _RunLock(first_account_tag):
-        _update_schedule_run("running", 0, total, "Processing tokens")
+        _update_schedule_run("running", 0, total, f"Processed {ok}/{total} channel(s)")
         for token_file in token_files:
             account_tag = os.path.splitext(os.path.basename(token_file))[0]
             cred_file = _resolve_token_file(token_file)
             try:
                 _run_for_credential(cred_file)
                 ok += 1
-                _update_schedule_run("running", ok, total, f"Processed {ok}/{total}")
+                _update_schedule_run("running", ok, total, f"Processed {ok}/{total} channel(s)")
             except Exception as e:
                 if str(e) == "Stop requested":
                     write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")
