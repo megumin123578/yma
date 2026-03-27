@@ -4,13 +4,16 @@ import {
   Stack,
   Typography,
   Paper,
+  Divider,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
   Grid,
+  Tooltip as MuiTooltip,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import { alpha, useTheme } from "@mui/material/styles";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import {
   ResponsiveContainer,
   LineChart,
@@ -56,6 +59,72 @@ const formatCurrency = (value) => {
   if (Number.isNaN(num)) return "-";
   return `$${num.toFixed(2)}`;
 };
+
+const MiniMetricCard = ({ label, value, accent, helper, isCurrency = true }) => (
+  <Box
+    sx={{
+      p: 1.6,
+      borderRadius: 2.5,
+      background: `linear-gradient(135deg, ${alpha(accent, 0.18)} 0%, ${alpha(
+        accent,
+        0.06
+      )} 100%)`,
+      border: `1px solid ${alpha(accent, 0.22)}`,
+      minHeight: 92,
+    }}
+  >
+    <Stack direction="row" spacing={0.75} alignItems="center">
+      <Typography variant="body2" color="text.secondary">
+        {label}
+      </Typography>
+      {helper ? (
+        <MuiTooltip title={helper} arrow placement="top">
+          <InfoOutlinedIcon
+            sx={{
+              fontSize: 15,
+              color: "text.secondary",
+              cursor: "help",
+              opacity: 0.75,
+            }}
+          />
+        </MuiTooltip>
+      ) : null}
+    </Stack>
+    <Typography variant="h6" fontWeight={800} mt={0.8}>
+      {isCurrency ? formatCurrency(value) : formatNumber(value)}
+    </Typography>
+  </Box>
+);
+
+const MetricRow = ({ label, value, accent, isCurrency = true }) => (
+  <Box
+    sx={{
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 2,
+      py: 1.1,
+    }}
+  >
+    <Stack direction="row" spacing={1.2} alignItems="center">
+      <Box
+        sx={{
+          width: 10,
+          height: 10,
+          borderRadius: "50%",
+          backgroundColor: accent,
+          boxShadow: `0 0 0 5px ${alpha(accent, 0.16)}`,
+        }}
+      />
+      <Typography variant="body2" color="text.secondary">
+        {label}
+      </Typography>
+    </Stack>
+    <Typography variant="subtitle1" fontWeight={700}>
+      {isCurrency ? formatCurrency(value) : formatNumber(value)}
+    </Typography>
+  </Box>
+);
 
 const RevenueAnalytics = () => {
   const theme = useTheme();
@@ -261,9 +330,56 @@ const RevenueAnalytics = () => {
         }
         return [formatCurrency(value), name];
       },
-      labelFormatter: (label) => dayjs(label).format("DD-MM-YYYY"),
+      labelFormatter: (label) => dayjs(label).format("DD/MM/YYYY"),
     };
   }, [theme.palette.mode]);
+
+  const revenueCards = [
+    {
+      label: "Estimated Revenue",
+      value: totals.estimated,
+      accent: "#22c55e",
+      helper: "Primary revenue estimate",
+    },
+    {
+      label: "Ad Revenue",
+      value: totals.ad,
+      accent: "#38bdf8",
+      helper: "Direct ad earnings",
+    },
+    {
+      label: "Gross Revenue",
+      value: totals.gross,
+      accent: "#a855f7",
+      helper: "Before deductions",
+    },
+    {
+      label: "Premium Revenue",
+      value: totals.premium,
+      accent: "#f59e0b",
+      helper: "YouTube Premium share",
+    },
+    {
+      label: "Monetized Playbacks",
+      value: totals.monetized,
+      accent: "#14b8a6",
+      helper: "Eligible revenue-generating plays",
+      isCurrency: false,
+    },
+    {
+      label: "Ad Impressions",
+      value: totals.adImpressions,
+      accent: "#6366f1",
+      helper: "Served ad count",
+      isCurrency: false,
+    },
+  ];
+
+  const efficiencyMetrics = [
+    { label: "RPM", value: totals.rpm, accent: "#22c55e" },
+    { label: "CPM", value: totals.cpm, accent: "#38bdf8" },
+    { label: "Playback CPM", value: totals.playbackCpm, accent: "#f59e0b" },
+  ];
 
   const cardSx = {
     borderRadius: 2,
@@ -278,6 +394,21 @@ const RevenueAnalytics = () => {
         : "rgba(248,250,252,0.9)",
     p: 2,
   };
+
+  const heroCardSx = {
+    ...cardSx,
+    p: { xs: 2.2, md: 2.6 },
+    borderRadius: 3,
+    background:
+      theme.palette.mode === "dark"
+        ? "linear-gradient(135deg, rgba(15,23,42,0.96) 0%, rgba(30,41,59,0.92) 55%, rgba(34,197,94,0.22) 100%)"
+        : "linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(240,253,244,0.96) 52%, rgba(219,234,254,0.94) 100%)",
+    boxShadow:
+      theme.palette.mode === "dark"
+        ? "0 18px 38px rgba(2,6,23,0.32)"
+        : "0 18px 34px rgba(148,163,184,0.24)",
+  };
+
   return (
     <Stack spacing={2}>
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
@@ -311,98 +442,38 @@ const RevenueAnalytics = () => {
         </Typography>
       )}
 
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Paper elevation={0} sx={cardSx}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Estimated Revenue
-            </Typography>
-            <Typography variant="h5" fontWeight={700} mt={1}>
-              {formatCurrency(totals.estimated)}
-            </Typography>
-          </Paper>
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Paper elevation={0} sx={cardSx}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Ad Revenue
-            </Typography>
-            <Typography variant="h5" fontWeight={700} mt={1}>
-              {formatCurrency(totals.ad)}
-            </Typography>
-          </Paper>
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Paper elevation={0} sx={cardSx}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Gross Revenue
-            </Typography>
-            <Typography variant="h5" fontWeight={700} mt={1}>
-              {formatCurrency(totals.gross)}
-            </Typography>
-          </Paper>
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Paper elevation={0} sx={cardSx}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Premium Revenue
-            </Typography>
-            <Typography variant="h5" fontWeight={700} mt={1}>
-              {formatCurrency(totals.premium)}
-            </Typography>
-          </Paper>
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Paper elevation={0} sx={cardSx}>
-            <Typography variant="subtitle2" color="text.secondary">
-              RPM
-            </Typography>
-            <Typography variant="h5" fontWeight={700} mt={1}>
-              {formatCurrency(totals.rpm)}
-            </Typography>
-          </Paper>
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Paper elevation={0} sx={cardSx}>
-            <Typography variant="subtitle2" color="text.secondary">
-              CPM
-            </Typography>
-            <Typography variant="h5" fontWeight={700} mt={1}>
-              {formatCurrency(totals.cpm)}
-            </Typography>
-          </Paper>
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Paper elevation={0} sx={cardSx}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Playback CPM
-            </Typography>
-            <Typography variant="h5" fontWeight={700} mt={1}>
-              {formatCurrency(totals.playbackCpm)}
-            </Typography>
-          </Paper>
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Paper elevation={0} sx={cardSx}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Monetized Playbacks
-            </Typography>
-            <Typography variant="h5" fontWeight={700} mt={1}>
-              {formatNumber(totals.monetized)}
-            </Typography>
-          </Paper>
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Paper elevation={0} sx={cardSx}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Ad Impressions
-            </Typography>
-            <Typography variant="h5" fontWeight={700} mt={1}>
-              {formatNumber(totals.adImpressions)}
-            </Typography>
-          </Paper>
-        </Grid>
-      </Grid>
+      <Paper elevation={0} sx={heroCardSx}>
+        <Stack spacing={2.4}>
+          <Grid container spacing={1.5}>
+            {revenueCards.map((item) => (
+              <Grid key={item.label} size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
+                <MiniMetricCard
+                  label={item.label}
+                  value={item.value}
+                  accent={item.accent}
+                  helper={item.helper}
+                  isCurrency={item.isCurrency}
+                />
+              </Grid>
+            ))}
+          </Grid>
+
+          <Grid container spacing={2.5}>
+            <Grid size={{ xs: 12 }}>
+              <Stack divider={<Divider flexItem sx={{ borderColor: "divider" }} />}>
+                {efficiencyMetrics.map((item) => (
+                  <MetricRow
+                    key={item.label}
+                    label={item.label}
+                    value={item.value}
+                    accent={item.accent}
+                  />
+                ))}
+              </Stack>
+            </Grid>
+          </Grid>
+        </Stack>
+      </Paper>
 
       <Paper elevation={0} sx={{ ...cardSx, p: 2 }}>
         <Typography variant="subtitle1" fontWeight={700} mb={2}>
