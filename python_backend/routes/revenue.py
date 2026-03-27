@@ -1,5 +1,4 @@
 import os
-import os
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import create_engine, text
@@ -161,10 +160,13 @@ def get_revenue(
                     estimated_revenue,
                     ad_revenue,
                     gross_revenue,
+                    estimated_red_partner_revenue,
                     cpm,
                     playback_cpm,
                     rpm,
-                    monetized_playbacks
+                    monetized_playbacks,
+                    ad_impressions,
+                    views
                 FROM revenue_daily
                 WHERE account_tag = :acct
                   AND (:start_date IS NULL OR day >= :start_date)

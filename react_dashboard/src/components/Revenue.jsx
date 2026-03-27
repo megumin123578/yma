@@ -140,14 +140,14 @@ const RevenueAnalytics = () => {
   }, []);
 
   useEffect(() => {
-        let active = true;
-        getChannelRevenueMap(range).then((map) => {
-            if (active) setChannelRevenueMap(map || {});
-        });
-        return () => {
-            active = false;
-        };
-    }, [range]);
+    let active = true;
+    getChannelRevenueMap(range).then((map) => {
+      if (active) setChannelRevenueMap(map || {});
+    });
+    return () => {
+      active = false;
+    };
+  }, [range]);
 
   useEffect(() => {
     if (!channel) {
@@ -187,10 +187,13 @@ const RevenueAnalytics = () => {
       estimated: Number(row.estimated_revenue || 0),
       ad: Number(row.ad_revenue || 0),
       gross: Number(row.gross_revenue || 0),
+      premium: Number(row.estimated_red_partner_revenue || 0),
       rpm: row.rpm != null ? Number(row.rpm) : null,
       cpm: row.cpm != null ? Number(row.cpm) : null,
       playbackCpm: row.playback_cpm != null ? Number(row.playback_cpm) : null,
       monetized: Number(row.monetized_playbacks || 0),
+      adImpressions: Number(row.ad_impressions || 0),
+      views: Number(row.views || 0),
     }));
   }, [rows]);
 
@@ -199,7 +202,10 @@ const RevenueAnalytics = () => {
       estimated: 0,
       ad: 0,
       gross: 0,
+      premium: 0,
       monetized: 0,
+      adImpressions: 0,
+      views: 0,
       rpm: [],
       cpm: [],
       playbackCpm: [],
@@ -208,7 +214,10 @@ const RevenueAnalytics = () => {
       base.estimated += row.estimated;
       base.ad += row.ad;
       base.gross += row.gross;
+      base.premium += row.premium;
       base.monetized += row.monetized;
+      base.adImpressions += row.adImpressions;
+      base.views += row.views;
       if (row.rpm != null) base.rpm.push(row.rpm);
       if (row.cpm != null) base.cpm.push(row.cpm);
       if (row.playbackCpm != null) base.playbackCpm.push(row.playbackCpm);
@@ -219,10 +228,18 @@ const RevenueAnalytics = () => {
       estimated: base.estimated,
       ad: base.ad,
       gross: base.gross,
+      premium: base.premium,
       monetized: base.monetized,
-      rpm: avg(base.rpm),
-      cpm: avg(base.cpm),
-      playbackCpm: avg(base.playbackCpm),
+      adImpressions: base.adImpressions,
+      rpm: base.views > 0 ? (base.estimated * 1000) / base.views : avg(base.rpm),
+      cpm:
+        base.adImpressions > 0
+          ? (base.gross * 1000) / base.adImpressions
+          : avg(base.cpm),
+      playbackCpm:
+        base.monetized > 0
+          ? (base.gross * 1000) / base.monetized
+          : avg(base.playbackCpm),
     };
   }, [chartData]);
 
@@ -328,7 +345,17 @@ const RevenueAnalytics = () => {
         <Grid size={{ xs: 12, md: 4 }}>
           <Paper elevation={0} sx={cardSx}>
             <Typography variant="subtitle2" color="text.secondary">
-              RPM (avg)
+              Premium Revenue
+            </Typography>
+            <Typography variant="h5" fontWeight={700} mt={1}>
+              {formatCurrency(totals.premium)}
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid size={{ xs: 12, md: 4 }}>
+          <Paper elevation={0} sx={cardSx}>
+            <Typography variant="subtitle2" color="text.secondary">
+              RPM
             </Typography>
             <Typography variant="h5" fontWeight={700} mt={1}>
               {formatCurrency(totals.rpm)}
@@ -338,10 +365,20 @@ const RevenueAnalytics = () => {
         <Grid size={{ xs: 12, md: 4 }}>
           <Paper elevation={0} sx={cardSx}>
             <Typography variant="subtitle2" color="text.secondary">
-              CPM (avg)
+              CPM
             </Typography>
             <Typography variant="h5" fontWeight={700} mt={1}>
               {formatCurrency(totals.cpm)}
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid size={{ xs: 12, md: 4 }}>
+          <Paper elevation={0} sx={cardSx}>
+            <Typography variant="subtitle2" color="text.secondary">
+              Playback CPM
+            </Typography>
+            <Typography variant="h5" fontWeight={700} mt={1}>
+              {formatCurrency(totals.playbackCpm)}
             </Typography>
           </Paper>
         </Grid>
@@ -352,6 +389,16 @@ const RevenueAnalytics = () => {
             </Typography>
             <Typography variant="h5" fontWeight={700} mt={1}>
               {formatNumber(totals.monetized)}
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid size={{ xs: 12, md: 4 }}>
+          <Paper elevation={0} sx={cardSx}>
+            <Typography variant="subtitle2" color="text.secondary">
+              Ad Impressions
+            </Typography>
+            <Typography variant="h5" fontWeight={700} mt={1}>
+              {formatNumber(totals.adImpressions)}
             </Typography>
           </Paper>
         </Grid>
@@ -406,6 +453,14 @@ const RevenueAnalytics = () => {
                   dataKey="gross"
                   name="Gross Revenue"
                   stroke="#a855f7"
+                  strokeWidth={2}
+                  dot={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="premium"
+                  name="Premium Revenue"
+                  stroke="#f59e0b"
                   strokeWidth={2}
                   dot={false}
                 />
