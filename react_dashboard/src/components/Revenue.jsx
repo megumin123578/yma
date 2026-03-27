@@ -63,14 +63,11 @@ const formatCurrency = (value) => {
 const MiniMetricCard = ({ label, value, accent, helper, isCurrency = true }) => (
   <Box
     sx={{
-      p: 1.6,
+      p: 1.35,
       borderRadius: 2.5,
-      background: `linear-gradient(135deg, ${alpha(accent, 0.18)} 0%, ${alpha(
-        accent,
-        0.06
-      )} 100%)`,
+      backgroundColor: alpha(accent, 0.1),
       border: `1px solid ${alpha(accent, 0.22)}`,
-      minHeight: 92,
+      minHeight: 84,
     }}
   >
     <Stack direction="row" spacing={0.75} alignItems="center">
@@ -90,7 +87,7 @@ const MiniMetricCard = ({ label, value, accent, helper, isCurrency = true }) => 
         </MuiTooltip>
       ) : null}
     </Stack>
-    <Typography variant="h6" fontWeight={800} mt={0.8}>
+    <Typography variant="h6" fontWeight={800} mt={0.65}>
       {isCurrency ? formatCurrency(value) : formatNumber(value)}
     </Typography>
   </Box>
@@ -401,8 +398,8 @@ const RevenueAnalytics = () => {
     borderRadius: 3,
     background:
       theme.palette.mode === "dark"
-        ? "linear-gradient(135deg, rgba(15,23,42,0.96) 0%, rgba(30,41,59,0.92) 55%, rgba(34,197,94,0.22) 100%)"
-        : "linear-gradient(135deg, rgba(255,255,255,0.98) 0%, rgba(240,253,244,0.96) 52%, rgba(219,234,254,0.94) 100%)",
+        ? "rgba(15,23,42,0.82)"
+        : "rgba(255,255,255,0.96)",
     boxShadow:
       theme.palette.mode === "dark"
         ? "0 18px 38px rgba(2,6,23,0.32)"
@@ -443,36 +440,47 @@ const RevenueAnalytics = () => {
       )}
 
       <Paper elevation={0} sx={heroCardSx}>
-        <Stack spacing={2.4}>
-          <Grid container spacing={1.5}>
-            {revenueCards.map((item) => (
-              <Grid key={item.label} size={{ xs: 12, sm: 6, md: 4, lg: 2 }}>
-                <MiniMetricCard
-                  label={item.label}
-                  value={item.value}
-                  accent={item.accent}
-                  helper={item.helper}
-                  isCurrency={item.isCurrency}
-                />
-              </Grid>
-            ))}
-          </Grid>
-
-          <Grid container spacing={2.5}>
-            <Grid size={{ xs: 12 }}>
-              <Stack divider={<Divider flexItem sx={{ borderColor: "divider" }} />}>
-                {efficiencyMetrics.map((item) => (
-                  <MetricRow
-                    key={item.label}
+        <Grid container spacing={{ xs: 2, lg: 2.5 }} alignItems="stretch">
+          <Grid size={{ xs: 12, lg: 7 }}>
+            <Grid container spacing={1.5}>
+              {revenueCards.map((item) => (
+                <Grid key={item.label} size={{ xs: 12, sm: 6, md: 4 }}>
+                  <MiniMetricCard
                     label={item.label}
                     value={item.value}
                     accent={item.accent}
+                    helper={item.helper}
+                    isCurrency={item.isCurrency}
                   />
-                ))}
-              </Stack>
+                </Grid>
+              ))}
             </Grid>
           </Grid>
-        </Stack>
+
+          <Grid size={{ xs: 12, lg: 5 }}>
+            <Box
+              sx={{
+                height: "100%",
+                pt: { xs: 0.5, lg: 0 },
+                pl: { lg: 0.75 },
+              }}
+            >
+              <Stack spacing={0} sx={{ height: "100%", justifyContent: "center" }}>
+                <Stack divider={<Divider flexItem sx={{ borderColor: "divider" }} />}>
+                  {efficiencyMetrics.map((item) => (
+                    <MetricRow
+                      key={item.label}
+                      label={item.label}
+                      value={item.value}
+                      accent={item.accent}
+                    />
+                  ))}
+                </Stack>
+                <Divider flexItem sx={{ borderColor: "divider" }} />
+              </Stack>
+            </Box>
+          </Grid>
+        </Grid>
       </Paper>
 
       <Paper elevation={0} sx={{ ...cardSx, p: 2 }}>
