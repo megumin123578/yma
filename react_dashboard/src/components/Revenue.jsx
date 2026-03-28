@@ -230,16 +230,15 @@ const RevenueAnalytics = () => {
         const finalChannels = sortByStoredTokenOrder(items, (item) => item.value);
         if (!stop) {
           setChannels(finalChannels);
-          const preferredChannel =
-            getStoredSharedChannelId("revenue.selectedChannelId") || channel;
-          const nextChannel = resolvePreferredSharedChannelId(
-            preferredChannel,
-            finalChannels,
-            (item) => item.value
-          );
-          if (nextChannel !== channel) {
-            setChannel(nextChannel);
-          }
+          setChannel((current) => {
+            const preferredChannel =
+              getStoredSharedChannelId("revenue.selectedChannelId") || current;
+            return resolvePreferredSharedChannelId(
+              preferredChannel,
+              finalChannels,
+              (item) => item.value
+            );
+          });
         }
       } catch (err) {
         console.error(err);
@@ -252,7 +251,7 @@ const RevenueAnalytics = () => {
     return () => {
       stop = true;
     };
-  }, [channel, range]);
+  }, [range]);
 
   useEffect(() => {
     let active = true;

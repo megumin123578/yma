@@ -92,13 +92,14 @@ const ReachAnalytics = () => {
   const [loading, setLoading] = useState(false);
   // === Data Fetching ===
   useEffect(() => {
+    let active = true;
     const loadChannels = async () => {
       try {
         const resp = await api.get("/api/reach/channels", {
           headers: authHeaders,
         });
         const data = resp.data;
-        const items = (data?.items || [])
+        const items = (Array.isArray(data?.items) ? data.items : [])
           .map((item) => {
             if (typeof item === "string") return { value: item, label: item };
             const value = item?.value || item?.name || "";
@@ -115,23 +116,29 @@ const ReachAnalytics = () => {
           (item) => item.value
         );
 
+        if (!active) return;
         setAccounts(finalAccounts);
-        const preferredChannel =
-          getStoredSharedChannelId("reach.selectedChannelId") || accountTag;
-        const nextChannel = resolvePreferredSharedChannelId(
-          preferredChannel,
-          finalAccounts,
-          (item) => item.value
-        );
-        if (nextChannel !== accountTag) {
-          setAccountTag(nextChannel);
-        }
+        setAccountTag((current) => {
+          const preferredChannel =
+            getStoredSharedChannelId("reach.selectedChannelId") || current;
+          return resolvePreferredSharedChannelId(
+            preferredChannel,
+            finalAccounts,
+            (item) => item.value
+          );
+        });
       } catch (err) {
-        setAccounts([]);
+        if (active) {
+          setAccounts([]);
+          setAccountTag("");
+        }
       }
     };
     loadChannels();
-  }, [accountTag, authHeaders]);
+    return () => {
+      active = false;
+    };
+  }, [authHeaders]);
 
   useEffect(() => {
     let active = true;
@@ -176,7 +183,7 @@ const ReachAnalytics = () => {
           { headers: authHeaders }
         );
         const data = resp.data;
-        setRows(data?.rows || []);
+        setRows(Array.isArray(data?.rows) ? data.rows : []);
         setRange({ start: data?.start_date || "", end: data?.end_date || "" });
       } catch (err) {
         setRows([]);
@@ -201,10 +208,10 @@ const ReachAnalytics = () => {
         const data = resp.data;
         setBreakdown({
           range: data?.range || { start: "", end: "" },
-          external: data?.external || [],
-          playlist: data?.playlist || 0,
-          suggested: data?.suggested || 0,
-          browse: data?.browse || 0,
+          external: Array.isArray(data?.external) ? data.external : [],
+          playlist: Number(data?.playlist || 0),
+          suggested: Number(data?.suggested || 0),
+          browse: Number(data?.browse || 0),
         });
       } catch (err) {
         setBreakdown({
@@ -219,10 +226,24 @@ const ReachAnalytics = () => {
     loadBreakdown();
   }, [accountTag, authHeaders]);
 
-  const displayRows = useMemo(() => rows.slice(0, 50), [rows]); // Increased limit slightly
-  const maxExternal = useMemo(
-    () => Math.max(1, ...breakdown.external.map((row) => Number(row.views || 0))),
+  const safeRows = useMemo(
+    () =>
+      (Array.isArray(rows) ? rows : []).filter(
+        (row) => row && typeof row === "object"
+      ),
+    [rows]
+  );
+  const safeExternal = useMemo(
+    () =>
+      (Array.isArray(breakdown.external) ? breakdown.external : []).filter(
+        (row) => row && typeof row === "object"
+      ),
     [breakdown.external]
+  );
+  const displayRows = useMemo(() => safeRows.slice(0, 50), [safeRows]); // Increased limit slightly
+  const maxExternal = useMemo(
+    () => Math.max(1, ...safeExternal.map((row) => Number(row.views || 0))),
+    [safeExternal]
   );
   const maxSuggestedBrowse = useMemo(
     () => Math.max(1, Number(breakdown.suggested || 0), Number(breakdown.browse || 0)),
@@ -230,11 +251,6 @@ const ReachAnalytics = () => {
   );
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: "easeOut" }}
-    >
       <Stack spacing={3}>
         {/* Controls */}
         <Stack
@@ -314,7 +330,7 @@ const ReachAnalytics = () => {
               </Typography>
             </Stack>
 
-            {breakdown.external.length === 0 ? (
+            {safeExternal.length === 0 ? (
               <Box flex={1} display="flex" alignItems="center" justifyContent="center">
                 <Typography variant="body2" color="text.secondary">
                   No external traffic data.
@@ -322,19 +338,19 @@ const ReachAnalytics = () => {
               </Box>
             ) : (
               <Stack spacing={2} sx={{ mt: 1 }}>
-                {breakdown.external.map((row) => {
+                {safeExternal.map((row, index) => {
                   const pct = Math.max(
                     6,
-                    Math.round((row.views / maxExternal) * 100)
+                    Math.round((Number(row?.views || 0) / maxExternal) * 100)
                   );
                   return (
-                    <Box key={row.source}>
+                    <Box key={row?.source || `external-${index}`}>
                       <Box display="flex" justifyContent="space-between" mb={0.5}>
                         <Typography variant="body2" fontWeight={600} sx={{ fontSize: "0.85rem" }}>
-                          {row.source}
+                          {row?.source || "Unknown"}
                         </Typography>
                         <Typography variant="body2" fontWeight={700}>
-                          {formatNumber(row.views)}
+                          {formatNumber(row?.views)}
                         </Typography>
                       </Box>
                       <Box
@@ -495,9 +511,9 @@ const ReachAnalytics = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {displayRows.map((row) => (
+                {displayRows.map((row, index) => (
                   <TableRow
-                    key={row.video_id}
+                    key={row?.video_id || `reach-row-${index}`}
                     sx={{
                       "&:hover": {
                         backgroundColor: isDark
@@ -509,17 +525,17 @@ const ReachAnalytics = () => {
                   >
                     <TableCell sx={{ minWidth: 360, py: 2 }}>
                       <Stack direction="row" spacing={2} alignItems="flex-start">
-                        {row.thumbnail ? (
+                        {row?.thumbnail ? (
                           <a
-                            href={`https://www.youtube.com/watch?v=${row.video_id}`}
+                            href={`https://www.youtube.com/watch?v=${row?.video_id || ""}`}
                             target="_blank"
                             rel="noreferrer"
                             style={{ display: "inline-block", position: "relative", borderRadius: 8, overflow: "hidden", boxShadow: "0 4px 12px rgba(0,0,0,0.2)" }}
                           >
                             <Box
                               component="img"
-                              src={row.thumbnail}
-                              alt={row.title || row.video_id}
+                              src={row?.thumbnail}
+                              alt={row?.title || row?.video_id || "video"}
                               sx={{
                                 width: 120,
                                 height: 68,
@@ -554,32 +570,32 @@ const ReachAnalytics = () => {
                             }}
                           >
                             <a
-                              href={`https://www.youtube.com/watch?v=${row.video_id}`}
+                              href={`https://www.youtube.com/watch?v=${row?.video_id || ""}`}
                               target="_blank"
                               rel="noreferrer"
                               style={{ color: "inherit", textDecoration: "none" }}
                             >
-                              {row.title || row.video_id}
+                              {row?.title || row?.video_id || "Unknown video"}
                             </a>
                           </Typography>
                           <Typography variant="caption" color="text.secondary" sx={{ fontFamily: "monospace", bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)", px: 0.5, borderRadius: 0.5 }}>
-                            {row.video_id}
+                            {row?.video_id || "-"}
                           </Typography>
                         </Box>
                       </Stack>
                     </TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 600 }}>{formatNumber(row.views)}</TableCell>
-                    <TableCell align="right">{formatNumber(row.estimated_minutes_watched)}</TableCell>
-                    <TableCell align="right">{formatNumber(row.card_impressions)}</TableCell>
-                    <TableCell align="right">{formatNumber(row.teaser_impressions)}</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 600 }}>{formatNumber(row.total_impressions)}</TableCell>
-                    <TableCell align="right">{formatNumber(row.card_clicks)}</TableCell>
-                    <TableCell align="right">{formatNumber(row.teaser_clicks)}</TableCell>
-                    <TableCell align="right">{formatNumber(row.total_clicks)}</TableCell>
-                    <TableCell align="right">{formatPct(row.card_ctr)}</TableCell>
-                    <TableCell align="right">{formatPct(row.teaser_ctr)}</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>{formatNumber(row?.views)}</TableCell>
+                    <TableCell align="right">{formatNumber(row?.estimated_minutes_watched)}</TableCell>
+                    <TableCell align="right">{formatNumber(row?.card_impressions)}</TableCell>
+                    <TableCell align="right">{formatNumber(row?.teaser_impressions)}</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>{formatNumber(row?.total_impressions)}</TableCell>
+                    <TableCell align="right">{formatNumber(row?.card_clicks)}</TableCell>
+                    <TableCell align="right">{formatNumber(row?.teaser_clicks)}</TableCell>
+                    <TableCell align="right">{formatNumber(row?.total_clicks)}</TableCell>
+                    <TableCell align="right">{formatPct(row?.card_ctr)}</TableCell>
+                    <TableCell align="right">{formatPct(row?.teaser_ctr)}</TableCell>
                     <TableCell align="right" sx={{ color: isDark ? "#4ade80" : "#16a34a", fontWeight: 700 }}>
-                      {formatPct(row.total_ctr)}
+                      {formatPct(row?.total_ctr)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -597,7 +613,6 @@ const ReachAnalytics = () => {
           </TableContainer>
         </Box>
       </Stack>
-    </motion.div>
   );
 };
 

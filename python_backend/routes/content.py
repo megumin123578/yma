@@ -109,20 +109,37 @@ def _chunked(ids, size=50):
     return [ids[i:i + size] for i in range(0, len(ids), size)]
 
 
+def _normalize_video_metrics_cache_payload(payload):
+    if not isinstance(payload, dict):
+        return None, None
+    if "video_metrics" in payload:
+        metrics = payload.get("video_metrics")
+        meta = payload.get("_meta") or {}
+        thumbnail_supported = meta.get("thumbnail_supported")
+        return metrics if isinstance(metrics, dict) else None, bool(thumbnail_supported)
+    return payload, None
+
+
+def _build_video_metrics_cache_payload(video_metrics: dict, thumbnail_supported: bool):
+    return {
+        "video_metrics": video_metrics,
+        "_meta": {
+            "thumbnail_supported": bool(thumbnail_supported),
+        },
+    }
+
+
 def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start_date, end_date):
     """
     Fetch per-video aggregated metrics (no day dimension).
-    Returns dict: {video_id: {estimatedRevenue, subscribers, impressions, impressionsClickThroughRate}}
+    Returns tuple: ({video_id: {estimatedRevenue, subscribers, impressions, impressionsClickThroughRate}}, thumbnail_supported)
     """
     if not video_ids:
-        return {}
+        return {}, False
 
     yta = build("youtubeAnalytics", "v2", credentials=creds)
     ids = f"channel=={channel_id}" if channel_id else "channel==MINE"
     out = {}
-    
-    # Track if Reach metrics are supported to avoid repeated 400 errors
-    reach_supported = True
 
     for chunk in _chunked(video_ids, 100):
         chunk_filter = f"video=={','.join(chunk)}"
@@ -155,35 +172,59 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
         except Exception:
             pass
 
-        # 2. Reach (Impressions) - Circuit breaker: stop trying if first chunk fails with 400
-        if reach_supported:
-            try:
-                resp = yta.reports().query(
-                    ids=ids,
-                    startDate=start_date,
-                    endDate=end_date,
-                    dimensions="video",
-                    filters=chunk_filter,
-                    metrics="videoThumbnailImpressions,videoThumbnailImpressionsClickRate"
-                ).execute() or {}
-                
-                rows = resp.get("rows") or []
-                headers = resp.get("columnHeaders", []) or []
-                if rows and headers:
-                    idx = {h["name"]: i for i, h in enumerate(headers)}
-                    for r in rows:
-                        vid = r[idx["video"]]
-                        if vid not in out: out[vid] = {}
-                        out[vid]["impressions"] = int(r[idx["videoThumbnailImpressions"]] or 0)
-                        ctr = float(r[idx["videoThumbnailImpressionsClickRate"]] or 0.0) * 100.0
-                        out[vid]["impressions_click_through_rate"] = ctr
-            except HttpError as e:
-                if e.resp.status == 400:
-                    reach_supported = False # Disable for future chunks to save time
-                elif e.resp.status != 403:
-                    print(f"[content.video-metrics] Reach metrics failed: {e}")
-            except Exception:
-                reach_supported = False
+    thumbnail_supported = False
+    for vid in video_ids:
+        try:
+            resp = yta.reports().query(
+                ids=ids,
+                startDate=start_date,
+                endDate=end_date,
+                filters=f"video=={vid}",
+                metrics="videoThumbnailImpressions,videoThumbnailImpressionsClickRate"
+            ).execute() or {}
+        except HttpError as e:
+            if e.resp.status == 400:
+                print(f"[content.video-metrics] Thumbnail metrics unsupported: {e}")
+                thumbnail_supported = False
+                break
+            if e.resp.status != 403:
+                print(f"[content.video-metrics] Thumbnail metrics failed for {vid}: {e}")
+            continue
+        except Exception:
+            continue
+
+        headers = resp.get("columnHeaders", []) or []
+        if not headers:
+            thumbnail_supported = True
+            continue
+
+        thumbnail_supported = True
+        rows = resp.get("rows") or []
+        idx = {h["name"]: i for i, h in enumerate(headers)}
+        if not rows:
+            continue
+        row = rows[0]
+        if vid not in out:
+            out[vid] = {}
+        try:
+            out[vid]["impressions"] = int(row[idx["videoThumbnailImpressions"]] or 0)
+        except Exception:
+            out[vid]["impressions"] = 0
+        try:
+            out[vid]["impressions_click_through_rate"] = (
+                float(row[idx["videoThumbnailImpressionsClickRate"]] or 0.0) * 100.0
+            )
+        except Exception:
+            out[vid]["impressions_click_through_rate"] = None
+
+    if thumbnail_supported:
+        for vid in video_ids:
+            if vid not in out:
+                out[vid] = {}
+            if "impressions" not in out[vid]:
+                out[vid]["impressions"] = 0
+            if "impressions_click_through_rate" not in out[vid]:
+                out[vid]["impressions_click_through_rate"] = None
 
     # Ensure all requested IDs are in out with defaults if missing
     for vid in video_ids:
@@ -201,7 +242,7 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
                 if key not in out[vid]:
                     out[vid][key] = None
 
-    return out
+    return out, thumbnail_supported
 
 # ==============================
 # Helper query
@@ -214,6 +255,108 @@ def query_all_safe(sql: str, params=None):
     except Exception as e:
         print("[content.query_all_safe] failed:", e)
         return []
+
+
+def _list_content_video_ids(account_tag: str, start_date: date, end_date: date):
+    sql = """
+        SELECT v.video_id
+        FROM videos v
+        LEFT JOIN video_daily_stats s
+          ON s.video_id = v.video_id
+         AND s.day BETWEEN :start_date AND :end_date
+        WHERE v.account_tag = :account_tag
+        GROUP BY v.video_id
+        HAVING SUM(s.views) > 0 OR MAX(v.views) > 0
+        ORDER BY MAX(v.published_at) DESC NULLS LAST;
+    """
+    rows = query_all_safe(
+        sql,
+        {
+            "account_tag": account_tag,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+    )
+    return [str(row.get("video_id")) for row in rows if row.get("video_id")]
+
+
+def _load_or_fetch_video_metrics(
+    db: Session,
+    account_tag: str,
+    start_date: date,
+    end_date: date,
+    video_ids,
+):
+    if not video_ids:
+        return {}, False
+
+    cached_payload = _load_video_metrics_cache(account_tag, start_date, end_date)
+    cached_metrics, cached_thumbnail_supported = _normalize_video_metrics_cache_payload(cached_payload)
+    if cached_metrics is not None:
+        return cached_metrics, bool(cached_thumbnail_supported)
+
+    credential_row = _find_credential_row(db, account_tag)
+    if not credential_row or not getattr(credential_row, "token_name", None):
+        return {}, False
+
+    creds = _load_token_credentials(credential_row.token_name)
+    if not creds:
+        return {}, False
+
+    channel_id = getattr(credential_row, "selected_channel_id", None)
+    video_metrics, thumbnail_supported = _fetch_video_metrics_bulk(
+        creds,
+        channel_id,
+        video_ids,
+        str(start_date),
+        str(end_date),
+    )
+    _save_video_metrics_cache(
+        account_tag,
+        start_date,
+        end_date,
+        _build_video_metrics_cache_payload(video_metrics, thumbnail_supported),
+    )
+    return video_metrics, thumbnail_supported
+
+
+def _apply_video_metrics_to_content_rows(rows_mutable, video_metrics: dict, thumbnail_supported: bool):
+    if not rows_mutable:
+        return
+    for row in rows_mutable:
+        metrics = video_metrics.get(row.get("videoId")) or {}
+        if metrics.get("impressions") is not None:
+            row["impressions"] = int(metrics["impressions"])
+        elif thumbnail_supported:
+            row["impressions"] = 0
+
+        if "impressions_click_through_rate" in metrics:
+            row["impressionsClickThroughRate"] = metrics.get("impressions_click_through_rate")
+        elif thumbnail_supported:
+            row["impressionsClickThroughRate"] = None
+
+
+def _compute_channel_metrics_from_video_metrics(video_metrics: dict):
+    impressions = 0
+    weighted_ctr_sum = 0.0
+    has_supported_value = False
+    for metrics in (video_metrics or {}).values():
+        impressions_value = metrics.get("impressions")
+        if impressions_value is None:
+            continue
+        has_supported_value = True
+        impressions_value = int(impressions_value or 0)
+        impressions += impressions_value
+        ctr_value = metrics.get("impressions_click_through_rate")
+        if ctr_value is not None and impressions_value > 0:
+            weighted_ctr_sum += float(ctr_value) * impressions_value
+
+    ctr = (weighted_ctr_sum / impressions) if impressions > 0 else None
+    return {
+        "impressions": impressions,
+        "ctr": ctr,
+        "supported": has_supported_value,
+    }
 
 
 def _ensure_timeseries_cache_table() -> None:
@@ -439,11 +582,24 @@ def content_list(
     }
 
     rows_mutable = [dict(r) for r in query_all_safe(sql, params)]
-
-    channel_metrics_payload = _compute_channel_metrics_from_db(
+    video_ids = [str(row.get("videoId")) for row in rows_mutable if row.get("videoId")]
+    video_metrics, thumbnail_supported = _load_or_fetch_video_metrics(
+        db,
         req.channelId,
         req.start,
         req.end,
+        video_ids,
+    )
+    _apply_video_metrics_to_content_rows(rows_mutable, video_metrics, thumbnail_supported)
+
+    channel_metrics_payload = (
+        _compute_channel_metrics_from_video_metrics(video_metrics)
+        if thumbnail_supported
+        else _compute_channel_metrics_from_db(
+            req.channelId,
+            req.start,
+            req.end,
+        )
     )
 
     return {
@@ -626,4 +782,14 @@ def channel_metrics(
     allowed = get_allowed_account_tags(db, current_user)
     if allowed is not None and req.channelId not in allowed:
         return {"impressions": 0, "ctr": None, "supported": False}
+    video_ids = _list_content_video_ids(req.channelId, req.start, req.end)
+    video_metrics, thumbnail_supported = _load_or_fetch_video_metrics(
+        db,
+        req.channelId,
+        req.start,
+        req.end,
+        video_ids,
+    )
+    if thumbnail_supported:
+        return _compute_channel_metrics_from_video_metrics(video_metrics)
     return _compute_channel_metrics_from_db(req.channelId, req.start, req.end)

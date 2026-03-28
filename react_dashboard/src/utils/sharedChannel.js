@@ -25,8 +25,13 @@ export const resolvePreferredSharedChannelId = (
   getOptionValue = (option) => option?.value
 ) => {
   const preferred = String(preferredValue || "").trim();
-  if (preferred) return preferred;
   if (!Array.isArray(options) || !options.length) return "";
+  if (preferred) {
+    const exists = options.some(
+      (option) => String(getOptionValue(option) || "").trim() === preferred
+    );
+    if (exists) return preferred;
+  }
   return String(getOptionValue(options[0]) || "").trim();
 };
 
