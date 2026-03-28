@@ -1,0 +1,698 @@
+import hashlib
+import json
+from datetime import datetime
+from typing import Any, Optional
+
+from sqlalchemy import bindparam, text
+
+from python_backend.db import engine
+
+
+def ensure_mail_tables() -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS mail_monitor_messages (
+                    id BIGSERIAL PRIMARY KEY,
+                    vps_id TEXT NOT NULL,
+                    provider TEXT NOT NULL DEFAULT 'imap',
+                    mailbox TEXT NOT NULL,
+                    provider_message_id TEXT NOT NULL,
+                    uid BIGINT,
+                    thread_id TEXT,
+                    subject TEXT,
+                    from_email TEXT,
+                    from_name TEXT,
+                    to_email TEXT,
+                    received_at TIMESTAMP NULL,
+                    seen BOOLEAN NOT NULL DEFAULT FALSE,
+                    status TEXT NOT NULL DEFAULT 'received',
+                    matched_rule TEXT,
+                    snippet TEXT,
+                    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    first_seen_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    last_seen_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    UNIQUE (vps_id, mailbox, provider_message_id)
+                );
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_mail_monitor_messages_vps_mailbox
+                ON mail_monitor_messages (vps_id, mailbox);
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_mail_monitor_messages_received_at
+                ON mail_monitor_messages (received_at DESC NULLS LAST);
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_mail_monitor_messages_status
+                ON mail_monitor_messages (status);
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS mail_monitor_runs (
+                    id BIGSERIAL PRIMARY KEY,
+                    vps_id TEXT NOT NULL,
+                    provider TEXT NOT NULL DEFAULT 'imap',
+                    mailbox TEXT NOT NULL,
+                    agent_version TEXT,
+                    run_started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    run_finished_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    status TEXT NOT NULL DEFAULT 'ok',
+                    message_count INTEGER NOT NULL DEFAULT 0,
+                    inserted_count INTEGER NOT NULL DEFAULT 0,
+                    updated_count INTEGER NOT NULL DEFAULT 0,
+                    error_message TEXT,
+                    cursor TEXT,
+                    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+                );
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_mail_monitor_runs_vps_mailbox
+                ON mail_monitor_runs (vps_id, mailbox, run_finished_at DESC);
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                CREATE SEQUENCE IF NOT EXISTS mail_monitor_vps_seq
+                START WITH 1
+                INCREMENT BY 1;
+                """
+            )
+        )
+
+
+def _normalize_message_id(
+    vps_id: str,
+    mailbox: str,
+    raw_message_id: Optional[str],
+    uid: Optional[int],
+    subject: Optional[str],
+    from_email: Optional[str],
+    received_at: Optional[datetime],
+) -> str:
+    if raw_message_id:
+        return str(raw_message_id).strip()
+    if uid is not None:
+        return f"uid:{uid}"
+    seed = "|".join(
+        [
+            vps_id,
+            mailbox,
+            str(subject or ""),
+            str(from_email or ""),
+            str(received_at.isoformat() if received_at else ""),
+        ]
+    )
+    return hashlib.sha1(seed.encode("utf-8")).hexdigest()
+
+
+def _normalize_message(
+    *,
+    vps_id: str,
+    provider: str,
+    mailbox: str,
+    item: dict[str, Any],
+) -> dict[str, Any]:
+    payload = item.get("payload")
+    if not isinstance(payload, dict):
+        payload = {}
+
+    received_at = item.get("received_at")
+    if isinstance(received_at, str):
+        try:
+            received_at = datetime.fromisoformat(received_at.replace("Z", "+00:00"))
+        except ValueError:
+            received_at = None
+    if not isinstance(received_at, datetime):
+        received_at = None
+
+    uid = item.get("uid")
+    try:
+        uid = int(uid) if uid is not None else None
+    except (TypeError, ValueError):
+        uid = None
+
+    provider_message_id = _normalize_message_id(
+        vps_id=vps_id,
+        mailbox=mailbox,
+        raw_message_id=item.get("provider_message_id"),
+        uid=uid,
+        subject=item.get("subject"),
+        from_email=item.get("from_email"),
+        received_at=received_at,
+    )
+
+    status = str(item.get("status") or "received").strip().lower() or "received"
+    return {
+        "vps_id": vps_id,
+        "provider": provider or "imap",
+        "mailbox": mailbox,
+        "provider_message_id": provider_message_id,
+        "uid": uid,
+        "thread_id": item.get("thread_id"),
+        "subject": item.get("subject"),
+        "from_email": item.get("from_email"),
+        "from_name": item.get("from_name"),
+        "to_email": item.get("to_email"),
+        "received_at": received_at,
+        "seen": bool(item.get("seen", False)),
+        "status": status,
+        "matched_rule": item.get("matched_rule"),
+        "snippet": item.get("snippet"),
+        "payload": json.dumps(payload),
+    }
+
+
+def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
+    ensure_mail_tables()
+
+    vps_id = str(payload.get("vps_id") or "").strip()
+    mailbox = str(payload.get("mailbox") or "INBOX").strip() or "INBOX"
+    provider = str(payload.get("provider") or "imap").strip() or "imap"
+    status = str(payload.get("status") or "ok").strip().lower() or "ok"
+    agent_version = str(payload.get("agent_version") or "").strip() or None
+    cursor = str(payload.get("cursor") or "").strip() or None
+    error_message = str(payload.get("error_message") or "").strip() or None
+    run_started_at = payload.get("run_started_at")
+    run_finished_at = payload.get("run_finished_at")
+    messages_raw = payload.get("messages") or []
+    run_payload = payload.get("payload")
+    if not isinstance(run_payload, dict):
+        run_payload = {}
+
+    if not vps_id:
+        raise ValueError("Missing vps_id")
+
+    if isinstance(run_started_at, str):
+        run_started_at = datetime.fromisoformat(run_started_at.replace("Z", "+00:00"))
+    if isinstance(run_finished_at, str):
+        run_finished_at = datetime.fromisoformat(run_finished_at.replace("Z", "+00:00"))
+    if not isinstance(run_started_at, datetime):
+        run_started_at = datetime.utcnow()
+    if not isinstance(run_finished_at, datetime):
+        run_finished_at = datetime.utcnow()
+
+    deduped_messages: dict[str, dict[str, Any]] = {}
+    for item in messages_raw:
+        if not isinstance(item, dict):
+            continue
+        normalized = _normalize_message(
+            vps_id=vps_id,
+            provider=provider,
+            mailbox=mailbox,
+            item=item,
+        )
+        deduped_messages[normalized["provider_message_id"]] = normalized
+
+    normalized_messages = list(deduped_messages.values())
+    provider_message_ids = [item["provider_message_id"] for item in normalized_messages]
+
+    inserted_count = 0
+    updated_count = 0
+
+    with engine.begin() as conn:
+        existing_ids: set[str] = set()
+        if provider_message_ids:
+            existing_query = text(
+                """
+                SELECT provider_message_id
+                FROM mail_monitor_messages
+                WHERE vps_id = :vps_id
+                  AND mailbox = :mailbox
+                  AND provider_message_id IN :provider_message_ids
+                """
+            ).bindparams(bindparam("provider_message_ids", expanding=True))
+            rows = conn.execute(
+                existing_query,
+                {
+                    "vps_id": vps_id,
+                    "mailbox": mailbox,
+                    "provider_message_ids": provider_message_ids,
+                },
+            ).fetchall()
+            existing_ids = {str(row[0]) for row in rows}
+
+        if normalized_messages:
+            upsert_statement = text(
+                """
+                INSERT INTO mail_monitor_messages (
+                    vps_id,
+                    provider,
+                    mailbox,
+                    provider_message_id,
+                    uid,
+                    thread_id,
+                    subject,
+                    from_email,
+                    from_name,
+                    to_email,
+                    received_at,
+                    seen,
+                    status,
+                    matched_rule,
+                    snippet,
+                    payload,
+                    first_seen_at,
+                    last_seen_at,
+                    created_at,
+                    updated_at
+                )
+                VALUES (
+                    :vps_id,
+                    :provider,
+                    :mailbox,
+                    :provider_message_id,
+                    :uid,
+                    :thread_id,
+                    :subject,
+                    :from_email,
+                    :from_name,
+                    :to_email,
+                    :received_at,
+                    :seen,
+                    :status,
+                    :matched_rule,
+                    :snippet,
+                    CAST(:payload AS JSONB),
+                    NOW(),
+                    NOW(),
+                    NOW(),
+                    NOW()
+                )
+                ON CONFLICT (vps_id, mailbox, provider_message_id)
+                DO UPDATE SET
+                    provider = EXCLUDED.provider,
+                    uid = EXCLUDED.uid,
+                    thread_id = EXCLUDED.thread_id,
+                    subject = EXCLUDED.subject,
+                    from_email = EXCLUDED.from_email,
+                    from_name = EXCLUDED.from_name,
+                    to_email = EXCLUDED.to_email,
+                    received_at = EXCLUDED.received_at,
+                    seen = EXCLUDED.seen,
+                    status = EXCLUDED.status,
+                    matched_rule = EXCLUDED.matched_rule,
+                    snippet = EXCLUDED.snippet,
+                    payload = EXCLUDED.payload,
+                    last_seen_at = NOW(),
+                    updated_at = NOW()
+                """
+            )
+            conn.execute(upsert_statement, normalized_messages)
+
+        inserted_count = max(len(normalized_messages) - len(existing_ids), 0)
+        updated_count = min(len(existing_ids), len(normalized_messages))
+
+        conn.execute(
+            text(
+                """
+                INSERT INTO mail_monitor_runs (
+                    vps_id,
+                    provider,
+                    mailbox,
+                    agent_version,
+                    run_started_at,
+                    run_finished_at,
+                    status,
+                    message_count,
+                    inserted_count,
+                    updated_count,
+                    error_message,
+                    cursor,
+                    payload,
+                    created_at
+                )
+                VALUES (
+                    :vps_id,
+                    :provider,
+                    :mailbox,
+                    :agent_version,
+                    :run_started_at,
+                    :run_finished_at,
+                    :status,
+                    :message_count,
+                    :inserted_count,
+                    :updated_count,
+                    :error_message,
+                    :cursor,
+                    CAST(:payload AS JSONB),
+                    NOW()
+                )
+                """
+            ),
+            {
+                "vps_id": vps_id,
+                "provider": provider,
+                "mailbox": mailbox,
+                "agent_version": agent_version,
+                "run_started_at": run_started_at,
+                "run_finished_at": run_finished_at,
+                "status": status,
+                "message_count": len(normalized_messages),
+                "inserted_count": inserted_count,
+                "updated_count": updated_count,
+                "error_message": error_message,
+                "cursor": cursor,
+                "payload": json.dumps(run_payload),
+            },
+        )
+
+    return {
+        "ok": True,
+        "vps_id": vps_id,
+        "mailbox": mailbox,
+        "message_count": len(normalized_messages),
+        "inserted_count": inserted_count,
+        "updated_count": updated_count,
+        "status": status,
+    }
+
+
+def get_mail_overview() -> dict[str, Any]:
+    ensure_mail_tables()
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                """
+                WITH mailbox_keys AS (
+                    SELECT DISTINCT vps_id, mailbox FROM mail_monitor_messages
+                    UNION
+                    SELECT DISTINCT vps_id, mailbox FROM mail_monitor_runs
+                ),
+                message_stats AS (
+                    SELECT
+                        vps_id,
+                        mailbox,
+                        MAX(provider) AS provider,
+                        COUNT(*)::bigint AS total_messages,
+                        COUNT(*) FILTER (WHERE COALESCE(seen, FALSE) = FALSE)::bigint AS unread_messages,
+                        COUNT(*) FILTER (WHERE status = 'error')::bigint AS error_messages,
+                        MAX(received_at) AS latest_received_at,
+                        MAX(last_seen_at) AS latest_seen_at
+                    FROM mail_monitor_messages
+                    GROUP BY vps_id, mailbox
+                ),
+                latest_runs AS (
+                    SELECT DISTINCT ON (vps_id, mailbox)
+                        vps_id,
+                        mailbox,
+                        provider,
+                        status AS last_run_status,
+                        error_message,
+                        run_finished_at,
+                        message_count,
+                        inserted_count,
+                        updated_count
+                    FROM mail_monitor_runs
+                    ORDER BY vps_id, mailbox, run_finished_at DESC, id DESC
+                )
+                SELECT
+                    k.vps_id,
+                    k.mailbox,
+                    COALESCE(r.provider, m.provider, 'imap') AS provider,
+                    COALESCE(m.total_messages, 0) AS total_messages,
+                    COALESCE(m.unread_messages, 0) AS unread_messages,
+                    COALESCE(m.error_messages, 0) AS error_messages,
+                    m.latest_received_at,
+                    m.latest_seen_at,
+                    r.last_run_status,
+                    r.error_message,
+                    r.run_finished_at AS last_run_finished_at,
+                    COALESCE(r.message_count, 0) AS last_run_message_count,
+                    COALESCE(r.inserted_count, 0) AS last_run_inserted_count,
+                    COALESCE(r.updated_count, 0) AS last_run_updated_count
+                FROM mailbox_keys k
+                LEFT JOIN message_stats m
+                  ON m.vps_id = k.vps_id AND m.mailbox = k.mailbox
+                LEFT JOIN latest_runs r
+                  ON r.vps_id = k.vps_id AND r.mailbox = k.mailbox
+                ORDER BY COALESCE(r.run_finished_at, m.latest_seen_at, m.latest_received_at) DESC NULLS LAST,
+                         k.vps_id,
+                         k.mailbox
+                """
+            )
+        ).mappings().all()
+
+        summary_row = conn.execute(
+            text(
+                """
+                WITH mailbox_keys AS (
+                    SELECT DISTINCT vps_id, mailbox FROM mail_monitor_messages
+                    UNION
+                    SELECT DISTINCT vps_id, mailbox FROM mail_monitor_runs
+                ),
+                message_stats AS (
+                    SELECT
+                        vps_id,
+                        mailbox,
+                        COUNT(*)::bigint AS total_messages,
+                        COUNT(*) FILTER (WHERE COALESCE(seen, FALSE) = FALSE)::bigint AS unread_messages
+                    FROM mail_monitor_messages
+                    GROUP BY vps_id, mailbox
+                ),
+                latest_runs AS (
+                    SELECT DISTINCT ON (vps_id, mailbox)
+                        vps_id,
+                        mailbox,
+                        status AS last_run_status
+                    FROM mail_monitor_runs
+                    ORDER BY vps_id, mailbox, run_finished_at DESC, id DESC
+                )
+                SELECT
+                    COUNT(DISTINCT k.vps_id)::bigint AS vps_count,
+                    COUNT(*)::bigint AS mailbox_count,
+                    COALESCE(SUM(m.total_messages), 0)::bigint AS total_messages,
+                    COALESCE(SUM(m.unread_messages), 0)::bigint AS unread_messages,
+                    COUNT(*) FILTER (WHERE COALESCE(r.last_run_status, '') = 'error')::bigint AS error_messages
+                FROM mailbox_keys k
+                LEFT JOIN message_stats m
+                  ON m.vps_id = k.vps_id AND m.mailbox = k.mailbox
+                LEFT JOIN latest_runs r
+                  ON r.vps_id = k.vps_id AND r.mailbox = k.mailbox
+                """
+            )
+        ).mappings().first()
+
+    return {
+        "summary": dict(summary_row or {}),
+        "items": [dict(row) for row in rows],
+    }
+
+
+def get_next_vps_id() -> str:
+    ensure_mail_tables()
+
+    with engine.begin() as conn:
+        existing_max_row = conn.execute(
+            text(
+                """
+                SELECT COALESCE(MAX(suffix), 0)::bigint AS highest_suffix
+                FROM (
+                    SELECT CAST(SUBSTRING(LOWER(vps_id) FROM '^vps-(\d+)$') AS BIGINT) AS suffix
+                    FROM mail_monitor_messages
+                    UNION ALL
+                    SELECT CAST(SUBSTRING(LOWER(vps_id) FROM '^vps-(\d+)$') AS BIGINT) AS suffix
+                    FROM mail_monitor_runs
+                ) AS ids
+                WHERE suffix IS NOT NULL
+                """
+            )
+        ).mappings().first()
+
+        sequence_row = conn.execute(
+            text(
+                """
+                SELECT last_value, is_called
+                FROM mail_monitor_vps_seq
+                """
+            )
+        ).mappings().first()
+
+        highest_existing = int((existing_max_row or {}).get("highest_suffix") or 0)
+        sequence_last = int((sequence_row or {}).get("last_value") or 0)
+        sequence_is_called = bool((sequence_row or {}).get("is_called"))
+        if not sequence_is_called:
+            sequence_last = 0
+
+        if sequence_last < highest_existing:
+            conn.execute(
+                text("SELECT setval('mail_monitor_vps_seq', :value, true)"),
+                {"value": highest_existing},
+            )
+
+        next_value = conn.execute(
+            text("SELECT nextval('mail_monitor_vps_seq') AS next_value")
+        ).scalar_one()
+
+    return f"vps-{int(next_value):02d}"
+
+
+def list_mail_messages(
+    *,
+    vps_id: Optional[str] = None,
+    mailbox: Optional[str] = None,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    ensure_mail_tables()
+
+    where_clauses = []
+    params: dict[str, Any] = {
+        "limit": max(1, min(int(limit or 100), 500)),
+        "offset": max(0, int(offset or 0)),
+    }
+
+    if vps_id:
+        where_clauses.append("vps_id = :vps_id")
+        params["vps_id"] = vps_id
+    if mailbox:
+        where_clauses.append("mailbox = :mailbox")
+        params["mailbox"] = mailbox
+    if status:
+        where_clauses.append("status = :status")
+        params["status"] = status
+    if search:
+        where_clauses.append(
+            """
+            (
+                COALESCE(subject, '') ILIKE :search
+                OR COALESCE(from_email, '') ILIKE :search
+                OR COALESCE(from_name, '') ILIKE :search
+                OR COALESCE(snippet, '') ILIKE :search
+                OR COALESCE(provider_message_id, '') ILIKE :search
+            )
+            """
+        )
+        params["search"] = f"%{search.strip()}%"
+
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT
+                    id,
+                    vps_id,
+                    provider,
+                    mailbox,
+                    provider_message_id,
+                    uid,
+                    thread_id,
+                    subject,
+                    from_email,
+                    from_name,
+                    to_email,
+                    received_at,
+                    seen,
+                    status,
+                    matched_rule,
+                    snippet,
+                    last_seen_at,
+                    updated_at
+                FROM mail_monitor_messages
+                {where_sql}
+                ORDER BY COALESCE(received_at, updated_at) DESC NULLS LAST, id DESC
+                LIMIT :limit
+                OFFSET :offset
+                """
+            ),
+            params,
+        ).mappings().all()
+
+        total_row = conn.execute(
+            text(
+                f"""
+                SELECT COUNT(*)::bigint AS total
+                FROM mail_monitor_messages
+                {where_sql}
+                """
+            ),
+            {k: v for k, v in params.items() if k not in {"limit", "offset"}},
+        ).mappings().first()
+
+    return {
+        "items": [dict(row) for row in rows],
+        "total": int((total_row or {}).get("total") or 0),
+    }
+
+
+def list_mail_runs(
+    *,
+    vps_id: Optional[str] = None,
+    mailbox: Optional[str] = None,
+    limit: int = 50,
+) -> dict[str, Any]:
+    ensure_mail_tables()
+
+    where_clauses = []
+    params: dict[str, Any] = {
+        "limit": max(1, min(int(limit or 50), 200)),
+    }
+
+    if vps_id:
+        where_clauses.append("vps_id = :vps_id")
+        params["vps_id"] = vps_id
+    if mailbox:
+        where_clauses.append("mailbox = :mailbox")
+        params["mailbox"] = mailbox
+
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                f"""
+                SELECT
+                    id,
+                    vps_id,
+                    provider,
+                    mailbox,
+                    agent_version,
+                    run_started_at,
+                    run_finished_at,
+                    status,
+                    message_count,
+                    inserted_count,
+                    updated_count,
+                    error_message,
+                    cursor,
+                    created_at
+                FROM mail_monitor_runs
+                {where_sql}
+                ORDER BY run_finished_at DESC NULLS LAST, id DESC
+                LIMIT :limit
+                """
+            ),
+            params,
+        ).mappings().all()
+
+    return {"items": [dict(row) for row in rows]}

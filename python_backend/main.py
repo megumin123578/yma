@@ -16,6 +16,7 @@ from python_backend.routes.audience import router as audience_router
 from python_backend.routes.channel_compare import router as channel_compare_router
 from python_backend.routes.content import router as content_router
 from python_backend.routes.geography import router as geo_router
+from python_backend.routes.mail import router as mail_router
 from python_backend.routes.overview import router as overview_router
 from python_backend.routes.reach import router as reach_router
 from python_backend.routes.revenue import router as revenue_router
@@ -66,6 +67,7 @@ app.add_middleware(
 app.include_router(ts_router)
 app.include_router(geo_router)
 app.include_router(content_router)
+app.include_router(mail_router)
 app.include_router(overview_router)
 app.include_router(smmstore_router)
 app.include_router(channel_compare_router)

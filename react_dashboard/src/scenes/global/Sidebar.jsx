@@ -15,6 +15,7 @@ import BarChartOutlinedIcon from "@mui/icons-material/BarChartOutlined";
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
+import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 // import FileUploadIcon from "@mui/icons-material/FileUpload";
 import WebhookIcon from '@mui/icons-material/Webhook';
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -378,6 +379,14 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
               to="/smmstore_analytics"
               icon={<BarChartOutlinedIcon />}
               isActive={isActivePath("/smmstore_analytics")}
+              onClick={closeOnMobile}
+            />
+
+            <Item
+              title="Email Manager"
+              to="/mail_monitor"
+              icon={<MailOutlineRoundedIcon />}
+              isActive={isActivePath("/mail_monitor")}
               onClick={closeOnMobile}
             />
 

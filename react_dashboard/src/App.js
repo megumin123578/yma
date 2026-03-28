@@ -21,6 +21,7 @@ import SmmstoreAnalyticsScene from "./scenes/smmstore_analytics";
 import AudienceAnalyticsScene from "./scenes/audience_analytics";
 import ReachAnalyticsScene from "./scenes/reach_analytics";
 import RevenueAnalyticsScene from "./scenes/revenue";
+import MailMonitorScene from "./scenes/mail_monitor";
 import ConfigPage from "./scenes/config";
 import PrivacyPage from "./scenes/privacy";
 import TermsPage from "./scenes/terms";
@@ -129,6 +130,14 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         element={
           <ProtectedRoute user={user} loading={loading}>
             <RevenueAnalyticsScene />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/mail_monitor"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <MailMonitorScene />
           </ProtectedRoute>
         }
       />
