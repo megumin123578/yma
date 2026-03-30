@@ -409,6 +409,7 @@ def mail_messages(
     search: Optional[str] = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    per_account_limit: Optional[int] = Query(default=None, ge=1, le=500),
     current_user=Depends(get_current_user),
 ):
     del current_user
@@ -420,6 +421,7 @@ def mail_messages(
         search=search,
         limit=limit,
         offset=offset,
+        per_account_limit=per_account_limit,
     )
 
 

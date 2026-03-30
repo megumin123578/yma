@@ -8,6 +8,14 @@ from sqlalchemy import bindparam, text
 from python_backend.db import engine
 
 
+def _infer_mail_match(*, from_name: Optional[str], from_email: Optional[str]) -> tuple[str, Optional[str]]:
+    sender_parts = [str(from_name or "").strip().lower(), str(from_email or "").strip().lower()]
+    sender_text = " ".join(part for part in sender_parts if part)
+    if "youtube" in sender_text:
+        return "matched", "from:youtube"
+    return "received", None
+
+
 def ensure_mail_tables() -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -154,6 +162,24 @@ def ensure_mail_tables() -> None:
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                UPDATE mail_monitor_messages
+                SET
+                    status = 'matched',
+                    matched_rule = 'from:youtube',
+                    updated_at = NOW()
+                WHERE
+                    (matched_rule IS NULL OR matched_rule = '')
+                    AND COALESCE(status, 'received') = 'received'
+                    AND (
+                        LOWER(COALESCE(from_name, '')) LIKE '%youtube%'
+                        OR LOWER(COALESCE(from_email, '')) LIKE '%youtube%'
+                    )
+                """
+            )
+        )
 
 
 def _normalize_message_id(
@@ -221,7 +247,15 @@ def _normalize_message(
         received_at=received_at,
     )
 
-    status = str(item.get("status") or "received").strip().lower() or "received"
+    inferred_status, inferred_rule = _infer_mail_match(
+        from_name=item.get("from_name"),
+        from_email=item.get("from_email"),
+    )
+    status = str(item.get("status") or inferred_status).strip().lower() or inferred_status
+    matched_rule = item.get("matched_rule") or inferred_rule
+    if status == "received" and matched_rule:
+        status = "matched"
+
     return {
         "vps_id": vps_id,
         "account_email": account_email,
@@ -237,7 +271,7 @@ def _normalize_message(
         "received_at": received_at,
         "seen": bool(item.get("seen", False)),
         "status": status,
-        "matched_rule": item.get("matched_rule"),
+        "matched_rule": matched_rule,
         "snippet": item.get("snippet"),
         "payload": json.dumps(payload),
     }
@@ -634,6 +668,7 @@ def list_mail_messages(
     search: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
+    per_account_limit: Optional[int] = None,
 ) -> dict[str, Any]:
     ensure_mail_tables()
 
@@ -642,6 +677,10 @@ def list_mail_messages(
         "limit": max(1, min(int(limit or 100), 500)),
         "offset": max(0, int(offset or 0)),
     }
+    normalized_per_account_limit = None
+    if per_account_limit is not None:
+        normalized_per_account_limit = max(1, min(int(per_account_limit), 500))
+        params["per_account_limit"] = normalized_per_account_limit
 
     if vps_id:
         where_clauses.append("vps_id = :vps_id")
@@ -672,49 +711,134 @@ def list_mail_messages(
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
     with engine.begin() as conn:
-        rows = conn.execute(
-            text(
-                f"""
-                SELECT
-                    id,
-                    vps_id,
-                    account_email,
-                    provider,
-                    mailbox,
-                    provider_message_id,
-                    uid,
-                    thread_id,
-                    subject,
-                    from_email,
-                    from_name,
-                    to_email,
-                    received_at,
-                    seen,
-                    status,
-                    matched_rule,
-                    snippet,
-                    last_seen_at,
-                    updated_at
-                FROM mail_monitor_messages
-                {where_sql}
-                ORDER BY COALESCE(received_at, updated_at) DESC NULLS LAST, id DESC
-                LIMIT :limit
-                OFFSET :offset
-                """
-            ),
-            params,
-        ).mappings().all()
+        if normalized_per_account_limit is not None:
+            rows = conn.execute(
+                text(
+                    f"""
+                    WITH ranked_messages AS (
+                        SELECT
+                            id,
+                            vps_id,
+                            account_email,
+                            provider,
+                            mailbox,
+                            provider_message_id,
+                            uid,
+                            thread_id,
+                            subject,
+                            from_email,
+                            from_name,
+                            to_email,
+                            received_at,
+                            seen,
+                            status,
+                            matched_rule,
+                            snippet,
+                            last_seen_at,
+                            updated_at,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY COALESCE(account_email, '')
+                                ORDER BY COALESCE(received_at, updated_at) DESC NULLS LAST, id DESC
+                            ) AS row_num
+                        FROM mail_monitor_messages
+                        {where_sql}
+                    )
+                    SELECT
+                        id,
+                        vps_id,
+                        account_email,
+                        provider,
+                        mailbox,
+                        provider_message_id,
+                        uid,
+                        thread_id,
+                        subject,
+                        from_email,
+                        from_name,
+                        to_email,
+                        received_at,
+                        seen,
+                        status,
+                        matched_rule,
+                        snippet,
+                        last_seen_at,
+                        updated_at
+                    FROM ranked_messages
+                    WHERE row_num <= :per_account_limit
+                    ORDER BY
+                        COALESCE(account_email, '') ASC,
+                        COALESCE(received_at, updated_at) DESC NULLS LAST,
+                        id DESC
+                    LIMIT :limit
+                    OFFSET :offset
+                    """
+                ),
+                params,
+            ).mappings().all()
 
-        total_row = conn.execute(
-            text(
-                f"""
-                SELECT COUNT(*)::bigint AS total
-                FROM mail_monitor_messages
-                {where_sql}
-                """
-            ),
-            {k: v for k, v in params.items() if k not in {"limit", "offset"}},
-        ).mappings().first()
+            total_row = conn.execute(
+                text(
+                    f"""
+                    WITH ranked_messages AS (
+                        SELECT
+                            ROW_NUMBER() OVER (
+                                PARTITION BY COALESCE(account_email, '')
+                                ORDER BY COALESCE(received_at, updated_at) DESC NULLS LAST, id DESC
+                            ) AS row_num
+                        FROM mail_monitor_messages
+                        {where_sql}
+                    )
+                    SELECT COUNT(*)::bigint AS total
+                    FROM ranked_messages
+                    WHERE row_num <= :per_account_limit
+                    """
+                ),
+                {k: v for k, v in params.items() if k not in {"limit", "offset"}},
+            ).mappings().first()
+        else:
+            rows = conn.execute(
+                text(
+                    f"""
+                    SELECT
+                        id,
+                        vps_id,
+                        account_email,
+                        provider,
+                        mailbox,
+                        provider_message_id,
+                        uid,
+                        thread_id,
+                        subject,
+                        from_email,
+                        from_name,
+                        to_email,
+                        received_at,
+                        seen,
+                        status,
+                        matched_rule,
+                        snippet,
+                        last_seen_at,
+                        updated_at
+                    FROM mail_monitor_messages
+                    {where_sql}
+                    ORDER BY COALESCE(received_at, updated_at) DESC NULLS LAST, id DESC
+                    LIMIT :limit
+                    OFFSET :offset
+                    """
+                ),
+                params,
+            ).mappings().all()
+
+            total_row = conn.execute(
+                text(
+                    f"""
+                    SELECT COUNT(*)::bigint AS total
+                    FROM mail_monitor_messages
+                    {where_sql}
+                    """
+                ),
+                {k: v for k, v in params.items() if k not in {"limit", "offset"}},
+            ).mappings().first()
 
     return {
         "items": [dict(row) for row in rows],

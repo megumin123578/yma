@@ -21,6 +21,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
+  TablePagination,
   TableRow,
   Tabs,
   TextField,
@@ -48,7 +49,9 @@ const formatDateTime = (value) => {
   if (!value) return "-";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return String(value);
-  return parsed.toLocaleString();
+  return parsed.toLocaleString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+  });
 };
 
 
@@ -157,6 +160,7 @@ const StatCard = ({ icon, label, value, accent }) => {
 const MailMonitor = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
+  const MAILS_PER_PAGE = 50;
   const [overview, setOverview] = useState({ summary: {}, items: [] });
   const [messages, setMessages] = useState({ items: [], total: 0 });
   const [filters, setFilters] = useState({
@@ -186,6 +190,7 @@ const MailMonitor = () => {
   const [machineDeleteLoading, setMachineDeleteLoading] = useState(false);
   const [machineDeleteError, setMachineDeleteError] = useState("");
   const [machineDeleteSuccess, setMachineDeleteSuccess] = useState("");
+  const [mailPage, setMailPage] = useState(0);
 
   const overviewItems = useMemo(
     () =>
@@ -243,7 +248,9 @@ const MailMonitor = () => {
             mailbox: filters.mailbox || undefined,
             status: filters.status || undefined,
             search: filters.search || undefined,
-            limit: 100,
+            limit: MAILS_PER_PAGE,
+            offset: mailPage * MAILS_PER_PAGE,
+            per_account_limit: MAILS_PER_PAGE,
           },
         }),
       ]);
@@ -252,11 +259,15 @@ const MailMonitor = () => {
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to load email manager data.");
     }
-  }, [filters.accountEmail, filters.mailbox, filters.search, filters.status, filters.vpsId]);
+  }, [MAILS_PER_PAGE, filters.accountEmail, filters.mailbox, filters.search, filters.status, filters.vpsId, mailPage]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    setMailPage(0);
+  }, [filters.vpsId, filters.accountEmail, filters.mailbox, filters.status, filters.search]);
 
   useEffect(() => {
     if (!autoRefresh) return undefined;
@@ -745,38 +756,11 @@ const MailMonitor = () => {
                     setFilters((current) => ({
                       ...current,
                       accountEmail: event.target.value,
-                      mailbox:
-                        current.mailbox &&
-                        !overviewItems
-                          .filter((item) => !current.vpsId || item.vps_id === current.vpsId)
-                          .filter((item) => !event.target.value || item.account_email === event.target.value)
-                          .map((item) => item.mailbox)
-                          .includes(current.mailbox)
-                          ? ""
-                          : current.mailbox,
                     }))
                   }
                 >
                   <MenuItem value="">All Accounts</MenuItem>
                   {accountOptions.map((value) => (
-                    <MenuItem key={value} value={value}>
-                      {value}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              <FormControl size="small" sx={{ minWidth: { xs: "100%", md: 220 }, flex: 1 }}>
-                <InputLabel>Mailbox</InputLabel>
-                <Select
-                  label="Mailbox"
-                  value={filters.mailbox}
-                  onChange={(event) =>
-                    setFilters((current) => ({ ...current, mailbox: event.target.value }))
-                  }
-                >
-                  <MenuItem value="">All Mailboxes</MenuItem>
-                  {mailboxOptions.map((value) => (
                     <MenuItem key={value} value={value}>
                       {value}
                     </MenuItem>
@@ -822,7 +806,6 @@ const MailMonitor = () => {
                 <TableRow>
                   <TableCell>Machine</TableCell>
                   <TableCell>Account</TableCell>
-                  <TableCell>Mailbox</TableCell>
                   <TableCell>From</TableCell>
                   <TableCell>Subject</TableCell>
                   <TableCell>Status</TableCell>
@@ -833,7 +816,7 @@ const MailMonitor = () => {
               <TableBody>
                 {messageItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} align="center">
+                    <TableCell colSpan={7} align="center">
                       No messages found for the current filters.
                     </TableCell>
                   </TableRow>
@@ -847,9 +830,6 @@ const MailMonitor = () => {
                     >
                       <TableCell>{item.vps_id || "-"}</TableCell>
                       <TableCell>{item.account_email || "-"}</TableCell>
-                      <TableCell>
-                        {item.mailbox || "-"}
-                      </TableCell>
                       <TableCell>
                         <Typography>{item.from_name || item.from_email || "-"}</Typography>
                         {item.from_name && item.from_email ? (
@@ -879,6 +859,22 @@ const MailMonitor = () => {
                 )}
               </TableBody>
             </Table>
+            <TablePagination
+              component="div"
+              count={Number(messages?.total || 0)}
+              page={mailPage}
+              onPageChange={(_, nextPage) => setMailPage(nextPage)}
+              rowsPerPage={MAILS_PER_PAGE}
+              rowsPerPageOptions={[MAILS_PER_PAGE]}
+              labelRowsPerPage="Mails per page"
+              sx={{
+                borderTop: "1px solid",
+                borderColor:
+                  theme.palette.mode === "dark"
+                    ? "rgba(148,163,184,0.12)"
+                    : "rgba(148,163,184,0.18)",
+              }}
+            />
           </TableContainer>
         </>
       ) : (
@@ -1064,10 +1060,7 @@ const MailMonitor = () => {
                     <TableCell>Account</TableCell>
                     <TableCell>Mailbox</TableCell>
                     <TableCell align="right">Messages</TableCell>
-                    <TableCell align="right">Unread</TableCell>
                     <TableCell>Status</TableCell>
-                    <TableCell align="right">Inserted</TableCell>
-                    <TableCell align="right">Updated</TableCell>
                     <TableCell>Last Run</TableCell>
                     <TableCell align="center">Action</TableCell>
                   </TableRow>
@@ -1075,7 +1068,7 @@ const MailMonitor = () => {
                 <TableBody>
                   {overviewItems.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} align="center">
+                      <TableCell colSpan={7} align="center">
                         No mailbox data yet.
                       </TableCell>
                     </TableRow>
@@ -1086,7 +1079,6 @@ const MailMonitor = () => {
                         <TableCell>{item.account_email || "-"}</TableCell>
                         <TableCell>{item.mailbox || "-"}</TableCell>
                         <TableCell align="right">{formatNumber(item.total_messages)}</TableCell>
-                        <TableCell align="right">{formatNumber(item.unread_messages)}</TableCell>
                         <TableCell>
                           <Chip
                             size="small"
@@ -1094,12 +1086,6 @@ const MailMonitor = () => {
                             color={statusChipColor(item.last_run_status)}
                             variant="outlined"
                           />
-                        </TableCell>
-                        <TableCell align="right">
-                          {formatNumber(item.last_run_inserted_count)}
-                        </TableCell>
-                        <TableCell align="right">
-                          {formatNumber(item.last_run_updated_count)}
                         </TableCell>
                         <TableCell>{formatDateTime(item.last_run_finished_at)}</TableCell>
                         <TableCell align="center">
