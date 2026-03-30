@@ -15,28 +15,9 @@ import requests
 
 
 AGENT_VERSION = "mail-agent-v2"
-
-AGENT_CONFIG_JSON = r"""
-{
-  "MAIL_INGEST_URL": "https://api.tuanfmcaa.site/api/mail/ingest",
-  "MAIL_INGEST_TOKEN": "fmc-2026",
-  "MAIL_AGENT_VPS_ID": "vps-01",
-  "MAIL_PROVIDER": "imap",
-  "MAIL_IMAP_HOST": "imap.gmail.com",
-  "MAIL_IMAP_PORT": 993,
-  "MAIL_IMAP_SSL": true,
-  "MAIL_IMAP_USERNAME": "user@example.com",
-  "MAIL_IMAP_PASSWORD": "app-password",
-  "MAIL_IMAP_MAILBOXES": [
-    "INBOX"
-  ],
-  "MAIL_AGENT_FETCH_LIMIT": 50,
-  "MAIL_IMAP_TIMEOUT": 30,
-  "MAIL_INGEST_TIMEOUT": 30,
-  "MAIL_AGENT_STATE_FILE": "mail_agent_state.json",
-  "MAIL_AGENT_INTERVAL_SECONDS": 3600
-}
-"""
+CONFIG_FILE_NAME = "config.json"
+ACCOUNT_LIST_KEY = "MAIL_ACCOUNTS"
+MIN_IMAP_PASSWORD_LENGTH = 16
 
 
 def _normalize_key(key: str) -> str:
@@ -65,6 +46,10 @@ def _normalize_value(value) -> Optional[str]:
     return normalized or None
 
 
+def _normalize_imap_password(value: str) -> str:
+    return re.sub(r"\s+", "", str(value or ""))
+
+
 def _iter_json_env_items(prefix: str, value):
     if isinstance(value, dict):
         for child_key, child_value in value.items():
@@ -78,21 +63,33 @@ def _iter_json_env_items(prefix: str, value):
     yield prefix, value
 
 
-def load_embedded_config() -> None:
+def _config_file_path() -> Path:
+    return Path(__file__).resolve().parent / CONFIG_FILE_NAME
+
+
+def load_config_file() -> dict:
+    config_path = _config_file_path()
+    if not config_path.exists():
+        raise RuntimeError(f"{CONFIG_FILE_NAME} was not found next to main_agent.py.")
+
     try:
-        payload = json.loads(AGENT_CONFIG_JSON)
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Invalid AGENT_CONFIG_JSON: {exc}") from exc
+        raise RuntimeError(f"Invalid {CONFIG_FILE_NAME}: {exc}") from exc
 
     if not isinstance(payload, dict):
-        raise RuntimeError("AGENT_CONFIG_JSON must contain a JSON object.")
+        raise RuntimeError(f"{CONFIG_FILE_NAME} must contain a JSON object.")
 
     for key, value in payload.items():
+        if key == ACCOUNT_LIST_KEY:
+            continue
         for env_key, env_value in _iter_json_env_items("", {key: value}):
             normalized = _normalize_value(env_value)
             if normalized is None:
                 continue
             os.environ.setdefault(env_key, normalized)
+
+    return payload
 
 
 def _is_placeholder(value: str) -> bool:
@@ -132,6 +129,105 @@ def _get_int_env(name: str, default: int) -> int:
 
 def _log(message: str) -> None:
     print(f"[{datetime.utcnow().isoformat()}] {message}", flush=True)
+
+
+def _get_account_value(account: dict, name: str):
+    if name in account:
+        value = account.get(name)
+        if value is not None and str(value).strip() != "":
+            return value
+    return None
+
+
+def _get_account_string(account: dict, name: str, default: str = "", required: bool = False) -> str:
+    value = _get_account_value(account, name)
+    if value is None:
+        value = os.getenv(name, "").strip() or default
+    normalized = str(value or "").strip()
+    if required and _is_placeholder(normalized):
+        raise RuntimeError(f"Missing or placeholder configuration value: {name}")
+    return normalized
+
+
+def _get_account_bool(account: dict, name: str, default: bool) -> bool:
+    value = _get_account_value(account, name)
+    if value is None:
+        return _get_bool_env(name, default)
+    if isinstance(value, bool):
+        return value
+    raw = str(value).strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _get_account_int(account: dict, name: str, default: int) -> int:
+    value = _get_account_value(account, name)
+    if value is None:
+        return _get_int_env(name, default)
+    return int(value)
+
+
+def _normalize_account_email(value: str) -> str:
+    return str(value or "").strip().lower()
+
+
+def load_accounts(config_payload: dict) -> list[dict]:
+    raw_accounts = config_payload.get(ACCOUNT_LIST_KEY)
+    normalized_accounts = []
+
+    if isinstance(raw_accounts, list):
+        for index, item in enumerate(raw_accounts, start=1):
+            if not isinstance(item, dict):
+                raise RuntimeError(f"{ACCOUNT_LIST_KEY}[{index}] must be a JSON object.")
+
+            username = (
+                str(item.get("MAIL_IMAP_USERNAME") or item.get("EMAIL") or "").strip()
+            )
+            password = (
+                _normalize_imap_password(
+                    item.get("MAIL_IMAP_PASSWORD")
+                    or item.get("PASSWORD")
+                    or item.get("MAIL_IMAP_APP_PASSWORD")
+                    or ""
+                )
+            )
+
+            if _is_placeholder(username):
+                raise RuntimeError(f"{ACCOUNT_LIST_KEY}[{index}] is missing MAIL_IMAP_USERNAME.")
+            if _is_placeholder(password):
+                raise RuntimeError(f"{ACCOUNT_LIST_KEY}[{index}] is missing MAIL_IMAP_PASSWORD.")
+            if len(password) < MIN_IMAP_PASSWORD_LENGTH:
+                raise RuntimeError(
+                    f"{ACCOUNT_LIST_KEY}[{index}] MAIL_IMAP_PASSWORD must be at least "
+                    f"{MIN_IMAP_PASSWORD_LENGTH} characters."
+                )
+
+            account = dict(item)
+            account["MAIL_IMAP_USERNAME"] = username
+            account["MAIL_IMAP_PASSWORD"] = password
+            normalized_accounts.append(account)
+
+    if normalized_accounts:
+        return normalized_accounts
+
+    fallback_username = os.getenv("MAIL_IMAP_USERNAME", "").strip()
+    fallback_password = _normalize_imap_password(
+        os.getenv("MAIL_IMAP_PASSWORD", "").strip() or os.getenv("MAIL_IMAP_APP_PASSWORD", "").strip()
+    )
+    if not _is_placeholder(fallback_username) and not _is_placeholder(fallback_password):
+        if len(fallback_password) < MIN_IMAP_PASSWORD_LENGTH:
+            raise RuntimeError(
+                f"MAIL_IMAP_PASSWORD must be at least {MIN_IMAP_PASSWORD_LENGTH} characters."
+            )
+        return [
+            {
+                "MAIL_IMAP_USERNAME": fallback_username,
+                "MAIL_IMAP_PASSWORD": fallback_password,
+            }
+        ]
+
+    raise RuntimeError(f"{CONFIG_FILE_NAME} must contain {ACCOUNT_LIST_KEY} with at least one account.")
 
 
 def _decode_header_value(value: Optional[str]) -> str:
@@ -247,13 +343,24 @@ def save_state(state: dict) -> None:
     path.write_text(json.dumps(state, ensure_ascii=True, indent=2), encoding="utf-8")
 
 
-def connect_imap():
-    host = _require_env("MAIL_IMAP_HOST")
-    port = _get_int_env("MAIL_IMAP_PORT", 993)
-    username = _require_env("MAIL_IMAP_USERNAME")
-    password = os.getenv("MAIL_IMAP_PASSWORD", "").strip() or _require_env("MAIL_IMAP_APP_PASSWORD")
-    use_ssl = _get_bool_env("MAIL_IMAP_SSL", True)
-    timeout = _get_int_env("MAIL_IMAP_TIMEOUT", 30)
+def connect_imap(account: dict):
+    host = _get_account_string(account, "MAIL_IMAP_HOST", required=True)
+    port = _get_account_int(account, "MAIL_IMAP_PORT", 993)
+    username = _get_account_string(account, "MAIL_IMAP_USERNAME", required=True)
+    password = _normalize_imap_password(
+        _get_account_string(account, "MAIL_IMAP_PASSWORD")
+        or _get_account_string(
+            account,
+            "MAIL_IMAP_APP_PASSWORD",
+            required=True,
+        )
+    )
+    if len(password) < MIN_IMAP_PASSWORD_LENGTH:
+        raise RuntimeError(
+            f"MAIL_IMAP_PASSWORD must be at least {MIN_IMAP_PASSWORD_LENGTH} characters."
+        )
+    use_ssl = _get_account_bool(account, "MAIL_IMAP_SSL", True)
+    timeout = _get_account_int(account, "MAIL_IMAP_TIMEOUT", 30)
 
     socket.setdefaulttimeout(timeout)
     client = imaplib.IMAP4_SSL(host, port) if use_ssl else imaplib.IMAP4(host, port)
@@ -261,8 +368,13 @@ def connect_imap():
     return client
 
 
-def list_mailboxes() -> list[str]:
-    raw = os.getenv("MAIL_IMAP_MAILBOXES", "").strip()
+def list_mailboxes(account: dict) -> list[str]:
+    value = _get_account_value(account, "MAIL_IMAP_MAILBOXES")
+    if isinstance(value, list):
+        items = [str(item).strip() for item in value if str(item or "").strip()]
+        return items or ["INBOX"]
+
+    raw = str(value).strip() if value is not None else os.getenv("MAIL_IMAP_MAILBOXES", "").strip()
     if not raw:
         return ["INBOX"]
     return [item.strip() for item in raw.split(",") if item.strip()]
@@ -377,83 +489,106 @@ def post_ingest(payload: dict) -> None:
     response.raise_for_status()
 
 
-def run_once() -> None:
+def run_once(config_payload: dict) -> None:
     vps_id = os.getenv("MAIL_AGENT_VPS_ID", "").strip() or socket.gethostname()
     provider = os.getenv("MAIL_PROVIDER", "").strip() or "imap"
     fetch_limit = max(1, _get_int_env("MAIL_AGENT_FETCH_LIMIT", 50))
-    state = load_state()
+    accounts = load_accounts(config_payload)
+    raw_state = load_state()
+    state_accounts = raw_state.get("accounts") if isinstance(raw_state.get("accounts"), dict) else {}
 
-    client = connect_imap()
-    try:
-        for mailbox in list_mailboxes():
-            mailbox_state = state.get(mailbox) or {}
-            last_uid = int(mailbox_state.get("last_uid") or 0)
-            run_started_at = datetime.utcnow().isoformat()
-            try:
-                messages, new_last_uid = fetch_mailbox_messages(
-                    client=client,
-                    mailbox=mailbox,
-                    last_uid=last_uid,
-                    fetch_limit=fetch_limit,
-                )
-                payload = {
-                    "vps_id": vps_id,
-                    "provider": provider,
-                    "mailbox": mailbox,
-                    "agent_version": AGENT_VERSION,
-                    "run_started_at": run_started_at,
-                    "run_finished_at": datetime.utcnow().isoformat(),
-                    "status": "ok",
-                    "cursor": str(new_last_uid),
-                    "messages": messages,
-                    "payload": {
-                        "last_uid_before": last_uid,
-                        "last_uid_after": new_last_uid,
-                    },
-                }
-                post_ingest(payload)
-                state[mailbox] = {"last_uid": new_last_uid}
-            except Exception as exc:
-                _log(f"Mailbox {mailbox} failed: {exc}")
-                try:
-                    post_ingest(
-                        {
-                            "vps_id": vps_id,
-                            "provider": provider,
-                            "mailbox": mailbox,
-                            "agent_version": AGENT_VERSION,
-                            "run_started_at": run_started_at,
-                            "run_finished_at": datetime.utcnow().isoformat(),
-                            "status": "error",
-                            "error_message": str(exc),
-                            "cursor": str(last_uid),
-                            "messages": [],
-                            "payload": {
-                                "last_uid_before": last_uid,
-                                "last_uid_after": last_uid,
-                            },
-                        }
-                    )
-                except Exception as report_exc:
-                    _log(f"Failed to report mailbox error for {mailbox}: {report_exc}")
-        save_state(state)
-    finally:
+    # Migrate legacy single-account state keyed directly by mailbox.
+    if not state_accounts and len(accounts) == 1:
+        legacy_state = {
+            key: value
+            for key, value in raw_state.items()
+            if key != "accounts" and isinstance(value, dict)
+        }
+        if legacy_state:
+            state_accounts[_normalize_account_email(accounts[0].get("MAIL_IMAP_USERNAME", ""))] = legacy_state
+
+    for account in accounts:
+        account_email = _normalize_account_email(_get_account_string(account, "MAIL_IMAP_USERNAME", required=True))
+        account_provider = _get_account_string(account, "MAIL_PROVIDER", default=provider) or provider
+        account_state = state_accounts.get(account_email)
+        if not isinstance(account_state, dict):
+            account_state = {}
+            state_accounts[account_email] = account_state
+
+        client = connect_imap(account)
         try:
-            client.logout()
-        except Exception:
-            pass
+            for mailbox in list_mailboxes(account):
+                mailbox_state = account_state.get(mailbox) or {}
+                last_uid = int(mailbox_state.get("last_uid") or 0)
+                run_started_at = datetime.utcnow().isoformat()
+                try:
+                    messages, new_last_uid = fetch_mailbox_messages(
+                        client=client,
+                        mailbox=mailbox,
+                        last_uid=last_uid,
+                        fetch_limit=fetch_limit,
+                    )
+                    payload = {
+                        "vps_id": vps_id,
+                        "account_email": account_email,
+                        "provider": account_provider,
+                        "mailbox": mailbox,
+                        "agent_version": AGENT_VERSION,
+                        "run_started_at": run_started_at,
+                        "run_finished_at": datetime.utcnow().isoformat(),
+                        "status": "ok",
+                        "cursor": str(new_last_uid),
+                        "messages": messages,
+                        "payload": {
+                            "last_uid_before": last_uid,
+                            "last_uid_after": new_last_uid,
+                        },
+                    }
+                    post_ingest(payload)
+                    account_state[mailbox] = {"last_uid": new_last_uid}
+                except Exception as exc:
+                    _log(f"Account {account_email} mailbox {mailbox} failed: {exc}")
+                    try:
+                        post_ingest(
+                            {
+                                "vps_id": vps_id,
+                                "account_email": account_email,
+                                "provider": account_provider,
+                                "mailbox": mailbox,
+                                "agent_version": AGENT_VERSION,
+                                "run_started_at": run_started_at,
+                                "run_finished_at": datetime.utcnow().isoformat(),
+                                "status": "error",
+                                "error_message": str(exc),
+                                "cursor": str(last_uid),
+                                "messages": [],
+                                "payload": {
+                                    "last_uid_before": last_uid,
+                                    "last_uid_after": last_uid,
+                                },
+                            }
+                        )
+                    except Exception as report_exc:
+                        _log(f"Failed to report mailbox error for {account_email}/{mailbox}: {report_exc}")
+        finally:
+            try:
+                client.logout()
+            except Exception:
+                pass
+
+    save_state({"accounts": state_accounts})
 
     _log("Cycle finished.")
 
 
 def main() -> int:
-    load_embedded_config()
+    config_payload = load_config_file()
     interval_seconds = max(60, _get_int_env("MAIL_AGENT_INTERVAL_SECONDS", 3600))
     _log(f"Mail agent started. Run interval: {interval_seconds} seconds.")
 
     while True:
         try:
-            run_once()
+            run_once(config_payload)
         except KeyboardInterrupt:
             _log("Stopped by user.")
             return 0

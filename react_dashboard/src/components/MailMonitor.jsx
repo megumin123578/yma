@@ -5,6 +5,7 @@ import {
   Button,
   Chip,
   Dialog,
+  DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
@@ -31,12 +32,17 @@ import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import StorageRoundedIcon from "@mui/icons-material/StorageRounded";
 import DnsRoundedIcon from "@mui/icons-material/DnsRounded";
 import ErrorOutlineRoundedIcon from "@mui/icons-material/ErrorOutlineRounded";
+import EastRoundedIcon from "@mui/icons-material/EastRounded";
 
 import api from "../services/api";
 
 
 const GMAIL_APP_PASSWORD_URL =
   "https://myaccount.google.com/apppasswords?continue=https://myaccount.google.com/security?gar%3DWzI4MV0%26hl%3Den%26authuser%3D0%26rapt%3DAEjHL4N2ZCtAmejTdU1B_yLRBSQnTW3O6JdoCcy_hZd5VFQzhI2gY0vZI-IjGq30JdDYz57LMBB5uwe6ZCrFNgpcD7rGfEHV3CNkKI8o94iA6RkjdDQqOTc%26utm_source%3DOGB%26utm_medium%3Dact&pli=1&rapt=AEjHL4Oinn7oeWvsu4jswaDQ7qheJeXNrGod1MqSnOUr7oddM7BsZhOvfUP0GgK7cWjdMMO-Pdf7HXGruTKrMoeQRRX6Dqv2boAljUWm9XPLJBm_cy9Ly8k";
+const MIN_IMAP_PASSWORD_LENGTH = 16;
+
+
+const normalizeImapPassword = (value) => String(value || "").replace(/\s+/g, "");
 
 
 const formatDateTime = (value) => {
@@ -128,6 +134,7 @@ const MailMonitor = () => {
   const [messages, setMessages] = useState({ items: [], total: 0 });
   const [filters, setFilters] = useState({
     vpsId: "",
+    accountEmail: "",
     mailbox: "",
     status: "",
     search: "",
@@ -136,8 +143,7 @@ const MailMonitor = () => {
   const [autoRefresh] = useState(true);
   const [agentForm, setAgentForm] = useState({
     vpsName: "",
-    username: "",
-    password: "",
+    accounts: [{ email: "", password: "" }],
   });
   const [agentDownload, setAgentDownload] = useState({
     loading: false,
@@ -149,6 +155,10 @@ const MailMonitor = () => {
   const [selectedMessageDetail, setSelectedMessageDetail] = useState(null);
   const [selectedMessageLoading, setSelectedMessageLoading] = useState(false);
   const [selectedMessageError, setSelectedMessageError] = useState("");
+  const [machineDeleteTarget, setMachineDeleteTarget] = useState(null);
+  const [machineDeleteLoading, setMachineDeleteLoading] = useState(false);
+  const [machineDeleteError, setMachineDeleteError] = useState("");
+  const [machineDeleteSuccess, setMachineDeleteSuccess] = useState("");
 
   const overviewItems = useMemo(
     () =>
@@ -168,7 +178,19 @@ const MailMonitor = () => {
       ...new Set(
         overviewItems
           .filter((item) => !filters.vpsId || item.vps_id === filters.vpsId)
+          .filter((item) => !filters.accountEmail || item.account_email === filters.accountEmail)
           .map((item) => item.mailbox)
+          .filter(Boolean)
+      ),
+    ];
+  }, [filters.accountEmail, filters.vpsId, overviewItems]);
+
+  const accountOptions = useMemo(() => {
+    return [
+      ...new Set(
+        overviewItems
+          .filter((item) => !filters.vpsId || item.vps_id === filters.vpsId)
+          .map((item) => item.account_email)
           .filter(Boolean)
       ),
     ];
@@ -190,6 +212,7 @@ const MailMonitor = () => {
         api.get("/api/mail/messages", {
           params: {
             vps_id: filters.vpsId || undefined,
+            account_email: filters.accountEmail || undefined,
             mailbox: filters.mailbox || undefined,
             status: filters.status || undefined,
             search: filters.search || undefined,
@@ -202,7 +225,7 @@ const MailMonitor = () => {
     } catch (err) {
       setError(err?.response?.data?.detail || err?.message || "Failed to load email manager data.");
     }
-  }, [filters.mailbox, filters.search, filters.status, filters.vpsId]);
+  }, [filters.accountEmail, filters.mailbox, filters.search, filters.status, filters.vpsId]);
 
   useEffect(() => {
     loadData();
@@ -216,14 +239,85 @@ const MailMonitor = () => {
     return () => window.clearInterval(timer);
   }, [autoRefresh, loadData]);
 
+  const handleAgentAccountChange = useCallback((index, field, value) => {
+    setAgentForm((current) => ({
+      ...current,
+      accounts: current.accounts.map((account, accountIndex) =>
+        accountIndex === index
+          ? {
+              ...account,
+              [field]: value,
+            }
+          : account
+      ),
+    }));
+  }, []);
+
+  const handleAddAgentAccount = useCallback(() => {
+    setAgentForm((current) => ({
+      ...current,
+      accounts: [...current.accounts, { email: "", password: "" }],
+    }));
+  }, []);
+
+  const handleRemoveAgentAccount = useCallback((index) => {
+    setAgentForm((current) => {
+      if (current.accounts.length <= 1) {
+        return current;
+      }
+      return {
+        ...current,
+        accounts: current.accounts.filter((_, accountIndex) => accountIndex !== index),
+      };
+    });
+  }, []);
+
   const handleAgentDownload = useCallback(async () => {
     const vpsName = agentForm.vpsName.trim();
-    const username = agentForm.username.trim();
-    const password = agentForm.password;
-    if (!vpsName || !username || !password) {
+    const normalizedAccounts = agentForm.accounts
+      .map((account) => ({
+        email: String(account?.email || "").trim(),
+        password: normalizeImapPassword(account?.password),
+      }))
+      .filter((account) => account.email || account.password);
+
+    if (!vpsName) {
       setAgentDownload({
         loading: false,
-        error: "Name, username, and password are required.",
+        error: "Name is required.",
+        success: "",
+      });
+      return;
+    }
+
+    if (normalizedAccounts.length === 0) {
+      setAgentDownload({
+        loading: false,
+        error: "At least one email account is required.",
+        success: "",
+      });
+      return;
+    }
+
+    const invalidIndex = normalizedAccounts.findIndex(
+      (account) => !account.email || !account.password
+    );
+    if (invalidIndex >= 0) {
+      setAgentDownload({
+        loading: false,
+        error: `Email and IMAP password are required for account ${invalidIndex + 1}.`,
+        success: "",
+      });
+      return;
+    }
+
+    const shortPasswordIndex = normalizedAccounts.findIndex(
+      (account) => account.password.length < MIN_IMAP_PASSWORD_LENGTH
+    );
+    if (shortPasswordIndex >= 0) {
+      setAgentDownload({
+        loading: false,
+        error: `IMAP password for account ${shortPasswordIndex + 1} must be at least ${MIN_IMAP_PASSWORD_LENGTH} characters.`,
         success: "",
       });
       return;
@@ -240,8 +334,7 @@ const MailMonitor = () => {
         "/api/mail/agent-template",
         {
           vps_id: vpsName,
-          username,
-          password,
+          accounts: normalizedAccounts,
         },
         {
           responseType: "blob",
@@ -267,7 +360,10 @@ const MailMonitor = () => {
 
       setAgentForm((current) => ({
         ...current,
-        password: "",
+        accounts: current.accounts.map((account) => ({
+          ...account,
+          password: "",
+        })),
       }));
       setAgentDownload({
         loading: false,
@@ -281,7 +377,7 @@ const MailMonitor = () => {
         success: "",
       });
     }
-  }, [agentForm.password, agentForm.username, agentForm.vpsName]);
+  }, [agentForm.accounts, agentForm.vpsName]);
 
   const summary = overview?.summary || {};
   const filterPanelBg =
@@ -356,6 +452,40 @@ const MailMonitor = () => {
     "";
   const selectedMessageHtml =
     selectedMessagePayload.html_body || selectedMessagePayload.htmlBody || "";
+  const selectedMessageHtmlDoc = useMemo(() => {
+    if (!selectedMessageHtml) return "";
+    return `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <base target="_blank" />
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: ${theme.palette.mode === "dark" ? "#0f172a" : "#ffffff"};
+        color: ${theme.palette.mode === "dark" ? "#e5e7eb" : "#0f172a"};
+        font-family: Arial, sans-serif;
+      }
+      body {
+        padding: 16px;
+        overflow-wrap: anywhere;
+      }
+      img, table {
+        max-width: 100%;
+      }
+      pre {
+        white-space: pre-wrap;
+      }
+      a {
+        color: ${theme.palette.mode === "dark" ? "#93c5fd" : "#2563eb"};
+      }
+    </style>
+  </head>
+  <body>${selectedMessageHtml}</body>
+</html>`;
+  }, [selectedMessageHtml, theme.palette.mode]);
 
   const handleOpenMessage = useCallback(async (messageId) => {
     setSelectedMessageId(messageId);
@@ -380,6 +510,47 @@ const MailMonitor = () => {
     setSelectedMessageError("");
     setSelectedMessageLoading(false);
   }, []);
+
+  const handleAskDeleteMachine = useCallback((vpsId) => {
+    setMachineDeleteError("");
+    setMachineDeleteTarget(vpsId);
+  }, []);
+
+  const handleCloseDeleteMachine = useCallback(() => {
+    if (machineDeleteLoading) return;
+    setMachineDeleteTarget(null);
+    setMachineDeleteError("");
+  }, [machineDeleteLoading]);
+
+  const handleDeleteMachine = useCallback(async () => {
+    if (!machineDeleteTarget) return;
+    setMachineDeleteLoading(true);
+    setMachineDeleteError("");
+    setMachineDeleteSuccess("");
+    try {
+      const response = await api.delete(
+        `/api/mail/machines/${encodeURIComponent(machineDeleteTarget)}`
+      );
+      const deletedMessages = response?.data?.deleted_messages ?? 0;
+      const deletedRuns = response?.data?.deleted_runs ?? 0;
+      setMachineDeleteSuccess(
+        `Deleted ${machineDeleteTarget} (${formatNumber(deletedMessages)} messages, ${formatNumber(deletedRuns)} runs).`
+      );
+      setMachineDeleteTarget(null);
+      setFilters((current) =>
+        current.vpsId === machineDeleteTarget
+          ? { ...current, vpsId: "", accountEmail: "", mailbox: "" }
+          : current
+      );
+      await loadData();
+    } catch (err) {
+      setMachineDeleteError(
+        err?.response?.data?.detail || err?.message || "Failed to delete machine."
+      );
+    } finally {
+      setMachineDeleteLoading(false);
+    }
+  }, [loadData, machineDeleteTarget]);
 
   return (
     <Box>
@@ -472,8 +643,8 @@ const MailMonitor = () => {
           />
           <StatCard
             icon={<MailOutlineRoundedIcon />}
-            label="Mailboxes"
-            value={formatNumber(summary.mailbox_count)}
+            label="Accounts"
+            value={formatNumber(summary.account_count)}
             accent="#a78bfa"
           />
           <StatCard
@@ -520,6 +691,12 @@ const MailMonitor = () => {
                     setFilters((current) => ({
                       ...current,
                       vpsId: event.target.value,
+                      accountEmail:
+                        current.accountEmail &&
+                        !accountOptions.includes(current.accountEmail) &&
+                        event.target.value !== current.vpsId
+                          ? ""
+                          : current.accountEmail,
                       mailbox:
                         current.mailbox &&
                         !mailboxOptions.includes(current.mailbox) &&
@@ -531,6 +708,36 @@ const MailMonitor = () => {
                 >
                   <MenuItem value="">All Machines</MenuItem>
                   {vpsOptions.map((value) => (
+                    <MenuItem key={value} value={value}>
+                      {value}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <FormControl size="small" sx={{ minWidth: { xs: "100%", md: 240 }, flex: 1 }}>
+                <InputLabel>Account</InputLabel>
+                <Select
+                  label="Account"
+                  value={filters.accountEmail}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      accountEmail: event.target.value,
+                      mailbox:
+                        current.mailbox &&
+                        !overviewItems
+                          .filter((item) => !current.vpsId || item.vps_id === current.vpsId)
+                          .filter((item) => !event.target.value || item.account_email === event.target.value)
+                          .map((item) => item.mailbox)
+                          .includes(current.mailbox)
+                          ? ""
+                          : current.mailbox,
+                    }))
+                  }
+                >
+                  <MenuItem value="">All Accounts</MenuItem>
+                  {accountOptions.map((value) => (
                     <MenuItem key={value} value={value}>
                       {value}
                     </MenuItem>
@@ -592,6 +799,8 @@ const MailMonitor = () => {
             <Table size="small">
               <TableHead sx={tableHeadSx}>
                 <TableRow>
+                  <TableCell>Machine</TableCell>
+                  <TableCell>Account</TableCell>
                   <TableCell>Mailbox</TableCell>
                   <TableCell>From</TableCell>
                   <TableCell>Subject</TableCell>
@@ -603,7 +812,7 @@ const MailMonitor = () => {
               <TableBody>
                 {messageItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} align="center">
+                    <TableCell colSpan={8} align="center">
                       No messages found for the current filters.
                     </TableCell>
                   </TableRow>
@@ -615,11 +824,10 @@ const MailMonitor = () => {
                       onClick={() => handleOpenMessage(item.id)}
                       sx={{ cursor: "pointer" }}
                     >
+                      <TableCell>{item.vps_id || "-"}</TableCell>
+                      <TableCell>{item.account_email || "-"}</TableCell>
                       <TableCell>
-                        <Typography fontWeight={700}>{item.vps_id || "-"}</Typography>
-                        <Typography variant="body2" sx={{ opacity: 0.72 }}>
-                          {item.mailbox || "-"}
-                        </Typography>
+                        {item.mailbox || "-"}
                       </TableCell>
                       <TableCell>
                         <Typography>{item.from_name || item.from_email || "-"}</Typography>
@@ -671,6 +879,12 @@ const MailMonitor = () => {
                   : "0 12px 24px rgba(148,163,184,0.18)",
             }}
           >
+            {machineDeleteSuccess ? (
+              <Alert severity="success" sx={{ mb: 2 }}>
+                {machineDeleteSuccess}
+              </Alert>
+            ) : null}
+
             <Typography variant="h6" fontWeight={800} sx={{ mb: 2 }}>
               Add Mail
             </Typography>
@@ -679,7 +893,7 @@ const MailMonitor = () => {
                   Gmail setup
                 </Typography>
                 <Typography variant="body2" sx={{ mt: 0.5 }}>
-                  Mail: enter the full Gmail address you want this machine to check, for example
+                  Mail: enter one or more full Gmail addresses you want this machine to check, for example
                   {" "}
                   <strong>yourmail@gmail.com</strong>.
                 </Typography>
@@ -704,7 +918,9 @@ const MailMonitor = () => {
                   </Link>
                 </Typography>
                 <Typography variant="body2">2. Sign in and create a new App Password for Mail.</Typography>
-                <Typography variant="body2">3. Paste that generated password into the IMAP Password field below.</Typography>
+                <Typography variant="body2">
+                  3. Paste that generated 16-character password into the IMAP Password field for each email below.
+                </Typography>
               </Alert>
 
               <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} mt={2}>
@@ -712,7 +928,6 @@ const MailMonitor = () => {
                   fullWidth
                   size="small"
                   label="Name"
-                  placeholder="machine-hcm-01"
                   value={agentForm.vpsName}
                   onChange={(event) =>
                     setAgentForm((current) => ({
@@ -721,45 +936,87 @@ const MailMonitor = () => {
                     }))
                   }
                 />
+              </Stack>
 
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Email"
-                  placeholder="Email"
-                  value={agentForm.username}
-                  onChange={(event) =>
-                    setAgentForm((current) => ({
-                      ...current,
-                      username: event.target.value,
-                    }))
-                  }
-                />
+              <Stack spacing={1.5} mt={2}>
+                {agentForm.accounts.map((account, index) => (
+                  <Stack key={`agent-account-${index}`} direction={{ xs: "column", md: "row" }} spacing={1.5}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label={`Email ${index + 1}`}
+                      placeholder="Email"
+                      value={account.email}
+                      onChange={(event) => handleAgentAccountChange(index, "email", event.target.value)}
+                    />
 
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="IMAP Password"
-                  type="password"
-                  value={agentForm.password}
-                  onChange={(event) =>
-                    setAgentForm((current) => ({
-                      ...current,
-                      password: event.target.value,
-                    }))
-                  }
-                />
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label={`IMAP Password ${index + 1}`}
+                      type="password"
+                      value={account.password}
+                      onChange={(event) => handleAgentAccountChange(index, "password", event.target.value)}
+                      error={
+                        account.password.length > 0 &&
+                        normalizeImapPassword(account.password).length < MIN_IMAP_PASSWORD_LENGTH
+                      }
+                      inputProps={{ minLength: MIN_IMAP_PASSWORD_LENGTH }}
+                      helperText={
+                        account.password.length > 0 &&
+                        normalizeImapPassword(account.password).length < MIN_IMAP_PASSWORD_LENGTH
+                          ? `Minimum ${MIN_IMAP_PASSWORD_LENGTH} characters`
+                          : ""
+                      }
+                    />
+
+                    <Button
+                      variant="text"
+                      color="error"
+                      disabled={agentForm.accounts.length <= 1}
+                      onClick={() => handleRemoveAgentAccount(index)}
+                      sx={{ minWidth: { md: 120 }, textTransform: "none", fontWeight: 700 }}
+                    >
+                      Remove
+                    </Button>
+                  </Stack>
+                ))}
+              </Stack>
+
+              <Box
+                sx={{
+                  mt: 2,
+                  display: "flex",
+                  gap: 1.5,
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                }}
+              >
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  onClick={handleAddAgentAccount}
+                  sx={{ textTransform: "none", fontWeight: 700 }}
+                >
+                  Add Email
+                </Button>
 
                 <Button
                   variant="contained"
                   color="success"
                   onClick={handleAgentDownload}
                   disabled={agentDownload.loading}
-                  sx={{ minWidth: { md: 220 }, textTransform: "none", fontWeight: 700 }}
+                  sx={{
+                    minWidth: { md: 220 },
+                    ml: { xs: 0, md: "auto" },
+                    textTransform: "none",
+                    fontWeight: 700,
+                  }}
                 >
                   {agentDownload.loading ? "Preparing..." : "Download script"}
                 </Button>
-              </Stack>
+              </Box>
 
               {agentDownload.error ? (
                 <Alert severity="error" sx={{ mt: 2 }}>
@@ -783,6 +1040,7 @@ const MailMonitor = () => {
                 <TableHead sx={tableHeadSx}>
                   <TableRow>
                     <TableCell>Machine</TableCell>
+                    <TableCell>Account</TableCell>
                     <TableCell>Mailbox</TableCell>
                     <TableCell align="right">Messages</TableCell>
                     <TableCell align="right">Unread</TableCell>
@@ -790,19 +1048,21 @@ const MailMonitor = () => {
                     <TableCell align="right">Inserted</TableCell>
                     <TableCell align="right">Updated</TableCell>
                     <TableCell>Last Run</TableCell>
+                    <TableCell align="center">Action</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {overviewItems.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} align="center">
+                      <TableCell colSpan={10} align="center">
                         No mailbox data yet.
                       </TableCell>
                     </TableRow>
                   ) : (
                     overviewItems.map((item, index) => (
-                      <TableRow key={`${item.vps_id || "vps"}-${item.mailbox || "mailbox"}-${index}`} hover>
+                      <TableRow key={`${item.vps_id || "machine"}-${item.account_email || "account"}-${item.mailbox || "mailbox"}-${index}`} hover>
                         <TableCell>{item.vps_id || "-"}</TableCell>
+                        <TableCell>{item.account_email || "-"}</TableCell>
                         <TableCell>{item.mailbox || "-"}</TableCell>
                         <TableCell align="right">{formatNumber(item.total_messages)}</TableCell>
                         <TableCell align="right">{formatNumber(item.unread_messages)}</TableCell>
@@ -821,6 +1081,22 @@ const MailMonitor = () => {
                           {formatNumber(item.last_run_updated_count)}
                         </TableCell>
                         <TableCell>{formatDateTime(item.last_run_finished_at)}</TableCell>
+                        <TableCell align="center">
+                          <Button
+                            size="small"
+                            color="error"
+                            variant="text"
+                            onClick={() => handleAskDeleteMachine(item.vps_id)}
+                            sx={{
+                              textTransform: "none",
+                              fontWeight: 700,
+                              minWidth: 0,
+                              px: 1,
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     ))
                   )}
@@ -832,6 +1108,69 @@ const MailMonitor = () => {
       )}
 
       <Dialog
+        open={Boolean(machineDeleteTarget)}
+        onClose={handleCloseDeleteMachine}
+        fullWidth
+        maxWidth="xs"
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            bgcolor: isDark ? "#1e293b" : "#ffffff",
+            backgroundImage: "none",
+            boxShadow: isDark ? "0 20px 50px rgba(0,0,0,0.5)" : "0 10px 30px rgba(0,0,0,0.1)",
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, pt: 3 }}>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" sx={{ color: isDark ? "#94a3b8" : "text.secondary" }}>
+            This will delete all messages and sync runs for{" "}
+            <Box component="span" sx={{ color: isDark ? "#f8fafc" : "#1e293b", fontWeight: 700 }}>
+              {machineDeleteTarget || "-"}
+            </Box>
+            . This action cannot be undone.
+          </Typography>
+          {machineDeleteError ? (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {machineDeleteError}
+            </Alert>
+          ) : null}
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 1 }}>
+          <Button
+            onClick={handleCloseDeleteMachine}
+            disabled={machineDeleteLoading}
+            sx={{
+              color: isDark ? "#94a3b8" : "text.secondary",
+              textTransform: "none",
+              fontWeight: 700,
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDeleteMachine}
+            disabled={machineDeleteLoading}
+            sx={{
+              borderRadius: 2,
+              textTransform: "none",
+              fontWeight: 700,
+              px: 3,
+              boxShadow: `0 4px 12px ${alpha(theme.palette.error.main, 0.3)}`,
+              "&:hover": {
+                bgcolor: theme.palette.error.main,
+                boxShadow: `0 6px 16px ${alpha(theme.palette.error.main, 0.4)}`,
+              },
+            }}
+          >
+            {machineDeleteLoading ? "Deleting..." : "Delete"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
         open={Boolean(selectedMessageId)}
         onClose={handleCloseMessage}
         fullWidth
@@ -841,13 +1180,41 @@ const MailMonitor = () => {
           <Typography variant="h6" fontWeight={800}>
             {selectedMessageDetail?.subject || "Email content"}
           </Typography>
-          <Typography variant="body2" sx={{ mt: 0.5, color: "text.secondary" }}>
-            {selectedMessageDetail?.from_name || selectedMessageDetail?.from_email || "-"}
-            {" -> "}
-            {selectedMessageDetail?.to_email || selectedMessageDetail?.mailbox || "-"}
-            {" • "}
-            {formatDateTime(selectedMessageDetail?.received_at)}
-          </Typography>
+          <Box
+            sx={{
+              mt: 0.5,
+              display: "flex",
+              alignItems: "center",
+              gap: 0.75,
+              flexWrap: "wrap",
+              color: "text.secondary",
+            }}
+          >
+            <Typography variant="body2">
+              {selectedMessageDetail?.from_name || selectedMessageDetail?.from_email || "-"}
+            </Typography>
+            <EastRoundedIcon sx={{ fontSize: 16, opacity: 0.8 }} />
+            <Typography variant="body2">
+              {selectedMessageDetail?.to_email || selectedMessageDetail?.mailbox || "-"}
+            </Typography>
+            <Box
+              component="span"
+              sx={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 18,
+                lineHeight: 1,
+                opacity: 0.72,
+                transform: "translateY(-1px)",
+              }}
+            >
+              •
+            </Box>
+            <Typography variant="body2">
+              {formatDateTime(selectedMessageDetail?.received_at)}
+            </Typography>
+          </Box>
         </DialogTitle>
         <DialogContent dividers sx={{ p: 0 }}>
           {selectedMessageLoading ? (
@@ -861,33 +1228,46 @@ const MailMonitor = () => {
           ) : (
             <Stack spacing={2} sx={{ p: 2.5 }}>
               <Box>
-                <Typography variant="body2" fontWeight={700} sx={{ mb: 0.75 }}>
-                  Full content
-                </Typography>
                 <Paper
                   variant="outlined"
                   sx={{
                     p: 1.5,
                     borderRadius: 2,
+                    overflow: "hidden",
                     bgcolor:
                       theme.palette.mode === "dark"
                         ? "rgba(15,23,42,0.78)"
                         : "rgba(248,250,252,0.95)",
                   }}
                 >
-                  <Typography
-                    component="pre"
-                    sx={{
-                      m: 0,
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                      fontFamily: "inherit",
-                      fontSize: "0.92rem",
-                      lineHeight: 1.65,
-                    }}
-                  >
-                    {selectedMessageBody || "This email does not have a stored full body yet."}
-                  </Typography>
+                  {selectedMessageHtml ? (
+                    <Box
+                      component="iframe"
+                      title={`email-preview-${selectedMessageDetail?.id || "message"}`}
+                      srcDoc={selectedMessageHtmlDoc}
+                      sandbox="allow-popups allow-popups-to-escape-sandbox"
+                      sx={{
+                        width: "100%",
+                        minHeight: 460,
+                        border: 0,
+                        bgcolor: theme.palette.mode === "dark" ? "#0f172a" : "#ffffff",
+                      }}
+                    />
+                  ) : (
+                    <Typography
+                      component="pre"
+                      sx={{
+                        m: 0,
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                        fontFamily: "inherit",
+                        fontSize: "0.92rem",
+                        lineHeight: 1.65,
+                      }}
+                    >
+                      {selectedMessageBody || "This email does not have a stored full body yet."}
+                    </Typography>
+                  )}
                 </Paper>
               </Box>
 
@@ -895,41 +1275,6 @@ const MailMonitor = () => {
                 <Alert severity="info">
                   This message was ingested before full-body capture was enabled. Only preview text is available.
                 </Alert>
-              ) : null}
-
-              {selectedMessageHtml ? (
-                <Box>
-                  <Typography variant="body2" fontWeight={700} sx={{ mb: 0.75 }}>
-                    HTML source
-                  </Typography>
-                  <Paper
-                    variant="outlined"
-                    sx={{
-                      p: 1.5,
-                      borderRadius: 2,
-                      maxHeight: 220,
-                      overflow: "auto",
-                      bgcolor:
-                        theme.palette.mode === "dark"
-                          ? "rgba(15,23,42,0.62)"
-                          : "rgba(248,250,252,0.88)",
-                    }}
-                  >
-                    <Typography
-                      component="pre"
-                      sx={{
-                        m: 0,
-                        whiteSpace: "pre-wrap",
-                        wordBreak: "break-word",
-                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                        fontSize: "0.78rem",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      {selectedMessageHtml}
-                    </Typography>
-                  </Paper>
-                </Box>
               ) : null}
             </Stack>
           )}

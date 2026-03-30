@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from python_backend.api.auth.auth_utils import get_current_user
 from python_backend.module_mail import (
+    delete_mail_machine,
     get_mail_message_detail,
     get_mail_overview,
     list_mail_messages,
@@ -22,9 +23,10 @@ from python_backend.module_mail import (
 
 router = APIRouter(prefix="/api/mail", tags=["mail"])
 AGENT_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "main_agent.py"
-AGENT_CONFIG_PATTERN = re.compile(r'(AGENT_CONFIG_JSON\s*=\s*r?""")\n(.*?)\n("""\s*)', re.DOTALL)
+AGENT_CONFIG_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "main_agent.config.template.json"
 PYTHON_INSTALLER_URL = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
 AGENT_REQUIREMENTS = "requests>=2.31.0,<3\n"
+MIN_IMAP_PASSWORD_LENGTH = 16
 
 
 def _allowed_ingest_tokens() -> set[str]:
@@ -79,6 +81,7 @@ class MailMessageIn(BaseModel):
 
 class MailIngestRequest(BaseModel):
     vps_id: str
+    account_email: Optional[str] = None
     mailbox: str = "INBOX"
     provider: str = "imap"
     agent_version: Optional[str] = None
@@ -91,16 +94,20 @@ class MailIngestRequest(BaseModel):
     messages: list[MailMessageIn] = Field(default_factory=list)
 
 
+class MailAgentAccountRequest(BaseModel):
+    email: str = Field(min_length=1)
+    password: str = Field(min_length=1)
+
+
 class MailAgentTemplateRequest(BaseModel):
     vps_id: str = Field(min_length=1)
-    username: str = Field(min_length=1)
-    password: str = Field(min_length=1)
+    accounts: list[MailAgentAccountRequest] = Field(default_factory=list)
 
 
 def _normalize_agent_vps_id(value: str) -> str:
     normalized = re.sub(r"\s+", " ", str(value or "").strip())
     if not normalized:
-        raise HTTPException(status_code=400, detail="VPS name is required.")
+        raise HTTPException(status_code=400, detail="Machine name is required.")
     return normalized
 
 
@@ -110,36 +117,60 @@ def _safe_filename_fragment(value: str) -> str:
     return fragment or "mail-agent"
 
 
-def _render_agent_template(*, vps_id: str, username: str, password: str) -> tuple[str, str]:
+def _read_agent_template() -> str:
     try:
-        template_source = AGENT_TEMPLATE_PATH.read_text(encoding="utf-8")
+        return AGENT_TEMPLATE_PATH.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail="Agent template file is missing.") from exc
 
-    match = AGENT_CONFIG_PATTERN.search(template_source)
-    if not match:
-        raise HTTPException(status_code=500, detail="Cannot locate AGENT_CONFIG_JSON in template.")
 
+def _normalize_imap_password(value: str) -> str:
+    return re.sub(r"\s+", "", str(value or ""))
+
+
+def _normalize_agent_accounts(items: list[MailAgentAccountRequest]) -> list[dict[str, str]]:
+    normalized_accounts = []
+    for index, item in enumerate(items, start=1):
+        email = str(item.email or "").strip()
+        password = _normalize_imap_password(item.password)
+        if not email:
+            raise HTTPException(status_code=400, detail=f"Email {index} is required.")
+        if not password:
+            raise HTTPException(status_code=400, detail=f"IMAP password {index} is required.")
+        if len(password) < MIN_IMAP_PASSWORD_LENGTH:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"IMAP password {index} must be at least "
+                    f"{MIN_IMAP_PASSWORD_LENGTH} characters."
+                ),
+            )
+        normalized_accounts.append(
+            {
+                "MAIL_IMAP_USERNAME": email,
+                "MAIL_IMAP_PASSWORD": password,
+            }
+        )
+    if not normalized_accounts:
+        raise HTTPException(status_code=400, detail="At least one email account is required.")
+    return normalized_accounts
+
+
+def _render_agent_config(*, vps_id: str, accounts: list[MailAgentAccountRequest]) -> tuple[str, str]:
     try:
-        agent_config = json.loads(match.group(2))
+        template_payload = json.loads(AGENT_CONFIG_TEMPLATE_PATH.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=500, detail="Agent config template is missing.") from exc
     except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=500, detail="Agent template JSON is invalid.") from exc
+        raise HTTPException(status_code=500, detail="Agent config template JSON is invalid.") from exc
 
-    if not isinstance(agent_config, dict):
-        raise HTTPException(status_code=500, detail="Agent template JSON must be an object.")
+    if not isinstance(template_payload, dict):
+        raise HTTPException(status_code=500, detail="Agent config template must be a JSON object.")
 
     normalized_vps_id = _normalize_agent_vps_id(vps_id)
-    agent_config["MAIL_AGENT_VPS_ID"] = normalized_vps_id
-    agent_config["MAIL_IMAP_USERNAME"] = username.strip()
-    agent_config["MAIL_IMAP_PASSWORD"] = password
-
-    rendered_config = json.dumps(agent_config, ensure_ascii=False, indent=2)
-    rendered_source = (
-        template_source[: match.start()]
-        + f"{match.group(1)}\n{rendered_config}\n{match.group(3)}"
-        + template_source[match.end() :]
-    )
-    return rendered_source, normalized_vps_id
+    template_payload["MAIL_AGENT_VPS_ID"] = normalized_vps_id
+    template_payload["MAIL_ACCOUNTS"] = _normalize_agent_accounts(accounts)
+    return json.dumps(template_payload, ensure_ascii=False, indent=2) + "\n", normalized_vps_id
 
 
 def _build_agent_runner_script() -> str:
@@ -247,9 +278,13 @@ $venvDir = Join-Path $rootDir ".venv"
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 $requirementsFile = Join-Path $rootDir "requirements.txt"
 $agentFile = Join-Path $rootDir "main_agent.py"
+$configFile = Join-Path $rootDir "config.json"
 
 if (-not (Test-Path $agentFile)) {
   throw "main_agent.py was not found."
+}
+if (-not (Test-Path $configFile)) {
+  throw "config.json was not found."
 }
 if (-not (Test-Path $requirementsFile)) {
   throw "requirements.txt was not found."
@@ -298,20 +333,23 @@ def _build_agent_bundle_readme(vps_id: str) -> str:
         "\n"
         "1. Extract this zip into its own folder.\n"
         "2. Double-click run_agent.bat.\n"
-        "3. The bootstrap script will install Python locally if needed,\n"
-        "   create .venv, install dependencies, and run main_agent.py once.\n"
+        "3. config.json stores the mail accounts, token, and interval settings.\n"
+        "4. The bootstrap script will install Python locally if needed,\n"
+        "   create .venv, install dependencies, and start main_agent.py.\n"
         "\n"
         "Notes:\n"
         "- Internet access is required the first time if Python or dependencies are missing.\n"
-        "- main_agent.py is still a one-shot sync. Run the batch file again to sync later.\n"
-        "- For periodic sync, schedule run_agent.bat in Windows Task Scheduler.\n"
+        "- main_agent.py keeps running and syncs every hour by default.\n"
+        "- Leave the terminal window open while the agent is running.\n"
+        "- Edit config.json later if you need to change the mail accounts or timing.\n"
     )
 
 
-def _build_agent_bundle(*, agent_source: str, vps_id: str) -> bytes:
+def _build_agent_bundle(*, agent_source: str, config_source: str, vps_id: str) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("main_agent.py", agent_source)
+        archive.writestr("config.json", config_source)
         archive.writestr("requirements.txt", AGENT_REQUIREMENTS)
         archive.writestr("install_and_run.ps1", _build_agent_bootstrap_script())
         archive.writestr("run_agent.bat", _build_agent_runner_script())
@@ -336,12 +374,12 @@ def download_mail_agent_template(
     current_user=Depends(get_current_user),
 ):
     del current_user
-    source, vps_id = _render_agent_template(
+    agent_source = _read_agent_template()
+    config_source, vps_id = _render_agent_config(
         vps_id=payload.vps_id,
-        username=payload.username,
-        password=payload.password,
+        accounts=payload.accounts,
     )
-    bundle = _build_agent_bundle(agent_source=source, vps_id=vps_id)
+    bundle = _build_agent_bundle(agent_source=agent_source, config_source=config_source, vps_id=vps_id)
     filename = f"mail_agent_{_safe_filename_fragment(vps_id)}.zip"
     return Response(
         content=bundle,
@@ -365,6 +403,7 @@ def mail_overview(
 @router.get("/messages")
 def mail_messages(
     vps_id: Optional[str] = Query(default=None),
+    account_email: Optional[str] = Query(default=None),
     mailbox: Optional[str] = Query(default=None),
     status_value: Optional[str] = Query(default=None, alias="status"),
     search: Optional[str] = Query(default=None),
@@ -375,6 +414,7 @@ def mail_messages(
     del current_user
     return list_mail_messages(
         vps_id=vps_id,
+        account_email=account_email,
         mailbox=mailbox,
         status=status_value,
         search=search,
@@ -398,6 +438,7 @@ def mail_message_detail(
 @router.get("/runs")
 def mail_runs(
     vps_id: Optional[str] = Query(default=None),
+    account_email: Optional[str] = Query(default=None),
     mailbox: Optional[str] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     current_user=Depends(get_current_user),
@@ -405,6 +446,19 @@ def mail_runs(
     del current_user
     return list_mail_runs(
         vps_id=vps_id,
+        account_email=account_email,
         mailbox=mailbox,
         limit=limit,
     )
+
+
+@router.delete("/machines/{vps_id}")
+def mail_delete_machine(
+    vps_id: str,
+    current_user=Depends(get_current_user),
+):
+    del current_user
+    try:
+        return delete_mail_machine(vps_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
