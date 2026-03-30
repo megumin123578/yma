@@ -4,6 +4,7 @@ import json
 import os
 import re
 import socket
+import time
 from datetime import datetime, timezone
 from email.header import decode_header
 from email.utils import parsedate_to_datetime, parseaddr
@@ -32,7 +33,8 @@ AGENT_CONFIG_JSON = r"""
   "MAIL_AGENT_FETCH_LIMIT": 50,
   "MAIL_IMAP_TIMEOUT": 30,
   "MAIL_INGEST_TIMEOUT": 30,
-  "MAIL_AGENT_STATE_FILE": "mail_agent_state.json"
+  "MAIL_AGENT_STATE_FILE": "mail_agent_state.json",
+  "MAIL_AGENT_INTERVAL_SECONDS": 3600
 }
 """
 
@@ -128,6 +130,10 @@ def _get_int_env(name: str, default: int) -> int:
     return int(raw)
 
 
+def _log(message: str) -> None:
+    print(f"[{datetime.utcnow().isoformat()}] {message}", flush=True)
+
+
 def _decode_header_value(value: Optional[str]) -> str:
     if not value:
         return ""
@@ -161,6 +167,46 @@ def _extract_plain_text(message: email.message.Message, limit: int = 280) -> str
     text = " ".join(fragment.strip() for fragment in fragments if fragment.strip())
     text = re.sub(r"\s+", " ", text).strip()
     return text[:limit]
+
+
+def _extract_plain_text_full(message: email.message.Message) -> str:
+    fragments = []
+    if message.is_multipart():
+        for part in message.walk():
+            content_type = part.get_content_type()
+            disposition = str(part.get("Content-Disposition") or "").lower()
+            if content_type != "text/plain" or "attachment" in disposition:
+                continue
+            payload = part.get_payload(decode=True) or b""
+            charset = part.get_content_charset() or "utf-8"
+            fragments.append(payload.decode(charset, errors="replace"))
+    else:
+        if message.get_content_type() == "text/plain":
+            payload = message.get_payload(decode=True) or b""
+            charset = message.get_content_charset() or "utf-8"
+            fragments.append(payload.decode(charset, errors="replace"))
+
+    return "\n\n".join(fragment.strip() for fragment in fragments if fragment.strip()).strip()
+
+
+def _extract_html_text(message: email.message.Message) -> str:
+    fragments = []
+    if message.is_multipart():
+        for part in message.walk():
+            content_type = part.get_content_type()
+            disposition = str(part.get("Content-Disposition") or "").lower()
+            if content_type != "text/html" or "attachment" in disposition:
+                continue
+            payload = part.get_payload(decode=True) or b""
+            charset = part.get_content_charset() or "utf-8"
+            fragments.append(payload.decode(charset, errors="replace"))
+    else:
+        if message.get_content_type() == "text/html":
+            payload = message.get_payload(decode=True) or b""
+            charset = message.get_content_charset() or "utf-8"
+            fragments.append(payload.decode(charset, errors="replace"))
+
+    return "\n".join(fragment for fragment in fragments if fragment).strip()
 
 
 def _parse_received_at(value: Optional[str]) -> Optional[str]:
@@ -304,6 +350,8 @@ def fetch_mailbox_messages(
                     "flags": flags,
                     "mailbox": mailbox,
                     "size": len(raw_message),
+                    "text_body": _extract_plain_text_full(parsed),
+                    "html_body": _extract_html_text(parsed),
                 },
             }
         )
@@ -329,9 +377,7 @@ def post_ingest(payload: dict) -> None:
     response.raise_for_status()
 
 
-def main() -> int:
-    load_embedded_config()
-
+def run_once() -> None:
     vps_id = os.getenv("MAIL_AGENT_VPS_ID", "").strip() or socket.gethostname()
     provider = os.getenv("MAIL_PROVIDER", "").strip() or "imap"
     fetch_limit = max(1, _get_int_env("MAIL_AGENT_FETCH_LIMIT", 50))
@@ -368,24 +414,28 @@ def main() -> int:
                 post_ingest(payload)
                 state[mailbox] = {"last_uid": new_last_uid}
             except Exception as exc:
-                post_ingest(
-                    {
-                        "vps_id": vps_id,
-                        "provider": provider,
-                        "mailbox": mailbox,
-                        "agent_version": AGENT_VERSION,
-                        "run_started_at": run_started_at,
-                        "run_finished_at": datetime.utcnow().isoformat(),
-                        "status": "error",
-                        "error_message": str(exc),
-                        "cursor": str(last_uid),
-                        "messages": [],
-                        "payload": {
-                            "last_uid_before": last_uid,
-                            "last_uid_after": last_uid,
-                        },
-                    }
-                )
+                _log(f"Mailbox {mailbox} failed: {exc}")
+                try:
+                    post_ingest(
+                        {
+                            "vps_id": vps_id,
+                            "provider": provider,
+                            "mailbox": mailbox,
+                            "agent_version": AGENT_VERSION,
+                            "run_started_at": run_started_at,
+                            "run_finished_at": datetime.utcnow().isoformat(),
+                            "status": "error",
+                            "error_message": str(exc),
+                            "cursor": str(last_uid),
+                            "messages": [],
+                            "payload": {
+                                "last_uid_before": last_uid,
+                                "last_uid_after": last_uid,
+                            },
+                        }
+                    )
+                except Exception as report_exc:
+                    _log(f"Failed to report mailbox error for {mailbox}: {report_exc}")
         save_state(state)
     finally:
         try:
@@ -393,7 +443,29 @@ def main() -> int:
         except Exception:
             pass
 
-    return 0
+    _log("Cycle finished.")
+
+
+def main() -> int:
+    load_embedded_config()
+    interval_seconds = max(60, _get_int_env("MAIL_AGENT_INTERVAL_SECONDS", 3600))
+    _log(f"Mail agent started. Run interval: {interval_seconds} seconds.")
+
+    while True:
+        try:
+            run_once()
+        except KeyboardInterrupt:
+            _log("Stopped by user.")
+            return 0
+        except Exception as exc:
+            _log(f"Cycle failed: {exc}")
+
+        _log(f"Sleeping for {interval_seconds} seconds before the next cycle.")
+        try:
+            time.sleep(interval_seconds)
+        except KeyboardInterrupt:
+            _log("Stopped by user.")
+            return 0
 
 
 if __name__ == "__main__":

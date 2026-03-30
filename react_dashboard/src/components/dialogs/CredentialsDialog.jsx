@@ -1706,25 +1706,42 @@ const CredentialsDialog = ({
             sx={{
               mt: 1,
               mb: 2,
-              borderBottom: `1px solid ${border}`,
-              minHeight: 44,
+              p: 0.5,
+              borderRadius: "14px",
+              bgcolor: isDark ? alpha("#0f172a", 0.4) : alpha("#f1f5f9", 0.7),
+              backdropFilter: "blur(10px)",
+              border: `1px solid ${isDark ? alpha("#94a3b8", 0.1) : alpha("#cbd5e1", 0.3)}`,
+              minHeight: 0,
               "& .MuiTabs-flexContainer": {
-                gap: 0.5,
-              },
-              "& .MuiTab-root": {
-                minHeight: 44,
-                textTransform: "none",
-                fontWeight: 600,
-                borderRadius: 2,
-                px: 2,
-                color: isDark ? "#d6deea" : "rgba(15,23,42,0.75)",
-              },
-              "& .Mui-selected": {
-                color: "#fff !important",
-                bgcolor: accent,
+                gap: 0.75,
               },
               "& .MuiTabs-indicator": {
-                display: "none",
+                height: "100%",
+                borderRadius: "10px",
+                backgroundColor: accent,
+                boxShadow: isDark
+                  ? `0 4px 12px ${alpha(accent, 0.4)}`
+                  : `0 4px 10px ${alpha(accent, 0.25)}`,
+                zIndex: 0,
+                transition: "all 300ms cubic-bezier(0.4, 0, 0.2, 1) !important",
+              },
+              "& .MuiTab-root": {
+                minHeight: 40,
+                textTransform: "none",
+                fontWeight: 700,
+                fontSize: "0.85rem",
+                borderRadius: "10px",
+                px: 2.5,
+                color: isDark ? alpha("#f8fafc", 0.6) : alpha("#475569", 0.8),
+                zIndex: 1,
+                transition: "all 0.2s ease",
+                "&:hover": {
+                  color: isDark ? "#ffffff" : "#0f172a",
+                  bgcolor: alpha(isDark ? "#ffffff" : "#94a3b8", 0.05),
+                },
+              },
+              "& .Mui-selected": {
+                color: "#ffffff !important",
               },
             }}
           >

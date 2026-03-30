@@ -645,6 +645,46 @@ def list_mail_messages(
     }
 
 
+def get_mail_message_detail(message_id: int) -> Optional[dict[str, Any]]:
+    ensure_mail_tables()
+
+    with engine.begin() as conn:
+        row = conn.execute(
+            text(
+                """
+                SELECT
+                    id,
+                    vps_id,
+                    provider,
+                    mailbox,
+                    provider_message_id,
+                    uid,
+                    thread_id,
+                    subject,
+                    from_email,
+                    from_name,
+                    to_email,
+                    received_at,
+                    seen,
+                    status,
+                    matched_rule,
+                    snippet,
+                    payload,
+                    first_seen_at,
+                    last_seen_at,
+                    created_at,
+                    updated_at
+                FROM mail_monitor_messages
+                WHERE id = :message_id
+                LIMIT 1
+                """
+            ),
+            {"message_id": int(message_id)},
+        ).mappings().first()
+
+    return dict(row) if row else None
+
+
 def list_mail_runs(
     *,
     vps_id: Optional[str] = None,
