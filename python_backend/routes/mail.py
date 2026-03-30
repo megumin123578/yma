@@ -18,6 +18,7 @@ from python_backend.module_mail import (
     list_mail_messages,
     list_mail_runs,
     save_mail_ingest,
+    send_test_telegram_notification,
 )
 
 
@@ -464,3 +465,16 @@ def mail_delete_machine(
         return delete_mail_machine(vps_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/test-telegram")
+def mail_test_telegram(
+    current_user=Depends(get_current_user),
+):
+    del current_user
+    try:
+        return send_test_telegram_notification()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Telegram send failed: {exc}")

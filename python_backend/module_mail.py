@@ -1,8 +1,11 @@
 import hashlib
 import json
+import os
 from datetime import datetime
+from html import escape
 from typing import Any, Optional
 
+import requests
 from sqlalchemy import bindparam, text
 
 from python_backend.db import engine
@@ -14,6 +17,96 @@ def _infer_mail_match(*, from_name: Optional[str], from_email: Optional[str]) ->
     if "youtube" in sender_text:
         return "matched", "from:youtube"
     return "received", None
+
+
+def _is_telegram_enabled() -> bool:
+    raw = str(os.getenv("TELEGRAM_ENABLED", "1") or "").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _send_telegram_match_alert(
+    *,
+    vps_id: str,
+    account_email: str,
+    mailbox: str,
+    matched_messages: list[dict[str, Any]],
+) -> None:
+    if not matched_messages or not _is_telegram_enabled():
+        return
+
+    bot_token = str(os.getenv("TELEGRAM_BOT_TOKEN", "") or "").strip()
+    chat_id = str(os.getenv("TELEGRAM_CHAT_ID", "") or "").strip()
+    if not bot_token or not chat_id:
+        return
+
+    lines = [
+        "<b>Email Manager</b>",
+        f"Machine: <code>{escape(vps_id or '-')}</code>",
+        f"Account: <code>{escape(account_email or '-')}</code>",
+        f"Mailbox: <code>{escape(mailbox or '-')}</code>",
+        f"New matched emails: <b>{len(matched_messages)}</b>",
+        "",
+    ]
+
+    for index, item in enumerate(matched_messages[:5], start=1):
+        sender = item.get("from_name") or item.get("from_email") or "-"
+        subject = item.get("subject") or "(no subject)"
+        lines.append(f"{index}. {escape(str(sender))} | {escape(str(subject))}")
+
+    if len(matched_messages) > 5:
+        lines.append(f"... and {len(matched_messages) - 5} more")
+
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": "\n".join(lines),
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+            },
+            timeout=10,
+        ).raise_for_status()
+    except Exception:
+        # Telegram notification failure should not break mail ingest.
+        return
+
+
+def send_test_telegram_notification() -> dict[str, Any]:
+    bot_token = str(os.getenv("TELEGRAM_BOT_TOKEN", "") or "").strip()
+    chat_id = str(os.getenv("TELEGRAM_CHAT_ID", "") or "").strip()
+
+    if not _is_telegram_enabled():
+        raise ValueError("TELEGRAM_ENABLED is disabled.")
+    if not bot_token:
+        raise ValueError("Missing TELEGRAM_BOT_TOKEN.")
+    if not chat_id:
+        raise ValueError("Missing TELEGRAM_CHAT_ID.")
+
+    lines = [
+        "<b>Email Manager</b>",
+        "Telegram test notification",
+        f"Time: <code>{datetime.utcnow().isoformat()}Z</code>",
+        "Status: <b>ok</b>",
+    ]
+
+    response = requests.post(
+        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+        json={
+            "chat_id": chat_id,
+            "text": "\n".join(lines),
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        },
+        timeout=10,
+    )
+    response.raise_for_status()
+
+    return {
+        "ok": True,
+        "chat_id": chat_id,
+        "telegram_ok": True,
+    }
 
 
 def ensure_mail_tables() -> None:
@@ -325,13 +418,14 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
 
     inserted_count = 0
     updated_count = 0
+    newly_matched_messages: list[dict[str, Any]] = []
 
     with engine.begin() as conn:
-        existing_ids: set[str] = set()
+        existing_messages: dict[str, dict[str, Any]] = {}
         if provider_message_ids:
             existing_query = text(
                 """
-                SELECT provider_message_id
+                SELECT provider_message_id, status, matched_rule
                 FROM mail_monitor_messages
                 WHERE vps_id = :vps_id
                   AND account_email = :account_email
@@ -347,8 +441,12 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
                     "mailbox": mailbox,
                     "provider_message_ids": provider_message_ids,
                 },
-            ).fetchall()
-            existing_ids = {str(row[0]) for row in rows}
+            ).mappings().all()
+            existing_messages = {
+                str(row["provider_message_id"]): dict(row)
+                for row in rows
+                if row.get("provider_message_id") is not None
+            }
 
         if normalized_messages:
             upsert_statement = text(
@@ -420,8 +518,16 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
             )
             conn.execute(upsert_statement, normalized_messages)
 
-        inserted_count = max(len(normalized_messages) - len(existing_ids), 0)
-        updated_count = min(len(existing_ids), len(normalized_messages))
+        inserted_count = max(len(normalized_messages) - len(existing_messages), 0)
+        updated_count = min(len(existing_messages), len(normalized_messages))
+
+        for message in normalized_messages:
+            if message.get("status") != "matched":
+                continue
+            existing = existing_messages.get(str(message.get("provider_message_id") or ""))
+            if existing and str(existing.get("status") or "").strip().lower() == "matched":
+                continue
+            newly_matched_messages.append(message)
 
         conn.execute(
             text(
@@ -479,6 +585,13 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
                 "payload": json.dumps(run_payload),
             },
         )
+
+    _send_telegram_match_alert(
+        vps_id=vps_id,
+        account_email=account_email,
+        mailbox=mailbox,
+        matched_messages=newly_matched_messages,
+    )
 
     return {
         "ok": True,

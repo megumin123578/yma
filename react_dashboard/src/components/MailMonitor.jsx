@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -35,6 +35,7 @@ import DnsRoundedIcon from "@mui/icons-material/DnsRounded";
 import EastRoundedIcon from "@mui/icons-material/EastRounded";
 
 import api from "../services/api";
+import { UserContext } from "../context/UserContext";
 
 
 const GMAIL_APP_PASSWORD_URL =
@@ -160,6 +161,8 @@ const StatCard = ({ icon, label, value, accent }) => {
 const MailMonitor = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
+  const { user } = useContext(UserContext);
+  const isAdmin = !!user?.is_admin;
   const MAILS_PER_PAGE = 50;
   const [overview, setOverview] = useState({ summary: {}, items: [] });
   const [messages, setMessages] = useState({ items: [], total: 0 });
@@ -191,6 +194,11 @@ const MailMonitor = () => {
   const [machineDeleteError, setMachineDeleteError] = useState("");
   const [machineDeleteSuccess, setMachineDeleteSuccess] = useState("");
   const [mailPage, setMailPage] = useState(0);
+  const [telegramTest, setTelegramTest] = useState({
+    loading: false,
+    error: "",
+    success: "",
+  });
 
   const overviewItems = useMemo(
     () =>
@@ -589,6 +597,28 @@ const MailMonitor = () => {
       setMachineDeleteLoading(false);
     }
   }, [loadData, machineDeleteTarget]);
+
+  const handleTestTelegram = useCallback(async () => {
+    setTelegramTest({
+      loading: true,
+      error: "",
+      success: "",
+    });
+    try {
+      await api.post("/api/mail/test-telegram");
+      setTelegramTest({
+        loading: false,
+        error: "",
+        success: "Telegram test notification sent successfully.",
+      });
+    } catch (err) {
+      setTelegramTest({
+        loading: false,
+        error: err?.response?.data?.detail || err?.message || "Failed to send Telegram test.",
+        success: "",
+      });
+    }
+  }, []);
 
   return (
     <Box>
@@ -1019,20 +1049,36 @@ const MailMonitor = () => {
                   Add Email
                 </Button>
 
-                <Button
-                  variant="contained"
-                  color="success"
-                  onClick={handleAgentDownload}
-                  disabled={agentDownload.loading}
-                  sx={{
-                    minWidth: { md: 220 },
-                    ml: { xs: 0, md: "auto" },
-                    textTransform: "none",
-                    fontWeight: 700,
-                  }}
-                >
-                  {agentDownload.loading ? "Preparing..." : "Download script"}
-                </Button>
+                <Box sx={{ display: "flex", gap: 1.5, ml: { xs: 0, md: "auto" }, flexWrap: "wrap" }}>
+                  {isAdmin ? (
+                    <Button
+                      variant="outlined"
+                      color="info"
+                      onClick={handleTestTelegram}
+                      disabled={telegramTest.loading}
+                      sx={{
+                        textTransform: "none",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {telegramTest.loading ? "Sending..." : "Test Telegram"}
+                    </Button>
+                  ) : null}
+
+                  <Button
+                    variant="contained"
+                    color="success"
+                    onClick={handleAgentDownload}
+                    disabled={agentDownload.loading}
+                    sx={{
+                      minWidth: { md: 220 },
+                      textTransform: "none",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {agentDownload.loading ? "Preparing..." : "Download script"}
+                  </Button>
+                </Box>
               </Box>
 
               {agentDownload.error ? (
@@ -1044,6 +1090,18 @@ const MailMonitor = () => {
               {agentDownload.success ? (
                 <Alert severity="success" sx={{ mt: 2 }}>
                   {agentDownload.success}
+                </Alert>
+              ) : null}
+
+              {isAdmin && telegramTest.error ? (
+                <Alert severity="error" sx={{ mt: 2 }}>
+                  {telegramTest.error}
+                </Alert>
+              ) : null}
+
+              {isAdmin && telegramTest.success ? (
+                <Alert severity="success" sx={{ mt: 2 }}>
+                  {telegramTest.success}
                 </Alert>
               ) : null}
           </Paper>
