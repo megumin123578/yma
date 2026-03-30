@@ -239,11 +239,11 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
     >
       <ProSidebar collapsed={false}>
         <Menu iconShape="square">
-          <Box px="18px" pt="12px" pb="8px">
+          <Box px="14px" pt="8px" pb="4px">
             <Box
               sx={{
-                px: 1.25,
-                py: 1.25,
+                px: 0.75,
+                py: 0.75,
               }}
             >
               <Box display="flex" justifyContent="center">
@@ -252,8 +252,8 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                   alt="profile-user"
                   src={sidebarAvatarSrc}
                   sx={{
-                    width: 72,
-                    height: 72,
+                    width: 60,
+                    height: 60,
                     borderRadius: "50%",
                     objectFit: "cover",
                     flexShrink: 0,
@@ -271,8 +271,8 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
               <Typography
                 color={theme.palette.mode === "dark" ? "#f8fafc" : "#0f172a"}
                 sx={{
-                  mt: 1,
-                  fontSize: "0.92rem",
+                  mt: 0.75,
+                  fontSize: "0.88rem",
                   fontWeight: 700,
                   lineHeight: 1.2,
                   textAlign: "center",
@@ -287,7 +287,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
           </Box>
 
           {/* MENU */}
-          <Box paddingLeft="6px" paddingRight="6px" pt="4px" pb="8px">
+          <Box paddingLeft="6px" paddingRight="6px" pt="2px" pb="8px">
             <Item
               title="Dashboard"
               to="/dashboard"

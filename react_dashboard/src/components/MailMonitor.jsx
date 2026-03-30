@@ -510,8 +510,8 @@ const MailMonitor = () => {
       html, body {
         margin: 0;
         padding: 0;
-        background: ${theme.palette.mode === "dark" ? "#0f172a" : "#ffffff"};
-        color: ${theme.palette.mode === "dark" ? "#e5e7eb" : "#0f172a"};
+        background: #ffffff;
+        color: #0f172a;
         font-family: Arial, sans-serif;
       }
       body {
@@ -525,13 +525,13 @@ const MailMonitor = () => {
         white-space: pre-wrap;
       }
       a {
-        color: ${theme.palette.mode === "dark" ? "#93c5fd" : "#2563eb"};
+        color: #2563eb;
       }
     </style>
   </head>
   <body>${selectedMessageHtml}</body>
 </html>`;
-  }, [selectedMessageHtml, theme.palette.mode]);
+  }, [selectedMessageHtml]);
 
   const handleOpenMessage = useCallback(async (messageId) => {
     setSelectedMessageId(messageId);
@@ -1305,10 +1305,8 @@ const MailMonitor = () => {
                     p: 1.5,
                     borderRadius: 2,
                     overflow: "hidden",
-                    bgcolor:
-                      theme.palette.mode === "dark"
-                        ? "rgba(15,23,42,0.78)"
-                        : "rgba(248,250,252,0.95)",
+                    bgcolor: "#f8fafc",
+                    borderColor: "rgba(148,163,184,0.28)",
                   }}
                 >
                   {selectedMessageHtml ? (
@@ -1321,7 +1319,7 @@ const MailMonitor = () => {
                         width: "100%",
                         minHeight: 620,
                         border: 0,
-                        bgcolor: theme.palette.mode === "dark" ? "#0f172a" : "#ffffff",
+                        bgcolor: "#ffffff",
                       }}
                     />
                   ) : (
@@ -1334,6 +1332,7 @@ const MailMonitor = () => {
                         fontFamily: "inherit",
                         fontSize: "0.92rem",
                         lineHeight: 1.65,
+                        color: "#0f172a",
                       }}
                     >
                       {selectedMessageBody || "This email does not have a stored full body yet."}
