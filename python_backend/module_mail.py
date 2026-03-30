@@ -1036,6 +1036,54 @@ def delete_mail_machine(vps_id: str) -> dict[str, Any]:
     }
 
 
+def delete_mail_account(vps_id: str, account_email: str) -> dict[str, Any]:
+    ensure_mail_tables()
+
+    normalized_vps_id = str(vps_id or "").strip()
+    normalized_account_email = str(account_email or "").strip().lower()
+    if not normalized_vps_id:
+        raise ValueError("Machine is required.")
+    if not normalized_account_email:
+        raise ValueError("Account email is required.")
+
+    with engine.begin() as conn:
+        message_deleted = conn.execute(
+            text(
+                """
+                DELETE FROM mail_monitor_messages
+                WHERE vps_id = :vps_id
+                  AND account_email = :account_email
+                """
+            ),
+            {
+                "vps_id": normalized_vps_id,
+                "account_email": normalized_account_email,
+            },
+        ).rowcount or 0
+
+        run_deleted = conn.execute(
+            text(
+                """
+                DELETE FROM mail_monitor_runs
+                WHERE vps_id = :vps_id
+                  AND account_email = :account_email
+                """
+            ),
+            {
+                "vps_id": normalized_vps_id,
+                "account_email": normalized_account_email,
+            },
+        ).rowcount or 0
+
+    return {
+        "ok": True,
+        "vps_id": normalized_vps_id,
+        "account_email": normalized_account_email,
+        "deleted_messages": int(message_deleted),
+        "deleted_runs": int(run_deleted),
+    }
+
+
 def list_mail_runs(
     *,
     vps_id: Optional[str] = None,

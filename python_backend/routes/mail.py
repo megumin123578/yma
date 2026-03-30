@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from python_backend.api.auth.auth_utils import get_current_user
 from python_backend.module_mail import (
+    delete_mail_account,
     delete_mail_machine,
     get_mail_message_detail,
     get_mail_overview,
@@ -463,6 +464,19 @@ def mail_delete_machine(
     del current_user
     try:
         return delete_mail_machine(vps_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.delete("/accounts")
+def mail_delete_account(
+    vps_id: str = Query(..., min_length=1),
+    account_email: str = Query(..., min_length=1),
+    current_user=Depends(get_current_user),
+):
+    del current_user
+    try:
+        return delete_mail_account(vps_id, account_email)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

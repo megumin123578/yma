@@ -33,6 +33,7 @@ import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import StorageRoundedIcon from "@mui/icons-material/StorageRounded";
 import DnsRoundedIcon from "@mui/icons-material/DnsRounded";
 import EastRoundedIcon from "@mui/icons-material/EastRounded";
+import { useSearchParams } from "react-router-dom";
 
 import api from "../services/api";
 import { UserContext } from "../context/UserContext";
@@ -163,6 +164,7 @@ const MailMonitor = () => {
   const isDark = theme.palette.mode === "dark";
   const { user } = useContext(UserContext);
   const isAdmin = !!user?.is_admin;
+  const [searchParams, setSearchParams] = useSearchParams();
   const MAILS_PER_PAGE = 50;
   const [overview, setOverview] = useState({ summary: {}, items: [] });
   const [messages, setMessages] = useState({ items: [], total: 0 });
@@ -184,15 +186,18 @@ const MailMonitor = () => {
     error: "",
     success: "",
   });
-  const [activeTab, setActiveTab] = useState("messages");
+  const [activeTab, setActiveTab] = useState(() => {
+    const tabParam = (searchParams.get("tab") || "").toLowerCase();
+    return tabParam === "setup" ? "setup" : "messages";
+  });
   const [selectedMessageId, setSelectedMessageId] = useState(null);
   const [selectedMessageDetail, setSelectedMessageDetail] = useState(null);
   const [selectedMessageLoading, setSelectedMessageLoading] = useState(false);
   const [selectedMessageError, setSelectedMessageError] = useState("");
-  const [machineDeleteTarget, setMachineDeleteTarget] = useState(null);
-  const [machineDeleteLoading, setMachineDeleteLoading] = useState(false);
-  const [machineDeleteError, setMachineDeleteError] = useState("");
-  const [machineDeleteSuccess, setMachineDeleteSuccess] = useState("");
+  const [accountDeleteTarget, setAccountDeleteTarget] = useState(null);
+  const [accountDeleteLoading, setAccountDeleteLoading] = useState(false);
+  const [accountDeleteError, setAccountDeleteError] = useState("");
+  const [accountDeleteSuccess, setAccountDeleteSuccess] = useState("");
   const [mailPage, setMailPage] = useState(0);
   const [telegramTest, setTelegramTest] = useState({
     loading: false,
@@ -272,6 +277,12 @@ const MailMonitor = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const tabParam = (searchParams.get("tab") || "").toLowerCase();
+    const nextTab = tabParam === "setup" ? "setup" : "messages";
+    setActiveTab((current) => (current === nextTab ? current : nextTab));
+  }, [searchParams]);
 
   useEffect(() => {
     setMailPage(0);
@@ -557,46 +568,53 @@ const MailMonitor = () => {
     setSelectedMessageLoading(false);
   }, []);
 
-  const handleAskDeleteMachine = useCallback((vpsId) => {
-    setMachineDeleteError("");
-    setMachineDeleteTarget(vpsId);
+  const handleAskDeleteAccount = useCallback((vpsId, accountEmail) => {
+    setAccountDeleteError("");
+    setAccountDeleteTarget({
+      vpsId,
+      accountEmail,
+    });
   }, []);
 
-  const handleCloseDeleteMachine = useCallback(() => {
-    if (machineDeleteLoading) return;
-    setMachineDeleteTarget(null);
-    setMachineDeleteError("");
-  }, [machineDeleteLoading]);
+  const handleCloseDeleteAccount = useCallback(() => {
+    if (accountDeleteLoading) return;
+    setAccountDeleteTarget(null);
+    setAccountDeleteError("");
+  }, [accountDeleteLoading]);
 
-  const handleDeleteMachine = useCallback(async () => {
-    if (!machineDeleteTarget) return;
-    setMachineDeleteLoading(true);
-    setMachineDeleteError("");
-    setMachineDeleteSuccess("");
+  const handleDeleteAccount = useCallback(async () => {
+    if (!accountDeleteTarget?.vpsId || !accountDeleteTarget?.accountEmail) return;
+    setAccountDeleteLoading(true);
+    setAccountDeleteError("");
+    setAccountDeleteSuccess("");
     try {
-      const response = await api.delete(
-        `/api/mail/machines/${encodeURIComponent(machineDeleteTarget)}`
-      );
+      const response = await api.delete("/api/mail/accounts", {
+        params: {
+          vps_id: accountDeleteTarget.vpsId,
+          account_email: accountDeleteTarget.accountEmail,
+        },
+      });
       const deletedMessages = response?.data?.deleted_messages ?? 0;
       const deletedRuns = response?.data?.deleted_runs ?? 0;
-      setMachineDeleteSuccess(
-        `Deleted ${machineDeleteTarget} (${formatNumber(deletedMessages)} messages, ${formatNumber(deletedRuns)} runs).`
+      setAccountDeleteSuccess(
+        `Deleted ${accountDeleteTarget.accountEmail} on ${accountDeleteTarget.vpsId} (${formatNumber(deletedMessages)} messages, ${formatNumber(deletedRuns)} runs).`
       );
-      setMachineDeleteTarget(null);
+      setAccountDeleteTarget(null);
       setFilters((current) =>
-        current.vpsId === machineDeleteTarget
-          ? { ...current, vpsId: "", accountEmail: "", mailbox: "" }
+        current.vpsId === accountDeleteTarget.vpsId &&
+        current.accountEmail === accountDeleteTarget.accountEmail
+          ? { ...current, accountEmail: "", mailbox: "" }
           : current
       );
       await loadData();
     } catch (err) {
-      setMachineDeleteError(
-        err?.response?.data?.detail || err?.message || "Failed to delete machine."
+      setAccountDeleteError(
+        err?.response?.data?.detail || err?.message || "Failed to delete account."
       );
     } finally {
-      setMachineDeleteLoading(false);
+      setAccountDeleteLoading(false);
     }
-  }, [loadData, machineDeleteTarget]);
+  }, [accountDeleteTarget, loadData]);
 
   const handleTestTelegram = useCallback(async () => {
     setTelegramTest({
@@ -653,7 +671,12 @@ const MailMonitor = () => {
       >
         <Tabs
           value={activeTab}
-          onChange={(_, value) => setActiveTab(value)}
+          onChange={(_, value) => {
+            setActiveTab(value);
+            const nextParams = new URLSearchParams(searchParams);
+            nextParams.set("tab", value === "setup" ? "setup" : "mailbox");
+            setSearchParams(nextParams, { replace: true });
+          }}
           variant="fullWidth"
           sx={{
             minHeight: 0,
@@ -926,9 +949,9 @@ const MailMonitor = () => {
                   : "0 12px 24px rgba(148,163,184,0.18)",
             }}
           >
-            {machineDeleteSuccess ? (
+            {accountDeleteSuccess ? (
               <Alert severity="success" sx={{ mb: 2 }}>
-                {machineDeleteSuccess}
+                {accountDeleteSuccess}
               </Alert>
             ) : null}
 
@@ -970,12 +993,14 @@ const MailMonitor = () => {
                 </Typography>
               </Alert>
 
-              <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} mt={2}>
+              <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} mt={2} autoComplete="off">
                 <TextField
                   fullWidth
                   size="small"
                   label="Name"
                   value={agentForm.vpsName}
+                  autoComplete="off"
+                  name="mail-machine-name"
                   onChange={(event) =>
                     setAgentForm((current) => ({
                       ...current,
@@ -994,6 +1019,9 @@ const MailMonitor = () => {
                       label={`Email ${index + 1}`}
                       placeholder="Email"
                       value={account.email}
+                      autoComplete="off"
+                      name={`mail-account-email-${index}`}
+                      inputProps={{ autoComplete: "off", form: { autoComplete: "off" } }}
                       onChange={(event) => handleAgentAccountChange(index, "email", event.target.value)}
                     />
 
@@ -1003,12 +1031,19 @@ const MailMonitor = () => {
                       label={`IMAP Password ${index + 1}`}
                       type="password"
                       value={account.password}
+                      autoComplete="new-password"
+                      name={`mail-account-password-${index}`}
                       onChange={(event) => handleAgentAccountChange(index, "password", event.target.value)}
                       error={
                         account.password.length > 0 &&
                         normalizeImapPassword(account.password).length < MIN_IMAP_PASSWORD_LENGTH
                       }
-                      inputProps={{ minLength: MIN_IMAP_PASSWORD_LENGTH }}
+                      inputProps={{
+                        minLength: MIN_IMAP_PASSWORD_LENGTH,
+                        autoComplete: "new-password",
+                        "data-lpignore": "true",
+                        "data-1p-ignore": "true",
+                      }}
                       helperText={
                         account.password.length > 0 &&
                         normalizeImapPassword(account.password).length < MIN_IMAP_PASSWORD_LENGTH
@@ -1151,7 +1186,7 @@ const MailMonitor = () => {
                             size="small"
                             color="error"
                             variant="text"
-                            onClick={() => handleAskDeleteMachine(item.vps_id)}
+                            onClick={() => handleAskDeleteAccount(item.vps_id, item.account_email)}
                             sx={{
                               textTransform: "none",
                               fontWeight: 700,
@@ -1173,8 +1208,8 @@ const MailMonitor = () => {
       )}
 
       <Dialog
-        open={Boolean(machineDeleteTarget)}
-        onClose={handleCloseDeleteMachine}
+        open={Boolean(accountDeleteTarget)}
+        onClose={handleCloseDeleteAccount}
         fullWidth
         maxWidth="xs"
         PaperProps={{
@@ -1189,22 +1224,26 @@ const MailMonitor = () => {
         <DialogTitle sx={{ fontWeight: 800, pt: 3 }}>Confirm Delete</DialogTitle>
         <DialogContent>
           <Typography variant="body1" sx={{ color: isDark ? "#94a3b8" : "text.secondary" }}>
-            This will delete all messages and sync runs for{" "}
+            This will delete all messages and sync runs for account{" "}
             <Box component="span" sx={{ color: isDark ? "#f8fafc" : "#1e293b", fontWeight: 700 }}>
-              {machineDeleteTarget || "-"}
+              {accountDeleteTarget?.accountEmail || "-"}
+            </Box>
+            {" "}on machine{" "}
+            <Box component="span" sx={{ color: isDark ? "#f8fafc" : "#1e293b", fontWeight: 700 }}>
+              {accountDeleteTarget?.vpsId || "-"}
             </Box>
             . This action cannot be undone.
           </Typography>
-          {machineDeleteError ? (
+          {accountDeleteError ? (
             <Alert severity="error" sx={{ mt: 2 }}>
-              {machineDeleteError}
+              {accountDeleteError}
             </Alert>
           ) : null}
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 1 }}>
           <Button
-            onClick={handleCloseDeleteMachine}
-            disabled={machineDeleteLoading}
+            onClick={handleCloseDeleteAccount}
+            disabled={accountDeleteLoading}
             sx={{
               color: isDark ? "#94a3b8" : "text.secondary",
               textTransform: "none",
@@ -1216,8 +1255,8 @@ const MailMonitor = () => {
           <Button
             variant="contained"
             color="error"
-            onClick={handleDeleteMachine}
-            disabled={machineDeleteLoading}
+            onClick={handleDeleteAccount}
+            disabled={accountDeleteLoading}
             sx={{
               borderRadius: 2,
               textTransform: "none",
@@ -1230,7 +1269,7 @@ const MailMonitor = () => {
               },
             }}
           >
-            {machineDeleteLoading ? "Deleting..." : "Delete"}
+            {accountDeleteLoading ? "Deleting..." : "Delete"}
           </Button>
         </DialogActions>
       </Dialog>
