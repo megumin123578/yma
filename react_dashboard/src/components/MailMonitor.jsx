@@ -31,7 +31,6 @@ import { alpha } from "@mui/material/styles";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import StorageRoundedIcon from "@mui/icons-material/StorageRounded";
 import DnsRoundedIcon from "@mui/icons-material/DnsRounded";
-import ErrorOutlineRoundedIcon from "@mui/icons-material/ErrorOutlineRounded";
 import EastRoundedIcon from "@mui/icons-material/EastRounded";
 
 import api from "../services/api";
@@ -55,6 +54,34 @@ const formatDateTime = (value) => {
 
 const formatNumber = (value) => {
   return Number(value || 0).toLocaleString();
+};
+
+
+const decodeHtmlEntities = (value) => {
+  if (!value || typeof window === "undefined") return value || "";
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = value;
+  return textarea.value;
+};
+
+
+const toPlainPreviewText = (value) => {
+  const raw = String(value || "");
+  if (!raw) return "-";
+
+  const decoded = decodeHtmlEntities(raw);
+  const withoutTags = decoded.replace(/<[^>]*>/g, " ");
+  const withoutBracketArtifacts = withoutTags.replace(/\[(?:image|cid:[^\]]+|attachment|logo)[^\]]*\]/gi, " ");
+  const compact = withoutBracketArtifacts.replace(/\s+/g, " ").trim();
+
+  return compact || "-";
+};
+
+
+const truncatePreviewText = (value, maxLength = 90) => {
+  const text = toPlainPreviewText(value);
+  if (text === "-" || text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength).trimEnd()}...`;
 };
 
 
@@ -631,7 +658,7 @@ const MailMonitor = () => {
       {activeTab === "messages" ? (
         <Box
           display="grid"
-          gridTemplateColumns={{ xs: "1fr", md: "repeat(2, minmax(0, 1fr))", xl: "repeat(4, minmax(0, 1fr))" }}
+          gridTemplateColumns={{ xs: "1fr", md: "repeat(3, minmax(0, 1fr))" }}
           gap={2}
           mb={2.5}
         >
@@ -652,12 +679,6 @@ const MailMonitor = () => {
             label="Messages"
             value={formatNumber(summary.total_messages)}
             accent="#22c55e"
-          />
-          <StatCard
-            icon={<ErrorOutlineRoundedIcon />}
-            label="Unread / Error"
-            value={`${formatNumber(summary.unread_messages)} / ${formatNumber(summary.error_messages)}`}
-            accent="#f97316"
           />
         </Box>
       ) : null}
@@ -839,10 +860,10 @@ const MailMonitor = () => {
                       </TableCell>
                       <TableCell sx={{ minWidth: 280 }}>
                         <Typography fontWeight={700}>{item.subject || "(no subject)"}</Typography>
-                        <Typography variant="body2" sx={{ opacity: 0.72 }}>
-                          {item.snippet || "-"}
-                        </Typography>
-                      </TableCell>
+                      <Typography variant="body2" sx={{ opacity: 0.72 }}>
+                          {truncatePreviewText(item.snippet)}
+                      </Typography>
+                    </TableCell>
                       <TableCell>
                         <Chip
                           size="small"
@@ -1174,7 +1195,13 @@ const MailMonitor = () => {
         open={Boolean(selectedMessageId)}
         onClose={handleCloseMessage}
         fullWidth
-        maxWidth="md"
+        maxWidth="lg"
+        PaperProps={{
+          sx: {
+            width: "min(1200px, calc(100vw - 32px))",
+            maxWidth: "1200px",
+          },
+        }}
       >
         <DialogTitle sx={{ pb: 1.25 }}>
           <Typography variant="h6" fontWeight={800}>
@@ -1248,7 +1275,7 @@ const MailMonitor = () => {
                       sandbox="allow-popups allow-popups-to-escape-sandbox"
                       sx={{
                         width: "100%",
-                        minHeight: 460,
+                        minHeight: 620,
                         border: 0,
                         bgcolor: theme.palette.mode === "dark" ? "#0f172a" : "#ffffff",
                       }}
