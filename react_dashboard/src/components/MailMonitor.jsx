@@ -167,7 +167,7 @@ const MailMonitor = () => {
     vpsId: "",
     accountEmail: "",
     mailbox: "",
-    status: "",
+    status: "matched",
     search: "",
   });
   const [error, setError] = useState("");
