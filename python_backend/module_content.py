@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import json
 import sqlite3
@@ -18,6 +19,17 @@ CONTENT_DAILY_LOOKBACK_DAYS = int(os.getenv("CONTENT_DAILY_LOOKBACK_DAYS", "7"))
 CONTENT_DAILY_FULL_BACKFILL_LOOKBACK_DAYS = int(
     os.getenv("CONTENT_DAILY_FULL_BACKFILL_LOOKBACK_DAYS", "0")
 )
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = str(os.getenv(name, str(default)) or "").strip()
+    try:
+        return int(raw)
+    except Exception:
+        return default
+
+
+CONTENT_DAILY_MAX_WORKERS = max(1, min(_env_int("CONTENT_DAILY_MAX_WORKERS", 4), 8))
 
 
 def get_upload_playlist_id(credentials, channel_id: Optional[str] = None):
@@ -233,6 +245,26 @@ def _chunked_ids(video_ids: List[str], size: int) -> List[List[str]]:
     return [video_ids[i:i + size] for i in range(0, len(video_ids), size)]
 
 
+def _chunked_rows(rows: List[Dict], size: int) -> List[List[Dict]]:
+    return [rows[i:i + size] for i in range(0, len(rows), size)]
+
+
+def _resolve_content_daily_workers(video_count: int) -> int:
+    return max(1, min(CONTENT_DAILY_MAX_WORKERS, max(1, video_count)))
+
+
+def _resolve_daily_start_date(
+    video_row: Dict,
+    full_backfill: bool,
+    recent_start_date: str,
+    end_date: str,
+) -> str:
+    published_at = str(video_row.get("published_at") or "").strip()
+    if not published_at:
+        return recent_start_date if not full_backfill else end_date
+    return published_at if full_backfill else max(published_at, recent_start_date)
+
+
 def get_video_impressions_bulk(
     credentials,
     video_ids: List[str],
@@ -414,27 +446,11 @@ def save_metadata(videos, account_tag: str, pg_url: str):
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS tags TEXT;"))
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS card_impressions BIGINT DEFAULT 0;"))
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS ad_impressions BIGINT DEFAULT 0;"))
+        if not videos:
+            return
 
-        for v in videos:
-            conn.execute(text("""
-                INSERT INTO videos
-                    (video_id, account_tag, title, thumbnail,
-                     published_at, duration, views, likes, comments,
-                     card_impressions, ad_impressions, tags, ctr)
-                VALUES
-                    (:id, :acct, :title, :thumb, :pub, :duration,
-                     :views, :likes, :comments,
-                     :card, :ad, :tags, :ctr)
-                ON CONFLICT(video_id)
-                DO UPDATE SET
-                    views = EXCLUDED.views,
-                    likes = EXCLUDED.likes,
-                    comments = EXCLUDED.comments,
-                    card_impressions = EXCLUDED.card_impressions,
-                    ad_impressions = EXCLUDED.ad_impressions,
-                    tags = EXCLUDED.tags,
-                    ctr = EXCLUDED.ctr;
-            """), {
+        params = [
+            {
                 "id": v["video_id"],
                 "acct": account_tag,
                 "title": v["title"],
@@ -448,7 +464,30 @@ def save_metadata(videos, account_tag: str, pg_url: str):
                 "ad": v.get("ad_impressions", 0),
                 "tags": json.dumps(v.get("tags") or []),
                 "ctr": v.get("ctr", 0.0),
-            })
+            }
+            for v in videos
+        ]
+        upsert_stmt = text("""
+            INSERT INTO videos
+                (video_id, account_tag, title, thumbnail,
+                 published_at, duration, views, likes, comments,
+                 card_impressions, ad_impressions, tags, ctr)
+            VALUES
+                (:id, :acct, :title, :thumb, :pub, :duration,
+                 :views, :likes, :comments,
+                 :card, :ad, :tags, :ctr)
+            ON CONFLICT(video_id)
+            DO UPDATE SET
+                views = EXCLUDED.views,
+                likes = EXCLUDED.likes,
+                comments = EXCLUDED.comments,
+                card_impressions = EXCLUDED.card_impressions,
+                ad_impressions = EXCLUDED.ad_impressions,
+                tags = EXCLUDED.tags,
+                ctr = EXCLUDED.ctr;
+        """)
+        for batch in _chunked_rows(params, 500):
+            conn.execute(upsert_stmt, batch)
 
 
 def save_daily_stats(daily_rows, pg_url: str):
@@ -480,26 +519,11 @@ def save_daily_stats(daily_rows, pg_url: str):
             pass
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vds_day ON video_daily_stats(day);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vds_day_video ON video_daily_stats(day, video_id);"))
+        if not daily_rows:
+            return
 
-        for r in daily_rows:
-            conn.execute(text("""
-                INSERT INTO video_daily_stats
-                    (video_id, day, views, estimated_minutes, average_view_duration, likes, 
-                     subscribers_gained, estimated_revenue,
-                     card_impressions, card_clicks)
-                VALUES
-                    (:id, :day, :views, :emw, :avd, :likes, :subs, :rev, :ci, :cc)
-                ON CONFLICT (video_id, day)
-                DO UPDATE SET
-                    views = EXCLUDED.views,
-                    estimated_minutes = EXCLUDED.estimated_minutes,
-                    average_view_duration = EXCLUDED.average_view_duration,
-                    likes = EXCLUDED.likes,
-                    subscribers_gained = EXCLUDED.subscribers_gained,
-                    estimated_revenue = EXCLUDED.estimated_revenue,
-                    card_impressions = EXCLUDED.card_impressions,
-                    card_clicks = EXCLUDED.card_clicks;
-            """), {
+        params = [
+            {
                 "id": r["video_id"],
                 "day": r["day"],
                 "views": r["views"],
@@ -510,7 +534,29 @@ def save_daily_stats(daily_rows, pg_url: str):
                 "rev": r["estimated_revenue"],
                 "ci": r["card_impressions"],
                 "cc": r["card_clicks"],
-            })
+            }
+            for r in daily_rows
+        ]
+        upsert_stmt = text("""
+            INSERT INTO video_daily_stats
+                (video_id, day, views, estimated_minutes, average_view_duration, likes, 
+                 subscribers_gained, estimated_revenue,
+                 card_impressions, card_clicks)
+            VALUES
+                (:id, :day, :views, :emw, :avd, :likes, :subs, :rev, :ci, :cc)
+            ON CONFLICT (video_id, day)
+            DO UPDATE SET
+                views = EXCLUDED.views,
+                estimated_minutes = EXCLUDED.estimated_minutes,
+                average_view_duration = EXCLUDED.average_view_duration,
+                likes = EXCLUDED.likes,
+                subscribers_gained = EXCLUDED.subscribers_gained,
+                estimated_revenue = EXCLUDED.estimated_revenue,
+                card_impressions = EXCLUDED.card_impressions,
+                card_clicks = EXCLUDED.card_clicks;
+        """)
+        for batch in _chunked_rows(params, 1000):
+            conn.execute(upsert_stmt, batch)
 
 
 def _ensure_content_sync_state(conn) -> None:
@@ -577,6 +623,30 @@ def invalidate_content_timeseries_cache(pg_url: str, account_tag: str) -> None:
         """), {"tag": account_tag})
 
 
+def _fetch_daily_rows_for_video(
+    credentials,
+    video_row: Dict,
+    recent_start_date: str,
+    end_date: str,
+    channel_id: Optional[str],
+    full_backfill: bool,
+) -> List[Dict]:
+    video_id = video_row["video_id"]
+    start_date = _resolve_daily_start_date(
+        video_row,
+        full_backfill=full_backfill,
+        recent_start_date=recent_start_date,
+        end_date=end_date,
+    )
+    return get_video_daily_analytics(
+        credentials,
+        video_id,
+        start_date,
+        end_date,
+        channel_id=channel_id,
+    )
+
+
 # ============================
 # RUNNER
 # ============================
@@ -636,17 +706,56 @@ def run_content_v3_hybrid(
             f"(recent {CONTENT_DAILY_LOOKBACK_DAYS} days)..."
         )
     daily_rows = []
+    daily_workers = _resolve_content_daily_workers(len(videos))
+    print(f"[INFO] [content] Daily workers: {daily_workers}")
 
-    for v in videos:
-        if _stop_requested():
-            raise RuntimeError("Stop requested")
-        video_id = v["video_id"]
-        print(f"[INFO] [content] Daily video: {video_id}")
-        start_date = v["published_at"] if full_backfill else max(v["published_at"], recent_start_date)
-        d = get_video_daily_analytics(
-            credentials, video_id, start_date, end_date, channel_id=channel_id
-        )
-        daily_rows.extend(d)
+    if daily_workers == 1:
+        for v in videos:
+            if _stop_requested():
+                raise RuntimeError("Stop requested")
+            video_id = v["video_id"]
+            print(f"[INFO] [content] Daily video: {video_id}")
+            daily_rows.extend(
+                _fetch_daily_rows_for_video(
+                    credentials,
+                    v,
+                    recent_start_date,
+                    end_date,
+                    channel_id,
+                    full_backfill,
+                )
+            )
+    else:
+        future_to_video_id = {}
+        with ThreadPoolExecutor(
+            max_workers=daily_workers,
+            thread_name_prefix="content-daily",
+        ) as executor:
+            for v in videos:
+                if _stop_requested():
+                    raise RuntimeError("Stop requested")
+                future = executor.submit(
+                    _fetch_daily_rows_for_video,
+                    credentials,
+                    v,
+                    recent_start_date,
+                    end_date,
+                    channel_id,
+                    full_backfill,
+                )
+                future_to_video_id[future] = v["video_id"]
+
+            for future in as_completed(future_to_video_id):
+                if _stop_requested():
+                    for pending_future in future_to_video_id:
+                        pending_future.cancel()
+                    raise RuntimeError("Stop requested")
+                video_id = future_to_video_id[future]
+                print(f"[INFO] [content] Daily video: {video_id}")
+                try:
+                    daily_rows.extend(future.result())
+                except Exception as e:
+                    print(f"[WARN] Daily analytics failed for {video_id}: {e}")
 
     print("→ Saving daily stats...")
     save_daily_stats(daily_rows, pg_url)

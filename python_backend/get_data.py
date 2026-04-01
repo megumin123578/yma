@@ -1,4 +1,5 @@
 # get_data.py — PG-only runner
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import sys
 import json
@@ -6,6 +7,20 @@ import sqlite3
 import time
 import tempfile
 from datetime import datetime
+try:
+    from python_backend.config import load_env
+except ModuleNotFoundError:
+    from config import load_env
+
+load_env()
+
+try:
+    from python_backend.google_api_quota import enable_google_api_quota_guard
+except ModuleNotFoundError:
+    from google_api_quota import enable_google_api_quota_guard
+
+enable_google_api_quota_guard()
+
 try:
     from python_backend.progress_state import write_progress
 except ModuleNotFoundError:
@@ -63,10 +78,24 @@ def _resolve_token_list(raw_value: str):
         pass
     return [_resolve_token_file(item.strip()) for item in raw_value.split(",") if item.strip()]
 
-def _lock_path() -> str:
+def _sanitize_lock_name(value: str) -> str:
+    raw = os.path.basename((value or "").strip()) or "global"
+    return "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in raw)
+
+
+def _lock_path(account_tag: str = "") -> str:
     lock_dir = os.path.join(tempfile.gettempdir(), "yt_manage_app")
     os.makedirs(lock_dir, exist_ok=True)
-    return os.path.join(lock_dir, "get_data.lock")
+    return os.path.join(lock_dir, f"get_data.{_sanitize_lock_name(account_tag)}.lock")
+
+
+def _max_parallel_workers() -> int:
+    raw_value = str(os.getenv("GET_DATA_MAX_PARALLEL", "2") or "").strip()
+    try:
+        value = int(raw_value)
+    except Exception:
+        value = 1
+    return max(1, min(value, 8))
 
 
 def _run_db_path() -> str:
@@ -117,28 +146,49 @@ def _update_schedule_run(status: str, processed=None, total=None, message: str =
     run_id = os.getenv("SCHEDULE_RUN_ID")
     if not run_id:
         return
-    try:
-        conn = _connect_auth_db()
-        cur = conn.cursor()
-        finished_at = None
-        if status in {"done", "error", "empty", "stopped"}:
-            finished_at = datetime.now().isoformat(sep=" ")
-        cur.execute(
-            """
-            UPDATE user_schedule_runs
-            SET status = ?,
-                processed = COALESCE(?, processed),
-                total = COALESCE(?, total),
-                message = ?,
-                finished_at = COALESCE(?, finished_at)
-            WHERE id = ?
-            """,
-            (status, processed, total, message, finished_at, int(run_id)),
-        )
-        conn.commit()
-        conn.close()
-    except Exception:
-        pass
+    attempts = 3
+    final_statuses = {"done", "error", "empty", "stopped", "canceled"}
+    for attempt in range(attempts):
+        conn = None
+        try:
+            conn = _connect_auth_db()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT status FROM user_schedule_runs WHERE id = ?",
+                (int(run_id),),
+            )
+            row = cur.fetchone()
+            current_status = str(row[0] or "").strip().lower() if row else ""
+            next_status = str(status or "").strip().lower()
+            if current_status in final_statuses and current_status != next_status:
+                return
+
+            finished_at = None
+            if next_status in final_statuses:
+                finished_at = datetime.now().isoformat(sep=" ")
+            cur.execute(
+                """
+                UPDATE user_schedule_runs
+                SET status = ?,
+                    processed = COALESCE(?, processed),
+                    total = COALESCE(?, total),
+                    message = ?,
+                    finished_at = COALESCE(?, finished_at)
+                WHERE id = ?
+                """,
+                (status, processed, total, message, finished_at, int(run_id)),
+            )
+            conn.commit()
+            return
+        except Exception as exc:
+            message_text = str(exc).lower()
+            if "locked" in message_text and attempt < attempts - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            return
+        finally:
+            if conn is not None:
+                conn.close()
 
 
 def _has_aggregate_token_scope() -> bool:
@@ -205,13 +255,17 @@ class _RunLock:
         self.handle = None
 
     def __enter__(self):
-        self.handle = open(_lock_path(), "a+", encoding="utf-8")
+        self.handle = open(_lock_path(self.account_tag), "a+", encoding="utf-8")
         self.handle.seek(0, os.SEEK_END)
         if self.handle.tell() == 0:
             self.handle.write(" ")
             self.handle.flush()
         poll_seconds = float(os.getenv("GET_DATA_LOCK_POLL_SECONDS", "2"))
-        wait_message = "Waiting for current run to finish"
+        wait_message = (
+            f"Waiting for current run of {self.account_tag} to finish"
+            if self.account_tag
+            else "Waiting for current run to finish"
+        )
         while True:
             if _try_lock_handle(self.handle):
                 self.handle.seek(0)
@@ -241,6 +295,13 @@ class _RunLock:
         if self.handle is not None:
             _unlock_handle(self.handle)
             self.handle.close()
+
+
+def _run_credential_with_lock(cred_file: str) -> str:
+    account_tag = os.path.splitext(os.path.basename(cred_file))[0]
+    with _RunLock(account_tag):
+        _run_for_credential(cred_file)
+    return account_tag
 
 def _run_for_credential(cred_file: str) -> None:
     account_tag = os.path.splitext(os.path.basename(cred_file))[0]
@@ -439,10 +500,9 @@ def main():
             print(f"Token not found: {cred_file}")
             return
         try:
-            with _RunLock(account_tag):
-                _update_schedule_run("running", 0, 1, "Processing 1 account")
-                _run_for_credential(cred_file)
-                _update_schedule_run("done", 1, 1, "Completed")
+            _update_schedule_run("running", 0, 1, "Processing 1 account")
+            _run_credential_with_lock(cred_file)
+            _update_schedule_run("done", 1, 1, "Completed")
         except Exception as e:
             if str(e) == "Stop requested":
                 write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")
@@ -460,27 +520,71 @@ def main():
 
     total = len(token_files)
     ok = 0
-    print(f"Processing {total} token(s)...")
-    first_account_tag = os.path.splitext(os.path.basename(token_files[0]))[0]
-    with _RunLock(first_account_tag):
-        _update_schedule_run("running", 0, total, f"Processed {ok}/{total} channel(s)")
+    failures = []
+    stopped = False
+    max_workers = min(_max_parallel_workers(), total)
+    print(f"Processing {total} token(s) with max_parallel={max_workers}...")
+    _update_schedule_run("running", 0, total, f"Processed {ok}/{total} channel(s)")
+
+    if max_workers == 1:
         for token_file in token_files:
             account_tag = os.path.splitext(os.path.basename(token_file))[0]
             cred_file = _resolve_token_file(token_file)
             try:
-                _run_for_credential(cred_file)
+                _run_credential_with_lock(cred_file)
                 ok += 1
                 _update_schedule_run("running", ok, total, f"Processed {ok}/{total} channel(s)")
             except Exception as e:
                 if str(e) == "Stop requested":
+                    stopped = True
                     write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")
-                    _update_schedule_run("stopped", ok, total, "Stopped by admin")
                     break
                 write_progress(account_tag, "error", 0, "error", str(e))
-                _update_schedule_run("error", ok, total, str(e))
-                break
-        if ok == total:
-            _update_schedule_run("done", ok, total, "Completed")
+                failures.append((account_tag, str(e)))
+    else:
+        future_to_token = {}
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="get-data") as executor:
+            for token_file in token_files:
+                cred_file = _resolve_token_file(token_file)
+                future = executor.submit(_run_credential_with_lock, cred_file)
+                future_to_token[future] = token_file
+
+            for future in as_completed(future_to_token):
+                token_file = future_to_token[future]
+                account_tag = os.path.splitext(os.path.basename(token_file))[0]
+                try:
+                    future.result()
+                    ok += 1
+                    _update_schedule_run("running", ok, total, f"Processed {ok}/{total} channel(s)")
+                except Exception as e:
+                    if str(e) == "Stop requested":
+                        stopped = True
+                        write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")
+                        for pending_future, pending_token_file in future_to_token.items():
+                            if pending_future.done():
+                                continue
+                            if pending_future.cancel():
+                                pending_account_tag = os.path.splitext(
+                                    os.path.basename(pending_token_file)
+                                )[0]
+                                write_progress(
+                                    pending_account_tag,
+                                    "stopped",
+                                    0,
+                                    "stopped",
+                                    "Stopped by admin",
+                                )
+                        break
+                    write_progress(account_tag, "error", 0, "error", str(e))
+                    failures.append((account_tag, str(e)))
+
+    if stopped:
+        _update_schedule_run("stopped", ok, total, "Stopped by admin")
+    elif failures:
+        account_tag, error_message = failures[0]
+        _update_schedule_run("error", ok, total, f"{account_tag}: {error_message}")
+    elif ok == total:
+        _update_schedule_run("done", ok, total, "Completed")
 
 if __name__ == "__main__":
     main()

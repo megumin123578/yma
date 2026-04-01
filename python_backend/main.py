@@ -6,8 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from python_backend.config import load_env
+from python_backend.google_api_quota import enable_google_api_quota_guard
 
 load_env()
+enable_google_api_quota_guard()
 
 from python_backend.api.auth.routers import auth, user
 from python_backend.api.auth.scheduler import start_scheduler, stop_scheduler

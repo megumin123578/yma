@@ -256,7 +256,6 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
 
     print(f"[INFO] live counter snapshot started: accounts={len(rows)}")
     channel_snapshots = []
-    channel_log_rows = []
     latest_video_snapshots = {}
     processed_accounts = 0
     failed_accounts = 0
@@ -298,11 +297,6 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
                     current_view_count,
                     int(latest_channel_snapshot.view_count or 0),
                 )
-            previous_view_count = (
-                int(latest_channel_snapshot.view_count or 0)
-                if latest_channel_snapshot and latest_channel_snapshot.view_count is not None
-                else None
-            )
             channel_snapshot = LiveCounterSnapshot(
                 user_id=row.user_id,
                 account_tag=row.account_tag,
@@ -363,17 +357,6 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
                             )
                         )
             channel_snapshots.append(channel_snapshot)
-            channel_log_rows.append(
-                {
-                    "account_tag": row.account_tag,
-                    "views": current_view_count,
-                    "changes": (
-                        current_view_count - previous_view_count
-                        if previous_view_count is not None
-                        else None
-                    ),
-                }
-            )
             latest_video_snapshots[(row.user_id, row.account_tag)] = account_video_snapshots
             processed_accounts += 1
         except Exception as e:
@@ -410,16 +393,6 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
         for snapshots in latest_video_snapshots.values()
         for snapshot in snapshots
     )
-    if channel_snapshots:
-        print("[INFO] live counter channel views:")
-        for row in channel_log_rows:
-            changes = row["changes"]
-            print(
-                "  "
-                f"account_tag={row['account_tag']}, "
-                f"views={int(row['views'] or 0)}, "
-                f"changes={('+' if changes and changes > 0 else '') + str(int(changes or 0))}"
-            )
     print(
         "[INFO] live counter snapshot finished: "
         f"processed={processed_accounts}, failed={failed_accounts}, "

@@ -232,50 +232,52 @@ def create_video_overview_table(pg_url: str):
     print("[DB] video_overview table ready.")
 
 
-def save_video_overview(pg_url: str, video_data: dict):
+def save_video_overviews(pg_url: str, video_rows: List[dict], batch_size: int = 500):
+    if not video_rows:
+        return
+
     engine = create_engine(pg_url, future=True)
     with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-            INSERT INTO video_overview (
-                account_tag,
-                video_id, title, thumbnail, publish_date,
-                views, likes, comments, dislikes, engaged_views,
-                annotation_click_through_rate,
-                annotation_close_rate, average_view_duration_seconds,
-                shares, subscribers_gained, subscribers_lost,
-                updated_at
-            )
-            VALUES (
-                :account_tag,
-                :video_id, :title, :thumbnail, :publish_date,
-                :views, :likes, :comments, :dislikes, :engaged_views,
-                :annotation_click_through_rate,
-                :annotation_close_rate, :average_view_duration_seconds,
-                :shares, :subscribers_gained, :subscribers_lost,
-                NOW()
-            )
-            ON CONFLICT (account_tag, video_id) DO UPDATE SET
-                title = EXCLUDED.title,
-                thumbnail = EXCLUDED.thumbnail,
-                publish_date = EXCLUDED.publish_date,
-                views = EXCLUDED.views,
-                likes = EXCLUDED.likes,
-                comments = EXCLUDED.comments,
-                dislikes = EXCLUDED.dislikes,
-                engaged_views = EXCLUDED.engaged_views,
-                annotation_click_through_rate = EXCLUDED.annotation_click_through_rate,
-                annotation_close_rate = EXCLUDED.annotation_close_rate,
-                average_view_duration_seconds = EXCLUDED.average_view_duration_seconds,
-                shares = EXCLUDED.shares,
-                subscribers_gained = EXCLUDED.subscribers_gained,
-                subscribers_lost = EXCLUDED.subscribers_lost,
-                updated_at = NOW();
-        """
-            ),
-            video_data,
+        upsert_stmt = text(
+            """
+        INSERT INTO video_overview (
+            account_tag,
+            video_id, title, thumbnail, publish_date,
+            views, likes, comments, dislikes, engaged_views,
+            annotation_click_through_rate,
+            annotation_close_rate, average_view_duration_seconds,
+            shares, subscribers_gained, subscribers_lost,
+            updated_at
         )
+        VALUES (
+            :account_tag,
+            :video_id, :title, :thumbnail, :publish_date,
+            :views, :likes, :comments, :dislikes, :engaged_views,
+            :annotation_click_through_rate,
+            :annotation_close_rate, :average_view_duration_seconds,
+            :shares, :subscribers_gained, :subscribers_lost,
+            NOW()
+        )
+        ON CONFLICT (account_tag, video_id) DO UPDATE SET
+            title = EXCLUDED.title,
+            thumbnail = EXCLUDED.thumbnail,
+            publish_date = EXCLUDED.publish_date,
+            views = EXCLUDED.views,
+            likes = EXCLUDED.likes,
+            comments = EXCLUDED.comments,
+            dislikes = EXCLUDED.dislikes,
+            engaged_views = EXCLUDED.engaged_views,
+            annotation_click_through_rate = EXCLUDED.annotation_click_through_rate,
+            annotation_close_rate = EXCLUDED.annotation_close_rate,
+            average_view_duration_seconds = EXCLUDED.average_view_duration_seconds,
+            shares = EXCLUDED.shares,
+            subscribers_gained = EXCLUDED.subscribers_gained,
+            subscribers_lost = EXCLUDED.subscribers_lost,
+            updated_at = NOW();
+    """
+        )
+        for batch in _chunked(video_rows, batch_size):
+            conn.execute(upsert_stmt, batch)
 
 
 # ======================================================================
@@ -304,6 +306,7 @@ def process_overall(cred_file: str, channel_id: Optional[str] = None):
     # Snippet info
     snippet_map = get_video_snippet_map(credentials, video_ids)
     analytics_map = get_yt_analytics_bulk(credentials, video_ids, channel_id=channel_id)
+    rows_to_save = []
 
     # ETL từng video
     for vid in video_ids:
@@ -338,6 +341,9 @@ def process_overall(cred_file: str, channel_id: Optional[str] = None):
             "subscribers_lost": ana.get("subscribersLost"),
         }
 
-        save_video_overview(pg_url, video_data)
+        rows_to_save.append(video_data)
+
+    print(f"[INFO] [{account_tag}] Saving {len(rows_to_save)} overview row(s) ...")
+    save_video_overviews(pg_url, rows_to_save)
 
     print(f"[DONE] [{account_tag}] All videos processed & saved to database.")

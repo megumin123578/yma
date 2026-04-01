@@ -566,7 +566,23 @@ const MailMonitor = () => {
     setSelectedMessageDetail(null);
     setSelectedMessageError("");
     setSelectedMessageLoading(false);
-  }, []);
+    setSearchParams((currentParams) => {
+      const nextParams = new URLSearchParams(currentParams);
+      nextParams.delete("messageId");
+      return nextParams;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  useEffect(() => {
+    const messageIdParam = searchParams.get("messageId");
+    const normalizedMessageId = Number(messageIdParam);
+    if (!messageIdParam || Number.isNaN(normalizedMessageId) || normalizedMessageId <= 0) {
+      return;
+    }
+
+    setActiveTab("messages");
+    handleOpenMessage(normalizedMessageId);
+  }, [handleOpenMessage, searchParams]);
 
   const handleAskDeleteAccount = useCallback((vpsId, accountEmail) => {
     setAccountDeleteError("");
