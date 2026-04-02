@@ -1,10 +1,13 @@
-import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
 import { motion } from "framer-motion";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
+import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
 
 import { useTheme } from "@mui/material/styles";
 
 import {
 
+  Avatar,
   Box,
   Stack,
   Typography,
@@ -123,6 +126,39 @@ const CONTENT_PERIOD_OPTIONS = CONTENT_PERIOD_OPTION_ORDER
     [...PERIOD_OPTIONS, ...EXTRA_PERIODS].find((option) => option.value === value)
   )
   .filter(Boolean);
+
+const CONTENT_ALL_CHANNELS_VALUE = "__all__";
+const CONTENT_LOCAL_CHANNEL_STORAGE_KEY = "content.selectedChannelId";
+const CHANNEL_SUMMARY_WEIGHT_BY_METRIC = {
+  averageViewDuration: "views",
+  averagePercentageViewed: "views",
+  stayedToWatch: "views",
+  averageViewsPerViewer: "uniqueViewers",
+  impressionsClickThroughRate: "impressions",
+};
+
+const getChartMetricRowKey = (selectedMetric) =>
+  (
+    {
+      views: "views",
+      estimatedMinutesWatched: "watchTimeHours",
+      averageViewDuration: "averageViewDuration",
+      averageViewPercentage: "averagePercentageViewed",
+      engagedViews: "engagedViews",
+    }[selectedMetric] || "views"
+  );
+
+const getStoredContentChannelId = () => {
+  try {
+    if (typeof window !== "undefined") {
+      const localValue = window.localStorage.getItem(CONTENT_LOCAL_CHANNEL_STORAGE_KEY);
+      if (localValue) return localValue;
+    }
+  } catch {
+    return "";
+  }
+  return getStoredSharedChannelId(CONTENT_LOCAL_CHANNEL_STORAGE_KEY);
+};
 
 
 
@@ -751,6 +787,7 @@ const ContentAnalytics = () => {
   const [page, setPage] = useState(0);
 
   const [rowsPerPage, setRowsPerPage] = useState(20);
+  const [expandedChannelIds, setExpandedChannelIds] = useState({});
   const [sortKey, setSortKey] = useState("views");
   const [sortDirection] = useState("desc");
 
@@ -760,7 +797,7 @@ const ContentAnalytics = () => {
 
     try {
 
-      return getStoredSharedChannelId("content.selectedChannelId");
+      return getStoredContentChannelId();
 
     } catch {
 
@@ -805,8 +842,10 @@ const ContentAnalytics = () => {
         setChannelList(finalChannels);
 
         setChannelId((current) => {
-          const preferredChannel =
-            getStoredSharedChannelId("content.selectedChannelId") || current;
+          const preferredChannel = getStoredContentChannelId() || current;
+          if (preferredChannel === CONTENT_ALL_CHANNELS_VALUE) {
+            return finalChannels.length ? CONTENT_ALL_CHANNELS_VALUE : "";
+          }
           return resolvePreferredSharedChannelId(
             preferredChannel,
             finalChannels,
@@ -826,18 +865,40 @@ const ContentAnalytics = () => {
 
   useEffect(() => {
 
-    setStoredSharedChannelId(channelId, "content.selectedChannelId");
+    if (channelId === CONTENT_ALL_CHANNELS_VALUE) {
+      try {
+        window.localStorage.setItem(CONTENT_LOCAL_CHANNEL_STORAGE_KEY, channelId);
+      } catch {
+        // ignore storage errors
+      }
+      return;
+    }
+
+    setStoredSharedChannelId(channelId, CONTENT_LOCAL_CHANNEL_STORAGE_KEY);
 
   }, [channelId]);
 
   useEffect(() => {
     return listenSharedChannelId((nextChannelId) => {
       setChannelId((current) => {
-        if (!nextChannelId || nextChannelId === current) return current;
+        if (
+          current === CONTENT_ALL_CHANNELS_VALUE ||
+          !nextChannelId ||
+          nextChannelId === current ||
+          !channelList.some((item) => item.id === nextChannelId)
+        ) {
+          return current;
+        }
         return nextChannelId;
       });
     });
-  }, []);
+  }, [channelList]);
+
+  const showAllMode = channelId === CONTENT_ALL_CHANNELS_VALUE;
+  const channelMetaById = useMemo(
+    () => new Map(channelList.map((item) => [item.id, item])),
+    [channelList]
+  );
 
 
 
@@ -1072,6 +1133,13 @@ const ContentAnalytics = () => {
           id: v.videoId,
 
           title: v.title,
+          displayTitle:
+            showAllMode && v.channelTitle
+              ? `${v.title} (${v.channelTitle})`
+              : v.title,
+          channelId: v.channelId || "",
+          channelTitle: v.channelTitle || "",
+          channelAvatar: v.channelAvatar || "",
 
           thumbnail: v.thumbnail,
 
@@ -1103,15 +1171,140 @@ const ContentAnalytics = () => {
 
         .sort((a, b) => b.views - a.views), // 🔴 Sort table by views
 
-    [videos]
+    [showAllMode, videos]
 
   );
 
+  const channelSummaryRows = useMemo(() => {
+    const groups = new Map();
+
+    rows.forEach((row) => {
+      const channelKey = String(row.channelId || "").trim();
+      if (!channelKey) return;
+
+      if (!groups.has(channelKey)) {
+        const channelMeta = channelMetaById.get(channelKey);
+        groups.set(channelKey, {
+          id: channelKey,
+          title: channelMeta?.title || row.channelTitle || channelKey,
+          displayTitle: channelMeta?.title || row.channelTitle || channelKey,
+          channelTitle: channelMeta?.title || row.channelTitle || channelKey,
+          channelAvatar: channelMeta?.avatar || row.channelAvatar || "",
+          published: row.published || null,
+          videoCount: 0,
+          _weighted: {},
+          _weights: {},
+          _sumFlags: {},
+        });
+      }
+
+      const entry = groups.get(channelKey);
+      entry.videoCount += 1;
+
+      if (row.published) {
+        const currentPublished = entry.published ? new Date(entry.published).getTime() : 0;
+        const nextPublished = new Date(row.published).getTime();
+        if (!entry.published || nextPublished > currentPublished) {
+          entry.published = row.published;
+        }
+      }
+
+      TABLE_METRIC_OPTIONS.forEach(({ value }) => {
+        const numericValue = toNullableNumber(row[value]);
+        if (numericValue === null) return;
+
+        if (NON_SUM_METRICS.has(value)) {
+          const weightKey = CHANNEL_SUMMARY_WEIGHT_BY_METRIC[value];
+          const weightValue = toNullableNumber(weightKey ? row[weightKey] : null);
+          const effectiveWeight = weightValue !== null && weightValue > 0 ? weightValue : 1;
+          entry._weighted[value] = (entry._weighted[value] || 0) + numericValue * effectiveWeight;
+          entry._weights[value] = (entry._weights[value] || 0) + effectiveWeight;
+          return;
+        }
+
+        entry[value] = (entry[value] || 0) + numericValue;
+        entry._sumFlags[value] = true;
+      });
+    });
+
+    return Array.from(groups.values()).map((entry) => {
+      const finalized = { ...entry };
+
+      TABLE_METRIC_OPTIONS.forEach(({ value }) => {
+        if (NON_SUM_METRICS.has(value)) {
+          finalized[value] =
+            entry._weights[value] > 0
+              ? entry._weighted[value] / entry._weights[value]
+              : null;
+          return;
+        }
+
+        if (!entry._sumFlags[value]) {
+          finalized[value] = null;
+        }
+      });
+
+      delete finalized._weighted;
+      delete finalized._weights;
+      delete finalized._sumFlags;
+      return finalized;
+    });
+  }, [channelMetaById, rows]);
+
+  const tableRows = showAllMode ? channelSummaryRows : rows;
+
+  const channelExpandedVideos = useMemo(() => {
+    const compareVideoRows = (left, right) => {
+      const childSortKey = sortKey === "videoCount" ? "views" : sortKey;
+
+      const getComparableValue = (row, key) => {
+        if (key === "title") return String(row.displayTitle || row.title || "").toLowerCase();
+        if (key === "published") {
+          return row.published ? new Date(row.published).getTime() : Number.NEGATIVE_INFINITY;
+        }
+        const value = row[key];
+        if (value === null || value === undefined || value === "") {
+          return Number.NEGATIVE_INFINITY;
+        }
+        if (typeof value === "number") return value;
+        return String(value).toLowerCase();
+      };
+
+      const leftValue = getComparableValue(left, childSortKey);
+      const rightValue = getComparableValue(right, childSortKey);
+      const directionFactor = sortDirection === "asc" ? 1 : -1;
+
+      if (typeof leftValue === "string" || typeof rightValue === "string") {
+        return String(leftValue).localeCompare(String(rightValue)) * directionFactor;
+      }
+      if (leftValue === rightValue) return 0;
+      return (leftValue - rightValue) * directionFactor;
+    };
+
+    const grouped = rows.reduce((acc, row) => {
+      const channelKey = String(row.channelId || "").trim();
+      if (!channelKey) return acc;
+      if (!acc[channelKey]) acc[channelKey] = [];
+      acc[channelKey].push(row);
+      return acc;
+    }, {});
+
+    return Object.fromEntries(
+      Object.entries(grouped).map(([channelKey, channelRows]) => [
+        channelKey,
+        [...channelRows].sort(compareVideoRows).slice(0, 5),
+      ])
+    );
+  }, [rows, sortDirection, sortKey]);
+
   const sortedRows = useMemo(() => {
     const getComparableValue = (row, key) => {
-      if (key === "title") return String(row.title || "").toLowerCase();
+      if (key === "title") return String(row.displayTitle || row.title || "").toLowerCase();
       if (key === "published") {
         return row.published ? new Date(row.published).getTime() : Number.NEGATIVE_INFINITY;
+      }
+      if (key === "videoCount") {
+        return Number(row.videoCount || 0);
       }
       const value = row[key];
       if (value === null || value === undefined || value === "") {
@@ -1122,7 +1315,7 @@ const ContentAnalytics = () => {
     };
 
     const directionFactor = sortDirection === "asc" ? 1 : -1;
-    return [...rows].sort((a, b) => {
+    return [...tableRows].sort((a, b) => {
       const aValue = getComparableValue(a, sortKey);
       const bValue = getComparableValue(b, sortKey);
 
@@ -1133,7 +1326,7 @@ const ContentAnalytics = () => {
       if (aValue === bValue) return 0;
       return (aValue - bValue) * directionFactor;
     });
-  }, [rows, sortDirection, sortKey]);
+  }, [sortDirection, sortKey, tableRows]);
 
   const totals = useMemo(() => {
     const acc = TABLE_METRIC_OPTIONS.reduce((out, item) => {
@@ -1165,6 +1358,47 @@ const ContentAnalytics = () => {
 
     return acc;
   }, [rows, channelMetrics]);
+
+  const showAllSummaryCards = useMemo(
+    () => [
+      {
+        label: "Channels",
+        value: formatNumber(channelSummaryRows.length),
+      },
+      {
+        label: "Videos",
+        value: formatNumber(rows.length),
+      },
+      {
+        label: "Views",
+        value:
+          totals.views == null ? "-" : formatTableMetricValue("views", totals.views),
+      },
+      {
+        label: "Watch time (hours)",
+        value:
+          totals.watchTimeHours == null
+            ? "-"
+            : formatTableMetricValue("watchTimeHours", totals.watchTimeHours),
+      },
+      {
+        label: "Subscribers",
+        value:
+          totals.subscribers == null
+            ? "-"
+            : formatTableMetricValue("subscribers", totals.subscribers),
+      },
+      {
+        label: "Impressions",
+        value:
+          totals.impressions == null
+            ? "-"
+            : formatTableMetricValue("impressions", totals.impressions),
+      },
+    ],
+    [channelSummaryRows.length, rows.length, totals]
+  );
+
 
 
   const pagedRows = useMemo(() => {
@@ -1277,6 +1511,20 @@ const ContentAnalytics = () => {
     setSortKey(key);
   }, []);
 
+  const handleToggleChannelExpand = useCallback((channelIdValue) => {
+    if (!channelIdValue) return;
+    setExpandedChannelIds((current) => ({
+      ...current,
+      [channelIdValue]: !current[channelIdValue],
+    }));
+  }, []);
+
+  useEffect(() => {
+    if (!showAllMode) {
+      setExpandedChannelIds({});
+    }
+  }, [showAllMode]);
+
 
 
   /* ================================
@@ -1288,6 +1536,43 @@ const ContentAnalytics = () => {
   const lineData = useMemo(() => {
 
     if (chartType !== "line") return [];
+
+    const lineMetricKey =
+      metric === "estimatedMinutesWatched" ? "watch_hours" : "views";
+
+    const allDatesSet = new Set();
+
+    timeseries.forEach(t => {
+
+      const d = dayjs(t.bucket).startOf('day').toDate().getTime();
+
+      allDatesSet.add(d);
+
+    });
+
+    const allDatesSorted = Array.from(allDatesSet).sort((a, b) => a - b).map(t => new Date(t));
+
+    if (showAllMode) {
+      const dailyTotals = new Map();
+
+      timeseries.forEach((t) => {
+        const d = dayjs(t.bucket).startOf("day").toDate().getTime();
+        dailyTotals.set(d, (dailyTotals.get(d) || 0) + n(t[lineMetricKey]));
+      });
+
+      if (!allDatesSorted.length) return [];
+
+      return [
+        {
+          id: CONTENT_ALL_CHANNELS_VALUE,
+          data: allDatesSorted.map((d) => ({
+            x: d,
+            y: dailyTotals.get(d.getTime()) || 0,
+            title: "All channels",
+          })),
+        },
+      ];
+    }
 
 
 
@@ -1303,24 +1588,6 @@ const ContentAnalytics = () => {
 
     const topIdsSet = new Set(topIds);
 
-
-
-    // 2. Identify all unique dates in the timeseries
-
-    const allDatesSet = new Set();
-
-    timeseries.forEach(t => {
-
-      const d = dayjs(t.bucket).startOf('day').toDate().getTime();
-
-      allDatesSet.add(d);
-
-    });
-
-    const allDatesSorted = Array.from(allDatesSet).sort((a, b) => a - b).map(t => new Date(t));
-
-
-
     const map = new Map();
 
     timeseries.forEach((t) => {
@@ -1331,35 +1598,22 @@ const ContentAnalytics = () => {
 
 
 
-      const title = t.title || id;
+      const title = t.displayTitle || t.title || id;
 
       if (!map.has(id)) {
 
         map.set(id, new Map());
 
       }
-
-      const metricKey =
-
-        {
-
-          views: "views",
-
-          estimatedMinutesWatched: "watch_hours",
-
-        }[metric] ?? "views";
-
-
-
       const d = dayjs(t.bucket).startOf('day').toDate().getTime();
 
-      map.get(id).set(d, { y: n(t[metricKey]), title });
+      map.get(id).set(d, { y: n(t[lineMetricKey]), title });
 
     });
 
 
 
-    const titleMap = new Map(rows.map(r => [r.id, r.title]));
+    const titleMap = new Map(rows.map(r => [r.id, r.displayTitle || r.title]));
 
 
 
@@ -1389,7 +1643,7 @@ const ContentAnalytics = () => {
 
     });
 
-  }, [timeseries, chartType, metric, rows, sortedRows]);
+  }, [chartType, metric, rows, showAllMode, sortedRows, timeseries]);
 
 
 
@@ -1427,21 +1681,25 @@ const ContentAnalytics = () => {
 
 
 
-    const metricKey =
-
-      {
+    const metricKey = showAllMode
+      ? getChartMetricRowKey(metric)
+      : ({
 
         views: "views",
 
         estimatedMinutesWatched: "watchHours",
 
-      }[metric] ?? "views";
+      }[metric] ?? "views");
 
 
 
     // 🔴 Limit to Top 5 for Bar chart too
 
-    const topRows = sortedRows
+    const sourceRows = showAllMode
+      ? [...channelSummaryRows].sort((a, b) => n(b[metricKey]) - n(a[metricKey]))
+      : sortedRows;
+
+    const topRows = sourceRows
 
       .slice(0, 5);
 
@@ -1453,15 +1711,15 @@ const ContentAnalytics = () => {
 
       data: topRows.map((r) => ({
 
-        video: r.title,
+        label: r.displayTitle || r.title,
 
-        [r.id]: r[metricKey],
+        [r.id]: n(r[metricKey]),
 
       })),
 
     };
 
-  }, [sortedRows, chartType, metric]);
+  }, [channelSummaryRows, chartType, metric, showAllMode, sortedRows]);
 
 
 
@@ -1490,16 +1748,18 @@ const ContentAnalytics = () => {
     ];
 
     const map = {};
+    const sourceIds =
+      lineData.length > 0 ? lineData.map((serie) => serie.id) : barPrep.keys || [];
 
-    lineData.forEach((serie, index) => {
+    sourceIds.forEach((id, index) => {
 
-      map[serie.id] = palette[index % palette.length];
+      map[id] = palette[index % palette.length];
 
     });
 
     return map;
 
-  }, [lineData]);
+  }, [barPrep.keys, lineData]);
 
 
 
@@ -1795,6 +2055,10 @@ const ContentAnalytics = () => {
           onChange={(option) => setChannelId(option?.value || "")}
           sx={CHANNEL_SWITCHER_SX}
           getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
+          showAllDisabled={!channelList.length}
+          showAllActive={showAllMode}
+          showAllSelectedLabel="All channels"
+          onShowAllClick={() => setChannelId(CONTENT_ALL_CHANNELS_VALUE)}
         />
 
         {/* Metric */}
@@ -1935,6 +2199,63 @@ const ContentAnalytics = () => {
 
       </Stack>
 
+      {showAllMode && (
+        <Box
+          sx={{
+            display: "grid",
+            gridTemplateColumns: {
+              xs: "repeat(2, minmax(0, 1fr))",
+              md: "repeat(3, minmax(0, 1fr))",
+              xl: "repeat(6, minmax(0, 1fr))",
+            },
+            gap: 1.5,
+          }}
+        >
+          {showAllSummaryCards.map((item) => (
+            <Paper
+              key={item.label}
+              elevation={0}
+              sx={{
+                p: 1.75,
+                borderRadius: 2.5,
+                border: "1px solid",
+                borderColor:
+                  theme.palette.mode === "dark"
+                    ? "rgba(148,163,184,0.2)"
+                    : "rgba(15,23,42,0.1)",
+                background:
+                  theme.palette.mode === "dark"
+                    ? "linear-gradient(180deg, rgba(15,23,42,0.88), rgba(10,15,24,0.78))"
+                    : "linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.95))",
+              }}
+            >
+              <Typography
+                variant="caption"
+                sx={{
+                  display: "block",
+                  mb: 0.6,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "text.secondary",
+                  fontWeight: 700,
+                }}
+              >
+                {item.label}
+              </Typography>
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 800,
+                  color: "text.primary",
+                }}
+              >
+                {item.value}
+              </Typography>
+            </Paper>
+          ))}
+        </Box>
+      )}
+
 
 
       {/* CHART */}
@@ -1966,7 +2287,6 @@ const ContentAnalytics = () => {
         }}
 
       >
-
         {chartType === "line" && lineData.length > 0 && (
           <Box
             component={motion.div}
@@ -2233,7 +2553,7 @@ const ContentAnalytics = () => {
 
             keys={barPrep.keys}
 
-            indexBy="video"
+            indexBy="label"
 
             margin={{ top: 32, right: 16, bottom: 112, left: 56 }}
 
@@ -2400,7 +2720,7 @@ const ContentAnalytics = () => {
 
                   {top5.map((entry) => {
 
-                    const videoId = Object.keys(entry).find(k => k !== "video");
+                    const videoId = Object.keys(entry).find(k => k !== "label");
 
                     const val = entry[videoId];
 
@@ -2474,7 +2794,7 @@ const ContentAnalytics = () => {
 
                           }}>
 
-                            {entry.video}
+                            {entry.label}
 
                           </span>
 
@@ -2580,7 +2900,19 @@ const ContentAnalytics = () => {
 
             <TableRow>
 
-              <TableCell>Video</TableCell>
+              <TableCell>{showAllMode ? "Channel" : "Video"}</TableCell>
+
+              {showAllMode ? (
+                <TableCell sortDirection={sortKey === "videoCount" ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortKey === "videoCount"}
+                    direction={sortKey === "videoCount" ? sortDirection : "desc"}
+                    onClick={() => handleSort("videoCount")}
+                  >
+                    Videos
+                  </TableSortLabel>
+                </TableCell>
+              ) : null}
 
               <TableCell sortDirection={sortKey === "published" ? sortDirection : false}>
                 <TableSortLabel
@@ -2588,7 +2920,7 @@ const ContentAnalytics = () => {
                   direction={sortKey === "published" ? sortDirection : "desc"}
                   onClick={() => handleSort("published")}
                 >
-                  Publish Date
+                  {showAllMode ? "Latest Publish" : "Publish Date"}
                 </TableSortLabel>
               </TableCell>
 
@@ -2631,6 +2963,11 @@ const ContentAnalytics = () => {
             {/* TOTAL row at top */}
             <TableRow>
               <TableCell sx={{ fontWeight: 700 }}>TOTAL</TableCell>
+              {showAllMode ? (
+                <TableCell align="right" sx={{ fontWeight: 700 }}>
+                  {formatNumber(rows.length)}
+                </TableCell>
+              ) : null}
               <TableCell />
               {selectedTableMetrics.map((metricKey) => (
                 <TableCell key={metricKey} align="right">
@@ -2641,113 +2978,244 @@ const ContentAnalytics = () => {
               ))}
             </TableRow>
 
-            {pagedRows.map((r) => (
+            {pagedRows.map((r) => {
+              const isExpanded = !!expandedChannelIds[r.id];
+              const expandedVideos = showAllMode ? channelExpandedVideos[r.id] || [] : [];
 
-              <TableRow
+              return (
+                <Fragment key={r.id}>
+                  <TableRow
 
-                key={r.id}
+                    key={r.id}
+                    onClick={showAllMode ? () => handleToggleChannelExpand(r.id) : undefined}
 
-                sx={{
+                    sx={{
 
-                  transition: "transform 0.2s ease, background-color 0.2s ease",
+                      transition: "transform 0.2s ease, background-color 0.2s ease",
+                      cursor: showAllMode ? "pointer" : "default",
 
-                  "&:hover": {
+                      "&:hover": {
 
-                    backgroundColor:
+                        backgroundColor:
 
-                      theme.palette.mode === "dark"
+                          theme.palette.mode === "dark"
 
-                        ? "rgba(51,65,85,0.55)"
+                            ? "rgba(51,65,85,0.55)"
 
-                        : "rgba(226,232,240,0.6)",
+                            : "rgba(226,232,240,0.6)",
 
-                    transform: "translateY(-1px)",
+                        transform: "translateY(-1px)",
 
-                  },
+                      },
 
-                }}
+                    }}
 
-              >
+                  >
 
-                <TableCell
+                    <TableCell
 
-                  sx={{
+                      sx={{
 
-                    borderLeft: seriesColors[r.id]
+                        borderLeft: seriesColors[r.id]
 
-                      ? `4px solid ${seriesColors[r.id]}`
+                          ? `4px solid ${seriesColors[r.id]}`
 
-                      : "4px solid transparent",
+                          : "4px solid transparent",
 
-                    pl: 1.5,
+                        pl: 1.5,
 
-                  }}
-
-                >
-
-                  <Stack direction="row" spacing={1} alignItems="center">
-
-                    <a
-
-                      href={`https://www.youtube.com/watch?v=${r.id}`}
-
-                      target="_blank"
-
-                      rel="noreferrer"
-
-                      style={{ display: "inline-flex" }}
+                      }}
 
                     >
 
-                      <VideoThumbnail src={r.thumbnail} duration={r.duration} videoId={r.id} />
+                      {showAllMode ? (
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          <Box
+                            sx={{
+                              width: 18,
+                              height: 18,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: "text.secondary",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {isExpanded ? (
+                              <KeyboardArrowDownIcon fontSize="small" />
+                            ) : (
+                              <KeyboardArrowRightIcon fontSize="small" />
+                            )}
+                          </Box>
+                          <Avatar
+                            src={r.channelAvatar || ""}
+                            alt={r.displayTitle || r.title}
+                            sx={{ width: 28, height: 28, fontSize: 13, fontWeight: 700 }}
+                          >
+                            {String(r.displayTitle || r.title || "?").trim().charAt(0).toUpperCase()}
+                          </Avatar>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography
+                              sx={{
+                                display: "block",
+                                fontWeight: 700,
+                                color: "text.primary",
+                              }}
+                            >
+                              {r.displayTitle || r.title}
+                            </Typography>
+                          </Box>
+                        </Stack>
+                      ) : (
+                        <Stack direction="row" spacing={1} alignItems="center">
 
-                    </a>
+                          <a
 
-                    <a
+                            href={`https://www.youtube.com/watch?v=${r.id}`}
 
-                      href={`https://www.youtube.com/watch?v=${r.id}`}
+                            target="_blank"
 
-                      target="_blank"
+                            rel="noreferrer"
 
-                      rel="noreferrer"
+                            style={{ display: "inline-flex" }}
 
-                      style={{ color: "inherit", textDecoration: "none" }}
+                          >
 
-                    >
+                            <VideoThumbnail src={r.thumbnail} duration={r.duration} videoId={r.id} />
 
-                      {r.title}
+                          </a>
 
-                    </a>
+                          <a
 
-                  </Stack>
+                            href={`https://www.youtube.com/watch?v=${r.id}`}
 
-                </TableCell>
+                            target="_blank"
+
+                            rel="noreferrer"
+
+                            style={{ color: "inherit", textDecoration: "none", minWidth: 0 }}
+
+                          >
+
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography
+                                component="span"
+                                sx={{
+                                  display: "block",
+                                  fontWeight: 600,
+                                  color: "inherit",
+                                }}
+                              >
+                                {r.title}
+                              </Typography>
+                            </Box>
+
+                          </a>
+
+                        </Stack>
+                      )}
+
+                    </TableCell>
+
+                    {showAllMode ? (
+                      <TableCell align="right">{formatNumber(r.videoCount)}</TableCell>
+                    ) : null}
 
 
+                    <TableCell>
 
-                <TableCell>
+                      {r.published
 
-                  {r.published
+                        ? dayjs(r.published).format("DD-MM-YYYY")
 
-                    ? dayjs(r.published).format("DD-MM-YYYY")
+                        : ""}
 
-                    : ""}
+                    </TableCell>
 
-                </TableCell>
+                    {selectedTableMetrics.map((metricKey) => (
 
-                {selectedTableMetrics.map((metricKey) => (
+                      <TableCell key={metricKey} align="right">
 
-                  <TableCell key={metricKey} align="right">
+                        {formatTableMetricValue(metricKey, r[metricKey])}
 
-                    {formatTableMetricValue(metricKey, r[metricKey])}
+                      </TableCell>
 
-                  </TableCell>
+                    ))}
 
-                ))}
+                  </TableRow>
 
-              </TableRow>
+                  {showAllMode && isExpanded
+                    ? expandedVideos.map((videoRow) => (
+                        <TableRow
+                          key={`${r.id}:${videoRow.id}`}
+                          sx={{
+                            backgroundColor:
+                              theme.palette.mode === "dark"
+                                ? "rgba(15,23,42,0.48)"
+                                : "rgba(248,250,252,0.95)",
+                            "&:hover": {
+                              backgroundColor:
+                                theme.palette.mode === "dark"
+                                  ? "rgba(30,41,59,0.58)"
+                                  : "rgba(241,245,249,0.98)",
+                            },
+                          }}
+                        >
+                          <TableCell sx={{ pl: 5.5 }}>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <a
+                                href={`https://www.youtube.com/watch?v=${videoRow.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ display: "inline-flex" }}
+                              >
+                                <VideoThumbnail
+                                  src={videoRow.thumbnail}
+                                  duration={videoRow.duration}
+                                  videoId={videoRow.id}
+                                />
+                              </a>
+                              <a
+                                href={`https://www.youtube.com/watch?v=${videoRow.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ color: "inherit", textDecoration: "none", minWidth: 0 }}
+                              >
+                                <Box sx={{ minWidth: 0 }}>
+                                  <Typography
+                                    component="span"
+                                    sx={{
+                                      display: "block",
+                                      fontWeight: 600,
+                                      color: "inherit",
+                                    }}
+                                  >
+                                    {videoRow.title}
+                                  </Typography>
+                                </Box>
+                              </a>
+                            </Stack>
+                          </TableCell>
 
-            ))}
+                          <TableCell align="right" />
+
+                          <TableCell>
+                            {videoRow.published
+                              ? dayjs(videoRow.published).format("DD-MM-YYYY")
+                              : ""}
+                          </TableCell>
+
+                          {selectedTableMetrics.map((metricKey) => (
+                            <TableCell key={`${videoRow.id}:${metricKey}`} align="right">
+                              {formatTableMetricValue(metricKey, videoRow[metricKey])}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))
+                    : null}
+                </Fragment>
+              );
+            })}
 
 
 
@@ -2759,7 +3227,7 @@ const ContentAnalytics = () => {
 
           component="div"
 
-          count={rows.length}
+          count={tableRows.length}
 
           page={page}
 

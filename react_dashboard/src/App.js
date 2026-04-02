@@ -1,5 +1,5 @@
 import { memo, useState, useContext, useEffect } from "react";
-import { Routes, Route, useLocation, Navigate } from "react-router-dom";
+import { Routes, Route, useLocation, Navigate, useNavigate } from "react-router-dom";
 import Topbar from "./scenes/global/Topbar";
 import Sidebar from "./scenes/global/Sidebar";
 import Dashboard from "./scenes/dashboard";
@@ -11,7 +11,7 @@ import SmmstoreScene from "./scenes/smmstore";
 import ChannelCompareScene from "./scenes/channel_compare";
 import RivalsData from "./scenes/rivals";
 
-import { Box, IconButton, useMediaQuery, useTheme } from "@mui/material";
+import { Box, Button, IconButton, useMediaQuery, useTheme } from "@mui/material";
 import { ColorModeContext } from "./theme";
 import GeographyScene from "./scenes/geography";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
@@ -27,6 +27,7 @@ import PrivacyPage from "./scenes/privacy";
 import TermsPage from "./scenes/terms";
 import LandingPage from "./scenes/landing";
 import { AnimatePresence, motion } from "framer-motion";
+import { uploadCredentials } from "./services/userService";
 
 const ProtectedRoute = memo(function ProtectedRoute({ children, user, loading }) {
   if (loading) return null;
@@ -158,7 +159,9 @@ function App() {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const colorMode = useContext(ColorModeContext);
   const [isSidebar, setIsSidebar] = useState(!isMobile);
+  const [addingChannel, setAddingChannel] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, loading } = useContext(UserContext);
 
   const noLayoutRoutes = [
@@ -180,6 +183,28 @@ function App() {
     }
   }, [location.pathname, isMobile]);
 
+  const handleAddChannel = async () => {
+    if (addingChannel) return;
+    if (!user) {
+      navigate("/login");
+      return;
+    }
+    setAddingChannel(true);
+    try {
+      const data = await uploadCredentials();
+      const nextUrl = data?.auth_url || "";
+      if (nextUrl) {
+        window.open(nextUrl, "_blank", "noopener");
+      }
+    } catch (error) {
+      if (error?.response?.status === 401) {
+        navigate("/login");
+      }
+    } finally {
+      setAddingChannel(false);
+    }
+  };
+
   return (
     <div className="app">
       {!isNoLayout && (
@@ -199,7 +224,40 @@ function App() {
           />
         )}
         {isNoLayout && (
-          <Box display="flex" justifyContent="flex-end" pt={0} px={2}>
+          <Box display="flex" justifyContent="flex-end" alignItems="center" gap={1} pt={0} px={2}>
+            <Button
+              variant="contained"
+              size="small"
+              onClick={handleAddChannel}
+              disabled={addingChannel}
+              sx={{
+                borderRadius: 999,
+                textTransform: "none",
+                fontWeight: 700,
+                minWidth: 0,
+                px: 1.25,
+                py: 0.45,
+                lineHeight: 1.2,
+                minHeight: 30,
+                bgcolor: theme.palette.mode === "dark" ? "#2b8a7b" : theme.palette.primary.main,
+                color: "#fff",
+                boxShadow:
+                  theme.palette.mode === "dark"
+                    ? "0 10px 22px rgba(43,138,123,0.28)"
+                    : "0 10px 22px rgba(25,118,210,0.22)",
+                transition: "all 180ms ease",
+                "&:hover": {
+                  bgcolor: theme.palette.mode === "dark" ? "#247468" : theme.palette.primary.dark,
+                  transform: "translateY(-1px)",
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? "0 14px 26px rgba(43,138,123,0.34)"
+                      : "0 14px 26px rgba(25,118,210,0.28)",
+                },
+              }}
+            >
+              Add Channel
+            </Button>
             <IconButton onClick={colorMode.toggleColorMode}>
               {theme.palette.mode === "dark" ? (
                 <DarkModeOutlinedIcon />

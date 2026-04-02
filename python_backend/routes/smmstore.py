@@ -4,7 +4,12 @@ from typing import Optional, List, Dict
 from sqlalchemy.orm import Session
 from python_backend.api.auth.auth_utils import get_current_user
 from python_backend.api.auth.database import get_db, SessionLocal
-from python_backend.api.auth.models import User, SmmstoreAnalyticsCache, SmmstoreScheduledOrder
+from python_backend.api.auth.models import (
+    SAIGON_TZ,
+    User,
+    SmmstoreAnalyticsCache,
+    SmmstoreScheduledOrder,
+)
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import json
@@ -57,6 +62,16 @@ def _error_text(exc: Exception) -> str:
 
 def _log_submit_event(level: str, message: str) -> None:
     print(f"[SMMSTORE][{level}] {message}")
+
+
+def _now_saigon_naive() -> datetime:
+    return datetime.now(SAIGON_TZ).replace(tzinfo=None)
+
+
+def _to_saigon_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(SAIGON_TZ).replace(tzinfo=None)
 
 
 @router.post("/balance")
@@ -164,7 +179,7 @@ def create_order(
         resp = smm_request(key, params)
         remote_id = str(resp.get("order") or "").strip()
         if remote_id:
-            now = datetime.utcnow()
+            now = _now_saigon_naive()
             row = SmmstoreScheduledOrder(
                 user_id=current_user.id,
                 run_at=now,
@@ -259,11 +274,11 @@ def create_scheduled_order(
         payload.interval,
     )
 
-    run_at = payload.run_at
-    if run_at.tzinfo is not None:
-        run_at = run_at.astimezone().replace(tzinfo=None)
-    if run_at < datetime.utcnow():
+    run_at = _to_saigon_naive(payload.run_at)
+    if run_at < _now_saigon_naive():
         raise HTTPException(status_code=400, detail="run_at must be in the future")
+
+    now = _now_saigon_naive()
 
     row = SmmstoreScheduledOrder(
         user_id=current_user.id,
@@ -274,8 +289,8 @@ def create_scheduled_order(
         runs=runs or None,
         interval=interval or None,
         status="queued",
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=now,
+        updated_at=now,
     )
     db.add(row)
     db.commit()
@@ -324,7 +339,7 @@ def delete_scheduled_order(
 
 
 def process_due_smmstore_orders(limit: int = 20) -> None:
-    now = datetime.utcnow()
+    now = _now_saigon_naive()
     db = SessionLocal()
     try:
         due_rows = (
@@ -345,7 +360,7 @@ def process_due_smmstore_orders(limit: int = 20) -> None:
                 order_row.status = "failed"
                 order_row.last_error = "Missing SMM API key"
                 order_row.attempts = int(order_row.attempts or 0) + 1
-                order_row.updated_at = datetime.utcnow()
+                order_row.updated_at = _now_saigon_naive()
                 db.add(order_row)
                 db.commit()
                 _log_submit_event(
@@ -378,7 +393,7 @@ def process_due_smmstore_orders(limit: int = 20) -> None:
                 else:
                     order_row.remote_order_id = remote_id
                     order_row.status = "submitted"
-                    order_row.submitted_at = datetime.utcnow()
+                    order_row.submitted_at = _now_saigon_naive()
                     order_row.last_error = None
                     _log_submit_event(
                         "OK",
@@ -393,7 +408,7 @@ def process_due_smmstore_orders(limit: int = 20) -> None:
                 )
 
             order_row.attempts = int(order_row.attempts or 0) + 1
-            order_row.updated_at = datetime.utcnow()
+            order_row.updated_at = _now_saigon_naive()
             db.add(order_row)
             db.commit()
 
@@ -428,7 +443,7 @@ def process_due_smmstore_orders(limit: int = 20) -> None:
                 order_row.status = status_text or "submitted"
                 order_row.charge = str(resp.get("charge") or "")
                 order_row.remains = str(resp.get("remains") or resp.get("remain") or "")
-                order_row.updated_at = datetime.utcnow()
+                order_row.updated_at = _now_saigon_naive()
                 db.add(order_row)
                 db.commit()
             except Exception:

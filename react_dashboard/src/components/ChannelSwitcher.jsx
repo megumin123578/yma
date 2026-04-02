@@ -88,6 +88,11 @@ const ChannelSwitcher = ({
   getOptionLabel = defaultGetLabel,
   getOptionAvatar = defaultGetAvatar,
   getOptionMeta = defaultGetMeta,
+  showAllLabel = "Show all",
+  showAllSelectedLabel = "All channels",
+  showAllDisabled = true,
+  showAllActive = false,
+  onShowAllClick,
 }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
@@ -214,8 +219,19 @@ const ChannelSwitcher = ({
     () =>
       groupedOptions.find((option) => option.value === selectedValue) ||
       mergedOptions.find((option) => option.value === selectedValue) ||
+      (showAllActive
+        ? {
+            raw: null,
+            value: "__all__",
+            label: showAllSelectedLabel,
+            avatar: "",
+            meta: "",
+            hidden: false,
+            tokenName: "",
+          }
+        : null) ||
       null,
-    [groupedOptions, mergedOptions, selectedValue]
+    [groupedOptions, mergedOptions, selectedValue, showAllActive, showAllSelectedLabel]
   );
 
   useEffect(() => {
@@ -324,51 +340,128 @@ const ChannelSwitcher = ({
   const renderDropdownPaper = (paperProps) => (
     <Paper {...paperProps}>
       {paperProps.children}
-      {visibilityReady && hiddenOptions.length ? (
+      {visibilityReady ? (
         <>
           <Divider />
           <Box
-            onMouseDown={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-            }}
-            onClick={handleToggleShowHidden}
             sx={{
-              px: 1.25,
-              py: 0.85,
+              px: 1,
+              py: 0.7,
               display: "flex",
               alignItems: "center",
-              gap: 0.5,
-              cursor: "pointer",
-              "&:hover": { bgcolor: "action.hover" },
+              justifyContent: "space-between",
+              gap: 1,
             }}
           >
+            {hiddenOptions.length ? (
+              <Box
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={handleToggleShowHidden}
+                sx={{
+                  px: 0.75,
+                  py: 0.45,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 0.5,
+                  cursor: "pointer",
+                  borderRadius: 1.5,
+                  "&:hover": { bgcolor: "action.hover" },
+                }}
+              >
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 24,
+                    height: 24,
+                    color: isDark ? "rgba(226,232,240,0.82)" : "rgba(15,23,42,0.6)",
+                  }}
+                >
+                  {showHidden ? (
+                    <ExpandLessIcon fontSize="small" />
+                  ) : (
+                    <ExpandMoreIcon fontSize="small" />
+                  )}
+                </Box>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: "text.secondary",
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  {showHidden ? "Hide hidden" : `Show hidden (${hiddenOptions.length})`}
+                </Typography>
+              </Box>
+            ) : (
+              <Box sx={{ minWidth: 12, minHeight: 1 }} />
+            )}
             <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 24,
-                height: 24,
-                color: isDark ? "rgba(226,232,240,0.82)" : "rgba(15,23,42,0.6)",
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
               }}
-            >
-              {showHidden ? (
-                <ExpandLessIcon fontSize="small" />
-              ) : (
-                <ExpandMoreIcon fontSize="small" />
-              )}
-            </Box>
-            <Typography
-              variant="body2"
+              onClick={() => {
+                if (showAllDisabled || typeof onShowAllClick !== "function") return;
+                onShowAllClick();
+                setOpen(false);
+                setStickyHiddenValues([]);
+              }}
               sx={{
-                color: "text.secondary",
+                color: showAllActive
+                  ? isDark
+                    ? "#7dd3fc"
+                    : "#1565c0"
+                  : "text.secondary",
                 fontSize: 13,
                 fontWeight: 700,
+                px: 1,
+                py: 0.45,
+                borderRadius: 1.5,
+                opacity: showAllDisabled ? 0.56 : 1,
+                cursor: showAllDisabled ? "not-allowed" : "pointer",
+                border: "1px solid",
+                borderColor: showAllActive
+                  ? isDark
+                    ? "rgba(125,211,252,0.45)"
+                    : "rgba(21,101,192,0.28)"
+                  : isDark
+                    ? "rgba(148,163,184,0.22)"
+                    : "rgba(15,23,42,0.1)",
+                bgcolor: showAllActive
+                  ? isDark
+                    ? "rgba(125,211,252,0.12)"
+                    : "rgba(21,101,192,0.08)"
+                  : isDark
+                    ? "rgba(148,163,184,0.08)"
+                    : "rgba(15,23,42,0.03)",
+                "&:hover": showAllDisabled
+                  ? undefined
+                  : {
+                      bgcolor: showAllActive
+                        ? isDark
+                          ? "rgba(125,211,252,0.18)"
+                          : "rgba(21,101,192,0.12)"
+                        : "action.hover",
+                    },
               }}
             >
-              {showHidden ? "Hide hidden" : `Show hidden (${hiddenOptions.length})`}
-            </Typography>
+              <Typography
+                variant="body2"
+                sx={{
+                  color: "inherit",
+                  fontSize: "inherit",
+                  fontWeight: "inherit",
+                }}
+              >
+                {showAllLabel}
+              </Typography>
+            </Box>
           </Box>
         </>
       ) : null}

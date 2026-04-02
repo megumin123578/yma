@@ -23,6 +23,7 @@ from google.auth.transport.requests import Request
 router = APIRouter(prefix="/api/content", tags=["content"])
 
 TOKEN_DIR = "./python_backend/token"
+ALL_CHANNELS_VALUE = "__all__"
 
 # cache table for per-video analytics (not daily)
 def _ensure_video_metrics_cache_table() -> None:
@@ -257,6 +258,23 @@ def query_all_safe(sql: str, params=None):
         return []
 
 
+def _build_account_tag_filter(column_name: str, account_tags):
+    normalized = [sanitize_filename(tag or "") for tag in (account_tags or []) if tag]
+    if not normalized:
+        return "1 = 0", {}
+
+    placeholders = []
+    params = {}
+    for idx, tag in enumerate(normalized):
+        key = f"account_tag_{idx}"
+        placeholders.append(f":{key}")
+        params[key] = tag
+
+    if len(placeholders) == 1:
+        return f"{column_name} = {placeholders[0]}", params
+    return f"{column_name} IN ({', '.join(placeholders)})", params
+
+
 def _list_content_video_ids(account_tag: str, start_date: date, end_date: date):
     sql = """
         SELECT v.video_id
@@ -440,10 +458,10 @@ def _save_timeseries_cache(account_tag: str, start_date, end_date, rows):
         print("[content.cache] save failed:", e)
 
 
-@router.get("/channels")
-def list_channels(
+def _list_content_channels(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
+    include_hidden: bool = False,
 ):
     items = []
     try:
@@ -466,7 +484,7 @@ def list_channels(
                 continue
             if allowed is not None and value not in allowed:
                 continue
-            if hidden_all and value in hidden_all:
+            if not include_hidden and hidden_all and value in hidden_all:
                 continue
             token_name = (row.token_name or "").strip()
             if not token_name:
@@ -481,7 +499,35 @@ def list_channels(
     except Exception as e:
         print("[content.channels] ERROR:", e)
 
-    return {"items": items}
+    return items
+
+
+def _resolve_content_account_tags(channel_id: str, channel_items, all_channel_items=None) -> list[str]:
+    available_tags = [
+        str(item.get("value") or "").strip()
+        for item in (channel_items or [])
+        if item.get("value")
+    ]
+    if channel_id == ALL_CHANNELS_VALUE:
+        source_items = all_channel_items if all_channel_items is not None else channel_items
+        return [
+            str(item.get("value") or "").strip()
+            for item in (source_items or [])
+            if item.get("value")
+        ]
+
+    requested = str(channel_id or "").strip()
+    if requested and requested in available_tags:
+        return [requested]
+    return []
+
+
+@router.get("/channels")
+def list_channels(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    return {"items": _list_content_channels(db, current_user)}
 
 
 class ContentListRequest(BaseModel):
@@ -496,12 +542,23 @@ def content_list(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
-    allowed = get_allowed_account_tags(db, current_user)
-    if allowed is not None and req.channelId not in allowed:
-        return {"items": []}
-    sql = """
+    channel_items = _list_content_channels(db, current_user)
+    all_channel_items = _list_content_channels(db, current_user, include_hidden=True)
+    requested_tags = _resolve_content_account_tags(req.channelId, channel_items, all_channel_items)
+    if not requested_tags:
+        return {
+            "items": [],
+            "channelMetrics": {"impressions": 0, "ctr": None, "supported": False},
+        }
+
+    account_filter_sql, account_filter_params = _build_account_tag_filter(
+        "v.account_tag",
+        requested_tags,
+    )
+    sql = f"""
     SELECT
         v.video_id      AS "videoId",
+        v.account_tag   AS "channelId",
         v.title,
         v.thumbnail,
         v.published_at  AS "publishedAt",
@@ -557,12 +614,13 @@ def content_list(
      AND s.day BETWEEN :start AND :end
     LEFT JOIN reach_video_metrics r
       ON r.video_id = v.video_id
-     AND r.account_tag = :account_tag
+     AND r.account_tag = v.account_tag
      AND r.start_date = :start
      AND r.end_date = :end
-    WHERE v.account_tag = :account_tag
+    WHERE {account_filter_sql}
     GROUP BY
         v.video_id,
+        v.account_tag,
         v.title,
         v.thumbnail,
         v.published_at,
@@ -572,35 +630,57 @@ def content_list(
         v.ad_impressions
     HAVING SUM(s.views) > 0 OR MAX(v.views) > 0
     ORDER BY v.published_at DESC;
-"""
+""" 
 
 
     params = {
         "start": req.start,
         "end": req.end,
-        "account_tag": req.channelId,
+        **account_filter_params,
     }
 
     rows_mutable = [dict(r) for r in query_all_safe(sql, params)]
-    video_ids = [str(row.get("videoId")) for row in rows_mutable if row.get("videoId")]
-    video_metrics, thumbnail_supported = _load_or_fetch_video_metrics(
-        db,
-        req.channelId,
-        req.start,
-        req.end,
-        video_ids,
-    )
-    _apply_video_metrics_to_content_rows(rows_mutable, video_metrics, thumbnail_supported)
+    channel_source_items = all_channel_items if req.channelId == ALL_CHANNELS_VALUE else channel_items
+    label_map = {
+        str(item.get("value") or ""): str(item.get("label") or item.get("value") or "")
+        for item in channel_source_items
+        if item.get("value")
+    }
+    avatar_map = {
+        str(item.get("value") or ""): item.get("avatar") or None
+        for item in channel_source_items
+        if item.get("value")
+    }
+    for row in rows_mutable:
+        channel_id = str(row.get("channelId") or "").strip()
+        row["channelTitle"] = label_map.get(channel_id) or channel_id
+        row["channelAvatar"] = avatar_map.get(channel_id)
 
-    channel_metrics_payload = (
-        _compute_channel_metrics_from_video_metrics(video_metrics)
-        if thumbnail_supported
-        else _compute_channel_metrics_from_db(
-            req.channelId,
+    if len(requested_tags) == 1:
+        video_ids = [str(row.get("videoId")) for row in rows_mutable if row.get("videoId")]
+        video_metrics, thumbnail_supported = _load_or_fetch_video_metrics(
+            db,
+            requested_tags[0],
+            req.start,
+            req.end,
+            video_ids,
+        )
+        _apply_video_metrics_to_content_rows(rows_mutable, video_metrics, thumbnail_supported)
+        channel_metrics_payload = (
+            _compute_channel_metrics_from_video_metrics(video_metrics)
+            if thumbnail_supported
+            else _compute_channel_metrics_from_db(
+                requested_tags[0],
+                req.start,
+                req.end,
+            )
+        )
+    else:
+        channel_metrics_payload = _compute_channel_metrics_from_db_for_accounts(
+            requested_tags,
             req.start,
             req.end,
         )
-    )
 
     return {
         "items": rows_mutable,
@@ -625,18 +705,37 @@ def content_timeseries(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
-    allowed = get_allowed_account_tags(db, current_user)
-    if allowed is not None and req.channelId not in allowed:
+    channel_items = _list_content_channels(db, current_user)
+    all_channel_items = _list_content_channels(db, current_user, include_hidden=True)
+    requested_tags = _resolve_content_account_tags(req.channelId, channel_items, all_channel_items)
+    if not requested_tags:
         return {"items": []}
 
-    cached = _load_timeseries_cache(req.channelId, req.start, req.end)
-    if cached is not None:
-        return {"items": cached}
+    label_map = {
+        str(item.get("value") or ""): str(item.get("label") or item.get("value") or "")
+        for item in (all_channel_items if req.channelId == ALL_CHANNELS_VALUE else channel_items)
+        if item.get("value")
+    }
 
-    sql = """
+    if len(requested_tags) == 1:
+        cached = _load_timeseries_cache(requested_tags[0], req.start, req.end)
+        if cached is not None:
+            cached_rows = [dict(row) for row in cached]
+            for row in cached_rows:
+                channel_id = str(row.get("channelId") or requested_tags[0]).strip()
+                row["channelId"] = channel_id
+                row["channelTitle"] = label_map.get(channel_id) or channel_id
+            return {"items": cached_rows}
+
+    account_filter_sql, account_filter_params = _build_account_tag_filter(
+        "v.account_tag",
+        requested_tags,
+    )
+    sql = f"""
         SELECT
             s.day                  AS bucket,
             v.video_id             AS "videoId",
+            v.account_tag          AS "channelId",
             v.title                AS title,
 
             s.views                AS views,
@@ -648,21 +747,27 @@ def content_timeseries(
         FROM video_daily_stats s
         JOIN videos v
           ON v.video_id = s.video_id
-        WHERE v.account_tag = :account_tag
+        WHERE {account_filter_sql}
           AND s.day BETWEEN :start AND :end
         ORDER BY
             bucket ASC,
+            "channelId" ASC,
             "videoId" ASC;
     """
 
     params = {
-        "account_tag": req.channelId,
         "start": req.start,
         "end": req.end,
+        **account_filter_params,
     }
 
-    rows = query_all_safe(sql, params)
-    _save_timeseries_cache(req.channelId, req.start, req.end, rows)
+    rows = [dict(row) for row in query_all_safe(sql, params)]
+    for row in rows:
+        channel_id = str(row.get("channelId") or "").strip()
+        row["channelTitle"] = label_map.get(channel_id) or channel_id
+
+    if len(requested_tags) == 1:
+        _save_timeseries_cache(requested_tags[0], req.start, req.end, rows)
     # print("[content.timeseries] rows (sample) =", rows[:5])  # debug
     return {"items": rows}
 
@@ -712,7 +817,15 @@ def _find_credential_row(db: Session, account_tag: str) -> Optional[UserCredenti
 
 
 def _compute_channel_metrics_from_db(account_tag: str, start_date: date, end_date: date):
-    sql = """
+    return _compute_channel_metrics_from_db_for_accounts([account_tag], start_date, end_date)
+
+
+def _compute_channel_metrics_from_db_for_accounts(account_tags, start_date: date, end_date: date):
+    account_filter_sql, account_filter_params = _build_account_tag_filter(
+        "v.account_tag",
+        account_tags,
+    )
+    sql = f"""
         WITH per_video AS (
             SELECT
                 v.video_id,
@@ -737,10 +850,10 @@ def _compute_channel_metrics_from_db(account_tag: str, start_date: date, end_dat
              AND s.day BETWEEN :start_date AND :end_date
             LEFT JOIN reach_video_metrics r
               ON r.video_id = v.video_id
-             AND r.account_tag = :account_tag
+             AND r.account_tag = v.account_tag
              AND r.start_date = :start_date
              AND r.end_date = :end_date
-            WHERE v.account_tag = :account_tag
+            WHERE {account_filter_sql}
             GROUP BY v.video_id
         )
         SELECT
@@ -755,9 +868,9 @@ def _compute_channel_metrics_from_db(account_tag: str, start_date: date, end_dat
     row = query_all_safe(
         sql,
         {
-            "account_tag": account_tag,
             "start_date": start_date,
             "end_date": end_date,
+            **account_filter_params,
         },
     )
     if not row:
@@ -779,17 +892,21 @@ def channel_metrics(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
-    allowed = get_allowed_account_tags(db, current_user)
-    if allowed is not None and req.channelId not in allowed:
+    channel_items = _list_content_channels(db, current_user)
+    all_channel_items = _list_content_channels(db, current_user, include_hidden=True)
+    requested_tags = _resolve_content_account_tags(req.channelId, channel_items, all_channel_items)
+    if not requested_tags:
         return {"impressions": 0, "ctr": None, "supported": False}
-    video_ids = _list_content_video_ids(req.channelId, req.start, req.end)
-    video_metrics, thumbnail_supported = _load_or_fetch_video_metrics(
-        db,
-        req.channelId,
-        req.start,
-        req.end,
-        video_ids,
-    )
-    if thumbnail_supported:
-        return _compute_channel_metrics_from_video_metrics(video_metrics)
-    return _compute_channel_metrics_from_db(req.channelId, req.start, req.end)
+    if len(requested_tags) == 1:
+        video_ids = _list_content_video_ids(requested_tags[0], req.start, req.end)
+        video_metrics, thumbnail_supported = _load_or_fetch_video_metrics(
+            db,
+            requested_tags[0],
+            req.start,
+            req.end,
+            video_ids,
+        )
+        if thumbnail_supported:
+            return _compute_channel_metrics_from_video_metrics(video_metrics)
+        return _compute_channel_metrics_from_db(requested_tags[0], req.start, req.end)
+    return _compute_channel_metrics_from_db_for_accounts(requested_tags, req.start, req.end)
