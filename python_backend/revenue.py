@@ -1,68 +1,48 @@
 import os
 import csv
-import pickle
 from datetime import datetime
-from typing import Tuple, Dict, Any, Optional
+from typing import Tuple, Dict, Any
 
 from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# ========================
-# Config
-# ========================
+from python_backend.token_store import load_token_credentials
+
+
 SCOPES = [
     "https://www.googleapis.com/auth/yt-analytics.readonly",
     "https://www.googleapis.com/auth/youtube.readonly",
-    "https://www.googleapis.com/auth/yt-analytics.monetary.readonly",  # bắt buộc để đọc revenue
+    "https://www.googleapis.com/auth/yt-analytics.monetary.readonly",
 ]
 
-TOKEN_FILE = "token/abc.pickle"
+TOKEN_NAME = os.environ.get("TOKEN_NAME", "abc").strip()
 OUTPUT_FILE = "youtube_revenue.csv"
 
-# Nếu có CONTENT_OWNER_ID -> dùng owner mode
 CONTENT_OWNER_ID = os.environ.get("CONTENT_OWNER_ID", "").strip()
 IS_OWNER_MODE = bool(CONTENT_OWNER_ID)
 
 
-# ========================
-# Auth (load từ pickle + refresh)
-# ========================
 def get_credentials() -> Credentials:
-    if not os.path.exists(TOKEN_FILE):
-        raise FileNotFoundError(f"Không tìm thấy token pickle: {TOKEN_FILE}")
+    if not TOKEN_NAME:
+        raise FileNotFoundError("Missing TOKEN_NAME")
 
-    with open(TOKEN_FILE, "rb") as token:
-        creds: Credentials = pickle.load(token)
+    creds: Credentials = load_token_credentials(TOKEN_NAME)
 
-    # Refresh nếu hết hạn và có refresh_token
-    if getattr(creds, "expired", False) and getattr(creds, "refresh_token", None):
-        creds.refresh(Request())
-
-    # Kiểm tra scope (đặc biệt monetary)
     granted = set(getattr(creds, "scopes", []) or [])
     required = set(SCOPES)
     if not required.issubset(granted):
         missing = ", ".join(sorted(required - granted))
         raise PermissionError(
-            "Token hiện tại thiếu scope bắt buộc để đọc doanh thu.\n"
-            f"Thiếu: {missing}\n"
-            "Hãy tạo lại token với scope 'yt-analytics.monetary.readonly'."
+            "Current token is missing revenue scopes.\n"
+            f"Missing: {missing}\n"
+            "Re-authorize with 'yt-analytics.monetary.readonly'."
         )
 
     return creds
 
 
-# ========================
-# API call
-# ========================
 def _ids_params() -> Tuple[str, Dict[str, Any]]:
-    """
-    Trả về cặp (ids, extra_params) cho query().
-    - channel==MINE (mặc định)
-    - Hoặc contentOwner==<ID> + onBehalfOfContentOwner nếu có CONTENT_OWNER_ID
-    """
     if IS_OWNER_MODE:
         return f"contentOwner=={CONTENT_OWNER_ID}", {"onBehalfOfContentOwner": CONTENT_OWNER_ID}
     return "channel==MINE", {}
@@ -73,24 +53,19 @@ def get_revenue(start_date: str, end_date: str, currency: str = "USD") -> Dict[s
     yta = build("youtubeAnalytics", "v2", credentials=creds)
 
     ids, extra = _ids_params()
-
-    # dimensions=day để lấy theo ngày; có thể bỏ để lấy tổng period
     req = {
         "ids": ids,
         "startDate": start_date,
         "endDate": end_date,
         "metrics": "estimatedRevenue",
         "dimensions": "day",
-        "currency": currency,  # optional nhưng nên set rõ
+        "currency": currency,
         **extra,
     }
 
     return yta.reports().query(**req).execute()
 
 
-# ========================
-# CSV I/O
-# ========================
 def save_to_csv(response: Dict[str, Any], output_file: str) -> None:
     headers = ["date", "estimatedRevenue"]
     rows = response.get("rows", []) or []
@@ -103,11 +78,7 @@ def save_to_csv(response: Dict[str, Any], output_file: str) -> None:
     print(f"Saved {len(rows)} rows to {output_file}")
 
 
-# ========================
-# Main
-# ========================
 if __name__ == "__main__":
-    # Ví dụ: từ đầu năm đến hôm nay
     start_date = "2025-01-01"
     end_date = datetime.today().strftime("%Y-%m-%d")
 
@@ -119,7 +90,6 @@ if __name__ == "__main__":
             print("Date:", row[0], "Revenue:", row[1])
 
     except PermissionError as e:
-        # Thiếu scope monetary hoặc token sai phạm vi
         print("Permission error:", e)
 
     except HttpError as e:

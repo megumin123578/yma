@@ -8,6 +8,7 @@ from googleapiclient.errors import HttpError
 from sqlalchemy import create_engine, text
 
 from module_trafficsource import create_token_from_credentials, TOKEN_FOLDER
+from python_backend.token_store import account_tag_from_token_name
 from module_content import get_upload_playlist_id, get_video_list
 
 
@@ -292,7 +293,7 @@ def process_overall(cred_file: str, channel_id: Optional[str] = None):
     create_video_overview_table(pg_url)
 
     # Derive account_tag từ tên file credential, ví dụ: mychannel.json -> "mychannel"
-    account_tag = os.path.splitext(os.path.basename(cred_file))[0]
+    account_tag = account_tag_from_token_name(cred_file)
 
     # Load credentials
     credentials = create_token_from_credentials(os.path.join(TOKEN_FOLDER, cred_file))

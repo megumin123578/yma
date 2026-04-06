@@ -1,6 +1,5 @@
 # module.py  — PostgreSQL only
 import os
-import pickle
 import re
 import sqlite3
 from typing import Dict, Tuple, Iterator, Optional, Set, List
@@ -9,9 +8,25 @@ from datetime import datetime, timedelta
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from google.auth.transport.requests import Request
 
 from sqlalchemy import create_engine, text
+
+try:
+    from python_backend.token_store import (
+        account_tag_from_token_name,
+        load_token_credentials as load_stored_token_credentials,
+        store_token_credentials,
+        token_name_from_ref,
+        token_exists,
+    )
+except ModuleNotFoundError:
+    from token_store import (
+        account_tag_from_token_name,
+        load_token_credentials as load_stored_token_credentials,
+        store_token_credentials,
+        token_name_from_ref,
+        token_exists,
+    )
 
 
 
@@ -60,30 +75,17 @@ def sanitize_filename(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9_\-\.]", "_", s)
 
 def create_token_from_credentials(cred_path: str):
-    os.makedirs(TOKEN_FOLDER, exist_ok=True)
-    base = os.path.splitext(os.path.basename(cred_path))[0]
-    token_filename = f"{base}.pickle"
-    token_path = os.path.join(TOKEN_FOLDER, token_filename)
+    token_name = token_name_from_ref(cred_path)
+    if token_exists(token_name):
+        return load_stored_token_credentials(token_name)
 
-    if cred_path.lower().endswith(".pickle") and os.path.exists(cred_path):
-        token_path = cred_path
+    if os.path.exists(cred_path) and cred_path.lower().endswith(".json"):
+        flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
+        creds = flow.run_local_server(port=0)
+        store_token_credentials(token_name, creds)
+        return creds
 
-    creds = None
-    if os.path.exists(token_path):
-        with open(token_path, "rb") as f:
-            creds = pickle.load(f)
-
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        elif os.path.exists(cred_path) and cred_path.lower().endswith(".json"):
-            flow = InstalledAppFlow.from_client_secrets_file(cred_path, SCOPES)
-            creds = flow.run_local_server(port=0)
-        else:
-            raise RuntimeError("Missing or invalid token for account")
-        with open(token_path, "wb") as f:
-            pickle.dump(creds, f)
-    return creds
+    raise RuntimeError("Missing or invalid token for account")
 
 def get_youtube_data(credentials):
     try:
@@ -525,7 +527,7 @@ def run_traffic_source_lifetime_daily_to_postgres(
 # ===== One-account runner =====
 def process_one(cred_file: str, channel_id: Optional[str] = None):
     cred_path = os.path.join(TOKEN_FOLDER, cred_file)
-    account_tag = sanitize_filename(os.path.splitext(os.path.basename(cred_file))[0])
+    account_tag = sanitize_filename(account_tag_from_token_name(cred_file))
 
     print(f"\nProcessing {cred_file} (mode: {'OWNER' if IS_OWNER_MODE else 'CHANNEL'})...")
     creds = create_token_from_credentials(cred_path)

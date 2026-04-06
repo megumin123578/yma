@@ -1,6 +1,5 @@
 const normalizeTokenOrderValue = (value) =>
   String(value || "")
-    .replace(/\.pickle$/i, "")
     .trim()
     .toLowerCase();
 

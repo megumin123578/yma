@@ -1,7 +1,6 @@
 import os
 import re
 import json
-import pickle
 import subprocess
 import sys
 import time
@@ -12,7 +11,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, text
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from google.auth.transport.requests import Request
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup, RivalGroup, UserCredential, UserCredentialGroup
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional, hash_password
@@ -22,6 +20,14 @@ from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, User
 from python_backend.api.auth.visibility import get_hidden_account_tags
 from python_backend.module_trafficsource import SCOPES, sanitize_filename
 from python_backend.progress_state import write_progress
+from python_backend.token_store import (
+    account_tag_from_token_name,
+    delete_token_credentials,
+    list_token_names,
+    load_token_credentials as load_stored_token_credentials,
+    store_token_credentials,
+    token_exists,
+)
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 
@@ -29,9 +35,6 @@ router = APIRouter(prefix="/users", tags=["Users"])
 
 UPLOAD_DIR = "python_backend/api/uploads/avatars"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-TOKEN_DIR = "python_backend/token"
-os.makedirs(TOKEN_DIR, exist_ok=True)
 
 OAUTH_REDIRECT_URL = os.getenv(
     "OAUTH_REDIRECT_URL",
@@ -104,32 +107,26 @@ def _mark_oauth_state_failed(db: Session, row: OAuthState, message: str) -> None
     db.commit()
 
 
-def _safe_token_filename(name: str) -> str:
+def _safe_token_name(name: str) -> str:
     return os.path.basename(name or "")
 
 
+def _require_valid_token_name(token_name: str) -> str:
+    safe_name = _safe_token_name(token_name)
+    if not safe_name or safe_name != token_name:
+        raise HTTPException(status_code=400, detail="Invalid token name")
+    return safe_name
+
+
 def _load_token_credentials(token_name: str):
-    token_path = os.path.join(TOKEN_DIR, token_name)
-    if not os.path.exists(token_path):
-        raise HTTPException(status_code=404, detail="Token not found")
     try:
-        with open(token_path, "rb") as f:
-            creds = pickle.load(f)
+        return load_stored_token_credentials(token_name)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Token not found")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Token is not valid")
     except Exception:
         raise HTTPException(status_code=400, detail="Failed to read token")
-    if not creds:
-        raise HTTPException(status_code=400, detail="Invalid token")
-    if not creds.valid:
-        if creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-                with open(token_path, "wb") as f:
-                    pickle.dump(creds, f)
-            except Exception:
-                raise HTTPException(status_code=400, detail="Failed to refresh token")
-        else:
-            raise HTTPException(status_code=400, detail="Token is not valid")
-    return creds
 
 
 def _fetch_selected_channel_metadata(creds, channel_id: Optional[str] = None) -> dict:
@@ -400,7 +397,7 @@ def _run_channel_titles(db: Session, user_id: int, token_names: List[str]) -> Li
     }
     out = []
     for token_name in token_names:
-        title = title_map.get(token_name, os.path.splitext(os.path.basename(token_name))[0])
+        title = title_map.get(token_name, account_tag_from_token_name(token_name))
         if title:
             out.append(title)
     return out
@@ -536,11 +533,8 @@ def credentials_callback(
         _mark_oauth_state_failed(db, row, f"Failed to fetch token: {e}")
         raise HTTPException(status_code=400, detail=f"Failed to fetch token: {e}")
 
-    token_filename = f"{account_tag}.pickle"
+    token_filename = account_tag
     token_name = token_filename
-    token_path = os.path.join(TOKEN_DIR, token_filename)
-    with open(token_path, "wb") as f:
-        pickle.dump(flow.credentials, f)
 
     user_id = row.user_id
     cred_row = None
@@ -590,14 +584,7 @@ def credentials_callback(
 
     if duplicate_channel_row is not None:
         canonical_tag = duplicate_channel_row.account_tag or sanitize_filename(title) or account_tag
-        canonical_token_name = duplicate_channel_row.token_name or f"{canonical_tag}.pickle"
-        canonical_token_path = os.path.join(TOKEN_DIR, canonical_token_name)
-
-        if os.path.abspath(token_path) != os.path.abspath(canonical_token_path):
-            try:
-                os.replace(token_path, canonical_token_path)
-            except Exception:
-                pass
+        canonical_token_name = duplicate_channel_row.token_name or canonical_tag
         token_name = canonical_token_name
         account_tag = canonical_tag
         cred_row.token_name = None
@@ -633,14 +620,7 @@ def credentials_callback(
                         break
                     counter += 1
         if new_tag and new_tag != account_tag:
-            new_token_name = f"{new_tag}.pickle"
-            old_token_path = os.path.join(TOKEN_DIR, token_name)
-            new_token_path = os.path.join(TOKEN_DIR, new_token_name)
-            if os.path.exists(old_token_path):
-                try:
-                    os.replace(old_token_path, new_token_path)
-                except Exception:
-                    pass
+            new_token_name = new_tag
             account_tag = new_tag
             token_name = new_token_name
 
@@ -648,6 +628,7 @@ def credentials_callback(
         _mark_oauth_state_failed(db, row, "OAuth state is missing the user credential record")
         raise HTTPException(status_code=400, detail="OAuth state is missing the user credential record")
 
+    store_token_credentials(token_name, flow.credentials)
     meta = _fetch_selected_channel_metadata(flow.credentials, channel_id=channel_id)
     cred_row.selected_channel_id = meta["channel_id"] or channel_id
     cred_row.selected_channel_title = meta["title"] or title
@@ -752,17 +733,9 @@ def list_tokens(
             row.token_name for row in rows if row.token_name and row.user_id == current_user.id
         }
 
-    if not os.path.exists(TOKEN_DIR):
-        return {"tokens": []}
-
     files = []
-    for name in os.listdir(TOKEN_DIR):
-        if not name.lower().endswith(".pickle"):
-            continue
-        token_path = os.path.join(TOKEN_DIR, name)
-        if not os.path.exists(token_path):
-            continue
-        base = os.path.splitext(name)[0]
+    for name in list_token_names():
+        base = account_tag_from_token_name(name)
         files.append(
             {
                 "name": name,
@@ -822,11 +795,8 @@ def set_token_visibility(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    token_name = _safe_token_filename(payload.token)
-    if token_name != payload.token or ".." in token_name:
-        raise HTTPException(status_code=400, detail="Invalid token filename")
-
-    base_name = os.path.splitext(token_name)[0]
+    token_name = _require_valid_token_name(payload.token)
+    base_name = account_tag_from_token_name(token_name)
     token_row = (
         db.query(UserCredential)
         .filter(UserCredential.token_name == token_name)
@@ -964,9 +934,7 @@ def assign_token_group(
     current_user: User = Depends(get_current_user),
 ):
     _require_admin(current_user)
-    safe_name = _safe_token_filename(token_name)
-    if safe_name != token_name or ".." in safe_name:
-        raise HTTPException(status_code=400, detail="Invalid token filename")
+    safe_name = _require_valid_token_name(token_name)
     owned = (
         db.query(UserCredential)
         .filter(
@@ -1021,15 +989,7 @@ def run_all_tokens(
     is_admin = _is_admin_user(current_user)
     token_names = []
     if is_admin:
-        if os.path.exists(TOKEN_DIR):
-            token_names = sorted(
-                [
-                    name
-                    for name in os.listdir(TOKEN_DIR)
-                    if name.lower().endswith(".pickle")
-                    and os.path.exists(os.path.join(TOKEN_DIR, name))
-                ]
-            )
+        token_names = list_token_names()
     else:
         hidden = get_hidden_account_tags(db, current_user.id)
         rows = (
@@ -1045,8 +1005,7 @@ def run_all_tokens(
                 continue
             if (row.account_tag or "") in hidden:
                 continue
-            token_path = os.path.join(TOKEN_DIR, row.token_name)
-            if not os.path.exists(token_path):
+            if not token_exists(row.token_name):
                 continue
             token_names.append(row.token_name)
         token_names = sorted(set(token_names))
@@ -1056,7 +1015,7 @@ def run_all_tokens(
 
     queued_progress_message = "Queued manual refresh" if not stage else f"Queued manual {stage}"
     for token_name in token_names:
-        account_tag = os.path.splitext(token_name)[0]
+        account_tag = account_tag_from_token_name(token_name)
         write_progress(account_tag, "queued", 0, "queued", queued_progress_message)
 
     run_type = "manual_all" if not stage else f"manual_all_stage:{stage}"
@@ -1099,9 +1058,7 @@ def list_token_channels(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    safe_name = _safe_token_filename(token_name)
-    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
-        raise HTTPException(status_code=400, detail="Invalid token filename")
+    safe_name = _require_valid_token_name(token_name)
 
     owned = (
         db.query(UserCredential)
@@ -1148,9 +1105,7 @@ def set_token_channel(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    safe_name = _safe_token_filename(token_name)
-    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
-        raise HTTPException(status_code=400, detail="Invalid token filename")
+    safe_name = _require_valid_token_name(token_name)
 
     owned = (
         db.query(UserCredential)
@@ -1175,7 +1130,7 @@ def set_token_channel(
     owned.updated_at = datetime.utcnow()
     db.add(owned)
     db.commit()
-    account_tag = os.path.splitext(safe_name)[0]
+    account_tag = account_tag_from_token_name(safe_name)
     write_progress(account_tag, "queued", 0, "queued", "Queued after authorization")
     _kickoff_get_data(account_tag)
     return {
@@ -1192,9 +1147,7 @@ def refresh_token_avatar(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    safe_name = _safe_token_filename(token_name)
-    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
-        raise HTTPException(status_code=400, detail="Invalid token filename")
+    safe_name = _require_valid_token_name(token_name)
 
     is_admin = _is_admin_user(current_user)
     q = db.query(UserCredential).filter(UserCredential.token_name == token_name)
@@ -1228,11 +1181,9 @@ def get_token_progress(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    safe_name = _safe_token_filename(token_name)
-    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
-        raise HTTPException(status_code=400, detail="Invalid token filename")
+    safe_name = _require_valid_token_name(token_name)
 
-    account_tag = os.path.splitext(safe_name)[0]
+    account_tag = account_tag_from_token_name(safe_name)
     is_admin = _is_admin_user(current_user)
     q = db.query(UserCredential).filter(UserCredential.token_name == token_name)
     if not is_admin:
@@ -1269,11 +1220,9 @@ def run_token(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    safe_name = _safe_token_filename(token_name)
-    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
-        raise HTTPException(status_code=400, detail="Invalid token filename")
+    safe_name = _require_valid_token_name(token_name)
 
-    account_tag = os.path.splitext(safe_name)[0]
+    account_tag = account_tag_from_token_name(safe_name)
     is_admin = _is_admin_user(current_user)
     q = db.query(UserCredential).filter(UserCredential.token_name == token_name)
     if not is_admin:
@@ -1282,8 +1231,7 @@ def run_token(
     if not owned:
         raise HTTPException(status_code=404, detail="Token not found")
 
-    token_path = os.path.join(TOKEN_DIR, safe_name)
-    if not os.path.exists(token_path):
+    if not token_exists(safe_name):
         raise HTTPException(status_code=404, detail="Token not found")
 
     write_progress(account_tag, "queued", 0, "queued", "Manual refresh")
@@ -1321,15 +1269,14 @@ def run_selected_tokens(
     current_user: User = Depends(get_current_user),
 ):
     requested_token_names = [
-        _safe_token_filename(str(name or "").strip())
+        _safe_token_name(str(name or "").strip())
         for name in (payload.token_names or [])
     ]
     requested_token_names = [
         name
         for name in requested_token_names
         if name
-        and ".." not in name
-        and name.lower().endswith(".pickle")
+        and name == _safe_token_name(name)
     ]
     requested_token_names = sorted(set(requested_token_names))
     if not requested_token_names:
@@ -1339,8 +1286,7 @@ def run_selected_tokens(
     token_names = []
     if is_admin:
         for token_name in requested_token_names:
-            token_path = os.path.join(TOKEN_DIR, token_name)
-            if os.path.exists(token_path):
+            if token_exists(token_name):
                 token_names.append(token_name)
     else:
         hidden = get_hidden_account_tags(db, current_user.id)
@@ -1357,8 +1303,7 @@ def run_selected_tokens(
                 continue
             if (row.account_tag or "") in hidden:
                 continue
-            token_path = os.path.join(TOKEN_DIR, row.token_name)
-            if not os.path.exists(token_path):
+            if not token_exists(row.token_name):
                 continue
             token_names.append(row.token_name)
         token_names = sorted(set(token_names))
@@ -1367,7 +1312,7 @@ def run_selected_tokens(
         raise HTTPException(status_code=400, detail="No selected tokens available to run")
 
     for token_name in token_names:
-        account_tag = os.path.splitext(token_name)[0]
+        account_tag = account_tag_from_token_name(token_name)
         write_progress(account_tag, "queued", 0, "queued", "Queued manual refresh")
 
     run = UserScheduleRun(
@@ -1402,9 +1347,7 @@ def run_token_stage(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    safe_name = _safe_token_filename(token_name)
-    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
-        raise HTTPException(status_code=400, detail="Invalid token filename")
+    safe_name = _require_valid_token_name(token_name)
 
     stage = (payload.stage or "").strip().lower()
     if stage not in _ALLOWED_RUN_STAGES:
@@ -1418,11 +1361,10 @@ def run_token_stage(
     if not owned:
         raise HTTPException(status_code=404, detail="Token not found")
 
-    token_path = os.path.join(TOKEN_DIR, safe_name)
-    if not os.path.exists(token_path):
+    if not token_exists(safe_name):
         raise HTTPException(status_code=404, detail="Token not found")
 
-    account_tag = os.path.splitext(safe_name)[0]
+    account_tag = account_tag_from_token_name(safe_name)
     write_progress(account_tag, "queued", 0, "queued", f"Manual {stage}")
     run = UserScheduleRun(
         user_id=owned.user_id,
@@ -1453,9 +1395,7 @@ def delete_token(
     current_user: User = Depends(get_current_user),
 ):
     _require_admin(current_user)
-    safe_name = _safe_token_filename(token_name)
-    if safe_name != token_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
-        raise HTTPException(status_code=400, detail="Invalid token filename")
+    safe_name = _require_valid_token_name(token_name)
 
     row = (
         db.query(UserCredential)
@@ -1466,10 +1406,8 @@ def delete_token(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Token not found")
-    token_path = os.path.join(TOKEN_DIR, safe_name)
-    base_name = os.path.splitext(safe_name)[0]
-    if os.path.exists(token_path):
-        os.remove(token_path)
+    base_name = account_tag_from_token_name(safe_name)
+    delete_token_credentials(safe_name)
     db.query(UserHiddenChannel).filter(
         UserHiddenChannel.account_tag == base_name,
     ).delete()
@@ -1602,11 +1540,10 @@ def resume_schedule_run(
 
     valid_token_names = []
     for token_name in token_names:
-        safe_name = _safe_token_filename(str(token_name or "").strip())
-        if not safe_name or ".." in safe_name or not safe_name.lower().endswith(".pickle"):
+        safe_name = _safe_token_name(str(token_name or "").strip())
+        if not safe_name or safe_name != str(token_name or "").strip():
             continue
-        token_path = os.path.join(TOKEN_DIR, safe_name)
-        if os.path.exists(token_path):
+        if token_exists(safe_name):
             valid_token_names.append(safe_name)
     valid_token_names = sorted(set(valid_token_names))
     if not valid_token_names:
@@ -1620,7 +1557,7 @@ def resume_schedule_run(
 
     if run_type == "manual_all":
         for token_name in valid_token_names:
-            write_progress(os.path.splitext(token_name)[0], "queued", 0, "queued", "Queued manual refresh")
+            write_progress(account_tag_from_token_name(token_name), "queued", 0, "queued", "Queued manual refresh")
         message = f"Queued manual refresh for {len(valid_token_names)} token(s)"
         new_run = UserScheduleRun(
             user_id=current_user.id,
@@ -1642,7 +1579,7 @@ def resume_schedule_run(
         if stage not in _ALLOWED_RUN_STAGES:
             raise HTTPException(status_code=400, detail="Run stage cannot be resumed")
         for token_name in valid_token_names:
-            write_progress(os.path.splitext(token_name)[0], "queued", 0, "queued", f"Queued manual {stage}")
+            write_progress(account_tag_from_token_name(token_name), "queued", 0, "queued", f"Queued manual {stage}")
         message = f"Queued manual {stage} for {len(valid_token_names)} token(s)"
         new_run = UserScheduleRun(
             user_id=current_user.id,
@@ -1662,7 +1599,7 @@ def resume_schedule_run(
         }
     elif run_type == "manual_selected":
         for token_name in valid_token_names:
-            write_progress(os.path.splitext(token_name)[0], "queued", 0, "queued", "Queued manual refresh")
+            write_progress(account_tag_from_token_name(token_name), "queued", 0, "queued", "Queued manual refresh")
         message = f"Queued manual refresh for {len(valid_token_names)} selected token(s)"
         new_run = UserScheduleRun(
             user_id=current_user.id,
@@ -1684,7 +1621,7 @@ def resume_schedule_run(
         if stage not in _ALLOWED_RUN_STAGES:
             raise HTTPException(status_code=400, detail="Run stage cannot be resumed")
         token_name = valid_token_names[0]
-        account_tag = os.path.splitext(token_name)[0]
+        account_tag = account_tag_from_token_name(token_name)
         write_progress(account_tag, "queued", 0, "queued", f"Manual {stage}")
         message = f"Queued manual {stage}"
         new_run = UserScheduleRun(
@@ -1702,7 +1639,7 @@ def resume_schedule_run(
         env_extra = {"RUN_STAGE": stage}
     else:
         token_name = valid_token_names[0]
-        account_tag = os.path.splitext(token_name)[0]
+        account_tag = account_tag_from_token_name(token_name)
         write_progress(account_tag, "queued", 0, "queued", "Manual refresh")
         message = "Queued manual refresh"
         new_run = UserScheduleRun(

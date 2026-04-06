@@ -17,9 +17,9 @@ from python_backend.api.auth.models import LiveCounterSnapshot, SAIGON_TZ, UserC
 from python_backend.module_trafficsource import sanitize_filename
 from python_backend.module_trafficsource import create_token_from_credentials
 from python_backend.module_geography import fetch_geography, load_geography_from_postgres, save_geography_to_postgres
+from python_backend.token_store import token_exists
 
 router = APIRouter(prefix="/api/video_overview", tags=["video_overview"])
-TOKEN_DIR = "./python_backend/token"
 
 
 
@@ -71,14 +71,12 @@ def _resolve_live_counter_window(
 def _load_credential_path(account_tag: str) -> Optional[str]:
     if not account_tag:
         return None
-    direct = os.path.join(TOKEN_DIR, f"{account_tag}.pickle")
-    if os.path.exists(direct):
-        return direct
+    if token_exists(account_tag):
+        return account_tag
     safe = sanitize_filename(account_tag)
     if safe != account_tag:
-        safe_path = os.path.join(TOKEN_DIR, f"{safe}.pickle")
-        if os.path.exists(safe_path):
-            return safe_path
+        if token_exists(safe):
+            return safe
     return None
 
 

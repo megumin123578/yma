@@ -353,6 +353,27 @@ def ensure_user_credentials_avatar(db_engine: Engine) -> None:
             )
 
 
+def ensure_oauth_tokens_table(db_engine: Engine) -> None:
+    with db_engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS oauth_tokens (
+                id INTEGER PRIMARY KEY,
+                token_name VARCHAR NOT NULL,
+                credentials_json TEXT NOT NULL,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            );
+            """
+        )
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_oauth_tokens_token_name ON oauth_tokens(token_name);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_oauth_tokens_updated ON oauth_tokens(updated_at);"
+        )
+
+
 def initialize_app_state() -> None:
     Base.metadata.create_all(bind=engine)
     ensure_token_progress_table(engine)
@@ -372,3 +393,4 @@ def initialize_app_state() -> None:
     ensure_user_credentials_token_name(engine)
     ensure_user_credentials_selected_channel(engine)
     ensure_user_credentials_avatar(engine)
+    ensure_oauth_tokens_table(engine)

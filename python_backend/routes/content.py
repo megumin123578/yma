@@ -1,7 +1,6 @@
 # routes/content.py
 import json
 import os
-import pickle
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -15,14 +14,16 @@ from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.api.auth.models import UserCredential
+from python_backend.token_store import (
+    load_token_credentials as load_stored_token_credentials,
+    token_exists,
+)
 from python_backend.module_trafficsource import sanitize_filename  # dùng lại hàm này
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from google.auth.transport.requests import Request
 
 router = APIRouter(prefix="/api/content", tags=["content"])
 
-TOKEN_DIR = "./python_backend/token"
 ALL_CHANNELS_VALUE = "__all__"
 
 # cache table for per-video analytics (not daily)
@@ -489,8 +490,7 @@ def _list_content_channels(
             token_name = (row.token_name or "").strip()
             if not token_name:
                 continue
-            token_path = os.path.join(TOKEN_DIR, token_name)
-            if not os.path.exists(token_path):
+            if not token_exists(token_name):
                 continue
             seen.add(value)
             label = row.selected_channel_title or row.account_tag or value
@@ -773,27 +773,10 @@ def content_timeseries(
 
 
 def _load_token_credentials(token_name: str):
-    token_path = os.path.join(TOKEN_DIR, token_name)
-    if not os.path.exists(token_path):
-        return None
     try:
-        with open(token_path, "rb") as f:
-            creds = pickle.load(f)
+        return load_stored_token_credentials(token_name)
     except Exception:
         return None
-    if not creds:
-        return None
-    if not creds.valid:
-        if creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-                with open(token_path, "wb") as f:
-                    pickle.dump(creds, f)
-            except Exception:
-                return None
-        else:
-            return None
-    return creds
 
 
 def _find_credential_row(db: Session, account_tag: str) -> Optional[UserCredential]:

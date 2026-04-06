@@ -1026,7 +1026,7 @@ const CredentialsDialog = ({
 
   const formatTokenName = (value) => {
     if (!value) return "All tokens";
-    return String(value).replace(/\.pickle$/i, "");
+    return String(value);
   };
 
   const formatRunType = (value) => {
@@ -1250,7 +1250,7 @@ const CredentialsDialog = ({
     const tokenName = typeof token === "string" ? token : token.name || "";
     const displayName =
       (typeof token === "object" && token.label) ||
-      (tokenName.toLowerCase().endsWith(".pickle") ? tokenName.slice(0, -7) : tokenName);
+      tokenName;
     const isHidden = typeof token === "string" ? false : !!token.hidden;
     const isOwned = typeof token === "string" ? true : token.owned !== false;
     const avatarSrc = typeof token === "object" ? resolveAvatarSrc(token.avatar) : "";

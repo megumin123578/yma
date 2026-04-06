@@ -15,9 +15,9 @@ from python_backend.api.auth.database import get_db
 from python_backend.api.auth.models import UserCredential
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.module_trafficsource import sanitize_filename
+from python_backend.token_store import token_exists
 
 router = APIRouter(prefix="/api/channel_compare", tags=["channel_compare"])
-TOKEN_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "token"))
 
 
 class CompareRequest(BaseModel):
@@ -51,8 +51,7 @@ def _existing_account_tags(db: Session):
         token_name = (row.token_name or "").strip()
         if not account_tag or not token_name:
             continue
-        token_path = os.path.join(TOKEN_DIR, token_name)
-        if os.path.exists(token_path):
+        if token_exists(token_name):
             tags.add(account_tag)
     return tags
 

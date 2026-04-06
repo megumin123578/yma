@@ -15,10 +15,9 @@ from python_backend.api.auth.database import get_db
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.api.auth.models import UserCredential
 from python_backend.module_trafficsource import sanitize_filename
+from python_backend.token_store import token_exists
 
 router = APIRouter(prefix="/api/geography")
-
-TOKEN_DIR = "./python_backend/token"
 
 
 def load_all_credentials(db: Session):
@@ -33,13 +32,12 @@ def load_all_credentials(db: Session):
         token_name = row.token_name
         if not token_name:
             continue
-        token_path = os.path.join(TOKEN_DIR, token_name)
-        if not os.path.exists(token_path):
+        if not token_exists(token_name):
             continue
         account_tag = row.account_tag or ""
         if not account_tag:
             continue
-        creds[account_tag] = token_path
+        creds[account_tag] = token_name
         labels[account_tag] = row.selected_channel_title or account_tag
     return creds, labels
 

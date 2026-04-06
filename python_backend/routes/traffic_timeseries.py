@@ -12,6 +12,7 @@ from python_backend.api.auth.database import get_db
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.api.auth.models import UserCredential
 from python_backend.module_trafficsource import sanitize_filename
+from python_backend.token_store import token_exists
 
 
 def query_all_safe(sql: str, params=None):
@@ -29,15 +30,12 @@ router = APIRouter(prefix="/api/traffic_source", tags=["traffic_source"])
 def _load_credential_path(account_tag: str):
     if not account_tag:
         return None
-    token_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "token"))
-    direct = os.path.join(token_dir, f"{account_tag}.pickle")
-    if os.path.exists(direct):
-        return direct
+    if token_exists(account_tag):
+        return account_tag
     safe = sanitize_filename(account_tag)
     if safe != account_tag:
-        safe_path = os.path.join(token_dir, f"{safe}.pickle")
-        if os.path.exists(safe_path):
-            return safe_path
+        if token_exists(safe):
+            return safe
     return None
 
 def resolve_channel(channel_root: str):

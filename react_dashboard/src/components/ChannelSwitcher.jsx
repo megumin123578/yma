@@ -26,7 +26,7 @@ const defaultGetValue = (option) => String(option?.value ?? "");
 const defaultGetLabel = (option) => String(option?.label ?? option?.value ?? "");
 const defaultGetAvatar = (option) => option?.avatar || "";
 const defaultGetMeta = () => "";
-const normalizeTokenValue = (value) => String(value || "").replace(/\.pickle$/i, "").trim();
+const normalizeTokenValue = (value) => String(value || "").trim();
 const isOptionHidden = (option) => !!option?.hidden;
 const sortOptionsByVisibility = (items) =>
   [...(Array.isArray(items) ? items : [])]

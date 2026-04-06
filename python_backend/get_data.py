@@ -25,6 +25,20 @@ try:
     from python_backend.progress_state import write_progress
 except ModuleNotFoundError:
     from progress_state import write_progress
+try:
+    from python_backend.token_store import (
+        account_tag_from_token_name,
+        list_token_names,
+        token_exists,
+        token_name_from_ref,
+    )
+except ModuleNotFoundError:
+    from token_store import (
+        account_tag_from_token_name,
+        list_token_names,
+        token_exists,
+        token_name_from_ref,
+    )
 from module_trafficsource import *
 from module_content import *
 from module_overall import *
@@ -59,12 +73,7 @@ if not os.path.exists(TOKEN_FOLDER):
 
 
 def _resolve_token_file(name: str) -> str:
-    base = os.path.basename(name or "")
-    if base.lower().endswith(".json"):
-        base = base[:-5]
-    if not base.lower().endswith(".pickle"):
-        base = f"{base}.pickle"
-    return base
+    return token_name_from_ref(name)
 
 
 def _resolve_token_list(raw_value: str):
@@ -298,13 +307,13 @@ class _RunLock:
 
 
 def _run_credential_with_lock(cred_file: str) -> str:
-    account_tag = os.path.splitext(os.path.basename(cred_file))[0]
+    account_tag = account_tag_from_token_name(cred_file)
     with _RunLock(account_tag):
         _run_for_credential(cred_file)
     return account_tag
 
 def _run_for_credential(cred_file: str) -> None:
-    account_tag = os.path.splitext(os.path.basename(cred_file))[0]
+    account_tag = account_tag_from_token_name(cred_file)
     aggregate_run = _has_aggregate_token_scope()
     channel_id = _get_selected_channel_id(account_tag)
     if not channel_id:
@@ -487,15 +496,14 @@ def main():
     target_arg = sys.argv[1] if len(sys.argv) > 1 else ""
     env_token_names = _resolve_token_list(os.getenv("RUN_TOKEN_NAMES", ""))
 
-    token_files = [f for f in os.listdir(TOKEN_FOLDER) if f.endswith(".pickle")]
+    token_files = list_token_names()
     if env_token_names:
         token_files = [name for name in env_token_names if name in token_files]
 
     if target_arg:
         cred_file = _resolve_token_file(target_arg)
-        token_path = os.path.join(TOKEN_FOLDER, cred_file)
-        account_tag = os.path.splitext(os.path.basename(cred_file))[0]
-        if not os.path.exists(token_path):
+        account_tag = account_tag_from_token_name(cred_file)
+        if not token_exists(cred_file):
             write_progress(account_tag, "error", 0, "error", "Token not found")
             print(f"Token not found: {cred_file}")
             return
@@ -528,7 +536,7 @@ def main():
 
     if max_workers == 1:
         for token_file in token_files:
-            account_tag = os.path.splitext(os.path.basename(token_file))[0]
+            account_tag = account_tag_from_token_name(token_file)
             cred_file = _resolve_token_file(token_file)
             try:
                 _run_credential_with_lock(cred_file)
@@ -551,7 +559,7 @@ def main():
 
             for future in as_completed(future_to_token):
                 token_file = future_to_token[future]
-                account_tag = os.path.splitext(os.path.basename(token_file))[0]
+                account_tag = account_tag_from_token_name(token_file)
                 try:
                     future.result()
                     ok += 1
@@ -564,9 +572,7 @@ def main():
                             if pending_future.done():
                                 continue
                             if pending_future.cancel():
-                                pending_account_tag = os.path.splitext(
-                                    os.path.basename(pending_token_file)
-                                )[0]
+                                pending_account_tag = account_tag_from_token_name(pending_token_file)
                                 write_progress(
                                     pending_account_tag,
                                     "stopped",

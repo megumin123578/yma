@@ -14,6 +14,7 @@ from module_trafficsource import (
     sanitize_filename,
     TOKEN_FOLDER,
 )
+from python_backend.token_store import account_tag_from_token_name
 
 CONTENT_DAILY_LOOKBACK_DAYS = int(os.getenv("CONTENT_DAILY_LOOKBACK_DAYS", "7"))
 CONTENT_DAILY_FULL_BACKFILL_LOOKBACK_DAYS = int(
@@ -772,7 +773,7 @@ def process_content(cred_file: str, channel_id: Optional[str] = None, force_full
         raise RuntimeError("Missing PG_URL env var")
 
     credentials = create_token_from_credentials(cred_path)
-    account_tag = sanitize_filename(os.path.splitext(cred_file)[0])
+    account_tag = sanitize_filename(account_tag_from_token_name(cred_file))
 
     run_content_v3_hybrid(
         credentials,

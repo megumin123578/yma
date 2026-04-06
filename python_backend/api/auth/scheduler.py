@@ -1,13 +1,11 @@
 import os
 import json
-import pickle
 import subprocess
 import sys
 from datetime import datetime, time as dtime, timedelta, timezone
 from typing import Optional
 from threading import Event, Thread
 
-from google.auth.transport.requests import Request
 from sqlalchemy import text
 
 from python_backend.api.auth.database import SessionLocal
@@ -21,6 +19,12 @@ from python_backend.api.auth.models import (
 )
 from python_backend.db import engine as analytics_engine
 from python_backend.progress_state import write_progress
+from python_backend.token_store import (
+    account_tag_from_token_name,
+    list_token_names,
+    load_token_credentials as load_stored_token_credentials,
+    token_exists,
+)
 
 
 _STOP_EVENT = Event()
@@ -35,11 +39,6 @@ _TOKEN_PROGRESS_RETENTION_DAYS = int(os.getenv("TOKEN_PROGRESS_RETENTION_DAYS", 
 _LAST_LIVE_COUNTER_SNAPSHOT_AT = None
 _LAST_TOKEN_PROGRESS_CLEANUP_AT = None
 SAIGON_TZ = timezone(timedelta(hours=7))
-_TOKEN_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "token")
-)
-
-
 def _now_saigon_naive() -> datetime:
     return datetime.now(SAIGON_TZ).replace(tzinfo=None)
 
@@ -75,21 +74,13 @@ def _kickoff_get_data(account_tag: Optional[str], env_extra: Optional[dict] = No
 
 
 def _list_schedulable_token_names() -> list[str]:
-    if not os.path.isdir(_TOKEN_DIR):
-        return []
-    return sorted(
-        name
-        for name in os.listdir(_TOKEN_DIR)
-        if name.lower().endswith(".pickle")
-        and os.path.isfile(os.path.join(_TOKEN_DIR, name))
-    )
+    return list_token_names()
 
 
 def _resolve_schedule_token_names(schedule: UserSchedule) -> list[str]:
     token_name = (schedule.token_name or "").strip()
     if token_name:
-        token_path = os.path.join(_TOKEN_DIR, token_name)
-        return [token_name] if os.path.exists(token_path) else []
+        return [token_name] if token_exists(token_name) else []
     return _list_schedulable_token_names()
 
 
@@ -172,21 +163,12 @@ def _load_scheduler_token_credentials(token_name: str):
     token_base = os.path.basename(token_name or "").strip()
     if not token_base:
         raise ValueError("Missing token name")
-    token_path = os.path.join(_TOKEN_DIR, token_base)
-    if not os.path.isfile(token_path):
+    try:
+        return load_stored_token_credentials(token_base)
+    except FileNotFoundError:
         raise FileNotFoundError(f"Token file not found: {token_base}")
-    with open(token_path, "rb") as f:
-        creds = pickle.load(f)
-    if not creds:
-        raise ValueError(f"Invalid token: {token_base}")
-    if not creds.valid:
-        if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            with open(token_path, "wb") as f:
-                pickle.dump(creds, f)
-        else:
-            raise ValueError(f"Token is not valid: {token_base}")
-    return creds
+    except ValueError:
+        raise ValueError(f"Token is not valid: {token_base}")
 
 
 def _cleanup_missing_token_credentials(db) -> int:
@@ -201,8 +183,7 @@ def _cleanup_missing_token_credentials(db) -> int:
         if not token_base:
             stale_ids.append(row_id)
             continue
-        token_path = os.path.join(_TOKEN_DIR, token_base)
-        if not os.path.isfile(token_path):
+        if not token_exists(token_base):
             stale_ids.append(row_id)
     if not stale_ids:
         return 0
@@ -495,13 +476,13 @@ def _run_loop():
                         )
                         db.commit()
                 for token_name in token_names:
-                    account_tag = os.path.splitext(os.path.basename(token_name))[0]
+                    account_tag = account_tag_from_token_name(token_name)
                     try:
                         write_progress(account_tag, "queued", 0, "queued", "Queued by scheduler")
                     except Exception as e:
                         print(f"[WARN] failed to write schedule progress for {account_tag}: {e}")
                 _kickoff_get_data(
-                    os.path.splitext(os.path.basename(token_names[0]))[0] if len(token_names) == 1 else None,
+                    account_tag_from_token_name(token_names[0]) if len(token_names) == 1 else None,
                     env_extra={
                         "SCHEDULE_RUN_ID": str(run.id),
                         "RUN_TOKEN_NAMES": json.dumps(token_names),
