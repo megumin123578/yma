@@ -7,7 +7,10 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from python_backend.token_store import load_token_credentials
+try:
+    from python_backend.token_store import load_token_credentials
+except ModuleNotFoundError:
+    from token_store import load_token_credentials
 
 
 SCOPES = [

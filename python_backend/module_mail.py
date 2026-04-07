@@ -41,7 +41,7 @@ def _send_telegram_match_alert(
 
     lines = [
         "<b>Email Manager</b>",
-        f"Machine: <code>{escape(vps_id or '-')}</code>",
+        f"Source: <code>{escape(vps_id or '-')}</code>",
         f"Account: <code>{escape(account_email or '-')}</code>",
         f"Mailbox: <code>{escape(mailbox or '-')}</code>",
         f"New matched emails: <b>{len(matched_messages)}</b>",

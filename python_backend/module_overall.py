@@ -8,7 +8,10 @@ from googleapiclient.errors import HttpError
 from sqlalchemy import create_engine, text
 
 from module_trafficsource import create_token_from_credentials, TOKEN_FOLDER
-from python_backend.token_store import account_tag_from_token_name
+try:
+    from python_backend.token_store import account_tag_from_token_name
+except ModuleNotFoundError:
+    from token_store import account_tag_from_token_name
 from module_content import get_upload_playlist_id, get_video_list
 
 

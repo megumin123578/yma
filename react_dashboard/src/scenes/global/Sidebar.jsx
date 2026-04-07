@@ -69,6 +69,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
   const theme = useTheme();
   const location = useLocation();
   const { user } = useContext(UserContext);
+  const isMailAdmin = !!user?.is_admin;
   const pathname = location.pathname || "/dashboard";
   const desktopSidebarWidth = 280;
   const sidebarWidth = isMobile
@@ -382,13 +383,15 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
               onClick={closeOnMobile}
             />
 
-            <Item
-              title="Email Manager"
-              to="/mail_monitor"
-              icon={<MailOutlineRoundedIcon />}
-              isActive={isActivePath("/mail_monitor")}
-              onClick={closeOnMobile}
-            />
+            {isMailAdmin ? (
+              <Item
+                title="Email Manager"
+                to="/mail_monitor"
+                icon={<MailOutlineRoundedIcon />}
+                isActive={isActivePath("/mail_monitor")}
+                onClick={closeOnMobile}
+              />
+            ) : null}
 
             <SectionLabel isCollapsed={false}>Setting</SectionLabel>
 

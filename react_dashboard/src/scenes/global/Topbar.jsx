@@ -74,7 +74,8 @@ const formatNotificationTime = (value) => {
 const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
   const theme = useTheme();
   const colorMode = useContext(ColorModeContext);
-  const { user } = useContext(UserContext);
+  const { user, loading } = useContext(UserContext);
+  const isMailAdmin = !!user?.is_admin;
 
   const [openProfile, setOpenProfile] = useState(false);
   const [addingChannel, setAddingChannel] = useState(false);
@@ -87,6 +88,7 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
   const [selectedMessageDetail, setSelectedMessageDetail] = useState(null);
   const [selectedMessageLoading, setSelectedMessageLoading] = useState(false);
   const [selectedMessageError, setSelectedMessageError] = useState("");
+  const [mailAccessDenied, setMailAccessDenied] = useState(false);
 
   const hasInitializedNotificationsRef = useRef(false);
   const notificationStorageKey = buildNotificationStorageKey(user);
@@ -153,6 +155,7 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
   };
 
   const handleOpenNotifications = (event) => {
+    if (!isMailAdmin) return;
     setNotificationAnchorEl(event.currentTarget);
     setVisibleNotificationCount(MAIL_NOTIFICATION_INITIAL_VISIBLE);
   };
@@ -168,6 +171,7 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
   };
 
   const handleOpenNotificationItem = async (item) => {
+    if (!isMailAdmin) return;
     const messageId = item?.id;
     if (!messageId) return;
     markNotificationIdsAsRead([messageId]);
@@ -200,10 +204,15 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
     setNotificationItems([]);
     setVisibleNotificationCount(MAIL_NOTIFICATION_INITIAL_VISIBLE);
     setNotificationAnchorEl(null);
+    setMailAccessDenied(false);
   }, [notificationStorageKey]);
 
   useEffect(() => {
-    if (!user) return undefined;
+    if (loading || !user || !isMailAdmin || mailAccessDenied) {
+      setNotificationItems([]);
+      setNotificationAnchorEl(null);
+      return undefined;
+    }
 
     const pollMatchedNotifications = async () => {
       try {
@@ -233,15 +242,19 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
             __read: item?.id ? seenIds.has(String(item.id)) : true,
           }))
         );
-      } catch {
-        // Keep current notification state on transient failures.
+      } catch (error) {
+        if (error?.response?.status === 403) {
+          setMailAccessDenied(true);
+          setNotificationItems([]);
+          setNotificationAnchorEl(null);
+        }
       }
     };
 
     pollMatchedNotifications();
     const timer = window.setInterval(pollMatchedNotifications, MAIL_NOTIFICATION_POLL_MS);
     return () => window.clearInterval(timer);
-  }, [notificationStorageKey, user]);
+  }, [isMailAdmin, loading, mailAccessDenied, notificationStorageKey, user]);
 
   return (
     <>
@@ -310,17 +323,19 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
               Add Channel
             </Button>
 
-            <IconButton size="medium" aria-label="Notifications" onClick={handleOpenNotifications}>
-              <Badge
-                color="error"
-                badgeContent={unreadCount}
-                max={99}
-                overlap="circular"
-                invisible={unreadCount <= 0}
-              >
-                <NotificationsNoneOutlinedIcon fontSize="medium" />
-              </Badge>
-            </IconButton>
+            {isMailAdmin ? (
+              <IconButton size="medium" aria-label="Notifications" onClick={handleOpenNotifications}>
+                <Badge
+                  color="error"
+                  badgeContent={unreadCount}
+                  max={99}
+                  overlap="circular"
+                  invisible={unreadCount <= 0}
+                >
+                  <NotificationsNoneOutlinedIcon fontSize="medium" />
+                </Badge>
+              </IconButton>
+            ) : null}
 
             <IconButton
               size="medium"
@@ -345,69 +360,70 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
         </Box>
       </Box>
 
-      <Menu
-        anchorEl={notificationAnchorEl}
-        open={Boolean(notificationAnchorEl)}
-        onClose={handleCloseNotifications}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-        transformOrigin={{ vertical: "top", horizontal: "right" }}
-        PaperProps={{
-          sx: {
-            mt: 1,
-            width: 360,
-            maxWidth: "calc(100vw - 24px)",
-            borderRadius: 3,
-            border: "1px solid",
-            borderColor:
-              theme.palette.mode === "dark"
-                ? "rgba(148,163,184,0.18)"
-                : "rgba(15,23,42,0.08)",
-            bgcolor:
-              theme.palette.mode === "dark"
-                ? "rgba(15,23,42,0.96)"
-                : "rgba(255,255,255,0.98)",
-            boxShadow:
-              theme.palette.mode === "dark"
-                ? "0 18px 40px rgba(2,6,23,0.46)"
-                : "0 18px 36px rgba(148,163,184,0.22)",
-          },
-        }}
-      >
-        {notificationItems.length === 0 ? (
-          <Box px={2} py={2.5}>
-            <Typography variant="body2" color="text.secondary">
-              Matched emails will appear here.
-            </Typography>
-          </Box>
-        ) : (
-          visibleNotificationItems.map((item) => (
-            <MenuItem
-              key={item.id}
-              onClick={() => handleOpenNotificationItem(item)}
-              sx={{
-                alignItems: "flex-start",
-                py: 1.25,
-                whiteSpace: "normal",
-                opacity: item.__read ? 0.56 : 1,
-                filter: item.__read ? "blur(0.6px)" : "none",
-                bgcolor:
-                  item.__read
-                    ? "transparent"
-                    : theme.palette.mode === "dark"
-                      ? "rgba(56,189,248,0.10)"
-                      : "rgba(59,130,246,0.08)",
-                "&:hover": {
+      {isMailAdmin ? (
+        <Menu
+          anchorEl={notificationAnchorEl}
+          open={Boolean(notificationAnchorEl)}
+          onClose={handleCloseNotifications}
+          anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+          transformOrigin={{ vertical: "top", horizontal: "right" }}
+          PaperProps={{
+            sx: {
+              mt: 1,
+              width: 360,
+              maxWidth: "calc(100vw - 24px)",
+              borderRadius: 3,
+              border: "1px solid",
+              borderColor:
+                theme.palette.mode === "dark"
+                  ? "rgba(148,163,184,0.18)"
+                  : "rgba(15,23,42,0.08)",
+              bgcolor:
+                theme.palette.mode === "dark"
+                  ? "rgba(15,23,42,0.96)"
+                  : "rgba(255,255,255,0.98)",
+              boxShadow:
+                theme.palette.mode === "dark"
+                  ? "0 18px 40px rgba(2,6,23,0.46)"
+                  : "0 18px 36px rgba(148,163,184,0.22)",
+            },
+          }}
+        >
+          {notificationItems.length === 0 ? (
+            <Box px={2} py={2.5}>
+              <Typography variant="body2" color="text.secondary">
+                Matched emails will appear here.
+              </Typography>
+            </Box>
+          ) : (
+            visibleNotificationItems.map((item) => (
+              <MenuItem
+                key={item.id}
+                onClick={() => handleOpenNotificationItem(item)}
+                sx={{
+                  alignItems: "flex-start",
+                  py: 1.25,
+                  whiteSpace: "normal",
+                  opacity: item.__read ? 0.56 : 1,
+                  filter: item.__read ? "blur(0.6px)" : "none",
                   bgcolor:
-                    theme.palette.mode === "dark"
-                      ? item.__read
-                        ? "rgba(148,163,184,0.08)"
-                        : "rgba(56,189,248,0.16)"
-                      : item.__read
-                        ? "rgba(148,163,184,0.08)"
-                        : "rgba(59,130,246,0.14)",
-                },
-              }}
-            >
+                    item.__read
+                      ? "transparent"
+                      : theme.palette.mode === "dark"
+                        ? "rgba(56,189,248,0.10)"
+                        : "rgba(59,130,246,0.08)",
+                  "&:hover": {
+                    bgcolor:
+                      theme.palette.mode === "dark"
+                        ? item.__read
+                          ? "rgba(148,163,184,0.08)"
+                          : "rgba(56,189,248,0.16)"
+                        : item.__read
+                          ? "rgba(148,163,184,0.08)"
+                          : "rgba(59,130,246,0.14)",
+                  },
+                }}
+              >
               <Box
                 sx={{
                   width: 10,
@@ -453,46 +469,47 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
                   </>
                 }
               />
-            </MenuItem>
-          ))
-        )}
+              </MenuItem>
+            ))
+          )}
 
-        {hasMoreNotifications ? (
-          <Box px={1.5} py={1.25}>
-            <Button
-              fullWidth
-              variant="outlined"
-              onClick={handleShowPreviousNotifications}
-              sx={{
-                textTransform: "none",
-                fontWeight: 700,
-                borderRadius: 999,
-                borderColor:
-                  theme.palette.mode === "dark"
-                    ? "rgba(103,232,249,0.42)"
-                    : "rgba(37,99,235,0.24)",
-                color: theme.palette.mode === "dark" ? "#67e8f9" : "#1d4ed8",
-                bgcolor:
-                  theme.palette.mode === "dark"
-                    ? "rgba(8,47,73,0.34)"
-                    : "rgba(239,246,255,0.95)",
-                "&:hover": {
+          {hasMoreNotifications ? (
+            <Box px={1.5} py={1.25}>
+              <Button
+                fullWidth
+                variant="outlined"
+                onClick={handleShowPreviousNotifications}
+                sx={{
+                  textTransform: "none",
+                  fontWeight: 700,
+                  borderRadius: 999,
                   borderColor:
                     theme.palette.mode === "dark"
-                      ? "rgba(103,232,249,0.62)"
-                      : "rgba(37,99,235,0.38)",
+                      ? "rgba(103,232,249,0.42)"
+                      : "rgba(37,99,235,0.24)",
+                  color: theme.palette.mode === "dark" ? "#67e8f9" : "#1d4ed8",
                   bgcolor:
                     theme.palette.mode === "dark"
-                      ? "rgba(14,116,144,0.26)"
-                      : "rgba(219,234,254,0.98)",
-                },
-              }}
-            >
-              See previous notifications
-            </Button>
-          </Box>
-        ) : null}
-      </Menu>
+                      ? "rgba(8,47,73,0.34)"
+                      : "rgba(239,246,255,0.95)",
+                  "&:hover": {
+                    borderColor:
+                      theme.palette.mode === "dark"
+                        ? "rgba(103,232,249,0.62)"
+                        : "rgba(37,99,235,0.38)",
+                    bgcolor:
+                      theme.palette.mode === "dark"
+                        ? "rgba(14,116,144,0.26)"
+                        : "rgba(219,234,254,0.98)",
+                  },
+                }}
+              >
+                See previous notifications
+              </Button>
+            </Box>
+          ) : null}
+        </Menu>
+      ) : null}
 
       <MailMessageDialog
         open={Boolean(selectedMessageId)}

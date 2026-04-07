@@ -14,7 +14,10 @@ from module_trafficsource import (
     sanitize_filename,
     TOKEN_FOLDER,
 )
-from python_backend.token_store import account_tag_from_token_name
+try:
+    from python_backend.token_store import account_tag_from_token_name
+except ModuleNotFoundError:
+    from token_store import account_tag_from_token_name
 
 CONTENT_DAILY_LOOKBACK_DAYS = int(os.getenv("CONTENT_DAILY_LOOKBACK_DAYS", "7"))
 CONTENT_DAILY_FULL_BACKFILL_LOOKBACK_DAYS = int(

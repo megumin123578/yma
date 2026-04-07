@@ -1,404 +1,310 @@
-import io
-import json
 import os
-import re
-import zipfile
-from datetime import datetime
-from pathlib import Path
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from python_backend.api.auth.auth_utils import get_current_user
+from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional
+from python_backend.api.auth.database import get_db
+from python_backend.api.auth.models import MailAccount, MailOAuthState
+from python_backend.mail_gmail_api import (
+    MAIL_OAUTH_TTL_MINUTES,
+    build_mail_oauth_flow,
+    delete_mail_account_integration,
+    deserialize_mail_label_ids,
+    fetch_gmail_profile,
+    mail_oauth_success_html,
+    normalize_mail_label_ids,
+    serialize_mail_label_ids,
+    sync_all_mail_accounts,
+    sync_mail_account,
+    upsert_mail_account,
+)
 from python_backend.module_mail import (
-    delete_mail_account,
-    delete_mail_machine,
     get_mail_message_detail,
     get_mail_overview,
     list_mail_messages,
     list_mail_runs,
-    save_mail_ingest,
     send_test_telegram_notification,
 )
 
 
 router = APIRouter(prefix="/api/mail", tags=["mail"])
-AGENT_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "main_agent.py"
-AGENT_CONFIG_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "main_agent.config.template.json"
-PYTHON_INSTALLER_URL = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
-AGENT_REQUIREMENTS = "requests>=2.31.0,<3\n"
-MIN_IMAP_PASSWORD_LENGTH = 16
+_ADMIN_ENV_KEY = "ADMIN_USERNAME"
 
 
-def _allowed_ingest_tokens() -> set[str]:
-    raw = os.getenv("MAIL_INGEST_TOKENS", "").strip()
-    if raw:
-        return {token.strip() for token in raw.split(",") if token.strip()}
-    single = os.getenv("MAIL_INGEST_TOKEN", "").strip()
-    return {single} if single else set()
+class MailAccountOAuthStartRequest(BaseModel):
+    label_ids: list[str] = Field(default_factory=lambda: ["INBOX"])
 
 
-def _require_ingest_token(
-    x_mail_ingest_token: Optional[str] = Header(default=None),
-    authorization: Optional[str] = Header(default=None),
-) -> None:
-    allowed_tokens = _allowed_ingest_tokens()
-    if not allowed_tokens:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="MAIL_INGEST_TOKEN is not configured.",
-        )
+class MailAccountUpdateRequest(BaseModel):
+    label_ids: Optional[list[str]] = None
+    enabled: Optional[bool] = None
 
-    candidate_tokens = []
-    if x_mail_ingest_token:
-        candidate_tokens.append(x_mail_ingest_token.strip())
-    if authorization and authorization.lower().startswith("bearer "):
-        candidate_tokens.append(authorization.split(" ", 1)[1].strip())
 
-    if any(token in allowed_tokens for token in candidate_tokens if token):
-        return
+def _get_admin_users() -> set[str]:
+    raw = os.getenv(_ADMIN_ENV_KEY, "admin")
+    return {item.strip().lower() for item in raw.split(",") if item.strip()}
 
+
+def _is_admin_user(current_user) -> bool:
+    username = str(getattr(current_user, "username", "") or "").strip().lower()
+    return bool(getattr(current_user, "is_admin", False) or username in _get_admin_users())
+
+
+def _require_mail_admin_user(current_user=Depends(get_current_user)):
+    if _is_admin_user(current_user):
+        return current_user
     raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid ingest token.",
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Admin access required.",
     )
 
 
-class MailMessageIn(BaseModel):
-    provider_message_id: Optional[str] = None
-    uid: Optional[int] = None
-    thread_id: Optional[str] = None
-    subject: Optional[str] = None
-    from_email: Optional[str] = None
-    from_name: Optional[str] = None
-    to_email: Optional[str] = None
-    received_at: Optional[datetime] = None
-    seen: bool = False
-    status: Optional[str] = "received"
-    matched_rule: Optional[str] = None
-    snippet: Optional[str] = None
-    payload: dict[str, Any] = Field(default_factory=dict)
+def _get_mail_admin_user_optional(current_user=Depends(get_current_user_optional)):
+    if _is_admin_user(current_user):
+        return current_user
+    return None
 
 
-class MailIngestRequest(BaseModel):
-    vps_id: str
-    account_email: Optional[str] = None
-    mailbox: str = "INBOX"
-    provider: str = "imap"
-    agent_version: Optional[str] = None
-    run_started_at: Optional[datetime] = None
-    run_finished_at: Optional[datetime] = None
-    status: str = "ok"
-    error_message: Optional[str] = None
-    cursor: Optional[str] = None
-    payload: dict[str, Any] = Field(default_factory=dict)
-    messages: list[MailMessageIn] = Field(default_factory=list)
+def _resolve_mail_oauth_redirect_url(request: Request) -> str:
+    configured = os.getenv("MAIL_OAUTH_REDIRECT_URL", "").strip()
+    if configured:
+        return configured
+    return f"{str(request.base_url).rstrip('/')}/api/mail/accounts/oauth/callback"
 
 
-class MailAgentAccountRequest(BaseModel):
-    email: str = Field(min_length=1)
-    password: str = Field(min_length=1)
+def _mark_mail_oauth_state_failed(db: Session, row: MailOAuthState, message: str) -> None:
+    row.status = "failed"
+    row.error_message = message
+    row.completed_at = datetime.utcnow()
+    db.add(row)
+    db.commit()
 
 
-class MailAgentTemplateRequest(BaseModel):
-    vps_id: str = Field(min_length=1)
-    accounts: list[MailAgentAccountRequest] = Field(default_factory=list)
+def _serialize_mail_account(row: MailAccount) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "user_id": row.user_id,
+        "account_email": row.account_email,
+        "provider": row.provider,
+        "token_name": row.token_name,
+        "label_ids": deserialize_mail_label_ids(row.label_ids_json),
+        "history_id": row.history_id,
+        "enabled": bool(row.enabled),
+        "last_sync_status": row.last_sync_status,
+        "last_error_message": row.last_error_message,
+        "last_synced_at": row.last_synced_at.isoformat() if row.last_synced_at else None,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
 
 
-def _normalize_agent_vps_id(value: str) -> str:
-    normalized = re.sub(r"\s+", " ", str(value or "").strip())
-    if not normalized:
-        raise HTTPException(status_code=400, detail="Machine name is required.")
-    return normalized
+def _mail_oauth_state_response(row: MailOAuthState) -> dict[str, Any]:
+    return {
+        "ready": row.status == "completed",
+        "status": row.status,
+        "account_email": row.account_email,
+        "error_message": row.error_message,
+    }
 
 
-def _safe_filename_fragment(value: str) -> str:
-    fragment = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value or "").strip())
-    fragment = fragment.strip(".-_")
-    return fragment or "mail-agent"
-
-
-def _read_agent_template() -> str:
-    try:
-        return AGENT_TEMPLATE_PATH.read_text(encoding="utf-8")
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=500, detail="Agent template file is missing.") from exc
-
-
-def _normalize_imap_password(value: str) -> str:
-    return re.sub(r"\s+", "", str(value or ""))
-
-
-def _normalize_agent_accounts(items: list[MailAgentAccountRequest]) -> list[dict[str, str]]:
-    normalized_accounts = []
-    for index, item in enumerate(items, start=1):
-        email = str(item.email or "").strip()
-        password = _normalize_imap_password(item.password)
-        if not email:
-            raise HTTPException(status_code=400, detail=f"Email {index} is required.")
-        if not password:
-            raise HTTPException(status_code=400, detail=f"IMAP password {index} is required.")
-        if len(password) < MIN_IMAP_PASSWORD_LENGTH:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"IMAP password {index} must be at least "
-                    f"{MIN_IMAP_PASSWORD_LENGTH} characters."
-                ),
-            )
-        normalized_accounts.append(
-            {
-                "MAIL_IMAP_USERNAME": email,
-                "MAIL_IMAP_PASSWORD": password,
-            }
-        )
-    if not normalized_accounts:
-        raise HTTPException(status_code=400, detail="At least one email account is required.")
-    return normalized_accounts
-
-
-def _render_agent_config(*, vps_id: str, accounts: list[MailAgentAccountRequest]) -> tuple[str, str]:
-    try:
-        template_payload = json.loads(AGENT_CONFIG_TEMPLATE_PATH.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=500, detail="Agent config template is missing.") from exc
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=500, detail="Agent config template JSON is invalid.") from exc
-
-    if not isinstance(template_payload, dict):
-        raise HTTPException(status_code=500, detail="Agent config template must be a JSON object.")
-
-    normalized_vps_id = _normalize_agent_vps_id(vps_id)
-    template_payload["MAIL_AGENT_VPS_ID"] = normalized_vps_id
-    template_payload["MAIL_ACCOUNTS"] = _normalize_agent_accounts(accounts)
-    return json.dumps(template_payload, ensure_ascii=False, indent=2) + "\n", normalized_vps_id
-
-
-def _build_agent_runner_script() -> str:
-    return (
-        "@echo off\n"
-        "setlocal\n"
-        'cd /d "%~dp0"\n'
-        'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install_and_run.ps1"\n'
-        'set "EXIT_CODE=%ERRORLEVEL%"\n'
-        'if not "%EXIT_CODE%"=="0" (\n'
-        "  echo.\n"
-        "  echo Mail agent failed with exit code %EXIT_CODE%.\n"
-        "  pause\n"
-        "  exit /b %EXIT_CODE%\n"
-        ")\n"
-        "echo.\n"
-        "echo Mail agent finished.\n"
-        "pause\n"
-        "exit /b 0\n"
-    )
-
-
-def _build_agent_bootstrap_script() -> str:
-    script = r"""$ErrorActionPreference = "Stop"
-$ProgressPreference = "SilentlyContinue"
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-function Write-Step {
-  param([string]$Message)
-  Write-Host "[mail-agent] $Message" -ForegroundColor Cyan
-}
-
-function Test-PythonExecutable {
-  param([string]$PythonPath)
-  if (-not $PythonPath) {
-    return $false
-  }
-  if (-not (Test-Path $PythonPath)) {
-    return $false
-  }
-  try {
-    & $PythonPath --version *> $null
-    return ($LASTEXITCODE -eq 0)
-  } catch {
-    return $false
-  }
-}
-
-function Resolve-PythonExecutable {
-  param(
-    [string]$PythonInstallDir
-  )
-
-  $localPython = Join-Path $PythonInstallDir "python.exe"
-  if (Test-PythonExecutable $localPython) {
-    return $localPython
-  }
-
-  $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
-  if ($pythonCommand -and (Test-PythonExecutable $pythonCommand.Source)) {
-    return $pythonCommand.Source
-  }
-
-  $installerUrl = "__PYTHON_INSTALLER_URL__"
-  $installerPath = Join-Path $env:TEMP "mail-agent-python-installer.exe"
-
-  Write-Step "Downloading Python installer..."
-  Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath
-
-  New-Item -ItemType Directory -Force -Path $PythonInstallDir | Out-Null
-
-  Write-Step "Installing Python locally..."
-  $process = Start-Process -FilePath $installerPath -ArgumentList @(
-    "/quiet",
-    "InstallAllUsers=0",
-    "Include_pip=1",
-    "Include_test=0",
-    "Include_launcher=0",
-    "SimpleInstall=1",
-    "Shortcuts=0",
-    "TargetDir=$PythonInstallDir"
-  ) -Wait -PassThru
-
-  if ($process.ExitCode -ne 0) {
-    throw "Python installer failed with exit code $($process.ExitCode)."
-  }
-
-  if (Test-PythonExecutable $localPython) {
-    return $localPython
-  }
-
-  $fallback = Get-ChildItem -Path $PythonInstallDir -Recurse -Filter python.exe -ErrorAction SilentlyContinue |
-    Select-Object -First 1 -ExpandProperty FullName
-
-  if (Test-PythonExecutable $fallback) {
-    return $fallback
-  }
-
-  throw "Python installation completed but python.exe was not found."
-}
-
-$rootDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$pythonInstallDir = Join-Path $rootDir ".python"
-$venvDir = Join-Path $rootDir ".venv"
-$venvPython = Join-Path $venvDir "Scripts\python.exe"
-$requirementsFile = Join-Path $rootDir "requirements.txt"
-$agentFile = Join-Path $rootDir "main_agent.py"
-$configFile = Join-Path $rootDir "config.json"
-
-if (-not (Test-Path $agentFile)) {
-  throw "main_agent.py was not found."
-}
-if (-not (Test-Path $configFile)) {
-  throw "config.json was not found."
-}
-if (-not (Test-Path $requirementsFile)) {
-  throw "requirements.txt was not found."
-}
-
-$pythonExe = Resolve-PythonExecutable -PythonInstallDir $pythonInstallDir
-
-if (-not (Test-PythonExecutable $venvPython)) {
-  Write-Step "Creating virtual environment..."
-  & $pythonExe -m venv $venvDir
-  if ($LASTEXITCODE -ne 0) {
-    throw "Failed to create virtual environment."
-  }
-}
-
-if (-not (Test-PythonExecutable $venvPython)) {
-  throw "Virtual environment python.exe was not created."
-}
-
-Write-Step "Upgrading pip..."
-& $venvPython -m pip install --disable-pip-version-check --upgrade pip
-if ($LASTEXITCODE -ne 0) {
-  throw "Failed to upgrade pip."
-}
-
-Write-Step "Installing dependencies..."
-& $venvPython -m pip install --disable-pip-version-check -r $requirementsFile
-if ($LASTEXITCODE -ne 0) {
-  throw "Failed to install dependencies."
-}
-
-Write-Step "Running mail agent..."
-& $venvPython $agentFile
-if ($LASTEXITCODE -ne 0) {
-  throw "main_agent.py exited with code $LASTEXITCODE."
-}
-
-Write-Step "Mail agent completed."
-"""
-    return script.replace("__PYTHON_INSTALLER_URL__", PYTHON_INSTALLER_URL)
-
-
-def _build_agent_bundle_readme(vps_id: str) -> str:
-    return (
-        f"Mail agent bundle for {vps_id}\n"
-        "\n"
-        "1. Extract this zip into its own folder.\n"
-        "2. Double-click run_agent.bat.\n"
-        "3. config.json stores the mail accounts, token, and interval settings.\n"
-        "4. The bootstrap script will install Python locally if needed,\n"
-        "   create .venv, install dependencies, and start main_agent.py.\n"
-        "\n"
-        "Notes:\n"
-        "- Internet access is required the first time if Python or dependencies are missing.\n"
-        "- main_agent.py keeps running and syncs every hour by default.\n"
-        "- Leave the terminal window open while the agent is running.\n"
-        "- Edit config.json later if you need to change the mail accounts or timing.\n"
-    )
-
-
-def _build_agent_bundle(*, agent_source: str, config_source: str, vps_id: str) -> bytes:
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("main_agent.py", agent_source)
-        archive.writestr("config.json", config_source)
-        archive.writestr("requirements.txt", AGENT_REQUIREMENTS)
-        archive.writestr("install_and_run.ps1", _build_agent_bootstrap_script())
-        archive.writestr("run_agent.bat", _build_agent_runner_script())
-        archive.writestr("README.txt", _build_agent_bundle_readme(vps_id))
-    return buffer.getvalue()
-
-
-@router.post("/ingest")
-def ingest_mail(
-    payload: MailIngestRequest,
-    _: None = Depends(_require_ingest_token),
+@router.get("/accounts")
+def list_mail_accounts(
+    db: Session = Depends(get_db),
+    current_user=Depends(_get_mail_admin_user_optional),
 ):
+    if not current_user:
+        return {"items": []}
+    rows = (
+        db.query(MailAccount)
+        .filter(MailAccount.user_id == current_user.id)
+        .order_by(MailAccount.account_email.asc())
+        .all()
+    )
+    return {"items": [_serialize_mail_account(row) for row in rows]}
+
+
+@router.post("/accounts/oauth/start")
+def start_mail_oauth(
+    payload: MailAccountOAuthStartRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user=Depends(_require_mail_admin_user),
+):
+    flow = build_mail_oauth_flow(_resolve_mail_oauth_redirect_url(request))
+    auth_url, state = flow.authorization_url(
+        access_type="offline",
+        prompt="consent",
+        include_granted_scopes="false",
+    )
+
+    now = datetime.utcnow()
+    db.add(
+        MailOAuthState(
+            state=state,
+            user_id=current_user.id,
+            status="pending",
+            label_ids_json=serialize_mail_label_ids(payload.label_ids),
+            created_at=now,
+            expires_at=now + timedelta(minutes=MAIL_OAUTH_TTL_MINUTES),
+        )
+    )
+    db.commit()
+    return {"auth_url": auth_url, "state": state}
+
+
+@router.get("/accounts/oauth/callback", response_class=HTMLResponse)
+def complete_mail_oauth(
+    request: Request,
+    state: str = "",
+    code: str = "",
+    error: str = "",
+    db: Session = Depends(get_db),
+):
+    row = db.query(MailOAuthState).filter(MailOAuthState.state == state).first()
+    if error:
+        if row:
+            _mark_mail_oauth_state_failed(db, row, f"Authorization failed: {error}")
+        raise HTTPException(status_code=400, detail=f"Authorization failed: {error}")
+
+    if not row:
+        raise HTTPException(status_code=400, detail="Invalid or expired state")
+
+    now = datetime.utcnow()
+    if row.expires_at and row.expires_at < now:
+        row.status = "expired"
+        row.completed_at = now
+        db.add(row)
+        db.commit()
+        raise HTTPException(status_code=400, detail="Invalid or expired state")
+
+    if row.status == "completed":
+        return mail_oauth_success_html()
+    if row.status == "failed":
+        raise HTTPException(status_code=400, detail=row.error_message or "OAuth flow failed")
+
+    flow = build_mail_oauth_flow(_resolve_mail_oauth_redirect_url(request))
     try:
-        return save_mail_ingest(payload.dict())
-    except ValueError as exc:
+        flow.fetch_token(code=code)
+    except Exception as exc:
+        _mark_mail_oauth_state_failed(db, row, f"Failed to fetch token: {exc}")
+        raise HTTPException(status_code=400, detail=f"Failed to fetch token: {exc}")
+
+    try:
+        profile = fetch_gmail_profile(flow.credentials)
+        account = upsert_mail_account(
+            db,
+            user_id=row.user_id,
+            account_email=profile["email"],
+            creds=flow.credentials,
+            label_ids=deserialize_mail_label_ids(row.label_ids_json),
+        )
+        row.status = "completed"
+        row.account_email = account.account_email
+        row.token_name = account.token_name
+        row.error_message = None
+        row.completed_at = datetime.utcnow()
+        row.consumed_at = row.consumed_at or now
+        db.add(row)
+        db.commit()
+
+        try:
+            sync_mail_account(db, account)
+        except Exception as sync_exc:
+            row.error_message = str(sync_exc)
+            db.add(row)
+            db.commit()
+    except Exception as exc:
+        _mark_mail_oauth_state_failed(db, row, str(exc))
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return mail_oauth_success_html()
+
+
+@router.get("/accounts/oauth/state/{state}")
+def get_mail_oauth_state(
+    state: str,
+    db: Session = Depends(get_db),
+    _: object = Depends(_get_mail_admin_user_optional),
+):
+    if not _:
+        return {"ready": False}
+    row = db.query(MailOAuthState).filter(MailOAuthState.state == state).first()
+    if not row:
+        return {"ready": False}
+    if row.expires_at and row.expires_at < datetime.utcnow() and row.status == "pending":
+        row.status = "expired"
+        row.completed_at = datetime.utcnow()
+        db.add(row)
+        db.commit()
+        return {"ready": False}
+    return _mail_oauth_state_response(row)
+
+
+@router.patch("/accounts/{account_id}")
+def update_mail_account(
+    account_id: int,
+    payload: MailAccountUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(_require_mail_admin_user),
+):
+    row = (
+        db.query(MailAccount)
+        .filter(MailAccount.id == account_id, MailAccount.user_id == current_user.id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Mail account not found.")
+
+    if payload.label_ids is not None:
+        row.label_ids_json = serialize_mail_label_ids(payload.label_ids)
+    if payload.enabled is not None:
+        row.enabled = bool(payload.enabled)
+    row.updated_at = datetime.utcnow()
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"account": _serialize_mail_account(row)}
+
+
+@router.post("/accounts/{account_id}/sync")
+def sync_one_mail_account(
+    account_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(_require_mail_admin_user),
+):
+    row = (
+        db.query(MailAccount)
+        .filter(MailAccount.id == account_id, MailAccount.user_id == current_user.id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Mail account not found.")
+
+    try:
+        return sync_mail_account(db, row)
+    except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
 
-@router.post("/agent-template")
-def download_mail_agent_template(
-    payload: MailAgentTemplateRequest,
-    current_user=Depends(get_current_user),
+@router.post("/sync")
+def sync_mail_accounts(
+    db: Session = Depends(get_db),
+    current_user=Depends(_require_mail_admin_user),
 ):
-    del current_user
-    agent_source = _read_agent_template()
-    config_source, vps_id = _render_agent_config(
-        vps_id=payload.vps_id,
-        accounts=payload.accounts,
-    )
-    bundle = _build_agent_bundle(agent_source=agent_source, config_source=config_source, vps_id=vps_id)
-    filename = f"mail_agent_{_safe_filename_fragment(vps_id)}.zip"
-    return Response(
-        content=bundle,
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "Cache-Control": "no-store",
-            "X-Agent-Vps-Id": vps_id,
-        },
-    )
+    return sync_all_mail_accounts(db, user_id=current_user.id)
 
 
 @router.get("/overview")
 def mail_overview(
-    current_user=Depends(get_current_user),
+    _: object = Depends(_get_mail_admin_user_optional),
 ):
-    del current_user
+    if not _:
+        return {"summary": {}, "items": []}
     return get_mail_overview()
 
 
@@ -412,9 +318,10 @@ def mail_messages(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     per_account_limit: Optional[int] = Query(default=None, ge=1, le=500),
-    current_user=Depends(get_current_user),
+    _: object = Depends(_get_mail_admin_user_optional),
 ):
-    del current_user
+    if not _:
+        return {"items": [], "total": 0}
     return list_mail_messages(
         vps_id=vps_id,
         account_email=account_email,
@@ -430,9 +337,10 @@ def mail_messages(
 @router.get("/messages/{message_id}")
 def mail_message_detail(
     message_id: int,
-    current_user=Depends(get_current_user),
+    _: object = Depends(_get_mail_admin_user_optional),
 ):
-    del current_user
+    if not _:
+        raise HTTPException(status_code=404, detail="Message not found.")
     item = get_mail_message_detail(message_id)
     if not item:
         raise HTTPException(status_code=404, detail="Message not found.")
@@ -445,9 +353,10 @@ def mail_runs(
     account_email: Optional[str] = Query(default=None),
     mailbox: Optional[str] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
-    current_user=Depends(get_current_user),
+    _: object = Depends(_get_mail_admin_user_optional),
 ):
-    del current_user
+    if not _:
+        return {"items": []}
     return list_mail_runs(
         vps_id=vps_id,
         account_email=account_email,
@@ -456,36 +365,27 @@ def mail_runs(
     )
 
 
-@router.delete("/machines/{vps_id}")
-def mail_delete_machine(
-    vps_id: str,
-    current_user=Depends(get_current_user),
+@router.delete("/accounts/{account_id}")
+def remove_mail_account(
+    account_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(_require_mail_admin_user),
 ):
-    del current_user
-    try:
-        return delete_mail_machine(vps_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-
-@router.delete("/accounts")
-def mail_delete_account(
-    vps_id: str = Query(..., min_length=1),
-    account_email: str = Query(..., min_length=1),
-    current_user=Depends(get_current_user),
-):
-    del current_user
-    try:
-        return delete_mail_account(vps_id, account_email)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    row = (
+        db.query(MailAccount)
+        .filter(MailAccount.id == account_id, MailAccount.user_id == current_user.id)
+        .first()
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Mail account not found.")
+    delete_mail_account_integration(db, row)
+    return {"ok": True, "account_id": account_id}
 
 
 @router.post("/test-telegram")
 def mail_test_telegram(
-    current_user=Depends(get_current_user),
+    _: object = Depends(_require_mail_admin_user),
 ):
-    del current_user
     try:
         return send_test_telegram_notification()
     except ValueError as exc:

@@ -196,6 +196,47 @@ class OAuthState(Base):
     consumed_at = Column(DateTime, nullable=True, index=True)
 
 
+class MailOAuthState(Base):
+    __tablename__ = "mail_oauth_states"
+    __table_args__ = (
+        UniqueConstraint("state", name="uq_mail_oauth_state"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    state = Column(String, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    status = Column(String, nullable=False, default="pending", index=True)
+    label_ids_json = Column(Text, nullable=False, default='["INBOX"]')
+    account_email = Column(String, nullable=True, index=True)
+    token_name = Column(String, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    completed_at = Column(DateTime, nullable=True, index=True)
+    consumed_at = Column(DateTime, nullable=True, index=True)
+
+
+class MailAccount(Base):
+    __tablename__ = "mail_accounts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "account_email", name="uq_mail_account_user_email"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    account_email = Column(String, nullable=False, index=True)
+    provider = Column(String, nullable=False, default="gmail_api")
+    token_name = Column(String, nullable=False, index=True)
+    label_ids_json = Column(Text, nullable=False, default='["INBOX"]')
+    history_id = Column(String, nullable=True)
+    enabled = Column(Boolean, nullable=False, default=True)
+    last_sync_status = Column(String, nullable=True, index=True)
+    last_error_message = Column(Text, nullable=True)
+    last_synced_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class UserCredential(Base):
     __tablename__ = "user_credentials"
     __table_args__ = (
