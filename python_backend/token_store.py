@@ -4,12 +4,21 @@ import sqlite3
 from datetime import datetime
 from typing import Optional
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _DEFAULT_AUTH_DB = os.path.join(_REPO_ROOT, "auth.db")
+
+
+class TokenCredentialsError(ValueError):
+    pass
+
+
+class TokenRefreshFailed(TokenCredentialsError):
+    pass
 
 
 def get_auth_db_path() -> str:
@@ -196,9 +205,20 @@ def load_token_credentials(token_name: str, refresh: bool = True):
 
     if refresh and not getattr(creds, "valid", False):
         if getattr(creds, "expired", False) and getattr(creds, "refresh_token", None):
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except RefreshError as exc:
+                detail = ""
+                if len(exc.args) > 1 and isinstance(exc.args[1], dict):
+                    error_code = str(exc.args[1].get("error") or "").strip()
+                    error_desc = str(exc.args[1].get("error_description") or "").strip()
+                    detail = ": ".join(part for part in (error_code, error_desc) if part)
+                message = f"Token refresh failed for {normalized}. Reconnect this account."
+                if detail:
+                    message = f"{message} ({detail})"
+                raise TokenRefreshFailed(message) from exc
             store_token_credentials(normalized, creds)
         else:
-            raise ValueError(f"Token is not valid: {normalized}")
+            raise TokenCredentialsError(f"Token is not valid: {normalized}")
 
     return creds

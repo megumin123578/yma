@@ -19,7 +19,7 @@ try:
 except ModuleNotFoundError:
     from token_store import account_tag_from_token_name
 
-CONTENT_DAILY_LOOKBACK_DAYS = int(os.getenv("CONTENT_DAILY_LOOKBACK_DAYS", "7"))
+CONTENT_DAILY_LOOKBACK_DAYS = int(os.getenv("CONTENT_DAILY_LOOKBACK_DAYS", "28"))
 CONTENT_DAILY_FULL_BACKFILL_LOOKBACK_DAYS = int(
     os.getenv("CONTENT_DAILY_FULL_BACKFILL_LOOKBACK_DAYS", "0")
 )
@@ -36,19 +36,74 @@ def _env_int(name: str, default: int) -> int:
 CONTENT_DAILY_MAX_WORKERS = max(1, min(_env_int("CONTENT_DAILY_MAX_WORKERS", 4), 8))
 
 
+class ContentChannelAccessError(RuntimeError):
+    pass
+
+
+def _http_error_payload(exc: HttpError) -> dict:
+    content = getattr(exc, "content", b"") or b""
+    if not content:
+        return {}
+    if isinstance(content, bytes):
+        try:
+            return json.loads(content.decode("utf-8", errors="ignore"))
+        except Exception:
+            return {}
+    try:
+        return json.loads(str(content))
+    except Exception:
+        return {}
+
+
+def _iter_http_error_reasons(payload: dict) -> list[str]:
+    error = payload.get("error") if isinstance(payload, dict) else None
+    if not isinstance(error, dict):
+        return []
+    errors = error.get("errors")
+    if isinstance(errors, list):
+        return [
+            str(item.get("reason") or "").strip()
+            for item in errors
+            if isinstance(item, dict) and str(item.get("reason") or "").strip()
+        ]
+    details = error.get("details")
+    if isinstance(details, list):
+        return [
+            str(item.get("reason") or "").strip()
+            for item in details
+            if isinstance(item, dict) and str(item.get("reason") or "").strip()
+        ]
+    return []
+
+
+def _raise_content_channel_access_error(exc: HttpError, channel_id: Optional[str] = None) -> None:
+    payload = _http_error_payload(exc)
+    reasons = {reason.lower() for reason in _iter_http_error_reasons(payload)}
+    status = int(getattr(getattr(exc, "resp", None), "status", 0) or 0)
+    if status == 401 and "youtubesignuprequired" in reasons:
+        target = f" for channel {channel_id}" if channel_id else ""
+        raise ContentChannelAccessError(
+            f"Reconnect this account or reselect the channel{target}."
+        ) from None
+
+
 def get_upload_playlist_id(credentials, channel_id: Optional[str] = None):
     yt = build("youtube", "v3", credentials=credentials)
-    if channel_id:
-        resp = yt.channels().list(
-            part="contentDetails",
-            id=channel_id,
-            maxResults=1,
-        ).execute()
-    else:
-        resp = yt.channels().list(
-            part="contentDetails",
-            mine=True
-        ).execute()
+    try:
+        if channel_id:
+            resp = yt.channels().list(
+                part="contentDetails",
+                id=channel_id,
+                maxResults=1,
+            ).execute()
+        else:
+            resp = yt.channels().list(
+                part="contentDetails",
+                mine=True
+            ).execute()
+    except HttpError as exc:
+        _raise_content_channel_access_error(exc, channel_id=channel_id)
+        raise
 
     items = resp.get("items", [])
     if not items:
@@ -90,19 +145,27 @@ def get_video_metadata(credentials, video_ids: List[str]) -> List[Dict]:
         chunk = video_ids[i:i + 50]
 
         resp = yt.videos().list(
-            part="snippet,contentDetails,statistics",
+            part="snippet,contentDetails,statistics,status",
             id=",".join(chunk)
         ).execute()
 
         for item in resp.get("items", []):
             stats = item.get("statistics", {})
+            thumbnails = item.get("snippet", {}).get("thumbnails", {}) or {}
+            medium_thumbnail = (
+                (thumbnails.get("medium") or {}).get("url")
+                or (thumbnails.get("high") or {}).get("url")
+                or (thumbnails.get("default") or {}).get("url")
+                or ""
+            )
 
             results.append({
                 "video_id": item["id"],
                 "title": item["snippet"]["title"],
-                "thumbnail": item["snippet"]["thumbnails"]["medium"]["url"],
+                "thumbnail": medium_thumbnail,
                 "published_at": item["snippet"]["publishedAt"][:10],
                 "duration": item["contentDetails"]["duration"],
+                "privacy_status": str((item.get("status") or {}).get("privacyStatus") or "").strip().lower(),
                 "tags": item["snippet"].get("tags", []),
                 "views": int(stats.get("viewCount", 0) or 0),
                 "likes": int(stats.get("likeCount", 0) or 0),
@@ -390,23 +453,17 @@ def get_video_daily_analytics(
 
     # Core metrics first (must-have). If this fails, no daily row should be saved.
     core = _query_daily(
-        ["views", "estimatedMinutesWatched", "averageViewDuration", "likes"],
+        ["views", "estimatedMinutesWatched", "averageViewDuration", "likes", "subscribersGained"],
         "core",
     )
     if not core:
         print(f"[ERROR] Failed core daily analytics for {video_id}")
         return []
 
-    # Optional groups: failures should not break daily ingestion.
-    subs_rev = _query_daily(["subscribersGained", "estimatedRevenue"], "subs_revenue")
-    reach = _query_daily(["cardImpressions", "cardClicks"], "reach")
-
     all_days = sorted(core.keys())
     results = []
     for day in all_days:
         c = core.get(day, {})
-        sr = subs_rev.get(day, {})
-        r = reach.get(day, {})
         results.append(
             {
                 "video_id": video_id,
@@ -415,10 +472,10 @@ def get_video_daily_analytics(
                 "estimated_minutes": _to_int(c.get("estimatedMinutesWatched")),
                 "average_view_duration": _to_int(c.get("averageViewDuration")),
                 "likes": _to_int(c.get("likes")),
-                "subscribers_gained": _to_int(sr.get("subscribersGained")),
-                "estimated_revenue": _to_float(sr.get("estimatedRevenue")),
-                "card_impressions": _to_int(r.get("cardImpressions")),
-                "card_clicks": _to_int(r.get("cardClicks")),
+                "subscribers_gained": _to_int(c.get("subscribersGained")),
+                "estimated_revenue": 0.0,
+                "card_impressions": 0,
+                "card_clicks": 0,
             }
         )
 
@@ -442,6 +499,7 @@ def save_metadata(videos, account_tag: str, pg_url: str):
                 comments INTEGER DEFAULT 0,
                 card_impressions BIGINT DEFAULT 0,
                 ad_impressions BIGINT DEFAULT 0,
+                privacy_status TEXT,
                 tags TEXT,
                 ctr NUMERIC DEFAULT 0
             );
@@ -450,6 +508,7 @@ def save_metadata(videos, account_tag: str, pg_url: str):
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS tags TEXT;"))
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS card_impressions BIGINT DEFAULT 0;"))
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS ad_impressions BIGINT DEFAULT 0;"))
+        conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS privacy_status TEXT;"))
         if not videos:
             return
 
@@ -466,6 +525,7 @@ def save_metadata(videos, account_tag: str, pg_url: str):
                 "comments": v["comments"],
                 "card": v.get("card_impressions", 0),
                 "ad": v.get("ad_impressions", 0),
+                "privacy_status": str(v.get("privacy_status") or "").strip().lower() or None,
                 "tags": json.dumps(v.get("tags") or []),
                 "ctr": v.get("ctr", 0.0),
             }
@@ -475,11 +535,11 @@ def save_metadata(videos, account_tag: str, pg_url: str):
             INSERT INTO videos
                 (video_id, account_tag, title, thumbnail,
                  published_at, duration, views, likes, comments,
-                 card_impressions, ad_impressions, tags, ctr)
+                 card_impressions, ad_impressions, privacy_status, tags, ctr)
             VALUES
                 (:id, :acct, :title, :thumb, :pub, :duration,
                  :views, :likes, :comments,
-                 :card, :ad, :tags, :ctr)
+                 :card, :ad, :privacy_status, :tags, :ctr)
             ON CONFLICT(video_id)
             DO UPDATE SET
                 views = EXCLUDED.views,
@@ -487,6 +547,7 @@ def save_metadata(videos, account_tag: str, pg_url: str):
                 comments = EXCLUDED.comments,
                 card_impressions = EXCLUDED.card_impressions,
                 ad_impressions = EXCLUDED.ad_impressions,
+                privacy_status = EXCLUDED.privacy_status,
                 tags = EXCLUDED.tags,
                 ctr = EXCLUDED.ctr;
         """)
@@ -678,19 +739,6 @@ def run_content_v3_hybrid(
 
     print("→ Fetching video metadata...")
     videos = get_video_metadata(credentials, video_ids)
-    start_date_min = min((v["published_at"] for v in videos if v.get("published_at")), default=end_date)
-    reach_map = get_video_reach_impressions_bulk(
-        credentials, video_ids, start_date_min, end_date, channel_id=channel_id
-    )
-
-    print("→ Fetching reach impressions via YouTube Analytics API...")
-    for v in videos:
-        if _stop_requested():
-            raise RuntimeError("Stop requested")
-        video_id = v["video_id"]
-        metrics = reach_map.get(video_id, {}) if reach_map is not None else {}
-        v["card_impressions"] = int(metrics.get("card_impressions", 0) or 0)
-        v["ad_impressions"] = int(metrics.get("ad_impressions", 0) or 0)
 
     print("→ Saving metadata to PostgreSQL...")
     save_metadata(videos, account_tag, pg_url)

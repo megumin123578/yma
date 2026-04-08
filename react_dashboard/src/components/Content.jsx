@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef, memo, startTransition } from "react";
 import { motion } from "framer-motion";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
@@ -129,6 +129,8 @@ const CONTENT_PERIOD_OPTIONS = CONTENT_PERIOD_OPTION_ORDER
 
 const CONTENT_ALL_CHANNELS_VALUE = "__all__";
 const CONTENT_LOCAL_CHANNEL_STORAGE_KEY = "content.selectedChannelId";
+const CONTENT_FILTERS_STORAGE_KEY = "content.filters";
+const CONTENT_ROWS_PER_PAGE_OPTIONS = [20, 50, 100, 200];
 const CHANNEL_SUMMARY_WEIGHT_BY_METRIC = {
   averageViewDuration: "views",
   averagePercentageViewed: "views",
@@ -158,6 +160,41 @@ const getStoredContentChannelId = () => {
     return "";
   }
   return getStoredSharedChannelId(CONTENT_LOCAL_CHANNEL_STORAGE_KEY);
+};
+
+const loadStoredContentFilters = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(CONTENT_FILTERS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const normalizeContentChartType = (value) => (value === "bar" ? "bar" : "line");
+
+const normalizeContentMetric = (value) =>
+  METRIC_OPTIONS.some((option) => option.value === value) ? value : "views";
+
+const normalizeContentPeriod = (value) =>
+  CONTENT_PERIOD_OPTIONS.some((option) => option.value === value) ? value : "last28";
+
+const normalizeSelectedTableMetrics = (value) => {
+  if (!Array.isArray(value)) return DEFAULT_TABLE_METRICS;
+  const allowed = new Set(TABLE_METRIC_OPTIONS.map((item) => item.value));
+  const filtered = value.filter((metricKey) => allowed.has(metricKey));
+  return Array.from(new Set(filtered));
+};
+
+const normalizeRowsPerPage = (value) => {
+  const parsed = Number(value);
+  return CONTENT_ROWS_PER_PAGE_OPTIONS.includes(parsed) ? parsed : 20;
+};
+
+const normalizeSortKey = (value) => {
+  const allowed = new Set(["videoCount", "published", ...TABLE_METRIC_OPTIONS.map((item) => item.value)]);
+  return allowed.has(value) ? value : "views";
 };
 
 
@@ -737,6 +774,7 @@ LineChart.displayName = "LineChart";
 const ContentAnalytics = () => {
 
   const theme = useTheme();
+  const storedFilters = useMemo(() => loadStoredContentFilters(), []);
 
   const LINE_MARGIN = useMemo(
 
@@ -776,19 +814,32 @@ const ContentAnalytics = () => {
 
 
 
-  const [chartType, setChartType] = useState("line");
+  const [chartType, setChartType] = useState(() =>
+    normalizeContentChartType(storedFilters?.chartType)
+  );
 
-  const [metric, setMetric] = useState("views");
+  const [metric, setMetric] = useState(() =>
+    normalizeContentMetric(storedFilters?.metric)
+  );
 
-  const [period, setPeriod] = useState("last28");
+  const [period, setPeriod] = useState(() =>
+    normalizeContentPeriod(storedFilters?.period)
+  );
 
-  const [selectedTableMetrics, setSelectedTableMetrics] = useState(DEFAULT_TABLE_METRICS);
+  const [selectedTableMetrics, setSelectedTableMetrics] = useState(() =>
+    normalizeSelectedTableMetrics(storedFilters?.selectedTableMetrics)
+  );
 
   const [page, setPage] = useState(0);
 
-  const [rowsPerPage, setRowsPerPage] = useState(20);
+  const [rowsPerPage, setRowsPerPage] = useState(() =>
+    normalizeRowsPerPage(storedFilters?.rowsPerPage)
+  );
+  const contentRequestSeqRef = useRef(0);
   const [expandedChannelIds, setExpandedChannelIds] = useState({});
-  const [sortKey, setSortKey] = useState("views");
+  const [sortKey, setSortKey] = useState(() =>
+    normalizeSortKey(storedFilters?.sortKey)
+  );
   const [sortDirection] = useState("desc");
 
 
@@ -807,9 +858,9 @@ const ContentAnalytics = () => {
 
   });
 
-  const [startDate, setStartDate] = useState("");
+  const [startDate, setStartDate] = useState(() => storedFilters?.startDate || "");
 
-  const [endDate, setEndDate] = useState("");
+  const [endDate, setEndDate] = useState(() => storedFilters?.endDate || "");
 
   /* ================================
 
@@ -879,6 +930,27 @@ const ContentAnalytics = () => {
   }, [channelId]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        CONTENT_FILTERS_STORAGE_KEY,
+        JSON.stringify({
+          chartType,
+          metric,
+          period,
+          selectedTableMetrics,
+          rowsPerPage,
+          sortKey,
+          startDate,
+          endDate,
+        })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [chartType, metric, period, selectedTableMetrics, rowsPerPage, sortKey, startDate, endDate]);
+
+  useEffect(() => {
     return listenSharedChannelId((nextChannelId) => {
       setChannelId((current) => {
         if (
@@ -910,11 +982,9 @@ const ContentAnalytics = () => {
 
   const fetchVideos = useCallback(
 
-    async (start, end) => {
+    async (start, end, requestSeq) => {
 
       if (!channelId) return;
-
-      setChannelMetrics(null);
 
       try {
 
@@ -932,15 +1002,21 @@ const ContentAnalytics = () => {
 
         const raw = resp.data;
 
-        setVideos(raw.items ?? []);
-        setChannelMetrics(raw.channelMetrics ?? null);
+        if (requestSeq !== contentRequestSeqRef.current) return;
+        startTransition(() => {
+          setVideos(raw.items ?? []);
+          setChannelMetrics(raw.channelMetrics ?? null);
+        });
 
       } catch (err) {
 
         console.error("Fetch videos failed:", err);
 
-        setVideos([]);
-        setChannelMetrics(null);
+        if (requestSeq !== contentRequestSeqRef.current) return;
+        startTransition(() => {
+          setVideos([]);
+          setChannelMetrics(null);
+        });
 
       }
 
@@ -954,7 +1030,7 @@ const ContentAnalytics = () => {
 
   const fetchTimeseries = useCallback(
 
-    async (start, end) => {
+    async (start, end, requestSeq) => {
 
       if (!channelId) return;
 
@@ -974,13 +1050,19 @@ const ContentAnalytics = () => {
 
         const raw = resp.data;
 
-        setTimeseries(raw.items ?? []);
+        if (requestSeq !== contentRequestSeqRef.current) return;
+        startTransition(() => {
+          setTimeseries(raw.items ?? []);
+        });
 
       } catch (err) {
 
         console.error("Fetch timeseries failed:", err);
 
-        setTimeseries([]);
+        if (requestSeq !== contentRequestSeqRef.current) return;
+        startTransition(() => {
+          setTimeseries([]);
+        });
 
       }
 
@@ -1095,12 +1177,19 @@ const ContentAnalytics = () => {
     setHoverSlice(null);
 
     setChannelMetrics(null);
+    const requestSeq = contentRequestSeqRef.current + 1;
+    contentRequestSeqRef.current = requestSeq;
+    let cancelled = false;
 
+    (async () => {
+      await fetchVideos(start, end, requestSeq);
+      if (cancelled || requestSeq !== contentRequestSeqRef.current) return;
+      await fetchTimeseries(start, end, requestSeq);
+    })();
 
-
-    fetchVideos(start, end);
-
-    fetchTimeseries(start, end);
+    return () => {
+      cancelled = true;
+    };
 
   }, [resolvePeriod, fetchVideos, fetchTimeseries, channelId]);
 
@@ -1553,9 +1642,12 @@ const ContentAnalytics = () => {
     const allDatesSorted = Array.from(allDatesSet).sort((a, b) => a - b).map(t => new Date(t));
 
     if (showAllMode) {
+      const visibleVideoIds = new Set(rows.map((row) => row.id));
       const dailyTotals = new Map();
 
       timeseries.forEach((t) => {
+        const videoId = String(t.videoId || "").trim();
+        if (videoId && !visibleVideoIds.has(videoId)) return;
         const d = dayjs(t.bucket).startOf("day").toDate().getTime();
         dailyTotals.set(d, (dailyTotals.get(d) || 0) + n(t[lineMetricKey]));
       });
@@ -1578,11 +1670,19 @@ const ContentAnalytics = () => {
 
     // 🔴 1. Get Top 5 IDs based on the current metric to avoid rendering 100s of lines
 
+    const timeseriesVideoIds = new Set(
+      timeseries
+        .map((t) => String(t.videoId || "").trim())
+        .filter(Boolean)
+    );
+
     const topIds = sortedRows
 
-      .slice(0, 5)
+      .map((r) => String(r.id || "").trim())
 
-      .map(r => r.id);
+      .filter((id, index, source) => source.indexOf(id) === index && timeseriesVideoIds.has(id))
+
+      .slice(0, 5);
 
 
 
@@ -3237,13 +3337,13 @@ const ContentAnalytics = () => {
 
           onRowsPerPageChange={(e) => {
 
-            setRowsPerPage(Number(e.target.value) || 10);
+            setRowsPerPage(normalizeRowsPerPage(e.target.value));
 
             setPage(0);
 
           }}
 
-          rowsPerPageOptions={[20, 50, 100, 200]}
+          rowsPerPageOptions={CONTENT_ROWS_PER_PAGE_OPTIONS}
 
         />
 

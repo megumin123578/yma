@@ -29,6 +29,8 @@ try:
     from python_backend.token_store import (
         account_tag_from_token_name,
         list_token_names,
+        TokenCredentialsError,
+        TokenRefreshFailed,
         token_exists,
         token_name_from_ref,
     )
@@ -36,9 +38,15 @@ except ModuleNotFoundError:
     from token_store import (
         account_tag_from_token_name,
         list_token_names,
+        TokenCredentialsError,
+        TokenRefreshFailed,
         token_exists,
         token_name_from_ref,
     )
+try:
+    from python_backend.module_content import ContentChannelAccessError
+except ModuleNotFoundError:
+    from module_content import ContentChannelAccessError
 from module_trafficsource import *
 from module_content import *
 from module_overall import *
@@ -511,6 +519,21 @@ def main():
             _update_schedule_run("running", 0, 1, "Processing 1 account")
             _run_credential_with_lock(cred_file)
             _update_schedule_run("done", 1, 1, "Completed")
+        except ContentChannelAccessError as e:
+            message = str(e)
+            write_progress(account_tag, "error", 0, "error", message)
+            _update_schedule_run("error", 0, 1, message)
+            print(message)
+        except TokenRefreshFailed as e:
+            message = str(e)
+            write_progress(account_tag, "error", 0, "error", message)
+            _update_schedule_run("error", 0, 1, message)
+            print(message)
+        except TokenCredentialsError as e:
+            message = str(e)
+            write_progress(account_tag, "error", 0, "error", message)
+            _update_schedule_run("error", 0, 1, message)
+            print(message)
         except Exception as e:
             if str(e) == "Stop requested":
                 write_progress(account_tag, "stopped", 0, "stopped", "Stopped by admin")

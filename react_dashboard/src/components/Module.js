@@ -75,8 +75,10 @@ export function getRangeForPeriod(periodValue, now = new Date()) {
   };
 
   if (periodValue === "last7") return rangeDays(7);
+  if (periodValue === "last14") return rangeDays(14);
   if (periodValue === "last28") return rangeDays(28);
   if (periodValue === "last90") return rangeDays(90);
+  if (periodValue === "last180") return rangeDays(180);
   if (periodValue === "last365") return rangeDays(365);
   if (periodValue === "lifetime") return { start: null, end: null };
   if (periodValue.startsWith("y-")) {

@@ -30,7 +30,9 @@ from python_backend.token_store import (
 _STOP_EVENT = Event()
 _THREAD = None
 _RUNS_MAX = int(os.getenv("SCHEDULE_RUNS_MAX", "200"))
-# Keep snapshots frequent enough for 60-minute view windows while still allowing env overrides.
+_LIVE_COUNTER_SNAPSHOTS_ENABLED = str(
+    os.getenv("LIVE_COUNTER_SNAPSHOTS_ENABLED", "0")
+).strip().lower() in {"1", "true", "yes", "on"}
 _LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS = int(
     os.getenv("LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS", str(24 * 60))
 )
@@ -121,6 +123,8 @@ def _should_run(schedule: UserSchedule, now: datetime) -> bool:
 
 def _should_capture_live_counters(now: datetime) -> bool:
     global _LAST_LIVE_COUNTER_SNAPSHOT_AT
+    if not _LIVE_COUNTER_SNAPSHOTS_ENABLED:
+        return False
     if _LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS <= 0:
         return False
     if _LAST_LIVE_COUNTER_SNAPSHOT_AT is None:

@@ -1082,8 +1082,6 @@ def delete_mail_account(vps_id: str, account_email: str) -> dict[str, Any]:
         "deleted_messages": int(message_deleted),
         "deleted_runs": int(run_deleted),
     }
-
-
 def list_mail_runs(
     *,
     vps_id: Optional[str] = None,

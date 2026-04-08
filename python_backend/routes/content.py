@@ -18,10 +18,9 @@ from python_backend.token_store import (
     load_token_credentials as load_stored_token_credentials,
     token_exists,
 )
-from python_backend.module_trafficsource import sanitize_filename  # dùng lại hàm này
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-
+from python_backend.module_trafficsource import sanitize_filename  # dùng lại hàm này
 router = APIRouter(prefix="/api/content", tags=["content"])
 
 ALL_CHANNELS_VALUE = "__all__"
@@ -134,7 +133,8 @@ def _build_video_metrics_cache_payload(video_metrics: dict, thumbnail_supported:
 def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start_date, end_date):
     """
     Fetch per-video aggregated metrics (no day dimension).
-    Returns tuple: ({video_id: {estimatedRevenue, subscribers, impressions, impressionsClickThroughRate}}, thumbnail_supported)
+    Returns tuple: ({video_id: {views, watch_time_hours, average_view_duration, subscribers,
+    impressions, impressions_click_through_rate}}, thumbnail_supported)
     """
     if not video_ids:
         return {}, False
@@ -146,7 +146,7 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
     for chunk in _chunked(video_ids, 100):
         chunk_filter = f"video=={','.join(chunk)}"
         
-        # 1. Core Metrics (Views + Watch Time + Subscribers + Revenue) - Combined for speed
+        # 1. Core Metrics (Views + Watch Time + Subscribers) - Combined for speed
         try:
             resp = yta.reports().query(
                 ids=ids,
@@ -154,7 +154,7 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
                 endDate=end_date,
                 dimensions="video",
                 filters=chunk_filter,
-                metrics="views,estimatedMinutesWatched,subscribersGained,estimatedRevenue"
+                metrics="views,estimatedMinutesWatched,averageViewDuration,subscribersGained"
             ).execute() or {}
             
             rows = resp.get("rows") or []
@@ -166,8 +166,8 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
                     if vid not in out: out[vid] = {}
                     out[vid]["views"] = int(r[idx["views"]] or 0) if "views" in idx else 0
                     out[vid]["watch_time_hours"] = round(float(r[idx["estimatedMinutesWatched"]] or 0) / 60.0, 2) if "estimatedMinutesWatched" in idx else 0.0
+                    out[vid]["average_view_duration"] = float(r[idx["averageViewDuration"]] or 0.0) if "averageViewDuration" in idx else None
                     out[vid]["subscribers"] = int(r[idx["subscribersGained"]] or 0) if "subscribersGained" in idx else 0
-                    out[vid]["estimated_revenue"] = float(r[idx["estimatedRevenue"]] or 0.0) if "estimatedRevenue" in idx else 0.0
         except HttpError as e:
             if e.resp.status != 403: # Only log if not a permission issue
                 print(f"[content.video-metrics] Core metrics failed for chunk: {e}")
@@ -234,13 +234,20 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
             out[vid] = {
                 "views": None,
                 "watch_time_hours": None,
+                "average_view_duration": None,
                 "subscribers": None,
-                "estimated_revenue": None,
                 "impressions": None,
                 "impressions_click_through_rate": None,
             }
         else:
-            for key in ["views", "watch_time_hours", "subscribers", "estimated_revenue", "impressions", "impressions_click_through_rate"]:
+            for key in [
+                "views",
+                "watch_time_hours",
+                "average_view_duration",
+                "subscribers",
+                "impressions",
+                "impressions_click_through_rate",
+            ]:
                 if key not in out[vid]:
                     out[vid][key] = None
 
@@ -344,6 +351,12 @@ def _apply_video_metrics_to_content_rows(rows_mutable, video_metrics: dict, thum
         return
     for row in rows_mutable:
         metrics = video_metrics.get(row.get("videoId")) or {}
+        if metrics.get("watch_time_hours") is not None:
+            row["watchTimeHours"] = float(metrics["watch_time_hours"])
+        if metrics.get("average_view_duration") is not None:
+            row["averageViewDuration"] = float(metrics["average_view_duration"])
+        if metrics.get("subscribers") is not None:
+            row["subscribers"] = int(metrics["subscribers"])
         if metrics.get("impressions") is not None:
             row["impressions"] = int(metrics["impressions"])
         elif thumbnail_supported:
@@ -353,6 +366,26 @@ def _apply_video_metrics_to_content_rows(rows_mutable, video_metrics: dict, thum
             row["impressionsClickThroughRate"] = metrics.get("impressions_click_through_rate")
         elif thumbnail_supported:
             row["impressionsClickThroughRate"] = None
+
+
+def _should_hide_private_content_row(row: dict) -> bool:
+    try:
+        watch_time_hours = float(
+            row.get("watchTimeHours")
+            or row.get("watch_time_hours")
+            or 0
+        )
+    except Exception:
+        watch_time_hours = 0.0
+    return watch_time_hours <= 0
+
+
+def _filter_private_timeseries_rows(
+    db: Session,
+    requested_tags: list[str],
+    rows_mutable: list[dict],
+):
+    return rows_mutable
 
 
 def _compute_channel_metrics_from_video_metrics(video_metrics: dict):
@@ -564,7 +597,7 @@ def content_list(
         v.published_at  AS "publishedAt",
         v.duration,
 
-        COALESCE(SUM(s.views), 0) AS views,
+        COALESCE(MAX(v.views), 0) AS views,
         COALESCE(SUM(s.estimated_minutes) / 60.0, 0) AS "watchTimeHours",
         CASE
             WHEN COALESCE(SUM(s.views), 0) > 0
@@ -585,8 +618,6 @@ def content_list(
         
         -- Sum daily stats for engagement and reach metrics
         COALESCE(SUM(s.subscribers_gained), 0) AS "subscribers",
-        COALESCE(SUM(s.estimated_revenue), 0) AS "estimatedRevenue",
-        
         -- Prefer exact-range reach totals (card + teaser). If unavailable, fall back
         -- to daily card-only metrics because video_daily_stats does not store teaser data.
         COALESCE(
@@ -656,16 +687,41 @@ def content_list(
         row["channelTitle"] = label_map.get(channel_id) or channel_id
         row["channelAvatar"] = avatar_map.get(channel_id)
 
-    if len(requested_tags) == 1:
-        video_ids = [str(row.get("videoId")) for row in rows_mutable if row.get("videoId")]
+    rows_by_account_tag = {}
+    for row in rows_mutable:
+        account_tag = str(row.get("channelId") or "").strip()
+        if not account_tag:
+            continue
+        rows_by_account_tag.setdefault(account_tag, []).append(row)
+
+    fetched_video_metrics = {}
+    for account_tag in requested_tags:
+        account_rows = rows_by_account_tag.get(account_tag) or []
+        video_ids = [str(row.get("videoId")) for row in account_rows if row.get("videoId")]
+        if not video_ids:
+            continue
         video_metrics, thumbnail_supported = _load_or_fetch_video_metrics(
             db,
-            requested_tags[0],
+            account_tag,
             req.start,
             req.end,
             video_ids,
         )
-        _apply_video_metrics_to_content_rows(rows_mutable, video_metrics, thumbnail_supported)
+        _apply_video_metrics_to_content_rows(account_rows, video_metrics, thumbnail_supported)
+        visible_video_ids = {
+            str(row.get("videoId") or "").strip()
+            for row in account_rows
+            if row.get("videoId") and not _should_hide_private_content_row(row)
+        }
+        filtered_video_metrics = {
+            vid: metrics
+            for vid, metrics in (video_metrics or {}).items()
+            if vid in visible_video_ids
+        }
+        fetched_video_metrics[account_tag] = (filtered_video_metrics, thumbnail_supported)
+
+    if len(requested_tags) == 1:
+        video_metrics, thumbnail_supported = fetched_video_metrics.get(requested_tags[0], ({}, False))
         channel_metrics_payload = (
             _compute_channel_metrics_from_video_metrics(video_metrics)
             if thumbnail_supported
@@ -681,6 +737,8 @@ def content_list(
             req.start,
             req.end,
         )
+
+    rows_mutable = [row for row in rows_mutable if not _should_hide_private_content_row(row)]
 
     return {
         "items": rows_mutable,
@@ -725,6 +783,7 @@ def content_timeseries(
                 channel_id = str(row.get("channelId") or requested_tags[0]).strip()
                 row["channelId"] = channel_id
                 row["channelTitle"] = label_map.get(channel_id) or channel_id
+            cached_rows = _filter_private_timeseries_rows(db, requested_tags, cached_rows)
             return {"items": cached_rows}
 
     account_filter_sql, account_filter_params = _build_account_tag_filter(
@@ -765,6 +824,7 @@ def content_timeseries(
     for row in rows:
         channel_id = str(row.get("channelId") or "").strip()
         row["channelTitle"] = label_map.get(channel_id) or channel_id
+    rows = _filter_private_timeseries_rows(db, requested_tags, rows)
 
     if len(requested_tags) == 1:
         _save_timeseries_cache(requested_tags[0], req.start, req.end, rows)
