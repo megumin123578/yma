@@ -687,56 +687,11 @@ def content_list(
         row["channelTitle"] = label_map.get(channel_id) or channel_id
         row["channelAvatar"] = avatar_map.get(channel_id)
 
-    rows_by_account_tag = {}
-    for row in rows_mutable:
-        account_tag = str(row.get("channelId") or "").strip()
-        if not account_tag:
-            continue
-        rows_by_account_tag.setdefault(account_tag, []).append(row)
-
-    fetched_video_metrics = {}
-    for account_tag in requested_tags:
-        account_rows = rows_by_account_tag.get(account_tag) or []
-        video_ids = [str(row.get("videoId")) for row in account_rows if row.get("videoId")]
-        if not video_ids:
-            continue
-        video_metrics, thumbnail_supported = _load_or_fetch_video_metrics(
-            db,
-            account_tag,
-            req.start,
-            req.end,
-            video_ids,
-        )
-        _apply_video_metrics_to_content_rows(account_rows, video_metrics, thumbnail_supported)
-        visible_video_ids = {
-            str(row.get("videoId") or "").strip()
-            for row in account_rows
-            if row.get("videoId") and not _should_hide_private_content_row(row)
-        }
-        filtered_video_metrics = {
-            vid: metrics
-            for vid, metrics in (video_metrics or {}).items()
-            if vid in visible_video_ids
-        }
-        fetched_video_metrics[account_tag] = (filtered_video_metrics, thumbnail_supported)
-
-    if len(requested_tags) == 1:
-        video_metrics, thumbnail_supported = fetched_video_metrics.get(requested_tags[0], ({}, False))
-        channel_metrics_payload = (
-            _compute_channel_metrics_from_video_metrics(video_metrics)
-            if thumbnail_supported
-            else _compute_channel_metrics_from_db(
-                requested_tags[0],
-                req.start,
-                req.end,
-            )
-        )
-    else:
-        channel_metrics_payload = _compute_channel_metrics_from_db_for_accounts(
-            requested_tags,
-            req.start,
-            req.end,
-        )
+    channel_metrics_payload = _compute_channel_metrics_from_db_for_accounts(
+        requested_tags,
+        req.start,
+        req.end,
+    )
 
     rows_mutable = [row for row in rows_mutable if not _should_hide_private_content_row(row)]
 
@@ -940,16 +895,4 @@ def channel_metrics(
     requested_tags = _resolve_content_account_tags(req.channelId, channel_items, all_channel_items)
     if not requested_tags:
         return {"impressions": 0, "ctr": None, "supported": False}
-    if len(requested_tags) == 1:
-        video_ids = _list_content_video_ids(requested_tags[0], req.start, req.end)
-        video_metrics, thumbnail_supported = _load_or_fetch_video_metrics(
-            db,
-            requested_tags[0],
-            req.start,
-            req.end,
-            video_ids,
-        )
-        if thumbnail_supported:
-            return _compute_channel_metrics_from_video_metrics(video_metrics)
-        return _compute_channel_metrics_from_db(requested_tags[0], req.start, req.end)
     return _compute_channel_metrics_from_db_for_accounts(requested_tags, req.start, req.end)

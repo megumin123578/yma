@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useCallback, useMemo, useRef, memo, startTransition } from "react";
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef, memo, startTransition, useDeferredValue } from "react";
 import { motion } from "framer-motion";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowRightIcon from "@mui/icons-material/KeyboardArrowRight";
@@ -36,7 +36,6 @@ import {
   Select,
 
   MenuItem,
-  Skeleton,
 
 } from "@mui/material";
 
@@ -1179,17 +1178,10 @@ const ContentAnalytics = () => {
     setChannelMetrics(null);
     const requestSeq = contentRequestSeqRef.current + 1;
     contentRequestSeqRef.current = requestSeq;
-    let cancelled = false;
+    fetchVideos(start, end, requestSeq);
+    fetchTimeseries(start, end, requestSeq);
 
-    (async () => {
-      await fetchVideos(start, end, requestSeq);
-      if (cancelled || requestSeq !== contentRequestSeqRef.current) return;
-      await fetchTimeseries(start, end, requestSeq);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    return undefined;
 
   }, [resolvePeriod, fetchVideos, fetchTimeseries, channelId]);
 
@@ -1256,18 +1248,17 @@ const ContentAnalytics = () => {
 
           cardImpressions: n(v.cardImpressions),
           adImpressions: n(v.adImpressions),
-        }))
-
-        .sort((a, b) => b.views - a.views), // 🔴 Sort table by views
+        })),
 
     [showAllMode, videos]
 
   );
+  const deferredRows = useDeferredValue(rows);
 
   const channelSummaryRows = useMemo(() => {
     const groups = new Map();
 
-    rows.forEach((row) => {
+    deferredRows.forEach((row) => {
       const channelKey = String(row.channelId || "").trim();
       if (!channelKey) return;
 
@@ -1338,9 +1329,9 @@ const ContentAnalytics = () => {
       delete finalized._sumFlags;
       return finalized;
     });
-  }, [channelMetaById, rows]);
+  }, [channelMetaById, deferredRows]);
 
-  const tableRows = showAllMode ? channelSummaryRows : rows;
+  const tableRows = showAllMode ? channelSummaryRows : deferredRows;
 
   const channelExpandedVideos = useMemo(() => {
     const compareVideoRows = (left, right) => {
@@ -1370,7 +1361,7 @@ const ContentAnalytics = () => {
       return (leftValue - rightValue) * directionFactor;
     };
 
-    const grouped = rows.reduce((acc, row) => {
+    const grouped = deferredRows.reduce((acc, row) => {
       const channelKey = String(row.channelId || "").trim();
       if (!channelKey) return acc;
       if (!acc[channelKey]) acc[channelKey] = [];
@@ -1384,7 +1375,7 @@ const ContentAnalytics = () => {
         [...channelRows].sort(compareVideoRows).slice(0, 5),
       ])
     );
-  }, [rows, sortDirection, sortKey]);
+  }, [deferredRows, sortDirection, sortKey]);
 
   const sortedRows = useMemo(() => {
     const getComparableValue = (row, key) => {
@@ -1416,6 +1407,7 @@ const ContentAnalytics = () => {
       return (aValue - bValue) * directionFactor;
     });
   }, [sortDirection, sortKey, tableRows]);
+  const deferredSortedRows = useDeferredValue(sortedRows);
 
   const totals = useMemo(() => {
     const acc = TABLE_METRIC_OPTIONS.reduce((out, item) => {
@@ -1425,7 +1417,7 @@ const ContentAnalytics = () => {
       }
       let sum = 0;
       let hasValue = false;
-      rows.forEach((row) => {
+      deferredRows.forEach((row) => {
         const value = toNullableNumber(row[item.value]);
         if (value === null) return;
         hasValue = true;
@@ -1446,7 +1438,7 @@ const ContentAnalytics = () => {
     }
 
     return acc;
-  }, [rows, channelMetrics]);
+  }, [deferredRows, channelMetrics]);
 
   const showAllSummaryCards = useMemo(
     () => [
@@ -1456,7 +1448,7 @@ const ContentAnalytics = () => {
       },
       {
         label: "Videos",
-        value: formatNumber(rows.length),
+        value: formatNumber(deferredRows.length),
       },
       {
         label: "Views",
@@ -1485,7 +1477,7 @@ const ContentAnalytics = () => {
             : formatTableMetricValue("impressions", totals.impressions),
       },
     ],
-    [channelSummaryRows.length, rows.length, totals]
+    [channelSummaryRows.length, deferredRows.length, totals]
   );
 
 
@@ -1496,104 +1488,11 @@ const ContentAnalytics = () => {
 
     const end = start + rowsPerPage;
 
-    return sortedRows.slice(start, end);
+    return deferredSortedRows.slice(start, end);
 
-  }, [sortedRows, page, rowsPerPage]);
+  }, [deferredSortedRows, page, rowsPerPage]);
 
-  const chartSkeleton = useMemo(
-    () => (
-      <Box
-        sx={{
-          height: "100%",
-          width: "100%",
-          px: 2,
-          py: 2,
-          display: "flex",
-          alignItems: "stretch",
-          gap: 1.25,
-        }}
-      >
-        {chartType === "line" ? (
-          <Box sx={{ position: "relative", width: "100%", height: "100%" }}>
-            <Box
-              sx={{
-                position: "absolute",
-                left: 44,
-                right: 16,
-                top: 16,
-                bottom: 36,
-                display: "grid",
-                gridTemplateRows: "repeat(4, 1fr)",
-                gap: 3,
-              }}
-            >
-              {[0, 1, 2, 3].map((idx) => (
-                <Skeleton
-                  key={idx}
-                  variant="rectangular"
-                  animation="wave"
-                  sx={{
-                    height: 1,
-                    width: "100%",
-                    transform: "scaleY(0.06)",
-                    transformOrigin: "center",
-                    borderRadius: 999,
-                  }}
-                />
-              ))}
-            </Box>
-            <Box
-              component="svg"
-              viewBox="0 0 100 100"
-              preserveAspectRatio="none"
-              sx={{
-                position: "absolute",
-                left: 44,
-                right: 16,
-                top: 16,
-                bottom: 36,
-                width: "calc(100% - 60px)",
-                height: "calc(100% - 52px)",
-              }}
-            >
-              <path
-                d="M0,78 C10,74 16,38 28,44 C40,50 44,66 56,58 C68,50 72,16 84,24 C92,30 96,42 100,34"
-                fill="none"
-                stroke={theme.palette.mode === "dark" ? "rgba(148,163,184,0.38)" : "rgba(148,163,184,0.55)"}
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeDasharray="6 6"
-              />
-            </Box>
-          </Box>
-        ) : (
-          Array.from({ length: 8 }).map((_, idx) => (
-            <Box
-              key={idx}
-              sx={{
-                flex: 1,
-                display: "flex",
-                alignItems: "flex-end",
-                minWidth: 0,
-              }}
-            >
-              <Skeleton
-                variant="rounded"
-                animation="wave"
-                sx={{
-                  width: "100%",
-                  height: `${40 + ((idx * 9) % 38)}%`,
-                  borderRadius: "10px 10px 4px 4px",
-                }}
-              />
-            </Box>
-          ))
-        )}
-      </Box>
-    ),
-    [chartType, theme.palette.mode]
-  );
+  const deferredTimeseries = useDeferredValue(timeseries);
 
   const handleSort = useCallback((key) => {
     setPage(0);
@@ -1631,7 +1530,7 @@ const ContentAnalytics = () => {
 
     const allDatesSet = new Set();
 
-    timeseries.forEach(t => {
+    deferredTimeseries.forEach(t => {
 
       const d = dayjs(t.bucket).startOf('day').toDate().getTime();
 
@@ -1642,10 +1541,10 @@ const ContentAnalytics = () => {
     const allDatesSorted = Array.from(allDatesSet).sort((a, b) => a - b).map(t => new Date(t));
 
     if (showAllMode) {
-      const visibleVideoIds = new Set(rows.map((row) => row.id));
+      const visibleVideoIds = new Set(deferredRows.map((row) => row.id));
       const dailyTotals = new Map();
 
-      timeseries.forEach((t) => {
+      deferredTimeseries.forEach((t) => {
         const videoId = String(t.videoId || "").trim();
         if (videoId && !visibleVideoIds.has(videoId)) return;
         const d = dayjs(t.bucket).startOf("day").toDate().getTime();
@@ -1671,12 +1570,12 @@ const ContentAnalytics = () => {
     // 🔴 1. Get Top 5 IDs based on the current metric to avoid rendering 100s of lines
 
     const timeseriesVideoIds = new Set(
-      timeseries
+      deferredTimeseries
         .map((t) => String(t.videoId || "").trim())
         .filter(Boolean)
     );
 
-    const topIds = sortedRows
+    const topIds = deferredSortedRows
 
       .map((r) => String(r.id || "").trim())
 
@@ -1690,7 +1589,7 @@ const ContentAnalytics = () => {
 
     const map = new Map();
 
-    timeseries.forEach((t) => {
+    deferredTimeseries.forEach((t) => {
 
       const id = t.videoId;
 
@@ -1713,7 +1612,7 @@ const ContentAnalytics = () => {
 
 
 
-    const titleMap = new Map(rows.map(r => [r.id, r.displayTitle || r.title]));
+    const titleMap = new Map(deferredRows.map(r => [r.id, r.displayTitle || r.title]));
 
 
 
@@ -1743,7 +1642,7 @@ const ContentAnalytics = () => {
 
     });
 
-  }, [chartType, metric, rows, showAllMode, sortedRows, timeseries]);
+  }, [chartType, metric, deferredRows, showAllMode, deferredSortedRows, deferredTimeseries]);
 
 
 
@@ -1765,13 +1664,13 @@ const ContentAnalytics = () => {
 
   const xTickValues = useMemo(() => {
 
-    if (!timeseries.length) return [];
+    if (!deferredTimeseries.length) return [];
 
-    const allDates = timeseries.map((t) => dayjs(t.bucket).startOf("day").toDate());
+    const allDates = deferredTimeseries.map((t) => dayjs(t.bucket).startOf("day").toDate());
 
     return pickTicks(allDates, 7); // tối đa 7 tick
 
-  }, [timeseries]);
+  }, [deferredTimeseries]);
 
 
 
@@ -1797,7 +1696,7 @@ const ContentAnalytics = () => {
 
     const sourceRows = showAllMode
       ? [...channelSummaryRows].sort((a, b) => n(b[metricKey]) - n(a[metricKey]))
-      : sortedRows;
+      : deferredSortedRows;
 
     const topRows = sourceRows
 
@@ -1819,7 +1718,7 @@ const ContentAnalytics = () => {
 
     };
 
-  }, [channelSummaryRows, chartType, metric, showAllMode, sortedRows]);
+  }, [channelSummaryRows, chartType, metric, showAllMode, deferredSortedRows]);
 
 
 
@@ -2624,27 +2523,30 @@ const ContentAnalytics = () => {
         {chartType === "line" && lineData.length === 0 && (
 
           <Box
-
+            component={motion.div}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28, ease: "easeOut" }}
             sx={{
-
               height: 1,
-
               minHeight: 120,
               width: "100%",
-
             }}
-
-          >
-            {chartSkeleton}
-
-          </Box>
+          />
 
         )}
 
 
 
         {chartType === "bar" && hasBarData && (
-
+          <Box
+            component={motion.div}
+            key={`${channelId}-${period}-${metric}-${barPrep.keys.join("|")}`}
+            initial={{ opacity: 0, y: 16, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
+            sx={{ width: "100%", height: "100%" }}
+          >
           <ResponsiveBar
 
             debounceResize={150}
@@ -2652,6 +2554,10 @@ const ContentAnalytics = () => {
             data={barPrep.data}
 
             keys={barPrep.keys}
+
+            animate={true}
+
+            motionConfig="gentle"
 
             indexBy="label"
 
@@ -2957,6 +2863,7 @@ const ContentAnalytics = () => {
             legends={[]}
 
           />
+          </Box>
 
         )}
 
@@ -2965,20 +2872,16 @@ const ContentAnalytics = () => {
         {chartType === "bar" && !hasBarData && (
 
           <Box
-
+            component={motion.div}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.28, ease: "easeOut" }}
             sx={{
-
               height: 1,
-
               minHeight: 120,
               width: "100%",
-
             }}
-
-          >
-            {chartSkeleton}
-
-          </Box>
+          />
 
         )}
 
