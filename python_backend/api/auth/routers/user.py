@@ -64,6 +64,7 @@ _ALLOWED_RUN_STAGES = {
     "overview",
     "audience",
     "reach",
+    "thumbnail_reach",
     "traffic_source",
     "revenue",
     "subscribers",
@@ -399,6 +400,27 @@ def _purge_postgres_account(account_tag: str) -> None:
             try:
                 conn.execute(
                     text("DELETE FROM reach_video_metrics WHERE account_tag = :acct"),
+                    {"acct": tag},
+                )
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    text("DELETE FROM video_thumbnail_daily WHERE account_tag = :acct"),
+                    {"acct": tag},
+                )
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    text("DELETE FROM youtube_reporting_processed_reports WHERE account_tag = :acct"),
+                    {"acct": tag},
+                )
+            except Exception:
+                pass
+            try:
+                conn.execute(
+                    text("DELETE FROM youtube_reporting_jobs WHERE account_tag = :acct"),
                     {"acct": tag},
                 )
             except Exception:

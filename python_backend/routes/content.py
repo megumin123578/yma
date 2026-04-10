@@ -25,6 +25,34 @@ router = APIRouter(prefix="/api/content", tags=["content"])
 
 ALL_CHANNELS_VALUE = "__all__"
 
+
+def _ensure_thumbnail_daily_table() -> None:
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS video_thumbnail_daily (
+                    account_tag TEXT NOT NULL,
+                    channel_id TEXT NOT NULL,
+                    video_id TEXT NOT NULL,
+                    day DATE NOT NULL,
+                    thumbnail_impressions BIGINT NOT NULL DEFAULT 0,
+                    thumbnail_ctr DOUBLE PRECISION,
+                    report_id TEXT,
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    PRIMARY KEY (account_tag, video_id, day)
+                );
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_video_thumbnail_daily_account_day
+                ON video_thumbnail_daily (account_tag, day);
+            """))
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_video_thumbnail_daily_video_day
+                ON video_thumbnail_daily (video_id, day);
+            """))
+    except Exception as e:
+        print("[content.thumbnail_daily] create table failed:", e)
+
 # cache table for per-video analytics (not daily)
 def _ensure_video_metrics_cache_table() -> None:
     try:
@@ -588,6 +616,7 @@ def content_list(
         "v.account_tag",
         requested_tags,
     )
+    _ensure_thumbnail_daily_table()
     sql = f"""
     SELECT
         v.video_id      AS "videoId",
@@ -618,23 +647,12 @@ def content_list(
         
         -- Sum daily stats for engagement and reach metrics
         COALESCE(SUM(s.subscribers_gained), 0) AS "subscribers",
-        -- Prefer exact-range reach totals (card + teaser). If unavailable, fall back
-        -- to daily card-only metrics because video_daily_stats does not store teaser data.
-        COALESCE(
-            MAX(r.total_impressions),
-            NULLIF(SUM(COALESCE(s.card_impressions, 0)), 0),
-            0
-        ) AS impressions,
+        MAX(tr.thumbnail_impressions) AS impressions,
 
         CASE
-            WHEN MAX(r.total_impressions) IS NOT NULL
-                THEN COALESCE(MAX(r.total_ctr), 0) * 100.0
-            WHEN SUM(COALESCE(s.card_impressions, 0)) > 0
-                THEN (
-                    SUM(COALESCE(s.card_clicks, 0))::numeric
-                    / SUM(COALESCE(s.card_impressions, 0))
-                ) * 100.0
-            ELSE 0
+            WHEN MAX(tr.thumbnail_impressions) IS NOT NULL
+                THEN MAX(tr.thumbnail_ctr) * 100.0
+            ELSE NULL
         END AS "impressionsClickThroughRate",
         
         COALESCE(v.card_impressions, 0) AS "cardImpressions",
@@ -643,11 +661,23 @@ def content_list(
     LEFT JOIN video_daily_stats s
       ON s.video_id = v.video_id
      AND s.day BETWEEN :start AND :end
-    LEFT JOIN reach_video_metrics r
-      ON r.video_id = v.video_id
-     AND r.account_tag = v.account_tag
-     AND r.start_date = :start
-     AND r.end_date = :end
+    LEFT JOIN (
+        SELECT
+            account_tag,
+            video_id,
+            SUM(thumbnail_impressions) AS thumbnail_impressions,
+            CASE
+                WHEN SUM(thumbnail_impressions) > 0
+                    THEN SUM(COALESCE(thumbnail_ctr, 0) * thumbnail_impressions)
+                         / SUM(thumbnail_impressions)
+                ELSE NULL
+            END AS thumbnail_ctr
+        FROM video_thumbnail_daily
+        WHERE day BETWEEN :start AND :end
+        GROUP BY account_tag, video_id
+    ) tr
+      ON tr.video_id = v.video_id
+     AND tr.account_tag = v.account_tag
     WHERE {account_filter_sql}
     GROUP BY
         v.video_id,
@@ -745,6 +775,7 @@ def content_timeseries(
         "v.account_tag",
         requested_tags,
     )
+    _ensure_thumbnail_daily_table()
     sql = f"""
         SELECT
             s.day                  AS bucket,
@@ -757,10 +788,14 @@ def content_timeseries(
 
             s.likes                AS likes,
             0::numeric             AS revenue,
-            0::bigint              AS impressions
+            t.thumbnail_impressions::bigint AS impressions
         FROM video_daily_stats s
         JOIN videos v
           ON v.video_id = s.video_id
+        LEFT JOIN video_thumbnail_daily t
+          ON t.account_tag = v.account_tag
+         AND t.video_id = v.video_id
+         AND t.day = s.day
         WHERE {account_filter_sql}
           AND s.day BETWEEN :start AND :end
         ORDER BY
@@ -823,44 +858,55 @@ def _compute_channel_metrics_from_db_for_accounts(account_tags, start_date: date
         "v.account_tag",
         account_tags,
     )
+    _ensure_thumbnail_daily_table()
     sql = f"""
         WITH per_video AS (
             SELECT
+                v.account_tag,
                 v.video_id,
-                COALESCE(
-                    MAX(r.total_impressions),
-                    NULLIF(SUM(COALESCE(s.card_impressions, 0)), 0),
-                    0
-                ) AS impressions,
+                MAX(tr.thumbnail_impressions) AS impressions,
                 CASE
-                    WHEN MAX(r.total_impressions) IS NOT NULL
-                        THEN COALESCE(MAX(r.total_ctr), 0) * 100.0
-                    WHEN SUM(COALESCE(s.card_impressions, 0)) > 0
-                        THEN (
-                            SUM(COALESCE(s.card_clicks, 0))::numeric
-                            / SUM(COALESCE(s.card_impressions, 0))
-                        ) * 100.0
+                    WHEN MAX(tr.thumbnail_impressions) IS NOT NULL
+                        THEN MAX(tr.thumbnail_ctr) * 100.0
                     ELSE NULL
-                END AS ctr
+                END AS ctr,
+                CASE
+                    WHEN MAX(tr.has_rows) > 0 THEN 1
+                    ELSE 0
+                END AS has_thumbnail
             FROM videos v
             LEFT JOIN video_daily_stats s
               ON s.video_id = v.video_id
              AND s.day BETWEEN :start_date AND :end_date
-            LEFT JOIN reach_video_metrics r
-              ON r.video_id = v.video_id
-             AND r.account_tag = v.account_tag
-             AND r.start_date = :start_date
-             AND r.end_date = :end_date
+            LEFT JOIN (
+                SELECT
+                    account_tag,
+                    video_id,
+                    SUM(thumbnail_impressions) AS thumbnail_impressions,
+                    CASE
+                        WHEN SUM(thumbnail_impressions) > 0
+                            THEN SUM(COALESCE(thumbnail_ctr, 0) * thumbnail_impressions)
+                                 / SUM(thumbnail_impressions)
+                        ELSE NULL
+                    END AS thumbnail_ctr,
+                    COUNT(*) AS has_rows
+                FROM video_thumbnail_daily
+                WHERE day BETWEEN :start_date AND :end_date
+                GROUP BY account_tag, video_id
+            ) tr
+              ON tr.video_id = v.video_id
+             AND tr.account_tag = v.account_tag
             WHERE {account_filter_sql}
-            GROUP BY v.video_id
+            GROUP BY v.account_tag, v.video_id
         )
         SELECT
-            COALESCE(SUM(impressions), 0) AS impressions,
+            SUM(impressions) AS impressions,
             CASE
                 WHEN SUM(impressions) > 0
                     THEN SUM(COALESCE(ctr, 0) * impressions) / SUM(impressions)
                 ELSE NULL
-            END AS ctr
+            END AS ctr,
+            COALESCE(SUM(has_thumbnail), 0) AS thumbnail_rows
         FROM per_video;
     """
     row = query_all_safe(
@@ -874,13 +920,15 @@ def _compute_channel_metrics_from_db_for_accounts(account_tags, start_date: date
     if not row:
         return {"impressions": 0, "ctr": None, "supported": False}
     payload = row[0]
-    impressions = int(payload.get("impressions") or 0)
+    raw_impressions = payload.get("impressions")
+    impressions = int(raw_impressions) if raw_impressions is not None else None
     ctr = payload.get("ctr")
     ctr = float(ctr) if ctr is not None else None
+    thumbnail_rows = int(payload.get("thumbnail_rows") or 0)
     return {
         "impressions": impressions,
         "ctr": ctr,
-        "supported": impressions > 0 or ctr is not None,
+        "supported": thumbnail_rows > 0,
     }
 
 

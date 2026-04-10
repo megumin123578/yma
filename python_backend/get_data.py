@@ -57,6 +57,10 @@ try:
     from python_backend.module_channel_daily import run_channel_daily
 except ModuleNotFoundError:
     from module_channel_daily import run_channel_daily
+try:
+    from python_backend.module_thumbnail_reach import run_thumbnail_reach_sync
+except ModuleNotFoundError:
+    from module_thumbnail_reach import run_thumbnail_reach_sync
 
 try:
     import msvcrt
@@ -361,6 +365,18 @@ def _run_for_credential(cred_file: str) -> None:
                 raise RuntimeError("Missing PG_URL env var")
             creds = create_token_from_credentials(os.path.join(TOKEN_FOLDER, cred_file))
             run_reach_analytics(creds, account_tag, pg_url, channel_id=channel_id)
+        elif stage == "thumbnail_reach":
+            pg_url = os.getenv("PG_URL")
+            if not pg_url:
+                raise RuntimeError("Missing PG_URL env var")
+            creds = create_token_from_credentials(os.path.join(TOKEN_FOLDER, cred_file))
+            run_thumbnail_reach_sync(
+                creds,
+                account_tag,
+                pg_url,
+                channel_id=channel_id,
+                token_name=cred_file,
+            )
         elif stage == "traffic_source":
             process_one(cred_file, channel_id=channel_id)
         elif stage == "revenue":
@@ -391,14 +407,14 @@ def _run_for_credential(cred_file: str) -> None:
     _update_schedule_run(
         "running",
         None if aggregate_run else 0,
-        None if aggregate_run else 6,
+        None if aggregate_run else 8,
         f"Traffic source{f' ({account_tag})' if aggregate_run else ''}",
     )
     process_one(cred_file, channel_id=channel_id)
     _update_schedule_run(
         "running",
         None if aggregate_run else 1,
-        None if aggregate_run else 6,
+        None if aggregate_run else 8,
         f"Traffic source{f' ({account_tag})' if aggregate_run else ''}",
     )
     _raise_if_stop_requested(account_tag, "stopped")
@@ -406,93 +422,114 @@ def _run_for_credential(cred_file: str) -> None:
     _update_schedule_run(
         "running",
         None if aggregate_run else 1,
-        None if aggregate_run else 6,
+        None if aggregate_run else 8,
         f"Content{f' ({account_tag})' if aggregate_run else ''}",
     )
     process_content(cred_file, channel_id=channel_id)
     _update_schedule_run(
         "running",
         None if aggregate_run else 2,
-        None if aggregate_run else 6,
+        None if aggregate_run else 8,
         f"Content{f' ({account_tag})' if aggregate_run else ''}",
+    )
+    _raise_if_stop_requested(account_tag, "stopped")
+    write_progress(account_tag, "thumbnail_reach", 55, "running", "Starting thumbnail reach")
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 2,
+        None if aggregate_run else 8,
+        f"Thumbnail reach{f' ({account_tag})' if aggregate_run else ''}",
+    )
+    pg_url = os.getenv("PG_URL")
+    if not pg_url:
+        raise RuntimeError("Missing PG_URL env var")
+    creds = create_token_from_credentials(os.path.join(TOKEN_FOLDER, cred_file))
+    run_thumbnail_reach_sync(
+        creds,
+        account_tag,
+        pg_url,
+        channel_id=channel_id,
+        token_name=cred_file,
+    )
+    _update_schedule_run(
+        "running",
+        None if aggregate_run else 3,
+        None if aggregate_run else 8,
+        f"Thumbnail reach{f' ({account_tag})' if aggregate_run else ''}",
     )
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "overview", 60, "running", "Starting overview")
     _update_schedule_run(
         "running",
-        None if aggregate_run else 2,
-        None if aggregate_run else 6,
+        None if aggregate_run else 3,
+        None if aggregate_run else 8,
         f"Overview{f' ({account_tag})' if aggregate_run else ''}",
     )
     process_overall(cred_file, channel_id=channel_id)
     _update_schedule_run(
         "running",
-        None if aggregate_run else 3,
-        None if aggregate_run else 6,
+        None if aggregate_run else 4,
+        None if aggregate_run else 8,
         f"Overview{f' ({account_tag})' if aggregate_run else ''}",
     )
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "audience", 80, "running", "Starting audience analytics")
     _update_schedule_run(
         "running",
-        None if aggregate_run else 3,
-        None if aggregate_run else 7,
+        None if aggregate_run else 4,
+        None if aggregate_run else 8,
         f"Audience{f' ({account_tag})' if aggregate_run else ''}",
     )
-    pg_url = os.getenv("PG_URL")
-    if not pg_url:
-        raise RuntimeError("Missing PG_URL env var")
-    creds = create_token_from_credentials(os.path.join(TOKEN_FOLDER, cred_file))
     run_audience_analytics(creds, account_tag, pg_url, channel_id=channel_id)
     _update_schedule_run(
         "running",
-        None if aggregate_run else 4,
-        None if aggregate_run else 7,
+        None if aggregate_run else 5,
+        None if aggregate_run else 8,
         f"Audience{f' ({account_tag})' if aggregate_run else ''}",
     )
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "reach", 90, "running", "Starting reach analytics")
     _update_schedule_run(
         "running",
-        None if aggregate_run else 4,
-        None if aggregate_run else 7,
+        None if aggregate_run else 5,
+        None if aggregate_run else 8,
         f"Reach{f' ({account_tag})' if aggregate_run else ''}",
     )
     run_reach_analytics(creds, account_tag, pg_url, channel_id=channel_id)
     _update_schedule_run(
         "running",
-        None if aggregate_run else 5,
-        None if aggregate_run else 7,
+        None if aggregate_run else 6,
+        None if aggregate_run else 8,
         f"Reach{f' ({account_tag})' if aggregate_run else ''}",
     )
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "revenue", 95, "running", "Starting revenue analytics")
     _update_schedule_run(
         "running",
-        None if aggregate_run else 5,
-        None if aggregate_run else 7,
+        None if aggregate_run else 6,
+        None if aggregate_run else 8,
         f"Revenue{f' ({account_tag})' if aggregate_run else ''}",
     )
     run_revenue_analytics(creds, account_tag, pg_url, channel_id=channel_id)
     _update_schedule_run(
         "running",
-        None if aggregate_run else 6,
         None if aggregate_run else 7,
+        None if aggregate_run else 8,
         f"Revenue{f' ({account_tag})' if aggregate_run else ''}",
     )
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "subscribers", 98, "running", "Starting subscriber analytics")
     _update_schedule_run(
         "running",
-        None if aggregate_run else 6,
         None if aggregate_run else 7,
+        None if aggregate_run else 8,
         f"Subscribers{f' ({account_tag})' if aggregate_run else ''}",
     )
     run_channel_daily(creds, account_tag, pg_url, channel_id=channel_id)
     _update_schedule_run(
         "running",
-        None if aggregate_run else 7,
-        None if aggregate_run else 7,
+        None if aggregate_run else 8,
+        None if aggregate_run else 8,
         f"Subscribers{f' ({account_tag})' if aggregate_run else ''}",
     )
     write_progress(account_tag, "done", 100, "done", "Completed")
