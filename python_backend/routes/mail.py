@@ -74,6 +74,9 @@ def _resolve_mail_oauth_redirect_url(request: Request) -> str:
     configured = os.getenv("MAIL_OAUTH_REDIRECT_URL", "").strip()
     if configured:
         return configured
+    shared_google_redirect = os.getenv("OAUTH_REDIRECT_URL", "").strip()
+    if shared_google_redirect:
+        return shared_google_redirect
     return f"{str(request.base_url).rstrip('/')}/api/mail/accounts/oauth/callback"
 
 

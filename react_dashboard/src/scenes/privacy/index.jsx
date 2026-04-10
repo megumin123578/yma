@@ -52,8 +52,8 @@ const PrivacyPage = () => {
             <Typography variant="body1">
               We access Google/YouTube account data only after you grant permission
               via Google OAuth. Requested scopes are limited to read-only analytics,
-              channel data, and Gmail read-only access required for the App's
-              reporting and mail-monitoring features.
+              channel data, and Gmail read-only access granted separately in Email
+              Manager.
             </Typography>
           </Stack>
 

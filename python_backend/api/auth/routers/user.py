@@ -17,8 +17,16 @@ from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional, hash_password
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
-from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun, TokenProgress, PasswordChangeRequest, SmmstoreAnalyticsCache, SmmstoreScheduledOrder, LiveCounterSnapshot, VideoLiveCounterSnapshot, OAuthState
+from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun, TokenProgress, PasswordChangeRequest, SmmstoreAnalyticsCache, SmmstoreScheduledOrder, LiveCounterSnapshot, VideoLiveCounterSnapshot, OAuthState, MailOAuthState
 from python_backend.api.auth.visibility import get_hidden_account_tags
+from python_backend.mail_gmail_api import (
+    build_mail_oauth_flow,
+    deserialize_mail_label_ids,
+    fetch_gmail_profile,
+    mail_oauth_success_html,
+    sync_mail_account,
+    upsert_mail_account,
+)
 from python_backend.module_trafficsource import SCOPES, sanitize_filename
 from python_backend.progress_state import write_progress
 from python_backend.token_store import (
@@ -108,6 +116,79 @@ def _mark_oauth_state_failed(db: Session, row: OAuthState, message: str) -> None
     row.completed_at = datetime.utcnow()
     db.add(row)
     db.commit()
+
+
+def _mail_oauth_redirect_url() -> str:
+    return os.getenv("MAIL_OAUTH_REDIRECT_URL", "").strip() or OAUTH_REDIRECT_URL
+
+
+def _mark_mail_oauth_state_failed(db: Session, row: MailOAuthState, message: str) -> None:
+    row.status = "failed"
+    row.error_message = message
+    row.completed_at = datetime.utcnow()
+    db.add(row)
+    db.commit()
+
+
+def _complete_mail_oauth_from_shared_callback(
+    db: Session,
+    row: MailOAuthState,
+    code: str = "",
+    error: str = "",
+) -> str:
+    if error:
+        _mark_mail_oauth_state_failed(db, row, f"Authorization failed: {error}")
+        raise HTTPException(status_code=400, detail=f"Authorization failed: {error}")
+
+    now = datetime.utcnow()
+    if row.expires_at and row.expires_at < now:
+        row.status = "expired"
+        row.completed_at = now
+        db.add(row)
+        db.commit()
+        raise HTTPException(status_code=400, detail="Invalid or expired state")
+
+    if row.status == "completed":
+        return mail_oauth_success_html()
+    if row.status == "failed":
+        raise HTTPException(status_code=400, detail=row.error_message or "OAuth flow failed")
+
+    flow = build_mail_oauth_flow(_mail_oauth_redirect_url())
+    try:
+        flow.fetch_token(code=code)
+    except Exception as exc:
+        _mark_mail_oauth_state_failed(db, row, f"Failed to fetch token: {exc}")
+        raise HTTPException(status_code=400, detail=f"Failed to fetch token: {exc}")
+
+    try:
+        profile = fetch_gmail_profile(flow.credentials)
+        account = upsert_mail_account(
+            db,
+            user_id=row.user_id,
+            account_email=profile["email"],
+            creds=flow.credentials,
+            label_ids=deserialize_mail_label_ids(row.label_ids_json),
+        )
+        row.status = "completed"
+        row.account_email = account.account_email
+        row.token_name = account.token_name
+        row.error_message = None
+        row.completed_at = datetime.utcnow()
+        row.consumed_at = row.consumed_at or now
+        db.add(row)
+        db.commit()
+
+        try:
+            sync_mail_account(db, account)
+        except Exception as sync_exc:
+            row.error_message = str(sync_exc)
+            db.add(row)
+            db.commit()
+    except Exception as exc:
+        _mark_mail_oauth_state_failed(db, row, str(exc))
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return mail_oauth_success_html()
 
 
 def _safe_token_name(name: str) -> str:
@@ -602,6 +683,11 @@ def credentials_callback(
     db: Session = Depends(get_db),
 ):
     row = db.query(OAuthState).filter(OAuthState.state == state).first()
+    if not row:
+        mail_row = db.query(MailOAuthState).filter(MailOAuthState.state == state).first()
+        if mail_row:
+            return _complete_mail_oauth_from_shared_callback(db, mail_row, code=code, error=error)
+
     if error:
         if row:
             _mark_oauth_state_failed(db, row, f"Authorization failed: {error}")

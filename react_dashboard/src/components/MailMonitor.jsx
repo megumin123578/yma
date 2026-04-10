@@ -14,6 +14,7 @@ import {
   Paper,
   Select,
   Stack,
+  Tab,
   Table,
   TableBody,
   TableCell,
@@ -21,6 +22,7 @@ import {
   TableHead,
   TablePagination,
   TableRow,
+  Tabs,
   TextField,
   Typography,
 } from "@mui/material";
@@ -31,6 +33,7 @@ import api from "../services/api";
 import { UserContext } from "../context/UserContext";
 
 const MAILS_PER_PAGE = 50;
+const MAIL_OAUTH_POLL_MS = 2000;
 
 const formatDateTime = (value) => {
   if (!value) return "-";
@@ -40,6 +43,12 @@ const formatDateTime = (value) => {
 };
 
 const formatNumber = (value) => Number(value || 0).toLocaleString();
+
+const parseLabelIds = (value) =>
+  String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 
 const decodeHtmlEntities = (value) => {
   if (!value || typeof window === "undefined") return value || "";
@@ -72,6 +81,9 @@ const MailMonitor = () => {
   const { user, loading } = useContext(UserContext);
   const isAdmin = !!user?.is_admin;
   const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(() =>
+    searchParams.get("tab") === "accounts" ? "accounts" : "messages"
+  );
 
   const [overview, setOverview] = useState({ summary: {}, items: [] });
   const [messages, setMessages] = useState({ items: [], total: 0 });
@@ -88,6 +100,13 @@ const MailMonitor = () => {
   const [selectedMessageLoading, setSelectedMessageLoading] = useState(false);
   const [selectedMessageError, setSelectedMessageError] = useState("");
   const [mailAccessDenied, setMailAccessDenied] = useState(false);
+  const [mailAccounts, setMailAccounts] = useState([]);
+  const [mailOAuthState, setMailOAuthState] = useState("");
+  const [mailOAuthStatus, setMailOAuthStatus] = useState({ type: "", message: "" });
+  const [connectingMail, setConnectingMail] = useState(false);
+  const [editingLabels, setEditingLabels] = useState({});
+  const [accountActionStatus, setAccountActionStatus] = useState({ type: "", message: "" });
+  const [accountActionId, setAccountActionId] = useState("");
 
   const overviewItems = useMemo(
     () => (Array.isArray(overview?.items) ? overview.items : []).filter(Boolean),
@@ -98,16 +117,18 @@ const MailMonitor = () => {
     [messages]
   );
   const summary = overview?.summary || {};
+  const connectedAccountCount = mailAccounts.length || Number(summary.account_count || 0);
 
   const accountOptions = useMemo(() => {
     return [
       ...new Set(
         overviewItems
           .map((item) => item?.account_email)
+          .concat(mailAccounts.map((item) => item?.account_email))
           .filter(Boolean)
       ),
     ];
-  }, [overviewItems]);
+  }, [mailAccounts, overviewItems]);
 
   const mailboxOptions = useMemo(() => {
     return [
@@ -125,12 +146,13 @@ const MailMonitor = () => {
       setError("");
       setOverview({ summary: {}, items: [] });
       setMessages({ items: [], total: 0 });
+      setMailAccounts([]);
       return;
     }
 
     setError("");
     try {
-      const [overviewResp, messagesResp] = await Promise.all([
+      const [overviewResp, messagesResp, accountsResp] = await Promise.all([
         api.get("/api/mail/overview"),
         api.get("/api/mail/messages", {
           params: {
@@ -143,21 +165,172 @@ const MailMonitor = () => {
             per_account_limit: MAILS_PER_PAGE,
           },
         }),
+        api.get("/api/mail/accounts"),
       ]);
 
       setOverview(overviewResp.data || { summary: {}, items: [] });
       setMessages(messagesResp.data || { items: [], total: 0 });
+      setMailAccounts(Array.isArray(accountsResp.data?.items) ? accountsResp.data.items : []);
     } catch (err) {
       if (err?.response?.status === 403) {
         setMailAccessDenied(true);
         setOverview({ summary: {}, items: [] });
         setMessages({ items: [], total: 0 });
+        setMailAccounts([]);
         setError("Admin access required.");
         return;
       }
       setError(err?.response?.data?.detail || err?.message || "Failed to load email manager data.");
     }
   }, [filters.accountEmail, filters.mailbox, filters.search, filters.status, isAdmin, loading, mailAccessDenied, mailPage]);
+
+  const handleStartMailOAuth = useCallback(async () => {
+    if (connectingMail) return;
+    setConnectingMail(true);
+    setMailOAuthStatus({ type: "", message: "" });
+    try {
+      const response = await api.post("/api/mail/accounts/oauth/start", {
+        label_ids: ["INBOX"],
+      });
+      const nextUrl = response.data?.auth_url || "";
+      const nextState = response.data?.state || "";
+      setMailOAuthState(nextState);
+      setMailOAuthStatus({
+        type: "info",
+        message: nextUrl ? "Google authorization opened." : "Gmail authorization started.",
+      });
+      if (nextUrl) {
+        window.open(nextUrl, "_blank", "noopener");
+      }
+    } catch (err) {
+      setMailOAuthStatus({
+        type: "error",
+        message: err?.response?.data?.detail || err?.message || "Failed to start Gmail authorization.",
+      });
+    } finally {
+      setConnectingMail(false);
+    }
+  }, [connectingMail]);
+
+  const handleTabChange = useCallback((_, nextTab) => {
+    setActiveTab(nextTab);
+    if (nextTab === "accounts") {
+      setSelectedMessageId(null);
+      setSelectedMessageDetail(null);
+      setSelectedMessageError("");
+      setSelectedMessageLoading(false);
+    }
+    setSearchParams((currentParams) => {
+      const nextParams = new URLSearchParams(currentParams);
+      if (nextTab === "accounts") {
+        nextParams.set("tab", "accounts");
+        nextParams.delete("messageId");
+      } else {
+        nextParams.delete("tab");
+      }
+      return nextParams;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  const handleUpdateMailAccount = useCallback(async (account, changes) => {
+    if (!account?.id) return;
+    const actionKey = `${account.id}:update`;
+    setAccountActionId(actionKey);
+    setAccountActionStatus({ type: "", message: "" });
+    try {
+      const response = await api.patch(`/api/mail/accounts/${account.id}`, changes);
+      const updatedAccount = response.data?.account;
+      if (updatedAccount) {
+        setMailAccounts((current) =>
+          current.map((item) => (item.id === updatedAccount.id ? updatedAccount : item))
+        );
+      } else {
+        await loadData();
+      }
+      setAccountActionStatus({
+        type: "success",
+        message: `Updated ${account.account_email || "Gmail account"}.`,
+      });
+    } catch (err) {
+      setAccountActionStatus({
+        type: "error",
+        message: err?.response?.data?.detail || err?.message || "Failed to update Gmail account.",
+      });
+    } finally {
+      setAccountActionId("");
+    }
+  }, [loadData]);
+
+  const handleSaveAccountLabels = useCallback((account) => {
+    if (!account?.id) return;
+    const currentValue =
+      editingLabels[account.id] ?? (Array.isArray(account.label_ids) ? account.label_ids.join(", ") : "INBOX");
+    handleUpdateMailAccount(account, { label_ids: parseLabelIds(currentValue) });
+  }, [editingLabels, handleUpdateMailAccount]);
+
+  const handleSyncMailAccount = useCallback(async (account) => {
+    if (!account?.id) return;
+    const actionKey = `${account.id}:sync`;
+    setAccountActionId(actionKey);
+    setAccountActionStatus({ type: "", message: "" });
+    try {
+      await api.post(`/api/mail/accounts/${account.id}/sync`);
+      await loadData();
+      setAccountActionStatus({
+        type: "success",
+        message: `Synced ${account.account_email || "Gmail account"}.`,
+      });
+    } catch (err) {
+      setAccountActionStatus({
+        type: "error",
+        message: err?.response?.data?.detail || err?.message || "Failed to sync Gmail account.",
+      });
+    } finally {
+      setAccountActionId("");
+    }
+  }, [loadData]);
+
+  const handleSyncAllMailAccounts = useCallback(async () => {
+    setAccountActionId("sync-all");
+    setAccountActionStatus({ type: "", message: "" });
+    try {
+      await api.post("/api/mail/sync");
+      await loadData();
+      setAccountActionStatus({ type: "success", message: "Synced all Gmail accounts." });
+    } catch (err) {
+      setAccountActionStatus({
+        type: "error",
+        message: err?.response?.data?.detail || err?.message || "Failed to sync Gmail accounts.",
+      });
+    } finally {
+      setAccountActionId("");
+    }
+  }, [loadData]);
+
+  const handleDeleteMailAccount = useCallback(async (account) => {
+    if (!account?.id) return;
+    const accountLabel = account.account_email || "this Gmail account";
+    if (typeof window !== "undefined" && !window.confirm(`Remove ${accountLabel}?`)) {
+      return;
+    }
+
+    const actionKey = `${account.id}:delete`;
+    setAccountActionId(actionKey);
+    setAccountActionStatus({ type: "", message: "" });
+    try {
+      await api.delete(`/api/mail/accounts/${account.id}`);
+      setMailAccounts((current) => current.filter((item) => item.id !== account.id));
+      await loadData();
+      setAccountActionStatus({ type: "success", message: `Removed ${accountLabel}.` });
+    } catch (err) {
+      setAccountActionStatus({
+        type: "error",
+        message: err?.response?.data?.detail || err?.message || "Failed to remove Gmail account.",
+      });
+    } finally {
+      setAccountActionId("");
+    }
+  }, [loadData]);
 
   const handleOpenMessage = useCallback(async (messageId) => {
     setSelectedMessageId(messageId);
@@ -203,21 +376,88 @@ const MailMonitor = () => {
   }, [isAdmin, loadData, loading, mailAccessDenied]);
 
   useEffect(() => {
+    if (!mailOAuthState || loading || !isAdmin || mailAccessDenied) return undefined;
+
+    let stopped = false;
+
+    const poll = async () => {
+      try {
+        const response = await api.get(`/api/mail/accounts/oauth/state/${encodeURIComponent(mailOAuthState)}`);
+        const data = response.data || {};
+        if (data.ready || data.status === "completed") {
+          setMailOAuthState("");
+          setMailOAuthStatus({
+            type: "success",
+            message: data.account_email ? `Gmail connected: ${data.account_email}` : "Gmail connected.",
+          });
+          await loadData();
+          return true;
+        }
+        if (data.status === "failed" || data.status === "expired") {
+          setMailOAuthState("");
+          setMailOAuthStatus({
+            type: "error",
+            message: data.error_message || "Gmail authorization did not complete.",
+          });
+          return true;
+        }
+      } catch (err) {
+        setMailOAuthState("");
+        setMailOAuthStatus({
+          type: "error",
+          message: err?.response?.data?.detail || err?.message || "Failed to check Gmail authorization.",
+        });
+        return true;
+      }
+      return false;
+    };
+
+    const intervalId = window.setInterval(async () => {
+      if (!stopped) {
+        const done = await poll();
+        if (done) {
+          stopped = true;
+          window.clearInterval(intervalId);
+        }
+      }
+    }, MAIL_OAUTH_POLL_MS);
+
+    poll();
+
+    return () => {
+      stopped = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isAdmin, loadData, loading, mailAccessDenied, mailOAuthState]);
+
+  useEffect(() => {
     setMailAccessDenied(false);
+    setMailOAuthState("");
+    setMailOAuthStatus({ type: "", message: "" });
   }, [user?.id, user?.username]);
 
   useEffect(() => {
     const tabParam = searchParams.get("tab");
-    if (!tabParam) return;
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.delete("tab");
-    setSearchParams(nextParams, { replace: true });
+    if (!tabParam) {
+      setActiveTab("messages");
+      return;
+    }
+    if (tabParam === "accounts" || tabParam === "messages") {
+      setActiveTab(tabParam);
+      return;
+    }
+    setSearchParams((currentParams) => {
+      const nextParams = new URLSearchParams(currentParams);
+      nextParams.delete("tab");
+      return nextParams;
+    }, { replace: true });
   }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     const messageIdParam = searchParams.get("messageId");
     const normalizedMessageId = Number(messageIdParam);
     if (!messageIdParam || Number.isNaN(normalizedMessageId) || normalizedMessageId <= 0) return;
+    setActiveTab("messages");
     handleOpenMessage(normalizedMessageId);
   }, [handleOpenMessage, searchParams]);
 
@@ -248,6 +488,60 @@ const MailMonitor = () => {
   return (
     <Box>
       {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
+      {mailOAuthStatus.message ? (
+        <Alert severity={mailOAuthStatus.type || "info"} sx={{ mb: 2 }}>
+          {mailOAuthStatus.message}
+        </Alert>
+      ) : null}
+
+      <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+        <Stack
+          direction={{ xs: "column", md: "row" }}
+          spacing={1.5}
+          justifyContent="space-between"
+          alignItems={{ xs: "stretch", md: "center" }}
+        >
+          <Box>
+            <Typography variant="body2" color="text.secondary">Gmail accounts</Typography>
+            <Typography variant="h6" fontWeight={800}>
+              {formatNumber(connectedAccountCount)} connected
+            </Typography>
+            {mailAccounts.length ? (
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
+                {mailAccounts.slice(0, 4).map((account) => (
+                  <Chip
+                    key={account.id || account.account_email}
+                    size="small"
+                    label={account.account_email}
+                    color={account.enabled ? "success" : "default"}
+                    variant="outlined"
+                  />
+                ))}
+                {mailAccounts.length > 4 ? (
+                  <Chip size="small" label={`+${mailAccounts.length - 4} more`} variant="outlined" />
+                ) : null}
+              </Stack>
+            ) : (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Connect Gmail for Email Manager.
+              </Typography>
+            )}
+          </Box>
+
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+            <Button variant="outlined" onClick={loadData}>
+              Refresh
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleStartMailOAuth}
+              disabled={connectingMail || Boolean(mailOAuthState)}
+            >
+              {connectingMail || mailOAuthState ? "Connecting..." : "Connect Gmail"}
+            </Button>
+          </Stack>
+        </Stack>
+      </Paper>
 
       <Stack direction={{ xs: "column", md: "row" }} spacing={2} mb={2}>
         <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, flex: 1 }}>
@@ -256,7 +550,7 @@ const MailMonitor = () => {
         </Paper>
         <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, flex: 1 }}>
           <Typography variant="body2" color="text.secondary">Accounts</Typography>
-          <Typography variant="h5" fontWeight={800}>{formatNumber(summary.account_count)}</Typography>
+          <Typography variant="h5" fontWeight={800}>{formatNumber(connectedAccountCount)}</Typography>
         </Paper>
         <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, flex: 1 }}>
           <Typography variant="body2" color="text.secondary">Mailboxes</Typography>
