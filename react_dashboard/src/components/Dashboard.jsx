@@ -133,7 +133,42 @@ const VideoList = () => {
             const bTime = b?.publish_date ? new Date(b.publish_date).getTime() : 0;
             return bTime - aTime;
         });
-        return sorted.slice(0, 5);
+        const toNumberOrNull = (value) => {
+            if (value == null || value === "") return null;
+            const num = Number(value);
+            return Number.isFinite(num) ? num : null;
+        };
+
+        return sorted.slice(0, 5).map((video) => {
+            const views = Math.max(0, toNumberOrNull(video?.views) ?? 0);
+            const likes = Math.max(0, toNumberOrNull(video?.likes) ?? 0);
+            const comments = Math.max(0, toNumberOrNull(video?.comments) ?? 0);
+            const shares = Math.max(0, toNumberOrNull(video?.shares) ?? 0);
+            const engagementRate =
+                views > 0 ? ((likes + comments + shares) / views) * 100 : null;
+
+            return {
+                ...video,
+                views,
+                likes,
+                comments,
+                shares,
+                engaged_views: Math.max(0, toNumberOrNull(video?.engaged_views) ?? 0),
+                subscribers_gained: Math.max(
+                    0,
+                    toNumberOrNull(video?.subscribers_gained) ?? 0
+                ),
+                subscribers_lost: Math.max(
+                    0,
+                    toNumberOrNull(video?.subscribers_lost) ?? 0
+                ),
+                average_view_duration_seconds: toNumberOrNull(
+                    video?.average_view_duration_seconds
+                ),
+                thumbnail_ctr: toNumberOrNull(video?.thumbnail_ctr),
+                engagementRate,
+            };
+        });
     }, [videos]);
     const subscribersSummary = useMemo(() => {
         const sorted = [...subscribersSeries].sort((a, b) => {
@@ -493,6 +528,21 @@ const VideoList = () => {
         if (Number.isNaN(num)) return "-";
         return `$${num.toFixed(2)}`;
     };
+    const formatRate = (value, digits = 1) => {
+        if (value == null) return "-";
+        const num = Number(value);
+        if (!Number.isFinite(num)) return "-";
+        return `${num.toFixed(digits)}%`;
+    };
+    const formatDuration = (seconds) => {
+        if (seconds == null) return "-";
+        const total = Math.max(0, Math.round(Number(seconds)));
+        if (!Number.isFinite(total)) return "-";
+        const mins = Math.floor(total / 60);
+        const secs = total % 60;
+        if (mins <= 0) return `${secs}s`;
+        return `${mins}m ${secs.toString().padStart(2, "0")}s`;
+    };
 
     const formatDate = (iso) => {
         if (!iso) return "-";
@@ -640,8 +690,6 @@ const VideoList = () => {
     };
 
     const renderVideoCard = (v, idx) => {
-        const engagementRate = (((Number(v.likes) + Number(v.comments)) / (Number(v.views) || 1)) * 100).toFixed(1);
-
         return (
             <Box key={v.video_id || idx} sx={{ width: "100%" }}>
                 <MotionCard
@@ -728,7 +776,7 @@ const VideoList = () => {
                             <Box>
                                 <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: '0.7rem' }}>Eng.</Typography>
                                 <Typography variant="body2" fontWeight={700} color="primary.main">
-                                    {engagementRate}%
+                                    {formatRate(v.engagementRate)}
                                 </Typography>
                             </Box>
                         </Stack>
@@ -753,8 +801,8 @@ const VideoList = () => {
                                 { label: "Shares", val: formatNumber(v.shares) },
                                 { label: "Sub. Gained", val: formatNumber(v.subscribers_gained) },
                                 { label: "Sub. Lost", val: formatNumber(v.subscribers_lost) },
-                                { label: "Avg Duration", val: `${v.average_view_duration_seconds}s` },
-                                { label: "CTR", val: `${v.annotation_click_through_rate || 0}%` },
+                                { label: "Avg Duration", val: formatDuration(v.average_view_duration_seconds) },
+                                { label: "Thumbnail CTR", val: formatRate(v.thumbnail_ctr) },
                             ].map((item) => (
                                 <Grid size={{ xs: 6 }} key={item.label}>
                                     <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: 0.5 }}>
@@ -1469,11 +1517,10 @@ const VideoList = () => {
 
                     {/* Latest 5 Videos Section - KEPT MODERN UPDATE */}
                     <Box mt={4} sx={{ ...sectionSx, p: 4 }}>
-                        <Box display="flex" alignItems="center" justifyContent="space-between" mb={3}>
+                        <Box display="flex" alignItems="center" mb={3}>
                             <Typography variant="h5" fontWeight={800} display="flex" alignItems="center" gap={1.5}>
                                 <InsightsIcon color="primary" /> Latest Video Performance
                             </Typography>
-                            <Typography variant="body2" color="text.secondary">Highlights from your recent uploads</Typography>
                         </Box>
                         <Box sx={latestRowSx}>
                             {latestVideos.map((v, idx) => renderVideoCard(v, idx))}

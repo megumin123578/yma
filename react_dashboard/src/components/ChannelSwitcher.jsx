@@ -14,6 +14,7 @@ import {
 import YouTubeIcon from "@mui/icons-material/YouTube";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { listTokens, setTokenVisibility } from "../services/userService";
 
 export const CHANNEL_SWITCHER_SX = {
@@ -27,14 +28,53 @@ const defaultGetLabel = (option) => String(option?.label ?? option?.value ?? "")
 const defaultGetAvatar = (option) => option?.avatar || "";
 const defaultGetMeta = () => "";
 const normalizeTokenValue = (value) => String(value || "").trim();
+const normalizeHierarchyName = (value) => String(value || "").trim();
 const isOptionHidden = (option) => !!option?.hidden;
+const CREDENTIALS_CHANGED_EVENT = "credentials-data-changed";
+const SUBMENU_VIEWPORT_PADDING = 12;
+const SUBMENU_GAP = 4;
+const SUBMENU_TOP_OFFSET = -10;
+const compareMenuLabels = (left, right) =>
+  String(left || "").localeCompare(String(right || ""), undefined, {
+    sensitivity: "base",
+    numeric: true,
+  });
 const sortOptionsByVisibility = (items) =>
   [...(Array.isArray(items) ? items : [])]
     .sort((a, b) => {
       const hiddenDiff = Number(isOptionHidden(a)) - Number(isOptionHidden(b));
       if (hiddenDiff !== 0) return hiddenDiff;
-      return 0;
+      return compareMenuLabels(a?.label || a?.value, b?.label || b?.value);
     });
+const getAnchorRect = (element) => {
+  if (!element || typeof element.getBoundingClientRect !== "function") return null;
+  const rect = element.getBoundingClientRect();
+  if (!rect || (!rect.width && !rect.height)) return null;
+  return rect;
+};
+const getSubmenuLayerSx = (rect, width, zIndex) => {
+  if (!rect) return { display: "none" };
+  const viewportWidth =
+    typeof window !== "undefined" ? window.innerWidth : rect.right + width + SUBMENU_VIEWPORT_PADDING;
+  const viewportHeight =
+    typeof window !== "undefined" ? window.innerHeight : rect.bottom + 360 + SUBMENU_VIEWPORT_PADDING;
+  const maxLeft = Math.max(SUBMENU_VIEWPORT_PADDING, viewportWidth - width - SUBMENU_VIEWPORT_PADDING);
+  const left = Math.max(
+    SUBMENU_VIEWPORT_PADDING,
+    Math.min(rect.right + SUBMENU_GAP, maxLeft)
+  );
+  const maxTop = Math.max(SUBMENU_VIEWPORT_PADDING, viewportHeight - 360 - SUBMENU_VIEWPORT_PADDING);
+  const top = Math.max(
+    SUBMENU_VIEWPORT_PADDING,
+    Math.min(rect.top + SUBMENU_TOP_OFFSET, maxTop)
+  );
+  return {
+    position: "fixed",
+    top,
+    left,
+    zIndex,
+  };
+};
 
 let tokenInventoryCache = null;
 let tokenInventoryPromise = null;
@@ -57,6 +97,9 @@ const loadTokenInventory = async () => {
             label: String(item?.label || value),
             avatar: item?.avatar || "",
             hidden: !!item?.hidden,
+            group_name: normalizeHierarchyName(item?.group_name),
+            project_name: normalizeHierarchyName(item?.project_name),
+            group_color: item?.group_color || "",
             owned: item?.owned !== false,
           };
         })
@@ -103,6 +146,10 @@ const ChannelSwitcher = ({
   const [visibilityReady, setVisibilityReady] = useState(false);
   const [pendingValues, setPendingValues] = useState({});
   const [stickyHiddenValues, setStickyHiddenValues] = useState([]);
+  const [hoveredRootKey, setHoveredRootKey] = useState("");
+  const [hoveredProjectKey, setHoveredProjectKey] = useState("");
+  const [hoveredRootRect, setHoveredRootRect] = useState(null);
+  const [hoveredProjectRect, setHoveredProjectRect] = useState(null);
   const listboxRef = useRef(null);
   const restoreScrollTopRef = useRef(null);
   const restoreFramesRef = useRef(0);
@@ -116,6 +163,9 @@ const ChannelSwitcher = ({
         label: getOptionLabel(option),
         avatar: getOptionAvatar(option),
         meta: getOptionMeta(option),
+        group_name: normalizeHierarchyName(option?.group_name),
+        project_name: normalizeHierarchyName(option?.project_name),
+        group_color: option?.group_color || "",
       })),
     [options, getOptionAvatar, getOptionLabel, getOptionMeta, getOptionValue]
   );
@@ -146,6 +196,24 @@ const ChannelSwitcher = ({
     return () => window.removeEventListener("token-visibility-changed", handleVisibilityChanged);
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const reloadInventory = () => {
+      tokenInventoryCache = null;
+      tokenInventoryPromise = null;
+      loadTokenInventory().then((items) => {
+        if (!active) return;
+        setTokenInventory(items);
+        setVisibilityReady(true);
+      });
+    };
+    window.addEventListener(CREDENTIALS_CHANGED_EVENT, reloadInventory);
+    return () => {
+      active = false;
+      window.removeEventListener(CREDENTIALS_CHANGED_EVENT, reloadInventory);
+    };
+  }, []);
+
   const inventoryByValue = useMemo(
     () => new Map(tokenInventory.map((item) => [item.value, item])),
     [tokenInventory]
@@ -162,6 +230,9 @@ const ChannelSwitcher = ({
         ...option,
         tokenName: inventory?.tokenName || "",
         hidden,
+        group_name: option.group_name || inventory?.group_name || "",
+        project_name: option.project_name || inventory?.project_name || "",
+        group_color: option.group_color || inventory?.group_color || "",
       };
     });
 
@@ -185,6 +256,9 @@ const ChannelSwitcher = ({
         meta: getOptionMeta(rawOption),
         tokenName: item.tokenName,
         hidden,
+        group_name: item.group_name || "",
+        project_name: item.project_name || "",
+        group_color: item.group_color || "",
       });
     });
 
@@ -215,6 +289,106 @@ const ChannelSwitcher = ({
     [selectedValue, showHidden, sortedOptions, stickyHiddenValues]
   );
 
+  const hierarchyMenu = useMemo(() => {
+    const groupsMap = new Map();
+    const ungroupedChannels = [];
+
+    groupedOptions.forEach((option) => {
+      const groupName = normalizeHierarchyName(option.group_name);
+      const projectName = normalizeHierarchyName(option.project_name);
+      if (!groupName) {
+        ungroupedChannels.push(option);
+        return;
+      }
+
+      let groupEntry = groupsMap.get(groupName);
+      if (!groupEntry) {
+        groupEntry = {
+          key: `group:${groupName}`,
+          type: "group",
+          label: groupName,
+          groupName,
+          projects: new Map(),
+          directChannels: [],
+        };
+        groupsMap.set(groupName, groupEntry);
+      }
+
+      if (!projectName) {
+        groupEntry.directChannels.push(option);
+        return;
+      }
+
+      let projectEntry = groupEntry.projects.get(projectName);
+      if (!projectEntry) {
+        projectEntry = {
+          key: `project:${groupName}::${projectName}`,
+          type: "project",
+          label: projectName,
+          projectName,
+          items: [],
+        };
+        groupEntry.projects.set(projectName, projectEntry);
+      }
+      projectEntry.items.push(option);
+    });
+
+    const groups = Array.from(groupsMap.values())
+      .map((groupEntry) => {
+        const projects = Array.from(groupEntry.projects.values())
+          .map((projectEntry) => ({
+            ...projectEntry,
+            items: sortOptionsByVisibility(projectEntry.items),
+          }))
+          .sort((a, b) => compareMenuLabels(a.label, b.label));
+
+        if (groupEntry.directChannels.length) {
+          projects.unshift({
+            key: `project:${groupEntry.groupName}::__direct__`,
+            type: "project",
+            label: "Channels",
+            projectName: "",
+            items: sortOptionsByVisibility(groupEntry.directChannels),
+            isDirectChannels: true,
+          });
+        }
+
+        return {
+          key: groupEntry.key,
+          type: "group",
+          label: groupEntry.label,
+          groupName: groupEntry.groupName,
+          projects,
+        };
+      })
+      .sort((a, b) => compareMenuLabels(a.label, b.label));
+
+    return {
+      groups,
+      ungroupedChannels: sortOptionsByVisibility(ungroupedChannels),
+      hasHierarchy: groups.length > 0,
+    };
+  }, [groupedOptions]);
+
+  const topLevelHierarchyEntries = useMemo(
+    () =>
+      hierarchyMenu.groups.map((groupEntry) => ({
+        ...groupEntry,
+        projectCount: groupEntry.projects.filter((project) => !project.isDirectChannels).length,
+      })),
+    [hierarchyMenu.groups]
+  );
+
+  const rootChannelOptions = useMemo(
+    () =>
+      groupedOptions.filter(
+        (option) =>
+          !normalizeHierarchyName(option.group_name) &&
+          !normalizeHierarchyName(option.project_name)
+      ),
+    [groupedOptions]
+  );
+
   const selectedOption = useMemo(
     () =>
       groupedOptions.find((option) => option.value === selectedValue) ||
@@ -233,6 +407,63 @@ const ChannelSwitcher = ({
       null,
     [groupedOptions, mergedOptions, selectedValue, showAllActive, showAllSelectedLabel]
   );
+
+  const normalizedSelectedLabel = String(selectedOption?.label || "").trim().toLowerCase();
+  const normalizedSelectedValue = String(selectedOption?.value || "").trim().toLowerCase();
+  const normalizedInputQuery = inputValue.trim().toLowerCase();
+  const hasTypedQuery =
+    !!normalizedInputQuery &&
+    normalizedInputQuery !== normalizedSelectedLabel &&
+    normalizedInputQuery !== normalizedSelectedValue;
+  const showHierarchyMenu = !hasTypedQuery && hierarchyMenu.hasHierarchy;
+
+  const selectedHierarchyPath = useMemo(() => {
+    for (const rootEntry of topLevelHierarchyEntries) {
+      for (const projectEntry of rootEntry.projects || []) {
+        if ((projectEntry.items || []).some((option) => option.value === selectedValue)) {
+          return {
+            rootKey: rootEntry.key,
+            projectKey: projectEntry.key,
+          };
+        }
+      }
+    }
+    return { rootKey: "", projectKey: "" };
+  }, [selectedValue, topLevelHierarchyEntries]);
+
+  useEffect(() => {
+    if (!showHierarchyMenu) {
+      setHoveredRootKey("");
+      setHoveredProjectKey("");
+      setHoveredRootRect(null);
+      setHoveredProjectRect(null);
+      return;
+    }
+    if (!hoveredRootKey) return;
+    const hoveredRootEntry = topLevelHierarchyEntries.find((entry) => entry.key === hoveredRootKey);
+    if (!hoveredRootEntry) {
+      setHoveredRootKey("");
+      setHoveredProjectKey("");
+      setHoveredRootRect(null);
+      setHoveredProjectRect(null);
+      return;
+    }
+    const nextProjectKey =
+      hoveredRootEntry.projects?.find((entry) => entry.key === hoveredProjectKey)?.key ||
+      (hoveredRootEntry.key === selectedHierarchyPath.rootKey && selectedHierarchyPath.projectKey) ||
+      hoveredRootEntry.projects?.[0]?.key ||
+      "";
+    if (hoveredProjectKey !== nextProjectKey) {
+      setHoveredProjectKey(nextProjectKey);
+    }
+  }, [
+    hoveredProjectKey,
+    hoveredRootKey,
+    selectedHierarchyPath.projectKey,
+    selectedHierarchyPath.rootKey,
+    showHierarchyMenu,
+    topLevelHierarchyEntries,
+  ]);
 
   useEffect(() => {
     if (open) return;
@@ -337,9 +568,238 @@ const ChannelSwitcher = ({
     setShowHidden((current) => !current);
   };
 
+  const resetHierarchyHover = () => {
+    setHoveredRootKey("");
+    setHoveredProjectKey("");
+    setHoveredRootRect(null);
+    setHoveredProjectRect(null);
+  };
+
+  const handleSelectOption = (option) => {
+    if (!option) return;
+    setInputValue(option.label || "");
+    onChange?.(option.raw || null);
+    setOpen(false);
+    setStickyHiddenValues([]);
+    resetHierarchyHover();
+  };
+
+  const activeRootEntry =
+    topLevelHierarchyEntries.find((entry) => entry.key === hoveredRootKey) || null;
+  const activeProjectEntry =
+    activeRootEntry?.projects?.find((entry) => entry.key === hoveredProjectKey) ||
+    null;
+  const activeRootRect = hoveredRootRect;
+  const activeProjectRect = hoveredProjectRect;
+
+  const menuRowSx = {
+    px: 1,
+    py: 0.8,
+    minHeight: 42,
+    display: "flex",
+    alignItems: "center",
+    gap: 1,
+    cursor: "pointer",
+    borderRadius: 1.5,
+  };
+
+  const renderCountPill = (value) => (
+    <Box
+      sx={{
+        minWidth: 22,
+        px: 0.65,
+        py: 0.2,
+        borderRadius: 999,
+        fontSize: 11,
+        fontWeight: 800,
+        lineHeight: 1,
+        textAlign: "center",
+        color: "text.secondary",
+        bgcolor: "action.hover",
+        border: "1px solid",
+        borderColor: "divider",
+        flexShrink: 0,
+      }}
+    >
+      {value}
+    </Box>
+  );
+
+  const renderMenuLeaf = (option, menuProps = {}) => {
+    const { onHover, showPath = false } = menuProps;
+    const optionIsHidden = isOptionHidden(option);
+    const isSelected = option.value === selectedValue;
+    return (
+      <Box
+        key={option.value}
+        onMouseDown={(event) => event.preventDefault()}
+        onMouseEnter={() => onHover?.(option)}
+        onClick={() => handleSelectOption(option)}
+        sx={{
+          ...menuRowSx,
+          bgcolor: isSelected ? "action.selected" : "transparent",
+          "&:hover": {
+            bgcolor: isSelected ? "action.selected" : "action.hover",
+          },
+        }}
+      >
+        {option.tokenName ? (
+          <Checkbox
+            checked={!option.hidden}
+            size="small"
+            sx={{
+              ml: -0.25,
+              mr: -0.25,
+              p: 0.5,
+              color: isDark ? "rgba(226,232,240,0.82)" : "rgba(15,23,42,0.48)",
+              "&.Mui-checked": {
+                color: isDark ? "#7dd3fc" : "#1976d2",
+              },
+            }}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onClick={(event) => handleToggleVisibility(event, option, option.hidden)}
+            disabled={!!pendingValues[`${option.value}:saving`]}
+          />
+        ) : (
+          <Box sx={{ width: 28 }} />
+        )}
+        <Avatar
+          src={option.avatar}
+          alt={option.label}
+          sx={{ width: 28, height: 28, opacity: optionIsHidden ? 0.58 : 1 }}
+        />
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography
+            variant="body2"
+            noWrap
+            sx={{
+              fontWeight: isSelected ? 800 : 700,
+              color: optionIsHidden ? "text.secondary" : "text.primary",
+              opacity: optionIsHidden ? 0.82 : 1,
+            }}
+          >
+            {option.label}
+          </Typography>
+          {showPath && (option.project_name || option.group_name) && (
+            <Typography
+              variant="caption"
+              noWrap
+              sx={{ display: "block", color: "text.secondary", mt: 0.15 }}
+            >
+              {[option.group_name, option.project_name].filter(Boolean).join(" / ")}
+            </Typography>
+          )}
+        </Box>
+        {pendingValues[`${option.value}:saving`] ? (
+          <CircularProgress size={14} sx={{ mr: 0.25 }} />
+        ) : null}
+        {option.meta ? (
+          <Box
+            sx={{
+              minWidth: 20,
+              px: 0.7,
+              py: 0.2,
+              borderRadius: 999,
+              fontSize: 11,
+              fontWeight: 800,
+              lineHeight: 1,
+              color: optionIsHidden ? "text.secondary" : "success.main",
+              bgcolor: optionIsHidden ? "action.hover" : "rgba(46, 125, 50, 0.12)",
+              border: "1px solid",
+              borderColor: optionIsHidden ? "divider" : "rgba(46, 125, 50, 0.2)",
+            }}
+          >
+            {option.meta}
+          </Box>
+        ) : null}
+      </Box>
+    );
+  };
+
+  const renderFlyoutPanel = (children, width, panelSx = null) => (
+    <Box
+      sx={{
+        width,
+        maxHeight: 360,
+        p: 0.75,
+        overflowY: "auto",
+        border: "1px solid",
+        borderColor: "divider",
+        borderRadius: 2,
+        bgcolor: "background.paper",
+        boxShadow: isDark
+          ? "0 18px 40px rgba(2, 6, 23, 0.55)"
+          : "0 18px 40px rgba(15, 23, 42, 0.14)",
+        ...(panelSx || {}),
+      }}
+    >
+      {children}
+    </Box>
+  );
+
+  const renderHierarchyMenu = () => (
+    <Box
+      sx={{
+        py: 0.75,
+        maxHeight: 360,
+        overflowY: "auto",
+      }}
+    >
+      {topLevelHierarchyEntries.map((entry) => {
+        const isActive = activeRootEntry?.key === entry.key;
+        return (
+          <Box
+            key={entry.key}
+            onMouseDown={(event) => event.preventDefault()}
+            onMouseEnter={(event) => {
+              setHoveredRootKey(entry.key);
+              setHoveredRootRect(getAnchorRect(event.currentTarget));
+              setHoveredProjectKey(
+                entry.key === selectedHierarchyPath.rootKey && selectedHierarchyPath.projectKey
+                  ? selectedHierarchyPath.projectKey
+                  : entry.projects?.[0]?.key || ""
+              );
+              setHoveredProjectRect(null);
+            }}
+            sx={{
+              ...menuRowSx,
+              justifyContent: "space-between",
+              bgcolor: isActive ? "action.selected" : "transparent",
+              "&:hover": {
+                bgcolor: isActive ? "action.selected" : "action.hover",
+              },
+            }}
+          >
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography variant="body2" noWrap sx={{ fontWeight: 800, lineHeight: 1.3 }}>
+                {entry.label}
+              </Typography>
+            </Box>
+            {renderCountPill(entry.projectCount || 0)}
+            <ChevronRightIcon
+              fontSize="small"
+              sx={{ color: "text.secondary", flexShrink: 0 }}
+            />
+          </Box>
+        );
+      })}
+      {topLevelHierarchyEntries.length && rootChannelOptions.length ? (
+        <Divider sx={{ my: 0.75 }} />
+      ) : null}
+      {rootChannelOptions.map((option) =>
+        renderMenuLeaf(option, {
+          onHover: resetHierarchyHover,
+        })
+      )}
+    </Box>
+  );
+
   const renderDropdownPaper = (paperProps) => (
     <Paper {...paperProps}>
-      {paperProps.children}
+      {showHierarchyMenu ? renderHierarchyMenu() : paperProps.children}
       {visibilityReady ? (
         <>
           <Divider />
@@ -489,6 +949,7 @@ const ChannelSwitcher = ({
         onClose={() => {
           setOpen(false);
           setStickyHiddenValues([]);
+          resetHierarchyHover();
         }}
         onInputChange={(_, nextInputValue, reason) => {
           if (reason === "input") {
@@ -510,7 +971,7 @@ const ChannelSwitcher = ({
             return items;
           }
           return items.filter((option) =>
-            [option.label, option.value, option.meta]
+            [option.label, option.value, option.meta, option.group_name, option.project_name]
               .filter(Boolean)
               .join(" ")
               .toLowerCase()
@@ -664,6 +1125,58 @@ const ChannelSwitcher = ({
           );
         }}
       />
+      {open && showHierarchyMenu && activeRootEntry && activeRootRect ? (
+        <Box sx={getSubmenuLayerSx(activeRootRect, 248, theme.zIndex.modal + 2)}>
+          {renderFlyoutPanel(
+            (activeRootEntry.projects || []).map((entry) => {
+              const isActive = activeProjectEntry?.key === entry.key;
+              const channelCount = entry.items?.length || 0;
+              return (
+                <Box
+                  key={entry.key}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={(event) => {
+                    setHoveredProjectKey(entry.key);
+                    setHoveredProjectRect(getAnchorRect(event.currentTarget));
+                  }}
+                  sx={{
+                    ...menuRowSx,
+                    justifyContent: "space-between",
+                    bgcolor: isActive ? "action.selected" : "transparent",
+                    "&:hover": {
+                      bgcolor: isActive ? "action.selected" : "action.hover",
+                    },
+                  }}
+                >
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography variant="body2" noWrap sx={{ fontWeight: 800, lineHeight: 1.3 }}>
+                      {entry.label}
+                    </Typography>
+                  </Box>
+                  {renderCountPill(channelCount)}
+                  <ChevronRightIcon
+                    fontSize="small"
+                    sx={{ color: "text.secondary", flexShrink: 0 }}
+                  />
+                </Box>
+              );
+            }),
+            248,
+            { pt: 0.15, pb: 0.75, px: 0.75 }
+          )}
+        </Box>
+      ) : null}
+      {open && showHierarchyMenu && activeProjectEntry && activeProjectRect ? (
+        <Box sx={getSubmenuLayerSx(activeProjectRect, 340, theme.zIndex.modal + 3)}>
+          {renderFlyoutPanel(
+            (activeProjectEntry.items || []).map((option) =>
+              renderMenuLeaf(option, { showPath: false })
+            ),
+            340,
+            { pt: 0.15, pb: 0.75, px: 0.75 }
+          )}
+        </Box>
+      ) : null}
     </Box>
   );
 };

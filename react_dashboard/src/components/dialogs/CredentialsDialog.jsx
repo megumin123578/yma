@@ -4,6 +4,7 @@ import {
   DialogContent,
   DialogActions,
   Avatar,
+  Autocomplete,
   Button,
   IconButton,
   Menu,
@@ -11,6 +12,7 @@ import {
   Box,
   Typography,
   Divider,
+  Collapse,
   Fade,
   Tooltip,
   Tabs,
@@ -38,6 +40,8 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
+import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
+import CheckBoxIcon from "@mui/icons-material/CheckBox";
 import {
   uploadCredentials,
   listTokens,
@@ -50,9 +54,15 @@ import {
   runTokenStage,
   refreshTokenAvatar,
   listTokenGroups,
+  listTokenProjects,
   createTokenGroup,
+  createTokenProject,
   renameTokenGroup,
+  renameTokenProject,
   deleteTokenGroup,
+  deleteTokenProject,
+  assignProjectGroup,
+  assignTokenProject,
   getOAuthState,
   listSchedules,
   createSchedule,
@@ -94,6 +104,9 @@ const RUN_MENU_OPTIONS = [
   { value: "incremental", label: "Run incremental", type: "incremental" },
   { value: "content_full", label: "Run full backfill", type: "stage" },
 ];
+const CREDENTIALS_ACTIVE_TAB_KEY = "credentials.activeTab";
+const channelOptionUncheckedIcon = <CheckBoxOutlineBlankIcon fontSize="small" />;
+const channelOptionCheckedIcon = <CheckBoxIcon fontSize="small" />;
 
 const getStageLabel = (stage) => {
   const key = String(stage || "").toLowerCase();
@@ -140,7 +153,13 @@ const CredentialsDialog = ({
   const [tokenUpdatedAtMap, setTokenUpdatedAtMap] = useState({});
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState("");
-  const [activeTab, setActiveTab] = useState("add");
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      return localStorage.getItem(CREDENTIALS_ACTIVE_TAB_KEY) || "add";
+    } catch {
+      return "add";
+    }
+  });
   const [dragTokenName, setDragTokenName] = useState("");
   const [dragOverTokenName, setDragOverTokenName] = useState("");
   const [tokenView, setTokenView] = useState(defaultTokenView);
@@ -148,9 +167,14 @@ const CredentialsDialog = ({
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
   const [menuTokenName, setMenuTokenName] = useState("");
   const [tokenGroups, setTokenGroups] = useState([]);
+  const [tokenProjects, setTokenProjects] = useState([]);
   const [groupDraft, setGroupDraft] = useState("");
+  const [projectDraftsByGroup, setProjectDraftsByGroup] = useState({});
+  const [expandedGroupNames, setExpandedGroupNames] = useState({});
   const [editingGroupName, setEditingGroupName] = useState("");
   const [editingGroupDraft, setEditingGroupDraft] = useState("");
+  const [editingProjectName, setEditingProjectName] = useState("");
+  const [editingProjectDraft, setEditingProjectDraft] = useState("");
   const [savingGroup, setSavingGroup] = useState(false);
   const [runSelectedMode, setRunSelectedMode] = useState(false);
   const [selectedTokenNames, setSelectedTokenNames] = useState([]);
@@ -220,6 +244,37 @@ const CredentialsDialog = ({
     return s;
   };
 
+  const projectOptionsByGroup = useMemo(() => {
+    const map = {};
+    (tokenProjects || []).forEach((item) => {
+      const groupName = String(item?.group_name || "").trim();
+      const projectName = String(item?.project_name || "").trim();
+      if (!groupName || !projectName) return;
+      map[groupName] = map[groupName] || [];
+      map[groupName].push(projectName);
+    });
+    Object.keys(map).forEach((key) => {
+      map[key] = Array.from(new Set(map[key])).sort((a, b) => a.localeCompare(b));
+    });
+    return map;
+  }, [tokenProjects]);
+
+  const assignableChannelOptions = useMemo(
+    () =>
+      (tokens || [])
+        .filter((token) => typeof token === "object" && token.owned !== false)
+        .map((token) => ({
+          value: token.name || "",
+          label: token.label || token.name || "",
+          avatar: resolveAvatarSrc(token.avatar || ""),
+          group_name: token.group_name || "",
+          project_name: token.project_name || "",
+          hidden: !!token.hidden,
+        }))
+        .filter((item) => item.value),
+    [tokens, resolveAvatarSrc]
+  );
+
   const applyTokenOrder = (items) => {
     const moveHiddenTokensToBottom = (list) => {
       const visible = [];
@@ -256,6 +311,33 @@ const CredentialsDialog = ({
       // ignore storage errors
     }
   };
+
+  const tokenHierarchy = useMemo(() => {
+    const groups = new Map();
+    (tokens || []).forEach((token) => {
+      const tokenName = typeof token === "string" ? token : token?.name || "";
+      if (!tokenName) return;
+      const groupName = typeof token === "object" ? token.group_name || "" : "";
+      const projectName = typeof token === "object" ? token.project_name || "" : "";
+      const groupKey = groupName || "Ungrouped";
+      const projectKey = projectName || "No project";
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, new Map());
+      }
+      const projects = groups.get(groupKey);
+      if (!projects.has(projectKey)) {
+        projects.set(projectKey, []);
+      }
+      projects.get(projectKey).push(token);
+    });
+    return Array.from(groups.entries()).map(([groupName, projects]) => ({
+      groupName,
+      projects: Array.from(projects.entries()).map(([projectName, items]) => ({
+        projectName,
+        items,
+      })),
+    }));
+  }, [tokens]);
 
   const isProgressFromToday = useCallback((updatedAt) => {
     const value = String(updatedAt || "").trim();
@@ -432,6 +514,27 @@ const CredentialsDialog = ({
     }
   }, [isAdmin]);
 
+  const loadTokenProjects = useCallback(async () => {
+    if (!isAdmin) {
+      setTokenProjects([]);
+      return;
+    }
+    try {
+      const data = await listTokenProjects();
+      const items = Array.isArray(data?.projects) ? data.projects : [];
+      setTokenProjects(
+        items
+          .map((item) => ({
+            group_name: item?.group_name || "",
+            project_name: item?.project_name || "",
+          }))
+          .filter((item) => item.project_name)
+      );
+    } catch {
+      setTokenProjects([]);
+    }
+  }, [isAdmin]);
+
   useEffect(() => {
     if (open) {
       hydratedProgressOnceRef.current = false;
@@ -439,23 +542,31 @@ const CredentialsDialog = ({
       setUploading(false);
       setAuthUrl("");
       setOauthState("");
-      setActiveTab("add");
+      setActiveTab(() => {
+        try {
+          return localStorage.getItem(CREDENTIALS_ACTIVE_TAB_KEY) || "add";
+        } catch {
+          return "add";
+        }
+      });
       setTokenView(defaultTokenView);
       setRunSelectedMode(false);
       setSelectedTokenNames([]);
       loadTokens();
       if (isAdmin) {
         loadTokenGroups();
+        loadTokenProjects();
         loadSchedules();
       } else {
         setTokenGroups([]);
+        setTokenProjects([]);
         setSchedules([]);
         setSchedulesError("");
         setScheduleRuns([]);
         setRunsError("");
       }
     }
-  }, [open, loadSchedules, loadTokenGroups, loadTokens, defaultTokenView, isAdmin]);
+  }, [open, loadSchedules, loadTokenGroups, loadTokenProjects, loadTokens, defaultTokenView, isAdmin]);
 
   useEffect(() => {
     if (
@@ -466,6 +577,14 @@ const CredentialsDialog = ({
     }
     setActiveTab("add");
   }, [activeTab, isAdmin]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CREDENTIALS_ACTIVE_TAB_KEY, activeTab);
+    } catch {
+      // ignore storage errors
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (isAdmin && activeTab === "schedule") {
@@ -662,8 +781,9 @@ const CredentialsDialog = ({
     setSavingGroup(true);
     try {
       await createTokenGroup(name);
-      await loadTokenGroups();
+      await Promise.all([loadTokenGroups(), loadTokenProjects()]);
       setGroupDraft("");
+      setExpandedGroupNames((prev) => ({ ...prev, [name]: true }));
       setStatus({ type: "success", message: "Group created." });
       notifyDataChanged();
     } catch (err) {
@@ -681,9 +801,25 @@ const CredentialsDialog = ({
     setSavingGroup(true);
     try {
       await renameTokenGroup(groupName, nextName);
-      await Promise.all([loadTokenGroups(), loadTokens()]);
+      await Promise.all([loadTokenGroups(), loadTokenProjects(), loadTokens()]);
       setEditingGroupName("");
       setEditingGroupDraft("");
+      setExpandedGroupNames((prev) => {
+        const next = { ...prev };
+        if (Object.prototype.hasOwnProperty.call(next, groupName)) {
+          next[nextName] = next[groupName];
+          delete next[groupName];
+        }
+        return next;
+      });
+      setProjectDraftsByGroup((prev) => {
+        const next = { ...prev };
+        if (Object.prototype.hasOwnProperty.call(next, groupName)) {
+          next[nextName] = next[groupName];
+          delete next[groupName];
+        }
+        return next;
+      });
       setStatus({ type: "success", message: "Group renamed." });
       notifyDataChanged();
     } catch (err) {
@@ -700,11 +836,21 @@ const CredentialsDialog = ({
     setSavingGroup(true);
     try {
       await deleteTokenGroup(groupName);
-      await Promise.all([loadTokenGroups(), loadTokens()]);
+      await Promise.all([loadTokenGroups(), loadTokenProjects(), loadTokens()]);
       if (editingGroupName === groupName) {
         setEditingGroupName("");
         setEditingGroupDraft("");
       }
+      setExpandedGroupNames((prev) => {
+        const next = { ...prev };
+        delete next[groupName];
+        return next;
+      });
+      setProjectDraftsByGroup((prev) => {
+        const next = { ...prev };
+        delete next[groupName];
+        return next;
+      });
       setStatus({ type: "success", message: "Group deleted." });
       notifyDataChanged();
     } catch (err) {
@@ -713,6 +859,113 @@ const CredentialsDialog = ({
       setStatus({ type: "error", message });
     } finally {
       setSavingGroup(false);
+    }
+  };
+
+  const handleToggleGroupExpanded = (groupName) => {
+    setExpandedGroupNames((prev) => ({
+      ...prev,
+      [groupName]: !prev[groupName],
+    }));
+  };
+
+  const handleProjectDraftChange = (groupName, value) => {
+    setProjectDraftsByGroup((prev) => ({
+      ...prev,
+      [groupName]: value,
+    }));
+  };
+
+  const handleCreateTokenProject = async (groupName) => {
+    const projectName = String(projectDraftsByGroup[groupName] || "").trim();
+    if (!groupName || !projectName || savingGroup) return;
+    setSavingGroup(true);
+    try {
+      await createTokenProject(projectName);
+      await assignProjectGroup(projectName, groupName);
+      await Promise.all([loadTokenProjects(), loadTokens()]);
+      setProjectDraftsByGroup((prev) => ({ ...prev, [groupName]: "" }));
+      setExpandedGroupNames((prev) => ({ ...prev, [groupName]: true }));
+      setStatus({ type: "success", message: "Project created." });
+      notifyDataChanged();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to create project.";
+      setStatus({ type: "error", message });
+    } finally {
+      setSavingGroup(false);
+    }
+  };
+
+  const handleRenameTokenProject = async (projectName) => {
+    const nextName = editingProjectDraft.trim();
+    if (!projectName || !nextName || savingGroup) return;
+    setSavingGroup(true);
+    try {
+      await renameTokenProject(projectName, nextName);
+      await Promise.all([loadTokenProjects(), loadTokens()]);
+      setEditingProjectName("");
+      setEditingProjectDraft("");
+      setStatus({ type: "success", message: "Project renamed." });
+      notifyDataChanged();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to rename project.";
+      setStatus({ type: "error", message });
+    } finally {
+      setSavingGroup(false);
+    }
+  };
+
+  const handleDeleteTokenProject = async (projectName) => {
+    if (!projectName || savingGroup) return;
+    setSavingGroup(true);
+    try {
+      await deleteTokenProject(projectName);
+      await Promise.all([loadTokenProjects(), loadTokens()]);
+      if (editingProjectName === projectName) {
+        setEditingProjectName("");
+        setEditingProjectDraft("");
+      }
+      setStatus({ type: "success", message: "Project deleted." });
+      notifyDataChanged();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to delete project.";
+      setStatus({ type: "error", message });
+    } finally {
+      setSavingGroup(false);
+    }
+  };
+
+  const handleProjectChannelsChange = async (groupName, projectName, values) => {
+    const nextValues = Array.isArray(values) ? values : [];
+    const currentValues = assignableChannelOptions
+      .filter(
+        (option) =>
+          option.group_name === groupName && option.project_name === projectName
+      )
+      .map((option) => option.value);
+    const currentSet = new Set(currentValues);
+    const nextSet = new Set(nextValues);
+    const additions = nextValues.filter((value) => !currentSet.has(value));
+    const removals = currentValues.filter((value) => !nextSet.has(value));
+
+    try {
+      await Promise.all([
+        ...additions.map((tokenName) =>
+          assignTokenProject(tokenName, groupName, projectName)
+        ),
+        ...removals.map((tokenName) =>
+          assignTokenProject(tokenName, groupName, "")
+        ),
+      ]);
+      await loadTokens();
+      notifyDataChanged();
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail || "Failed to update project channels.";
+      setStatus({ type: "error", message });
     }
   };
 
@@ -1255,6 +1508,7 @@ const CredentialsDialog = ({
     const isOwned = typeof token === "string" ? true : token.owned !== false;
     const avatarSrc = typeof token === "object" ? resolveAvatarSrc(token.avatar) : "";
     const groupName = typeof token === "object" ? token.group_name || "" : "";
+    const projectName = typeof token === "object" ? token.project_name || "" : "";
     const groupColor = typeof token === "object" ? token.group_color || "" : "";
     const isSelected = selectedTokenNames.includes(tokenName);
     const tokenUpdatedAt = tokenUpdatedAtMap[tokenName] || tokenProgress[tokenName]?.updated_at || "";
@@ -1397,17 +1651,28 @@ const CredentialsDialog = ({
                       View only
                     </Typography>
                   )}
-                  {!!groupName && (
-                    <Chip
-                      size="small"
-                      label={groupName}
-                      sx={{
-                        mt: 0.75,
-                        bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)",
-                        color: isDark ? "#e5e7eb" : "rgba(15,23,42,0.78)",
-                      }}
-                    />
-                  )}
+                  <Box display="flex" alignItems="center" gap={0.75} flexWrap="wrap" mt={0.75}>
+                    {!!groupName && (
+                      <Chip
+                        size="small"
+                        label={`Group: ${groupName}`}
+                        sx={{
+                          bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)",
+                          color: isDark ? "#e5e7eb" : "rgba(15,23,42,0.78)",
+                        }}
+                      />
+                    )}
+                    {!!projectName && (
+                      <Chip
+                        size="small"
+                        label={`Project: ${projectName}`}
+                        sx={{
+                          bgcolor: isDark ? "rgba(125,224,210,0.12)" : "rgba(25,118,210,0.08)",
+                          color: isDark ? "#d7fff7" : "rgba(15,23,42,0.82)",
+                        }}
+                      />
+                    )}
+                  </Box>
                 </Box>
               </Box>
               
@@ -1630,10 +1895,20 @@ const CredentialsDialog = ({
               {!!groupName && (
                 <Chip
                   size="small"
-                  label={groupName}
+                  label={`Group: ${groupName}`}
                   sx={{
                     bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)",
                     color: isDark ? "#e5e7eb" : "rgba(15,23,42,0.78)",
+                  }}
+                />
+              )}
+              {!!projectName && (
+                <Chip
+                  size="small"
+                  label={`Project: ${projectName}`}
+                  sx={{
+                    bgcolor: isDark ? "rgba(125,224,210,0.12)" : "rgba(25,118,210,0.08)",
+                    color: isDark ? "#d7fff7" : "rgba(15,23,42,0.82)",
                   }}
                 />
               )}
@@ -1746,7 +2021,7 @@ const CredentialsDialog = ({
             }}
           >
             <Tab value="add" label="Manage Channel" />
-            {isAdmin && <Tab value="groups" label="Groups" />}
+            {isAdmin && <Tab value="groups" label="Structure" />}
             {isAdmin && <Tab value="schedule" label="Schedule" />}
             {isAdmin && <Tab value="logs" label="Run logs" />}
             {isAdmin && <Tab value="manage-user" label="Manage User" />}
@@ -1970,27 +2245,61 @@ const CredentialsDialog = ({
                       {loadingTokens ? "Loading tokens..." : "No tokens found."}
                     </Typography>
                   ) : (
-                    tokenView === "card" ? (
-                      <Box
-                        display="grid"
-                        gap={1.5}
-                        sx={{
-                          justifyContent: "start",
-                          justifyItems: "start",
-                          gridTemplateColumns: {
-                            xs: "1fr",
-                            sm: "repeat(auto-fill, minmax(220px, 1fr))",
-                            lg: "repeat(auto-fill, minmax(240px, 1fr))",
-                          },
-                        }}
-                      >
-                        {tokens.map((token) => renderTokenItem(token, "card"))}
-                      </Box>
-                    ) : (
-                      <Box display="flex" flexDirection="column" gap={1}>
-                        {tokens.map((token) => renderTokenItem(token, "list"))}
-                      </Box>
-                    )
+                    <Box display="flex" flexDirection="column" gap={2}>
+                      {tokenHierarchy.map((group) => (
+                        <Box
+                          key={group.groupName}
+                          sx={{
+                            border: `1px solid ${border}`,
+                            borderRadius: 2,
+                            p: 1.5,
+                            bgcolor: isDark ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.55)",
+                          }}
+                        >
+                          <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>
+                            {group.groupName}
+                          </Typography>
+                          <Box display="flex" flexDirection="column" gap={1.5}>
+                            {group.projects.map((project) => (
+                              <Box
+                                key={`${group.groupName}-${project.projectName}`}
+                                sx={{
+                                  border: `1px dashed ${border}`,
+                                  borderRadius: 2,
+                                  p: 1.25,
+                                  bgcolor: isDark ? "rgba(15,23,42,0.35)" : "rgba(248,250,252,0.9)",
+                                }}
+                              >
+                                <Typography variant="body2" sx={{ fontWeight: 700, mb: 1 }}>
+                                  {project.projectName}
+                                </Typography>
+                                {tokenView === "card" ? (
+                                  <Box
+                                    display="grid"
+                                    gap={1.5}
+                                    sx={{
+                                      justifyContent: "start",
+                                      justifyItems: "start",
+                                      gridTemplateColumns: {
+                                        xs: "1fr",
+                                        sm: "repeat(auto-fill, minmax(220px, 1fr))",
+                                        lg: "repeat(auto-fill, minmax(240px, 1fr))",
+                                      },
+                                    }}
+                                  >
+                                    {project.items.map((token) => renderTokenItem(token, "card"))}
+                                  </Box>
+                                ) : (
+                                  <Box display="flex" flexDirection="column" gap={1}>
+                                    {project.items.map((token) => renderTokenItem(token, "list"))}
+                                  </Box>
+                                )}
+                              </Box>
+                            ))}
+                          </Box>
+                        </Box>
+                      ))}
+                    </Box>
                   )}
                 </Box>
               </>
@@ -1999,154 +2308,403 @@ const CredentialsDialog = ({
                 {activeTab === "groups" ? (
                   <Box
                     sx={{
-                      bgcolor: panel,
-                      border: `1px solid ${border}`,
-                      borderRadius: 2,
-                      p: 2,
                       display: "flex",
                       flexDirection: "column",
-                      gap: 1.5,
+                      gap: 1.25,
                     }}
                   >
-                    <Box display="flex" gap={1} flexWrap="wrap">
-                      <TextField
-                        size="small"
-                        label="New group"
-                        value={groupDraft}
-                        onChange={(event) => setGroupDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            handleCreateTokenGroup();
-                          }
-                        }}
-                        sx={{ minWidth: 220, flex: 1 }}
-                      />
-                      <Button
-                        variant="contained"
-                        onClick={handleCreateTokenGroup}
-                        disabled={!groupDraft.trim() || savingGroup}
-                        sx={shimmerSx}
-                      >
-                        Add group
-                      </Button>
-                    </Box>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 1.25,
+                      }}
+                    >
+                      <Box display="flex" gap={1} flexWrap="wrap">
+                        <TextField
+                          size="small"
+                          label="Create group"
+                          value={groupDraft}
+                          onChange={(event) => setGroupDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              handleCreateTokenGroup();
+                            }
+                          }}
+                          sx={{ minWidth: 220, flex: 1 }}
+                        />
+                        <Button
+                          variant="contained"
+                          onClick={handleCreateTokenGroup}
+                          disabled={!groupDraft.trim() || savingGroup}
+                          sx={shimmerSx}
+                        >
+                          Add group
+                        </Button>
+                      </Box>
 
-                    {tokenGroups.length === 0 ? (
-                      <Typography variant="body2" color="text.secondary">
-                        No groups yet.
-                      </Typography>
-                    ) : (
-                      <Box display="flex" flexDirection="column" gap={1}>
-                        {tokenGroups.map((group) => {
-                          const groupName = group.group_name;
-                          const isEditing = editingGroupName === groupName;
-                          return (
-                            <Box
-                              key={groupName}
-                              display="flex"
-                              alignItems="center"
-                              gap={1}
-                              flexWrap="wrap"
-                              sx={{
-                                p: 1,
-                                border: `1px solid ${group.color ? alpha(group.color, isDark ? 0.42 : 0.26) : border}`,
-                                borderRadius: 1.5,
-                                bgcolor: group.color
-                                  ? alpha(group.color, isDark ? 0.16 : 0.1)
-                                  : isDark
-                                    ? "rgba(255,255,255,0.04)"
-                                    : "rgba(255,255,255,0.72)",
-                              }}
-                            >
-                              {isEditing ? (
-                                <TextField
-                                  size="small"
-                                  value={editingGroupDraft}
-                                  onChange={(event) => setEditingGroupDraft(event.target.value)}
-                                  sx={{ minWidth: 220, flex: 1 }}
-                                />
-                              ) : (
-                                <Typography
-                                  variant="body2"
-                                  sx={{
-                                    fontWeight: 600,
-                                    color: isDark ? "#e5e7eb" : "rgba(15,23,42,0.78)",
-                                    flex: 1,
-                                    minWidth: 0,
-                                  }}
-                                >
-                                  {groupName}
-                                </Typography>
-                              )}
-                              <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap">
-                                {isEditing ? (
-                                  <>
-                                    <Tooltip title="Save group name">
-                                      <IconButton
-                                        size="small"
-                                        color="primary"
-                                        onClick={() => handleRenameTokenGroup(groupName)}
-                                        disabled={!editingGroupDraft.trim() || savingGroup}
-                                        sx={{
-                                          border: `1px solid ${border}`,
-                                          bgcolor: isDark ? "rgba(125,224,210,0.12)" : "rgba(25,118,210,0.08)",
-                                        }}
-                                      >
-                                        <CheckIcon fontSize="small" />
-                                      </IconButton>
-                                    </Tooltip>
-                                    <Tooltip title="Cancel editing">
+                      {tokenGroups.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          No groups yet.
+                        </Typography>
+                      ) : (
+                        <Box display="flex" flexDirection="column" gap={1.25}>
+                          {tokenGroups.map((group) => {
+                            const groupName = group.group_name;
+                            const isEditing = editingGroupName === groupName;
+                            const isExpanded = !!expandedGroupNames[groupName];
+                            const groupProjects = projectOptionsByGroup[groupName] || [];
+                            const groupChannels = assignableChannelOptions.filter(
+                              (option) => option.group_name === groupName
+                            );
+                            const projectDraftValue = projectDraftsByGroup[groupName] || "";
+
+                            return (
+                              <Box
+                                key={groupName}
+                                sx={{
+                                  border: `1px solid ${group.color ? alpha(group.color, isDark ? 0.42 : 0.26) : border}`,
+                                  borderRadius: 1.75,
+                                  bgcolor: group.color
+                                    ? alpha(group.color, isDark ? 0.14 : 0.08)
+                                    : isDark
+                                      ? "rgba(255,255,255,0.04)"
+                                      : "rgba(255,255,255,0.74)",
+                                  overflow: "hidden",
+                                }}
+                              >
+                                <Box display="flex" alignItems="center" gap={1} flexWrap="wrap" sx={{ px: 1.25, py: 1 }}>
+                                  <IconButton
+                                    size="small"
+                                    onClick={() => handleToggleGroupExpanded(groupName)}
+                                    sx={{
+                                      border: `1px solid ${border}`,
+                                      transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                                      transition: "transform 180ms ease",
+                                    }}
+                                  >
+                                    <ExpandMoreIcon fontSize="small" />
+                                  </IconButton>
+                                  {isEditing ? (
+                                    <TextField
+                                      size="small"
+                                      value={editingGroupDraft}
+                                      onChange={(event) => setEditingGroupDraft(event.target.value)}
+                                      sx={{ minWidth: 220, flex: 1 }}
+                                    />
+                                  ) : (
+                                    <Typography variant="body2" sx={{ fontWeight: 700, flex: 1 }}>
+                                      {groupName}
+                                    </Typography>
+                                  )}
+                                  <Chip size="small" label={`${groupProjects.length} project${groupProjects.length === 1 ? "" : "s"}`} />
+                                  <Chip size="small" label={`${groupChannels.length} channel${groupChannels.length === 1 ? "" : "s"}`} />
+                                  <Box display="flex" alignItems="center" gap={0.5}>
+                                    {isEditing ? (
+                                      <>
+                                        <IconButton
+                                          size="small"
+                                          color="primary"
+                                          onClick={() => handleRenameTokenGroup(groupName)}
+                                          disabled={!editingGroupDraft.trim() || savingGroup}
+                                          sx={{ border: `1px solid ${border}` }}
+                                        >
+                                          <CheckIcon fontSize="small" />
+                                        </IconButton>
+                                        <IconButton
+                                          size="small"
+                                          onClick={() => {
+                                            setEditingGroupName("");
+                                            setEditingGroupDraft("");
+                                          }}
+                                          sx={{ border: `1px solid ${border}` }}
+                                        >
+                                          <CloseIcon fontSize="small" />
+                                        </IconButton>
+                                      </>
+                                    ) : (
                                       <IconButton
                                         size="small"
                                         onClick={() => {
-                                          setEditingGroupName("");
-                                          setEditingGroupDraft("");
+                                          setEditingGroupName(groupName);
+                                          setEditingGroupDraft(groupName);
                                         }}
-                                        sx={{
-                                          border: `1px solid ${border}`,
-                                        }}
+                                        sx={{ border: `1px solid ${border}` }}
                                       >
-                                        <CloseIcon fontSize="small" />
+                                        <EditOutlinedIcon fontSize="small" />
                                       </IconButton>
-                                    </Tooltip>
-                                  </>
-                                ) : (
-                                  <Tooltip title="Rename group">
+                                    )}
                                     <IconButton
                                       size="small"
-                                      onClick={() => {
-                                        setEditingGroupName(groupName);
-                                        setEditingGroupDraft(groupName);
-                                      }}
+                                      color="error"
+                                      onClick={() => handleDeleteTokenGroup(groupName)}
+                                      disabled={savingGroup}
                                       sx={{
                                         border: `1px solid ${border}`,
+                                        bgcolor: "rgba(239,68,68,0.08)",
                                       }}
                                     >
-                                      <EditOutlinedIcon fontSize="small" />
+                                      <DeleteOutlineIcon fontSize="small" />
                                     </IconButton>
-                                  </Tooltip>
-                                )}
-                                <Tooltip title="Delete group">
-                                  <IconButton
-                                    size="small"
-                                    color="error"
-                                    onClick={() => handleDeleteTokenGroup(groupName)}
-                                    disabled={savingGroup}
-                                    sx={{
-                                      border: `1px solid ${border}`,
-                                      bgcolor: "rgba(239,68,68,0.08)",
-                                    }}
-                                  >
-                                    <DeleteOutlineIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
+                                  </Box>
+                                </Box>
+
+                                <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                                  <Box sx={{ px: 1.25, pb: 1.25, pt: 0.25, borderTop: `1px solid ${border}`, bgcolor: isDark ? "rgba(2,6,23,0.18)" : "rgba(248,250,252,0.8)", display: "flex", flexDirection: "column", gap: 1.25 }}>
+                                    <Box display="flex" gap={1} flexWrap="wrap">
+                                      <TextField
+                                        size="small"
+                                        label={`Create project in ${groupName}`}
+                                        value={projectDraftValue}
+                                        onChange={(event) => handleProjectDraftChange(groupName, event.target.value)}
+                                        onKeyDown={(event) => {
+                                          if (event.key === "Enter") {
+                                            event.preventDefault();
+                                            handleCreateTokenProject(groupName);
+                                          }
+                                        }}
+                                        sx={{ minWidth: 240, flex: 1 }}
+                                      />
+                                      <Button
+                                        variant="contained"
+                                        onClick={() => handleCreateTokenProject(groupName)}
+                                        disabled={!projectDraftValue.trim() || savingGroup}
+                                        sx={shimmerSx}
+                                      >
+                                        Add project
+                                      </Button>
+                                    </Box>
+                                    {groupProjects.length > 0 ? (
+                                      <Box display="flex" flexDirection="column" gap={1}>
+                                        {groupProjects.map((projectName) => {
+                                          const isEditingProject =
+                                            editingProjectName === projectName;
+                                          const selectedChannels = assignableChannelOptions
+                                            .filter(
+                                              (option) =>
+                                                option.group_name === groupName &&
+                                                option.project_name === projectName
+                                            )
+                                            .map((option) => option.value);
+                                          const selectedChannelOptions = assignableChannelOptions
+                                            .filter((option) =>
+                                              selectedChannels.includes(option.value)
+                                            );
+
+                                          return (
+                                            <Box
+                                              key={`${groupName}-${projectName}`}
+                                              sx={{
+                                                p: 1,
+                                                border: `1px solid ${border}`,
+                                                borderRadius: 1.5,
+                                                bgcolor: isDark
+                                                  ? "rgba(15,23,42,0.34)"
+                                                  : "rgba(255,255,255,0.92)",
+                                                display: "flex",
+                                                flexDirection: "column",
+                                                gap: 1,
+                                              }}
+                                            >
+                                              <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                                                {isEditingProject ? (
+                                                  <TextField
+                                                    size="small"
+                                                    value={editingProjectDraft}
+                                                    onChange={(event) =>
+                                                      setEditingProjectDraft(event.target.value)
+                                                    }
+                                                    sx={{ minWidth: 220, flex: 1 }}
+                                                  />
+                                                ) : (
+                                                  <Typography variant="body2" sx={{ fontWeight: 700, flex: 1 }}>
+                                                    {projectName}
+                                                  </Typography>
+                                                )}
+                                                <Box display="flex" alignItems="center" gap={0.5}>
+                                                  {isEditingProject ? (
+                                                    <>
+                                                      <IconButton
+                                                        size="small"
+                                                        color="primary"
+                                                        onClick={() => handleRenameTokenProject(projectName)}
+                                                        disabled={!editingProjectDraft.trim() || savingGroup}
+                                                        sx={{ border: `1px solid ${border}` }}
+                                                      >
+                                                        <CheckIcon fontSize="small" />
+                                                      </IconButton>
+                                                      <IconButton
+                                                        size="small"
+                                                        onClick={() => {
+                                                          setEditingProjectName("");
+                                                          setEditingProjectDraft("");
+                                                        }}
+                                                        sx={{ border: `1px solid ${border}` }}
+                                                      >
+                                                        <CloseIcon fontSize="small" />
+                                                      </IconButton>
+                                                    </>
+                                                  ) : (
+                                                    <IconButton
+                                                      size="small"
+                                                      onClick={() => {
+                                                        setEditingProjectName(projectName);
+                                                        setEditingProjectDraft(projectName);
+                                                      }}
+                                                      sx={{ border: `1px solid ${border}` }}
+                                                    >
+                                                      <EditOutlinedIcon fontSize="small" />
+                                                    </IconButton>
+                                                  )}
+                                                  <IconButton
+                                                    size="small"
+                                                    color="error"
+                                                    onClick={() => handleDeleteTokenProject(projectName)}
+                                                    disabled={savingGroup}
+                                                    sx={{
+                                                      border: `1px solid ${border}`,
+                                                      bgcolor: "rgba(239,68,68,0.08)",
+                                                    }}
+                                                  >
+                                                    <DeleteOutlineIcon fontSize="small" />
+                                                  </IconButton>
+                                                </Box>
+                                              </Box>
+                                              <Autocomplete
+                                                multiple
+                                                disableCloseOnSelect
+                                                options={assignableChannelOptions}
+                                                value={selectedChannelOptions}
+                                                getOptionLabel={(option) => option?.label || ""}
+                                                isOptionEqualToValue={(option, value) =>
+                                                  option.value === value.value
+                                                }
+                                                getOptionDisabled={(option) =>
+                                                  !!option.project_name &&
+                                                  (
+                                                    option.project_name !== projectName ||
+                                                    option.group_name !== groupName
+                                                  )
+                                                }
+                                                onChange={(_, nextOptions) =>
+                                                  handleProjectChannelsChange(
+                                                    groupName,
+                                                    projectName,
+                                                    (nextOptions || []).map((option) => option.value)
+                                                  )
+                                                }
+                                                renderTags={() => null}
+                                                renderInput={(params) => (
+                                                  <TextField
+                                                    {...params}
+                                                    size="small"
+                                                    label="Channels"
+                                                  />
+                                                )}
+                                                renderOption={(props, option, { selected }) => {
+                                                  const isLockedToOtherProject =
+                                                    !!option.project_name &&
+                                                    (
+                                                      option.project_name !== projectName ||
+                                                      option.group_name !== groupName
+                                                    );
+                                                  const optionMeta = [
+                                                    option.group_name ? `Group: ${option.group_name}` : null,
+                                                    option.project_name ? `Project: ${option.project_name}` : null,
+                                                    isLockedToOtherProject
+                                                      ? "Locked in another project"
+                                                      : null,
+                                                    option.hidden ? "Hidden" : null,
+                                                  ]
+                                                    .filter(Boolean)
+                                                    .join(" | ");
+                                                  return (
+                                                    <li
+                                                      {...props}
+                                                      key={`${groupName}-${projectName}-${option.value}`}
+                                                      style={{
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        gap: 8,
+                                                      }}
+                                                    >
+                                                      <Checkbox
+                                                        size="small"
+                                                        icon={channelOptionUncheckedIcon}
+                                                        checkedIcon={channelOptionCheckedIcon}
+                                                        checked={selected}
+                                                        sx={{ p: 0.5 }}
+                                                      />
+                                                      <Avatar
+                                                        src={option.avatar}
+                                                        alt={option.label}
+                                                        sx={{
+                                                          width: 28,
+                                                          height: 28,
+                                                          fontSize: 12,
+                                                          bgcolor: isDark
+                                                            ? "rgba(125,224,210,0.18)"
+                                                            : "rgba(25,118,210,0.12)",
+                                                          color: isDark
+                                                            ? "#d7fff7"
+                                                            : "rgba(15,23,42,0.8)",
+                                                        }}
+                                                      >
+                                                        {(option.label || "?").slice(0, 1).toUpperCase()}
+                                                      </Avatar>
+                                                      <Box
+                                                        sx={{
+                                                          minWidth: 0,
+                                                          display: "flex",
+                                                          flexDirection: "column",
+                                                        }}
+                                                      >
+                                                        <Typography variant="body2">
+                                                          {option.label}
+                                                        </Typography>
+                                                        {!!optionMeta && (
+                                                          <Typography variant="caption" color="text.secondary">
+                                                            {optionMeta}
+                                                          </Typography>
+                                                        )}
+                                                      </Box>
+                                                    </li>
+                                                  );
+                                                }}
+                                              />
+                                              {!!selectedChannelOptions.length && (
+                                                <Box display="flex" alignItems="center" gap={0.75} flexWrap="wrap">
+                                                  {selectedChannelOptions.map((option) => (
+                                                    <Chip
+                                                      key={`${groupName}-${projectName}-${option.value}`}
+                                                      size="small"
+                                                      avatar={
+                                                        <Avatar
+                                                          src={option.avatar}
+                                                          alt={option.label}
+                                                        >
+                                                          {(option.label || "?").slice(0, 1).toUpperCase()}
+                                                        </Avatar>
+                                                      }
+                                                      label={option.label}
+                                                    />
+                                                  ))}
+                                                </Box>
+                                              )}
+                                            </Box>
+                                          );
+                                        })}
+                                      </Box>
+                                    ) : null}
+                                  </Box>
+                                </Collapse>
                               </Box>
-                            </Box>
-                          );
-                        })}
-                      </Box>
-                    )}
+                            );
+                          })}
+                        </Box>
+                      )}
+                    </Box>
                   </Box>
                 ) : activeTab === "manage-user" ? (
                   <ManageUserRequests active={activeTab === "manage-user"} />

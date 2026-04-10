@@ -103,6 +103,16 @@ def ensure_user_credential_group_column(db_engine: Engine) -> None:
             )
 
 
+def ensure_user_credential_project_column(db_engine: Engine) -> None:
+    with db_engine.begin() as conn:
+        columns = conn.exec_driver_sql("PRAGMA table_info(user_credentials)").fetchall()
+        has_column = any(row[1] == "project_name" for row in columns)
+        if not has_column:
+            conn.exec_driver_sql(
+                "ALTER TABLE user_credentials ADD COLUMN project_name VARCHAR"
+            )
+
+
 def ensure_user_credential_groups_table(db_engine: Engine) -> None:
     with db_engine.begin() as conn:
         conn.exec_driver_sql(
@@ -133,6 +143,37 @@ def ensure_user_credential_groups_table(db_engine: Engine) -> None:
             SELECT user_id, group_name
             FROM user_credentials
             WHERE group_name IS NOT NULL AND TRIM(group_name) != '';
+            """
+        )
+
+
+def ensure_user_credential_projects_table(db_engine: Engine) -> None:
+    with db_engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS user_credential_projects (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                group_name VARCHAR NOT NULL,
+                project_name VARCHAR NOT NULL
+            );
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_user_credential_project_name
+            ON user_credential_projects (user_id, group_name, project_name);
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            INSERT OR IGNORE INTO user_credential_projects (user_id, group_name, project_name)
+            SELECT user_id, group_name, project_name
+            FROM user_credentials
+            WHERE group_name IS NOT NULL
+              AND TRIM(group_name) != ''
+              AND project_name IS NOT NULL
+              AND TRIM(project_name) != '';
             """
         )
 
@@ -382,7 +423,9 @@ def initialize_app_state() -> None:
     ensure_user_schedule_run_columns(engine)
     ensure_user_smmstore_column(engine)
     ensure_user_credential_group_column(engine)
+    ensure_user_credential_project_column(engine)
     ensure_user_credential_groups_table(engine)
+    ensure_user_credential_projects_table(engine)
     ensure_rival_channel_avatar_column(engine)
     ensure_rival_channel_group_column(engine)
     ensure_rival_channel_groups_table(engine)

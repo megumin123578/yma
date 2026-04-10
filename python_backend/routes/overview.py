@@ -33,6 +33,15 @@ def query(sql: str, params=None):
         return []
 
 
+def scalar(sql: str, params=None):
+    try:
+        with engine.begin() as conn:
+            return conn.execute(text(sql), params or {}).scalar()
+    except Exception as e:
+        print("[DB ERROR]", e)
+        return None
+
+
 def _allowed_or_hidden_blocked(current_user, db, account_tag: str) -> bool:
     allowed = get_allowed_account_tags(db, current_user)
     if allowed is not None and account_tag not in allowed:
@@ -164,29 +173,60 @@ def list_videos(
         return []
     if _allowed_or_hidden_blocked(current_user, db, accountTag):
         return []
-    rows = query("""
+    has_videos_table = bool(scalar("SELECT to_regclass('public.videos') IS NOT NULL"))
+    sql = """
         SELECT
-            account_tag,
-            video_id,
-            title,
-            thumbnail,
-            publish_date,
-            views,
-            likes,
-            comments,
-            dislikes,
-            engaged_views,
-            annotation_click_through_rate,
-            annotation_close_rate,
-            average_view_duration_seconds,
-            shares,
-            subscribers_gained,
-            subscribers_lost,
-            updated_at
-        FROM video_overview
-        WHERE account_tag = :tag
-        ORDER BY publish_date DESC;
-    """, {"tag": accountTag})
+            vo.account_tag,
+            vo.video_id,
+            vo.title,
+            vo.thumbnail,
+            vo.publish_date,
+            vo.views,
+            vo.likes,
+            vo.comments,
+            vo.dislikes,
+            vo.engaged_views,
+            NULL::DOUBLE PRECISION AS thumbnail_ctr,
+            vo.annotation_click_through_rate,
+            vo.annotation_close_rate,
+            vo.average_view_duration_seconds,
+            vo.shares,
+            vo.subscribers_gained,
+            vo.subscribers_lost,
+            vo.updated_at
+        FROM video_overview vo
+        WHERE vo.account_tag = :tag
+        ORDER BY vo.publish_date DESC;
+    """
+    if has_videos_table:
+        sql = """
+            SELECT
+                vo.account_tag,
+                vo.video_id,
+                vo.title,
+                vo.thumbnail,
+                COALESCE(vo.publish_date, v.published_at::text) AS publish_date,
+                GREATEST(COALESCE(vo.views, 0), COALESCE(v.views, 0)) AS views,
+                GREATEST(COALESCE(vo.likes, 0), COALESCE(v.likes, 0)) AS likes,
+                GREATEST(COALESCE(vo.comments, 0), COALESCE(v.comments, 0)) AS comments,
+                vo.dislikes,
+                vo.engaged_views,
+                v.ctr AS thumbnail_ctr,
+                vo.annotation_click_through_rate,
+                vo.annotation_close_rate,
+                vo.average_view_duration_seconds,
+                vo.shares,
+                vo.subscribers_gained,
+                vo.subscribers_lost,
+                vo.updated_at
+            FROM video_overview vo
+            LEFT JOIN videos v
+                ON v.account_tag = vo.account_tag
+               AND v.video_id = vo.video_id
+            WHERE vo.account_tag = :tag
+            ORDER BY publish_date DESC;
+        """
+    rows = query(sql, {"tag": accountTag})
 
     return rows
 

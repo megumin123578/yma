@@ -137,9 +137,21 @@ export const listTokenGroups = async () => {
   return res.data;
 };
 
+export const listTokenProjects = async () => {
+  const res = await api.get("/api/users/tokens/projects");
+  return res.data;
+};
+
 export const createTokenGroup = async (groupName) => {
   const res = await api.post("/api/users/tokens/groups", {
     group_name: groupName,
+  });
+  return res.data;
+};
+
+export const createTokenProject = async (projectName) => {
+  const res = await api.post("/api/users/tokens/projects", {
+    project_name: projectName,
   });
   return res.data;
 };
@@ -151,14 +163,45 @@ export const renameTokenGroup = async (groupName, nextGroupName) => {
   return res.data;
 };
 
+export const renameTokenProject = async (projectName, nextProjectName) => {
+  const res = await api.patch(
+    `/api/users/tokens/projects/${encodeURIComponent(projectName)}`,
+    { project_name: nextProjectName }
+  );
+  return res.data;
+};
+
 export const deleteTokenGroup = async (groupName) => {
   const res = await api.delete(`/api/users/tokens/groups/${encodeURIComponent(groupName)}`);
+  return res.data;
+};
+
+export const deleteTokenProject = async (projectName) => {
+  const res = await api.delete(
+    `/api/users/tokens/projects/${encodeURIComponent(projectName)}`
+  );
+  return res.data;
+};
+
+export const assignProjectGroup = async (projectName, groupName) => {
+  const res = await api.post(
+    `/api/users/tokens/projects/${encodeURIComponent(projectName)}/group`,
+    { group_name: groupName || null }
+  );
   return res.data;
 };
 
 export const assignTokenGroup = async (tokenName, groupName) => {
   const res = await api.post(`/api/users/tokens/${encodeURIComponent(tokenName)}/group`, {
     group_name: groupName || null,
+  });
+  return res.data;
+};
+
+export const assignTokenProject = async (tokenName, groupName, projectName) => {
+  const res = await api.post(`/api/users/tokens/${encodeURIComponent(tokenName)}/project`, {
+    group_name: groupName || null,
+    project_name: projectName || null,
   });
   return res.data;
 };

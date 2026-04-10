@@ -248,6 +248,7 @@ class UserCredential(Base):
     account_tag = Column(String, nullable=False, index=True)
     token_name = Column(String, nullable=True)
     group_name = Column(String, nullable=True, index=True)
+    project_name = Column(String, nullable=True, index=True)
     selected_channel_id = Column(String, nullable=True)
     selected_channel_title = Column(String, nullable=True)
     selected_channel_avatar = Column(String, nullable=True)
@@ -265,6 +266,23 @@ class UserCredentialGroup(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     group_name = Column(String, nullable=False, index=True)
     color = Column(String, nullable=True)
+
+
+class UserCredentialProject(Base):
+    __tablename__ = "user_credential_projects"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "group_name",
+            "project_name",
+            name="uq_user_credential_project_name",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    group_name = Column(String, nullable=False, index=True)
+    project_name = Column(String, nullable=False, index=True)
 
 
 class LiveCounterSnapshot(Base):
