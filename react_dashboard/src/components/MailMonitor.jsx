@@ -3,13 +3,16 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
+  IconButton,
   InputLabel,
+  ListItemText,
   MenuItem,
   Paper,
   Select,
@@ -24,9 +27,12 @@ import {
   TableRow,
   Tabs,
   TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
+import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import EastRoundedIcon from "@mui/icons-material/EastRounded";
+import SyncRoundedIcon from "@mui/icons-material/SyncRounded";
 import { useSearchParams } from "react-router-dom";
 
 import api from "../services/api";
@@ -34,6 +40,13 @@ import { UserContext } from "../context/UserContext";
 
 const MAILS_PER_PAGE = 50;
 const MAIL_OAUTH_POLL_MS = 2000;
+const MAIL_LABEL_OPTIONS = [
+  { value: "INBOX", label: "Inbox" },
+  { value: "CATEGORY_UPDATES", label: "Updates" },
+  { value: "CATEGORY_PROMOTIONS", label: "Promotions" },
+  { value: "CATEGORY_SOCIAL", label: "Social" },
+  { value: "CATEGORY_FORUMS", label: "Forums" },
+];
 
 const formatDateTime = (value) => {
   if (!value) return "-";
@@ -44,11 +57,17 @@ const formatDateTime = (value) => {
 
 const formatNumber = (value) => Number(value || 0).toLocaleString();
 
-const parseLabelIds = (value) =>
-  String(value || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+const normalizeLabelIds = (value) => {
+  const labels = Array.isArray(value) ? value : String(value || "").split(",");
+  return labels.map((item) => String(item || "").trim()).filter(Boolean);
+};
+
+const formatLabelSelection = (values) => {
+  const selected = normalizeLabelIds(values);
+  if (!selected.length) return "None";
+  const labelMap = new Map(MAIL_LABEL_OPTIONS.map((item) => [item.value, item.label]));
+  return selected.map((value) => labelMap.get(value) || value).join(", ");
+};
 
 const decodeHtmlEntities = (value) => {
   if (!value || typeof window === "undefined") return value || "";
@@ -75,6 +94,70 @@ const statusChipColor = (status) => {
   if (normalized === "matched") return "info";
   if (normalized === "pending") return "warning";
   return "default";
+};
+
+const greenOutlinedButtonSx = {
+  borderColor: "secondary.main",
+  color: "secondary.main",
+  backgroundColor: "rgba(76, 206, 172, 0.08)",
+  "&:hover": {
+    borderColor: "secondary.main",
+    backgroundColor: "rgba(76, 206, 172, 0.16)",
+  },
+  "&.Mui-disabled": {
+    borderColor: "rgba(148, 163, 184, 0.35)",
+    color: "text.disabled",
+  },
+};
+
+const greenContainedButtonSx = {
+  backgroundColor: "secondary.main",
+  color: "#04140f",
+  "&:hover": {
+    backgroundColor: "secondary.main",
+    filter: "brightness(0.92)",
+  },
+  "&.Mui-disabled": {
+    backgroundColor: "rgba(148, 163, 184, 0.24)",
+    color: "text.disabled",
+  },
+};
+
+const greenIconButtonSx = {
+  border: "1px solid",
+  borderColor: "secondary.main",
+  color: "secondary.main",
+  backgroundColor: "rgba(76, 206, 172, 0.08)",
+  borderRadius: 1,
+  "&:hover": {
+    backgroundColor: "rgba(76, 206, 172, 0.16)",
+  },
+  "&.Mui-disabled": {
+    borderColor: "rgba(148, 163, 184, 0.35)",
+    color: "text.disabled",
+  },
+};
+
+const redIconButtonSx = {
+  border: "1px solid",
+  borderColor: "error.main",
+  color: "error.main",
+  backgroundColor: "rgba(219, 79, 74, 0.08)",
+  borderRadius: 1,
+  "&:hover": {
+    backgroundColor: "rgba(219, 79, 74, 0.16)",
+  },
+  "&.Mui-disabled": {
+    borderColor: "rgba(148, 163, 184, 0.35)",
+    color: "text.disabled",
+  },
+};
+
+const greenCheckboxSx = {
+  color: "secondary.main",
+  "&.Mui-checked": {
+    color: "secondary.main",
+  },
 };
 
 const MailMonitor = () => {
@@ -104,7 +187,7 @@ const MailMonitor = () => {
   const [mailOAuthState, setMailOAuthState] = useState("");
   const [mailOAuthStatus, setMailOAuthStatus] = useState({ type: "", message: "" });
   const [connectingMail, setConnectingMail] = useState(false);
-  const [editingLabels, setEditingLabels] = useState({});
+  const [accountSearch, setAccountSearch] = useState("");
   const [accountActionStatus, setAccountActionStatus] = useState({ type: "", message: "" });
   const [accountActionId, setAccountActionId] = useState("");
 
@@ -118,6 +201,13 @@ const MailMonitor = () => {
   );
   const summary = overview?.summary || {};
   const connectedAccountCount = mailAccounts.length || Number(summary.account_count || 0);
+  const filteredMailAccounts = useMemo(() => {
+    const searchText = accountSearch.trim().toLowerCase();
+    if (!searchText) return mailAccounts;
+    return mailAccounts.filter((account) =>
+      String(account?.account_email || "").toLowerCase().includes(searchText)
+    );
+  }, [accountSearch, mailAccounts]);
 
   const accountOptions = useMemo(() => {
     return [
@@ -247,10 +337,6 @@ const MailMonitor = () => {
       } else {
         await loadData();
       }
-      setAccountActionStatus({
-        type: "success",
-        message: `Updated ${account.account_email || "Gmail account"}.`,
-      });
     } catch (err) {
       setAccountActionStatus({
         type: "error",
@@ -261,12 +347,10 @@ const MailMonitor = () => {
     }
   }, [loadData]);
 
-  const handleSaveAccountLabels = useCallback((account) => {
+  const handleAutoSaveAccountLabels = useCallback((account, nextLabels) => {
     if (!account?.id) return;
-    const currentValue =
-      editingLabels[account.id] ?? (Array.isArray(account.label_ids) ? account.label_ids.join(", ") : "INBOX");
-    handleUpdateMailAccount(account, { label_ids: parseLabelIds(currentValue) });
-  }, [editingLabels, handleUpdateMailAccount]);
+    handleUpdateMailAccount(account, { label_ids: normalizeLabelIds(nextLabels) });
+  }, [handleUpdateMailAccount]);
 
   const handleSyncMailAccount = useCallback(async (account) => {
     if (!account?.id) return;
@@ -296,11 +380,11 @@ const MailMonitor = () => {
     try {
       await api.post("/api/mail/sync");
       await loadData();
-      setAccountActionStatus({ type: "success", message: "Synced all Gmail accounts." });
+      setAccountActionStatus({ type: "success", message: "Synced all accounts." });
     } catch (err) {
       setAccountActionStatus({
         type: "error",
-        message: err?.response?.data?.detail || err?.message || "Failed to sync Gmail accounts.",
+        message: err?.response?.data?.detail || err?.message || "Failed to sync accounts.",
       });
     } finally {
       setAccountActionId("");
@@ -434,6 +518,8 @@ const MailMonitor = () => {
     setMailAccessDenied(false);
     setMailOAuthState("");
     setMailOAuthStatus({ type: "", message: "" });
+    setAccountActionStatus({ type: "", message: "" });
+    setAccountActionId("");
   }, [user?.id, user?.username]);
 
   useEffect(() => {
@@ -494,200 +580,334 @@ const MailMonitor = () => {
         </Alert>
       ) : null}
 
-      <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
-        <Stack
-          direction={{ xs: "column", md: "row" }}
-          spacing={1.5}
-          justifyContent="space-between"
-          alignItems={{ xs: "stretch", md: "center" }}
+      <Paper variant="outlined" sx={{ mb: 2, borderRadius: 2, overflow: "hidden" }}>
+        <Tabs
+          value={activeTab}
+          onChange={handleTabChange}
+          variant="scrollable"
+          allowScrollButtonsMobile
+          sx={{
+            "& .MuiTab-root": {
+              color: "#60a5fa",
+              fontWeight: 700,
+            },
+            "& .Mui-selected": {
+              color: "#60a5fa",
+            },
+            "& .MuiTabs-indicator": {
+              backgroundColor: "#ffffff",
+            },
+          }}
         >
-          <Box>
-            <Typography variant="body2" color="text.secondary">Gmail accounts</Typography>
-            <Typography variant="h6" fontWeight={800}>
-              {formatNumber(connectedAccountCount)} connected
-            </Typography>
-            {mailAccounts.length ? (
-              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
-                {mailAccounts.slice(0, 4).map((account) => (
-                  <Chip
-                    key={account.id || account.account_email}
-                    size="small"
-                    label={account.account_email}
-                    color={account.enabled ? "success" : "default"}
-                    variant="outlined"
-                  />
-                ))}
-                {mailAccounts.length > 4 ? (
-                  <Chip size="small" label={`+${mailAccounts.length - 4} more`} variant="outlined" />
-                ) : null}
-              </Stack>
-            ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Connect Gmail for Email Manager.
-              </Typography>
-            )}
-          </Box>
+          <Tab value="messages" label="Messages" />
+          <Tab value="accounts" label="Accounts" />
+        </Tabs>
+      </Paper>
 
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-            <Button variant="outlined" onClick={loadData}>
-              Refresh
-            </Button>
-            <Button
-              variant="contained"
-              onClick={handleStartMailOAuth}
-              disabled={connectingMail || Boolean(mailOAuthState)}
-            >
-              {connectingMail || mailOAuthState ? "Connecting..." : "Connect Gmail"}
-            </Button>
+      {activeTab === "messages" ? (
+        <>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={2} mb={2}>
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, flex: 1 }}>
+              <Typography variant="body2" color="text.secondary">Messages</Typography>
+              <Typography variant="h5" fontWeight={800}>{formatNumber(summary.total_messages)}</Typography>
+            </Paper>
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, flex: 1 }}>
+              <Typography variant="body2" color="text.secondary">Accounts</Typography>
+              <Typography variant="h5" fontWeight={800}>{formatNumber(connectedAccountCount)}</Typography>
+            </Paper>
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, flex: 1 }}>
+              <Typography variant="body2" color="text.secondary">Mailboxes</Typography>
+              <Typography variant="h5" fontWeight={800}>{formatNumber(summary.mailbox_count)}</Typography>
+            </Paper>
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, flex: 1 }}>
+              <Typography variant="body2" color="text.secondary">Errors</Typography>
+              <Typography variant="h5" fontWeight={800}>{formatNumber(summary.error_messages)}</Typography>
+            </Paper>
           </Stack>
-        </Stack>
-      </Paper>
 
-      <Stack direction={{ xs: "column", md: "row" }} spacing={2} mb={2}>
-        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, flex: 1 }}>
-          <Typography variant="body2" color="text.secondary">Messages</Typography>
-          <Typography variant="h5" fontWeight={800}>{formatNumber(summary.total_messages)}</Typography>
-        </Paper>
-        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, flex: 1 }}>
-          <Typography variant="body2" color="text.secondary">Accounts</Typography>
-          <Typography variant="h5" fontWeight={800}>{formatNumber(connectedAccountCount)}</Typography>
-        </Paper>
-        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, flex: 1 }}>
-          <Typography variant="body2" color="text.secondary">Mailboxes</Typography>
-          <Typography variant="h5" fontWeight={800}>{formatNumber(summary.mailbox_count)}</Typography>
-        </Paper>
-        <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, flex: 1 }}>
-          <Typography variant="body2" color="text.secondary">Errors</Typography>
-          <Typography variant="h5" fontWeight={800}>{formatNumber(summary.error_messages)}</Typography>
-        </Paper>
-      </Stack>
+          <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+              <FormControl size="small" sx={{ minWidth: 220 }}>
+                <InputLabel>Account</InputLabel>
+                <Select
+                  label="Account"
+                  value={filters.accountEmail}
+                  onChange={(event) =>
+                    setFilters((current) => ({
+                      ...current,
+                      accountEmail: event.target.value,
+                      mailbox:
+                        current.mailbox &&
+                        !mailboxOptions.includes(current.mailbox) &&
+                        event.target.value !== current.accountEmail
+                          ? ""
+                          : current.mailbox,
+                    }))
+                  }
+                >
+                  <MenuItem value="">All Accounts</MenuItem>
+                  {accountOptions.map((value) => (
+                    <MenuItem key={value} value={value}>{value}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
 
-      <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
-        <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
-          <FormControl size="small" sx={{ minWidth: 220 }}>
-            <InputLabel>Account</InputLabel>
-            <Select
-              label="Account"
-              value={filters.accountEmail}
-              onChange={(event) =>
-                setFilters((current) => ({
-                  ...current,
-                  accountEmail: event.target.value,
-                  mailbox:
-                    current.mailbox &&
-                    !mailboxOptions.includes(current.mailbox) &&
-                    event.target.value !== current.accountEmail
-                      ? ""
-                      : current.mailbox,
-                }))
-              }
-            >
-              <MenuItem value="">All Accounts</MenuItem>
-              {accountOptions.map((value) => (
-                <MenuItem key={value} value={value}>{value}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+              <FormControl size="small" sx={{ minWidth: 180 }}>
+                <InputLabel>Mailbox</InputLabel>
+                <Select
+                  label="Mailbox"
+                  value={filters.mailbox}
+                  onChange={(event) => setFilters((current) => ({ ...current, mailbox: event.target.value }))}
+                >
+                  <MenuItem value="">All Mailboxes</MenuItem>
+                  {mailboxOptions.map((value) => (
+                    <MenuItem key={value} value={value}>{value}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
 
-          <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel>Mailbox</InputLabel>
-            <Select
-              label="Mailbox"
-              value={filters.mailbox}
-              onChange={(event) => setFilters((current) => ({ ...current, mailbox: event.target.value }))}
-            >
-              <MenuItem value="">All Mailboxes</MenuItem>
-              {mailboxOptions.map((value) => (
-                <MenuItem key={value} value={value}>{value}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+              <FormControl size="small" sx={{ minWidth: 140 }}>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  label="Status"
+                  value={filters.status}
+                  onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
+                >
+                  <MenuItem value="">All Status</MenuItem>
+                  <MenuItem value="received">received</MenuItem>
+                  <MenuItem value="matched">matched</MenuItem>
+                  <MenuItem value="error">error</MenuItem>
+                </Select>
+              </FormControl>
 
-          <FormControl size="small" sx={{ minWidth: 140 }}>
-            <InputLabel>Status</InputLabel>
-            <Select
-              label="Status"
-              value={filters.status}
-              onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
-            >
-              <MenuItem value="">All Status</MenuItem>
-              <MenuItem value="received">received</MenuItem>
-              <MenuItem value="matched">matched</MenuItem>
-              <MenuItem value="error">error</MenuItem>
-            </Select>
-          </FormControl>
+              <TextField
+                size="small"
+                label="Search"
+                placeholder="Subject, sender..."
+                value={filters.search}
+                onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+                sx={{ flex: 1 }}
+              />
+            </Stack>
+          </Paper>
 
-          <TextField
-            size="small"
-            label="Search"
-            placeholder="Subject, sender..."
-            value={filters.search}
-            onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
-            sx={{ flex: 1 }}
-          />
-        </Stack>
-      </Paper>
-
-      <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Account</TableCell>
-              <TableCell>Mailbox</TableCell>
-              <TableCell>From</TableCell>
-              <TableCell>Subject</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Received</TableCell>
-              <TableCell>Last Seen</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {messageItems.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} align="center">No messages found for the current filters.</TableCell>
-              </TableRow>
-            ) : (
-              messageItems.map((item) => (
-                <TableRow key={item.id} hover onClick={() => handleOpenMessage(item.id)} sx={{ cursor: "pointer" }}>
-                  <TableCell>{item.account_email || "-"}</TableCell>
-                  <TableCell>{item.mailbox || "-"}</TableCell>
-                  <TableCell>
-                    <Typography>{item.from_name || item.from_email || "-"}</Typography>
-                    {item.from_name && item.from_email ? (
-                      <Typography variant="body2" color="text.secondary">{item.from_email}</Typography>
-                    ) : null}
-                  </TableCell>
-                  <TableCell sx={{ minWidth: 280 }}>
-                    <Typography fontWeight={700}>{item.subject || "(no subject)"}</Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {truncatePreviewText(item.snippet)}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      size="small"
-                      label={item.status || "unknown"}
-                      color={statusChipColor(item.status)}
-                      variant={item.seen ? "outlined" : "filled"}
-                    />
-                  </TableCell>
-                  <TableCell>{formatDateTime(item.received_at)}</TableCell>
-                  <TableCell>{formatDateTime(item.last_seen_at)}</TableCell>
+          <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Account</TableCell>
+                  <TableCell>Mailbox</TableCell>
+                  <TableCell>From</TableCell>
+                  <TableCell>Subject</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Received</TableCell>
+                  <TableCell>Last Seen</TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        <TablePagination
-          component="div"
-          count={Number(messages?.total || 0)}
-          page={mailPage}
-          onPageChange={(_, nextPage) => setMailPage(nextPage)}
-          rowsPerPage={MAILS_PER_PAGE}
-          rowsPerPageOptions={[MAILS_PER_PAGE]}
-          labelRowsPerPage="Mails per page"
-        />
-      </TableContainer>
+              </TableHead>
+              <TableBody>
+                {messageItems.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} align="center">No messages found for the current filters.</TableCell>
+                  </TableRow>
+                ) : (
+                  messageItems.map((item) => (
+                    <TableRow key={item.id} hover onClick={() => handleOpenMessage(item.id)} sx={{ cursor: "pointer" }}>
+                      <TableCell>{item.account_email || "-"}</TableCell>
+                      <TableCell>{item.mailbox || "-"}</TableCell>
+                      <TableCell>
+                        <Typography>{item.from_name || item.from_email || "-"}</Typography>
+                        {item.from_name && item.from_email ? (
+                          <Typography variant="body2" color="text.secondary">{item.from_email}</Typography>
+                        ) : null}
+                      </TableCell>
+                      <TableCell sx={{ minWidth: 280 }}>
+                        <Typography fontWeight={700}>{item.subject || "(no subject)"}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {truncatePreviewText(item.snippet)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={item.status || "unknown"}
+                          color={statusChipColor(item.status)}
+                          variant={item.seen ? "outlined" : "filled"}
+                        />
+                      </TableCell>
+                      <TableCell>{formatDateTime(item.received_at)}</TableCell>
+                      <TableCell>{formatDateTime(item.last_seen_at)}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+            <TablePagination
+              component="div"
+              count={Number(messages?.total || 0)}
+              page={mailPage}
+              onPageChange={(_, nextPage) => setMailPage(nextPage)}
+              rowsPerPage={MAILS_PER_PAGE}
+              rowsPerPageOptions={[MAILS_PER_PAGE]}
+              labelRowsPerPage="Mails per page"
+            />
+          </TableContainer>
+        </>
+      ) : (
+        <>
+          {accountActionStatus.message ? (
+            <Alert severity={accountActionStatus.type || "info"} sx={{ mb: 2 }}>
+              {accountActionStatus.message}
+            </Alert>
+          ) : null}
+
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={1.5}
+            justifyContent="flex-end"
+            alignItems={{ xs: "stretch", md: "center" }}
+            sx={{ mb: 2 }}
+          >
+            <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+              <TextField
+                size="small"
+                placeholder="Search accounts"
+                value={accountSearch}
+                onChange={(event) => setAccountSearch(event.target.value)}
+                sx={{ minWidth: { xs: "100%", sm: 240 } }}
+              />
+              <Button variant="outlined" onClick={loadData} sx={greenOutlinedButtonSx}>
+                Refresh
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={handleSyncAllMailAccounts}
+                disabled={!mailAccounts.length || accountActionId === "sync-all"}
+                sx={greenOutlinedButtonSx}
+              >
+                {accountActionId === "sync-all" ? "Syncing..." : "Sync All"}
+              </Button>
+              <Button
+                  variant="contained"
+                  onClick={handleStartMailOAuth}
+                  disabled={connectingMail || Boolean(mailOAuthState)}
+                  sx={greenContainedButtonSx}
+                >
+                  {connectingMail || mailOAuthState ? "Adding..." : "Add Gmail"}
+                </Button>
+            </Stack>
+          </Stack>
+
+          <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Account</TableCell>
+                  <TableCell>Inbox</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Last Sync</TableCell>
+                  <TableCell align="right" sx={{ minWidth: 340 }}>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredMailAccounts.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center">
+                      {mailAccounts.length === 0 ? "No accounts connected." : "No accounts found."}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredMailAccounts.map((account) => {
+                    const labelValue = normalizeLabelIds(account.label_ids || ["INBOX"]);
+                    const updateActionId = `${account.id}:update`;
+                    const syncActionId = `${account.id}:sync`;
+                    const deleteActionId = `${account.id}:delete`;
+
+                    return (
+                      <TableRow key={account.id || account.account_email}>
+                        <TableCell sx={{ minWidth: 220 }}>
+                          <Typography fontWeight={700}>{account.account_email || "-"}</Typography>
+                        </TableCell>
+                        <TableCell sx={{ minWidth: 260 }}>
+                          <FormControl size="small" fullWidth>
+                            <Select
+                              multiple
+                              value={labelValue}
+                              renderValue={formatLabelSelection}
+                              onChange={(event) =>
+                                handleAutoSaveAccountLabels(account, event.target.value)
+                              }
+                              disabled={accountActionId === updateActionId}
+                            >
+                              {MAIL_LABEL_OPTIONS.map((option) => (
+                                <MenuItem key={option.value} value={option.value}>
+                                  <Checkbox
+                                    checked={labelValue.includes(option.value)}
+                                    sx={greenCheckboxSx}
+                                  />
+                                  <ListItemText primary={option.label} />
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        </TableCell>
+                        <TableCell>
+                          <Stack spacing={0.75} alignItems="flex-start">
+                            {account.last_sync_status ? (
+                              <Chip
+                                size="small"
+                                label={account.last_sync_status}
+                                color={statusChipColor(account.last_sync_status)}
+                              />
+                            ) : (
+                              <Chip size="small" label="pending" color="warning" />
+                            )}
+                            {account.last_error_message ? (
+                              <Typography variant="body2" color="error">
+                                {account.last_error_message}
+                              </Typography>
+                            ) : null}
+                          </Stack>
+                        </TableCell>
+                        <TableCell>{formatDateTime(account.last_synced_at)}</TableCell>
+                        <TableCell align="right" sx={{ minWidth: 340 }}>
+                          <Stack direction="row" spacing={1} justifyContent="flex-end" useFlexGap flexWrap="wrap">
+                            <Tooltip title={accountActionId === syncActionId ? "Syncing" : "Sync"}>
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  aria-label="Sync account"
+                                  onClick={() => handleSyncMailAccount(account)}
+                                  disabled={accountActionId === syncActionId}
+                                  sx={greenIconButtonSx}
+                                >
+                                  <SyncRoundedIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                            <Tooltip title={accountActionId === deleteActionId ? "Removing" : "Remove"}>
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  aria-label="Remove account"
+                                  onClick={() => handleDeleteMailAccount(account)}
+                                  disabled={accountActionId === deleteActionId}
+                                  sx={redIconButtonSx}
+                                >
+                                  <DeleteOutlineRoundedIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </>
+      )}
 
       <Dialog open={Boolean(selectedMessageId)} onClose={handleCloseMessage} fullWidth maxWidth="lg">
         <DialogTitle sx={{ pb: 1 }}>
