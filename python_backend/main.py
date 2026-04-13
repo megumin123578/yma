@@ -16,7 +16,7 @@ from python_backend.api.auth.scheduler import start_scheduler, stop_scheduler
 from python_backend.bootstrap import initialize_app_state
 from python_backend.routes.audience import router as audience_router
 from python_backend.routes.channel_compare import router as channel_compare_router
-from python_backend.routes.content import router as content_router
+from python_backend.routes.content import router as content_router, prewarm_content_cache
 from python_backend.routes.geography import router as geo_router
 from python_backend.routes.mail import router as mail_router
 from python_backend.routes.overview import router as overview_router
@@ -38,6 +38,7 @@ async def lifespan(_: FastAPI):
     should_start_scheduler = _scheduler_enabled()
     if should_start_scheduler:
         start_scheduler()
+    prewarm_content_cache()
     try:
         yield
     finally:

@@ -43,7 +43,7 @@ const AllChannelsScene = () => {
       <Header title="ALL CHANNELS" subtitle="Cross-channel content overview" />
       {ready ? (
         <Box mt={3}>
-          <ContentAnalytics />
+          <ContentAnalytics hideChannelSwitcher />
         </Box>
       ) : null}
     </Box>

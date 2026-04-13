@@ -1,7 +1,7 @@
 import { ProSidebar, Menu, MenuItem, SubMenu } from "react-pro-sidebar";
 import { Box, Typography, useTheme } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { useContext, useState } from "react";
+import { useContext } from "react";
 import { Link, useLocation } from "react-router-dom";
 import "react-pro-sidebar/dist/css/styles.css";
 import { tokens } from "../../theme";
@@ -58,15 +58,9 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
 
   const inGroup = (routes) => routes.some((r) => isActivePath(r));
 
-  const [openAnalytics, setOpenAnalytics] = useState(() =>
-    inGroup(["/all_channels", "/content", "/traffic_source", "/geography", "/audience_analytics", "/reach", "/revenue"])
-  );
-  const [openStatistics, setOpenStatistics] = useState(() =>
-    inGroup(["/channel_compare", "/rivals"])
-  );
-  const [openAutomation, setOpenAutomation] = useState(() =>
-    inGroup(["/smmstore", "/smmstore_analytics", "/mail_monitor"])
-  );
+  const defaultOpenAnalytics = inGroup(["/all_channels", "/content", "/traffic_source", "/geography", "/audience_analytics", "/reach", "/revenue"]);
+  const defaultOpenStatistics = inGroup(["/channel_compare", "/rivals"]);
+  const defaultOpenAutomation = inGroup(["/smmstore", "/smmstore_analytics", "/mail_monitor"]);
 
   const closeOnMobile = () => {
     if (isMobile) setIsSidebar?.(false);
@@ -304,8 +298,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
               <SubMenu
                 title={<Typography sx={subMenuTitleSx}>Analytics</Typography>}
                 icon={<BarChartOutlinedIcon />}
-                open={openAnalytics}
-                onOpenChange={setOpenAnalytics}
+                defaultOpen={defaultOpenAnalytics}
               >
                 <Item
                   title="All Channels"
@@ -361,8 +354,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
               <SubMenu
                 title={<Typography sx={subMenuTitleSx}>Statistics</Typography>}
                 icon={<QueryStatsIcon />}
-                open={openStatistics}
-                onOpenChange={setOpenStatistics}
+                defaultOpen={defaultOpenStatistics}
               >
                 <Item
                   title="Channel Compare"
@@ -383,8 +375,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
               <SubMenu
                 title={<Typography sx={subMenuTitleSx}>Automation</Typography>}
                 icon={<AutoModeIcon />}
-                open={openAutomation}
-                onOpenChange={setOpenAutomation}
+                defaultOpen={defaultOpenAutomation}
               >
                 <Item
                   title="SMMStore Orders"

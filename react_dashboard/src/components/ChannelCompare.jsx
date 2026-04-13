@@ -387,9 +387,6 @@ const ChannelCompare = () => {
             <Typography variant="h6" fontWeight={700}>
               Channel Compare
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Rank channels by metric and mark unusual changes across periods.
-            </Typography>
           </Box>
 
           <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
@@ -657,7 +654,18 @@ const ChannelCompare = () => {
                 }}
               >
                 <TableCell>{row.rank}</TableCell>
-                <TableCell>{getChannelLabel(row.accountTag)}</TableCell>
+                <TableCell>
+                  <Box display="flex" alignItems="center" gap={1.25}>
+                    <Avatar
+                      src={channelAvatarMap[row.accountTag] || ""}
+                      alt={getChannelLabel(row.accountTag)}
+                      sx={{ width: 28, height: 28 }}
+                    />
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {getChannelLabel(row.accountTag)}
+                    </Typography>
+                  </Box>
+                </TableCell>
                 <TableCell align="right">{formatNumber(row.currentValue)}</TableCell>
                 <TableCell align="right">{formatNumber(row.previousValue)}</TableCell>
                 <TableCell align="right">
@@ -672,7 +680,7 @@ const ChannelCompare = () => {
             ))}
             {!visibleRows.length && !loading && (
               <TableRow>
-                <TableCell colSpan={7}>
+                <TableCell colSpan={6}>
                   <Typography variant="body2" color="text.secondary">
                     No data
                   </Typography>

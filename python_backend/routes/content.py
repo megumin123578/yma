@@ -1,10 +1,10 @@
 # routes/content.py
 import json
 import os
-from datetime import datetime, timedelta
+import threading
+from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from datetime import date
 from typing import Optional
 from sqlalchemy import text
 from python_backend.db import engine
@@ -129,7 +129,6 @@ def _save_video_metrics_cache(account_tag: str, start_date, end_date, payload: d
                     "payload": payload_json,
                 },
             )
-        print("[content.metrics_cache] save ok")
     except Exception as e:
         print("[content.metrics_cache] save failed:", e)
 
@@ -515,9 +514,67 @@ def _save_timeseries_cache(account_tag: str, start_date, end_date, rows):
                     "payload": payload,
                 },
             )
-        print("[content.cache] save ok")
     except Exception as e:
         print("[content.cache] save failed:", e)
+
+
+def _make_multi_tag_cache_key(tags: list[str]) -> str:
+    """Tạo cache key duy nhất cho tập hợp nhiều account_tag."""
+    return "__multi__:" + "|".join(sorted(tags))
+
+
+def _load_list_cache(cache_key: str, start_date, end_date):
+    """Load cache cho /list endpoint (cả single lẫn multi-channel)."""
+    _ensure_timeseries_cache_table()
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT payload
+                    FROM content_timeseries_cache
+                    WHERE account_tag = :tag
+                      AND start_date = :start_date
+                      AND end_date = :end_date
+                    LIMIT 1;
+                """),
+                {"tag": f"list:{cache_key}", "start_date": start_date, "end_date": end_date},
+            ).mappings().first()
+        if not row:
+            return None
+        payload = row.get("payload")
+        if isinstance(payload, str):
+            return json.loads(payload)
+        return payload
+    except Exception as e:
+        print("[content.list_cache] load failed:", e)
+        return None
+
+
+def _save_list_cache(cache_key: str, start_date, end_date, payload: dict):
+    """Save cache cho /list endpoint."""
+    _ensure_timeseries_cache_table()
+    try:
+        payload_json = json.dumps(payload, default=str)
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO content_timeseries_cache (
+                        account_tag, start_date, end_date, payload, updated_at
+                    )
+                    VALUES (:tag, :start_date, :end_date, :payload, NOW())
+                    ON CONFLICT (account_tag, start_date, end_date) DO UPDATE SET
+                        payload = EXCLUDED.payload,
+                        updated_at = NOW();
+                """),
+                {
+                    "tag": f"list:{cache_key}",
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "payload": payload_json,
+                },
+            )
+    except Exception as e:
+        print("[content.list_cache] save failed:", e)
 
 
 def _list_content_channels(
@@ -611,6 +668,14 @@ def content_list(
             "items": [],
             "channelMetrics": {"impressions": 0, "ctr": None, "supported": False},
         }
+
+    list_cache_key = (
+        requested_tags[0] if len(requested_tags) == 1
+        else _make_multi_tag_cache_key(requested_tags)
+    )
+    cached_list = _load_list_cache(list_cache_key, req.start, req.end)
+    if cached_list is not None:
+        return cached_list
 
     account_filter_sql, account_filter_params = _build_account_tag_filter(
         "v.account_tag",
@@ -725,10 +790,12 @@ def content_list(
 
     rows_mutable = [row for row in rows_mutable if not _should_hide_private_content_row(row)]
 
-    return {
+    result = {
         "items": rows_mutable,
         "channelMetrics": channel_metrics_payload,
     }
+    _save_list_cache(list_cache_key, req.start, req.end, result)
+    return result
 
 class TimeSeriesRequest(BaseModel):
     start: date
@@ -760,12 +827,15 @@ def content_timeseries(
         if item.get("value")
     }
 
-    if len(requested_tags) == 1:
-        cached = _load_timeseries_cache(requested_tags[0], req.start, req.end)
-        if cached is not None:
+    ts_cache_key = (
+        requested_tags[0] if len(requested_tags) == 1
+        else _make_multi_tag_cache_key(requested_tags)
+    )
+    cached = _load_timeseries_cache(ts_cache_key, req.start, req.end)
+    if cached is not None:
             cached_rows = [dict(row) for row in cached]
             for row in cached_rows:
-                channel_id = str(row.get("channelId") or requested_tags[0]).strip()
+                channel_id = str(row.get("channelId") or ts_cache_key).strip()
                 row["channelId"] = channel_id
                 row["channelTitle"] = label_map.get(channel_id) or channel_id
             cached_rows = _filter_private_timeseries_rows(db, requested_tags, cached_rows)
@@ -816,9 +886,7 @@ def content_timeseries(
         row["channelTitle"] = label_map.get(channel_id) or channel_id
     rows = _filter_private_timeseries_rows(db, requested_tags, rows)
 
-    if len(requested_tags) == 1:
-        _save_timeseries_cache(requested_tags[0], req.start, req.end, rows)
-    # print("[content.timeseries] rows (sample) =", rows[:5])  # debug
+    _save_timeseries_cache(ts_cache_key, req.start, req.end, rows)
     return {"items": rows}
 
 
@@ -944,3 +1012,229 @@ def channel_metrics(
     if not requested_tags:
         return {"impressions": 0, "ctr": None, "supported": False}
     return _compute_channel_metrics_from_db_for_accounts(requested_tags, req.start, req.end)
+
+
+# ---------------------------------------------------------------------------
+# All Channels Summary endpoint
+# ---------------------------------------------------------------------------
+
+class AllChannelsSummaryRequest(BaseModel):
+    start: date
+    end: date
+
+
+@router.post("/all_channels")
+def content_all_channels(
+    req: AllChannelsSummaryRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    channel_items = _list_content_channels(db, current_user)
+    all_channel_items = _list_content_channels(db, current_user, include_hidden=True)
+    requested_tags = _resolve_content_account_tags(ALL_CHANNELS_VALUE, channel_items, all_channel_items)
+
+    if not requested_tags:
+        return {"channels": [], "timeseries": [], "channelMetrics": {"impressions": 0, "ctr": None, "supported": False}}
+
+    label_map = {str(item.get("value") or ""): str(item.get("label") or item.get("value") or "") for item in all_channel_items if item.get("value")}
+    avatar_map = {str(item.get("value") or ""): item.get("avatar") or None for item in all_channel_items if item.get("value")}
+
+    cache_key = f"all_channels:{_make_multi_tag_cache_key(requested_tags) if len(requested_tags) > 1 else requested_tags[0]}"
+    cached = _load_list_cache(cache_key, req.start, req.end)
+    if cached is not None:
+        return cached
+
+    account_filter_sql, account_filter_params = _build_account_tag_filter("v.account_tag", requested_tags)
+    _ensure_thumbnail_daily_table()
+    params = {"start": req.start, "end": req.end, **account_filter_params}
+
+    channels_sql = f"""
+        SELECT
+            v.account_tag AS "channelId",
+            COUNT(DISTINCT v.video_id) AS "videoCount",
+            COALESCE(SUM(s.views), 0) AS views,
+            COALESCE(SUM(s.estimated_minutes) / 60.0, 0) AS "watchTimeHours",
+            COALESCE(SUM(s.likes), 0) AS likes,
+            COALESCE(SUM(s.subscribers_gained), 0) AS subscribers,
+            CASE WHEN SUM(s.views) > 0
+                THEN ROUND(SUM(COALESCE(s.average_view_duration, 0) * COALESCE(s.views, 0))::numeric / NULLIF(SUM(s.views), 0), 2)
+                ELSE NULL END AS "averageViewDuration",
+            COALESCE(SUM(tr.thumbnail_impressions), 0) AS impressions,
+            CASE WHEN SUM(tr.thumbnail_impressions) > 0
+                THEN ROUND(SUM(COALESCE(tr.thumbnail_ctr, 0) * COALESCE(tr.thumbnail_impressions, 0))::numeric / NULLIF(SUM(tr.thumbnail_impressions), 0) * 100.0, 4)
+                ELSE NULL END AS "impressionsClickThroughRate",
+            MAX(v.published_at) AS "latestPublishedAt"
+        FROM videos v
+        LEFT JOIN video_daily_stats s ON s.video_id = v.video_id AND s.day BETWEEN :start AND :end
+        LEFT JOIN (
+            SELECT account_tag, video_id,
+                SUM(thumbnail_impressions) AS thumbnail_impressions,
+                CASE WHEN SUM(thumbnail_impressions) > 0
+                    THEN SUM(COALESCE(thumbnail_ctr, 0) * thumbnail_impressions) / SUM(thumbnail_impressions)
+                    ELSE NULL END AS thumbnail_ctr
+            FROM video_thumbnail_daily
+            WHERE day BETWEEN :start AND :end
+            GROUP BY account_tag, video_id
+        ) tr ON tr.video_id = v.video_id AND tr.account_tag = v.account_tag
+        WHERE {account_filter_sql}
+        GROUP BY v.account_tag
+        HAVING COALESCE(SUM(s.views), 0) > 0
+        ORDER BY COALESCE(SUM(s.views), 0) DESC;
+    """
+
+    timeseries_sql = f"""
+        SELECT
+            s.day AS bucket,
+            SUM(s.views) AS views,
+            SUM(s.estimated_minutes) / 60.0 AS watch_hours,
+            SUM(s.likes) AS likes
+        FROM video_daily_stats s
+        JOIN videos v ON v.video_id = s.video_id
+        WHERE {account_filter_sql}
+          AND s.day BETWEEN :start AND :end
+        GROUP BY s.day
+        ORDER BY s.day ASC;
+    """
+
+    channels = [dict(r) for r in query_all_safe(channels_sql, params)]
+    for ch in channels:
+        cid = str(ch.get("channelId") or "").strip()
+        ch["channelTitle"] = label_map.get(cid) or cid
+        ch["channelAvatar"] = avatar_map.get(cid)
+        ch["id"] = cid
+        ch["title"] = ch["channelTitle"]
+        ch["displayTitle"] = ch["channelTitle"]
+        ch["published"] = ch.get("latestPublishedAt")
+
+    timeseries = [dict(r) for r in query_all_safe(timeseries_sql, params)]
+    channel_metrics = _compute_channel_metrics_from_db_for_accounts(requested_tags, req.start, req.end)
+
+    result = {"channels": channels, "timeseries": timeseries, "channelMetrics": channel_metrics}
+    _save_list_cache(cache_key, req.start, req.end, result)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Cache pre-warming
+# ---------------------------------------------------------------------------
+
+PREWARM_PERIODS_DAYS = [7, 28, 90]
+
+
+def _get_all_account_tags_from_db() -> list[str]:
+    """Lấy tất cả account_tag từ bảng videos (không qua auth)."""
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(
+                text("SELECT DISTINCT account_tag FROM videos WHERE account_tag IS NOT NULL")
+            ).fetchall()
+        return [str(r[0]).strip() for r in rows if r[0]]
+    except Exception as e:
+        print("[content.prewarm] get tags failed:", e)
+        return []
+
+
+def _prewarm_worker() -> None:
+    import time
+    time.sleep(8)  # Đợi server khởi động xong
+
+    print("[content.prewarm] starting cache pre-warm...")
+    all_tags = _get_all_account_tags_from_db()
+    if not all_tags:
+        print("[content.prewarm] no channels found, skipping")
+        return
+
+    cache_key = _make_multi_tag_cache_key(all_tags) if len(all_tags) > 1 else all_tags[0]
+    account_filter_sql, account_filter_params = _build_account_tag_filter("v.account_tag", all_tags)
+    today = date.today()
+
+    for days in PREWARM_PERIODS_DAYS:
+        start = today - timedelta(days=days)
+        end = today
+
+        # --- Pre-warm /list ---
+        if _load_list_cache(cache_key, start, end) is None:
+            try:
+                _ensure_thumbnail_daily_table()
+                list_sql = f"""
+                    SELECT
+                        v.video_id      AS "videoId",
+                        v.account_tag   AS "channelId",
+                        v.title,
+                        v.thumbnail,
+                        v.published_at  AS "publishedAt",
+                        v.duration,
+                        COALESCE(MAX(v.views), 0) AS views,
+                        COALESCE(SUM(s.estimated_minutes) / 60.0, 0) AS "watchTimeHours",
+                        CASE WHEN COALESCE(SUM(s.views), 0) > 0
+                            THEN ROUND(SUM(COALESCE(s.average_view_duration, 0) * COALESCE(s.views, 0))::numeric / NULLIF(SUM(s.views), 0), 2)
+                            ELSE NULL END AS "averageViewDuration",
+                        COALESCE(SUM(s.likes), 0) AS likes,
+                        COALESCE(SUM(s.subscribers_gained), 0) AS "subscribers",
+                        NULL::numeric AS "averagePercentageViewed",
+                        NULL::bigint AS "engagedViews",
+                        NULL::numeric AS "stayedToWatch",
+                        NULL::bigint AS "uniqueViewers",
+                        NULL::numeric AS "averageViewsPerViewer",
+                        NULL::bigint AS "newViewers",
+                        NULL::bigint AS "returningViewers",
+                        NULL::bigint AS "casualViewers",
+                        NULL::bigint AS "regularViewers",
+                        NULL::numeric AS "impressionsClickThroughRate",
+                        COALESCE(v.card_impressions, 0) AS "cardImpressions",
+                        COALESCE(v.ad_impressions, 0) AS "adImpressions"
+                    FROM videos v
+                    LEFT JOIN video_daily_stats s
+                      ON s.video_id = v.video_id AND s.day BETWEEN :start AND :end
+                    WHERE {account_filter_sql}
+                    GROUP BY v.video_id, v.account_tag, v.title, v.thumbnail,
+                             v.published_at, v.duration, v.ctr, v.card_impressions, v.ad_impressions
+                    HAVING SUM(s.views) > 0 OR MAX(v.views) > 0
+                    ORDER BY v.published_at DESC;
+                """
+                params = {"start": start, "end": end, **account_filter_params}
+                rows = [dict(r) for r in query_all_safe(list_sql, params)]
+                channel_metrics = _compute_channel_metrics_from_db_for_accounts(all_tags, start, end)
+                result = {"items": rows, "channelMetrics": channel_metrics}
+                _save_list_cache(cache_key, start, end, result)
+                print(f"[content.prewarm] list cached: last {days}d ({len(rows)} videos)")
+            except Exception as e:
+                print(f"[content.prewarm] list failed for last {days}d:", e)
+
+        # --- Pre-warm /timeseries ---
+        if _load_timeseries_cache(cache_key, start, end) is None:
+            try:
+                _ensure_thumbnail_daily_table()
+                ts_sql = f"""
+                    SELECT
+                        s.day           AS bucket,
+                        v.video_id      AS "videoId",
+                        v.account_tag   AS "channelId",
+                        v.title         AS title,
+                        s.views         AS views,
+                        (s.estimated_minutes / 60.0) AS watch_hours,
+                        s.likes         AS likes,
+                        0::numeric      AS revenue,
+                        t.thumbnail_impressions::bigint AS impressions
+                    FROM video_daily_stats s
+                    JOIN videos v ON v.video_id = s.video_id
+                    LEFT JOIN video_thumbnail_daily t
+                      ON t.account_tag = v.account_tag AND t.video_id = v.video_id AND t.day = s.day
+                    WHERE {account_filter_sql}
+                      AND s.day BETWEEN :start AND :end
+                    ORDER BY bucket ASC, "channelId" ASC, "videoId" ASC;
+                """
+                params = {"start": start, "end": end, **account_filter_params}
+                rows = [dict(r) for r in query_all_safe(ts_sql, params)]
+                _save_timeseries_cache(cache_key, start, end, rows)
+                print(f"[content.prewarm] timeseries cached: last {days}d ({len(rows)} rows)")
+            except Exception as e:
+                print(f"[content.prewarm] timeseries failed for last {days}d:", e)
+
+    print("[content.prewarm] done")
+
+
+def prewarm_content_cache() -> None:
+    """Khởi động background thread để pre-warm cache khi server start."""
+    t = threading.Thread(target=_prewarm_worker, daemon=True, name="content-prewarm")
+    t.start()

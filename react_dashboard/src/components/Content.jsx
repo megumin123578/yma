@@ -130,13 +130,6 @@ const CONTENT_ALL_CHANNELS_VALUE = "__all__";
 const CONTENT_LOCAL_CHANNEL_STORAGE_KEY = "content.selectedChannelId";
 const CONTENT_FILTERS_STORAGE_KEY = "content.filters";
 const CONTENT_ROWS_PER_PAGE_OPTIONS = [20, 50, 100, 200];
-const CHANNEL_SUMMARY_WEIGHT_BY_METRIC = {
-  averageViewDuration: "views",
-  averagePercentageViewed: "views",
-  stayedToWatch: "views",
-  averageViewsPerViewer: "uniqueViewers",
-  impressionsClickThroughRate: "impressions",
-};
 
 const getChartMetricRowKey = (selectedMetric) =>
   (
@@ -770,7 +763,7 @@ LineChart.displayName = "LineChart";
 
 
 
-const ContentAnalytics = () => {
+const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
 
   const theme = useTheme();
   const storedFilters = useMemo(() => loadStoredContentFilters(), []);
@@ -796,6 +789,8 @@ const ContentAnalytics = () => {
   const [videos, setVideos] = useState([]);
 
   const [timeseries, setTimeseries] = useState([]);
+  const [allChannelRows, setAllChannelRows] = useState([]);
+  const [allChannelTimeseries, setAllChannelTimeseries] = useState([]);
 
   const [channelList, setChannelList] = useState([]);
   const [channelRevenueMap, setChannelRevenueMap] = useState({});
@@ -835,7 +830,8 @@ const ContentAnalytics = () => {
     normalizeRowsPerPage(storedFilters?.rowsPerPage)
   );
   const contentRequestSeqRef = useRef(0);
-  const [expandedChannelIds, setExpandedChannelIds] = useState({});
+  const [expandedChannelId, setExpandedChannelId] = useState(null);
+  const [channelVideoCache, setChannelVideoCache] = useState({});
   const [sortKey, setSortKey] = useState(() =>
     normalizeSortKey(storedFilters?.sortKey)
   );
@@ -964,10 +960,6 @@ const ContentAnalytics = () => {
   }, [channelList]);
 
   const showAllMode = channelId === CONTENT_ALL_CHANNELS_VALUE;
-  const channelMetaById = useMemo(
-    () => new Map(channelList.map((item) => [item.id, item])),
-    [channelList]
-  );
 
 
 
@@ -1048,18 +1040,14 @@ const ContentAnalytics = () => {
         const raw = resp.data;
 
         if (requestSeq !== contentRequestSeqRef.current) return;
-        startTransition(() => {
-          setTimeseries(raw.items ?? []);
-        });
+        setTimeseries(raw.items ?? []);
 
       } catch (err) {
 
         console.error("Fetch timeseries failed:", err);
 
         if (requestSeq !== contentRequestSeqRef.current) return;
-        startTransition(() => {
-          setTimeseries([]);
-        });
+        setTimeseries([]);
 
       }
 
@@ -1072,6 +1060,26 @@ const ContentAnalytics = () => {
 
 
 
+
+  const fetchAllChannels = useCallback(
+    async (start, end, requestSeq) => {
+      try {
+        const resp = await api.post("/api/content/all_channels", { start, end });
+        if (requestSeq !== contentRequestSeqRef.current) return;
+        const raw = resp.data;
+        startTransition(() => {
+          setAllChannelRows(raw.channels ?? []);
+          setAllChannelTimeseries(raw.timeseries ?? []);
+          setChannelMetrics(raw.channelMetrics ?? null);
+        });
+      } catch {
+        if (requestSeq !== contentRequestSeqRef.current) return;
+        setAllChannelRows([]);
+        setAllChannelTimeseries([]);
+      }
+    },
+    []
+  );
 
   /* ================================
 
@@ -1168,20 +1176,24 @@ const ContentAnalytics = () => {
     if (!start || !end) return;
 
     setVideos([]);
-
     setTimeseries([]);
-
+    setAllChannelRows([]);
+    setAllChannelTimeseries([]);
     setHoverSlice(null);
 
     setChannelMetrics(null);
     const requestSeq = contentRequestSeqRef.current + 1;
     contentRequestSeqRef.current = requestSeq;
-    fetchVideos(start, end, requestSeq);
-    fetchTimeseries(start, end, requestSeq);
+    if (channelId === CONTENT_ALL_CHANNELS_VALUE) {
+      fetchAllChannels(start, end, requestSeq);
+    } else {
+      fetchVideos(start, end, requestSeq);
+      fetchTimeseries(start, end, requestSeq);
+    }
 
     return undefined;
 
-  }, [resolvePeriod, fetchVideos, fetchTimeseries, channelId]);
+  }, [resolvePeriod, fetchVideos, fetchTimeseries, fetchAllChannels, channelId]);
 
   useEffect(() => {
     let active = true;
@@ -1253,83 +1265,7 @@ const ContentAnalytics = () => {
   );
   const deferredRows = useDeferredValue(rows);
 
-  const channelSummaryRows = useMemo(() => {
-    const groups = new Map();
-
-    deferredRows.forEach((row) => {
-      const channelKey = String(row.channelId || "").trim();
-      if (!channelKey) return;
-
-      if (!groups.has(channelKey)) {
-        const channelMeta = channelMetaById.get(channelKey);
-        groups.set(channelKey, {
-          id: channelKey,
-          title: channelMeta?.title || row.channelTitle || channelKey,
-          displayTitle: channelMeta?.title || row.channelTitle || channelKey,
-          channelTitle: channelMeta?.title || row.channelTitle || channelKey,
-          channelAvatar: channelMeta?.avatar || row.channelAvatar || "",
-          published: row.published || null,
-          videoCount: 0,
-          _weighted: {},
-          _weights: {},
-          _sumFlags: {},
-        });
-      }
-
-      const entry = groups.get(channelKey);
-      entry.videoCount += 1;
-
-      if (row.published) {
-        const currentPublished = entry.published ? new Date(entry.published).getTime() : 0;
-        const nextPublished = new Date(row.published).getTime();
-        if (!entry.published || nextPublished > currentPublished) {
-          entry.published = row.published;
-        }
-      }
-
-      TABLE_METRIC_OPTIONS.forEach(({ value }) => {
-        const numericValue = toNullableNumber(row[value]);
-        if (numericValue === null) return;
-
-        if (NON_SUM_METRICS.has(value)) {
-          const weightKey = CHANNEL_SUMMARY_WEIGHT_BY_METRIC[value];
-          const weightValue = toNullableNumber(weightKey ? row[weightKey] : null);
-          const effectiveWeight = weightValue !== null && weightValue > 0 ? weightValue : 1;
-          entry._weighted[value] = (entry._weighted[value] || 0) + numericValue * effectiveWeight;
-          entry._weights[value] = (entry._weights[value] || 0) + effectiveWeight;
-          return;
-        }
-
-        entry[value] = (entry[value] || 0) + numericValue;
-        entry._sumFlags[value] = true;
-      });
-    });
-
-    return Array.from(groups.values()).map((entry) => {
-      const finalized = { ...entry };
-
-      TABLE_METRIC_OPTIONS.forEach(({ value }) => {
-        if (NON_SUM_METRICS.has(value)) {
-          finalized[value] =
-            entry._weights[value] > 0
-              ? entry._weighted[value] / entry._weights[value]
-              : null;
-          return;
-        }
-
-        if (!entry._sumFlags[value]) {
-          finalized[value] = null;
-        }
-      });
-
-      delete finalized._weighted;
-      delete finalized._weights;
-      delete finalized._sumFlags;
-      return finalized;
-    });
-  }, [channelMetaById, deferredRows]);
-
-  const tableRows = showAllMode ? channelSummaryRows : deferredRows;
+  const tableRows = showAllMode ? allChannelRows : deferredRows;
 
   const channelExpandedVideos = useMemo(() => {
     const compareVideoRows = (left, right) => {
@@ -1415,7 +1351,8 @@ const ContentAnalytics = () => {
       }
       let sum = 0;
       let hasValue = false;
-      deferredRows.forEach((row) => {
+      const source = showAllMode ? allChannelRows : deferredRows;
+      source.forEach((row) => {
         const value = toNullableNumber(row[item.value]);
         if (value === null) return;
         hasValue = true;
@@ -1436,17 +1373,17 @@ const ContentAnalytics = () => {
     }
 
     return acc;
-  }, [deferredRows, channelMetrics]);
+  }, [showAllMode, allChannelRows, deferredRows, channelMetrics]);
 
   const showAllSummaryCards = useMemo(
     () => [
       {
         label: "Channels",
-        value: formatNumber(channelSummaryRows.length),
+        value: formatNumber(allChannelRows.length),
       },
       {
         label: "Videos",
-        value: formatNumber(deferredRows.length),
+        value: formatNumber(showAllMode ? allChannelRows.reduce((s, r) => s + (r.videoCount || 0), 0) : deferredRows.length),
       },
       {
         label: "Views",
@@ -1475,7 +1412,7 @@ const ContentAnalytics = () => {
             : formatTableMetricValue("impressions", totals.impressions),
       },
     ],
-    [channelSummaryRows.length, deferredRows.length, totals]
+    [allChannelRows, deferredRows.length, showAllMode, totals]
   );
 
 
@@ -1490,24 +1427,80 @@ const ContentAnalytics = () => {
 
   }, [deferredSortedRows, page, rowsPerPage]);
 
-  const deferredTimeseries = useDeferredValue(timeseries);
+  const deferredTimeseries = timeseries;
+
+  // Pre-compute bucket → timestamp map một lần, dùng lại ở tất cả useMemo bên dưới
+  // Thay dayjs() (rất chậm) bằng native Date parsing (~10x nhanh hơn)
+  const expandedChannelTimeseries = useMemo(
+    () => (showAllMode && expandedChannelId ? channelVideoCache[expandedChannelId]?.timeseries ?? [] : []),
+    [showAllMode, expandedChannelId, channelVideoCache]
+  );
+
+  const bucketTsMap = useMemo(() => {
+    const map = new Map();
+    const sources = showAllMode
+      ? expandedChannelId ? [expandedChannelTimeseries] : [allChannelTimeseries]
+      : [deferredTimeseries];
+    for (const source of sources) {
+      for (let i = 0; i < source.length; i++) {
+        const b = source[i].bucket;
+        if (b && !map.has(b)) {
+          const str = String(b).slice(0, 10);
+          const [y, mo, d] = str.split("-");
+          map.set(b, new Date(+y, +mo - 1, +d).getTime());
+        }
+      }
+    }
+    return map;
+  }, [showAllMode, expandedChannelId, expandedChannelTimeseries, allChannelTimeseries, deferredTimeseries]);
 
   const handleSort = useCallback((key) => {
     setPage(0);
     setSortKey(key);
   }, []);
 
+  const fetchChannelVideosForExpand = useCallback(async (channelIdValue) => {
+    setChannelVideoCache((prev) => ({
+      ...prev,
+      [channelIdValue]: { loading: true, videos: prev[channelIdValue]?.videos || [], timeseries: prev[channelIdValue]?.timeseries || [] },
+    }));
+    try {
+      const { start, end } = resolvePeriod();
+      const [videosResp, tsResp] = await Promise.all([
+        api.post("/api/content/list", { start, end, channelId: channelIdValue }),
+        api.post("/api/content/timeseries", { start, end, channelId: channelIdValue }),
+      ]);
+      setChannelVideoCache((prev) => ({
+        ...prev,
+        [channelIdValue]: {
+          loading: false,
+          videos: videosResp.data?.items ?? [],
+          timeseries: tsResp.data?.items ?? [],
+        },
+      }));
+    } catch {
+      setChannelVideoCache((prev) => ({
+        ...prev,
+        [channelIdValue]: { loading: false, videos: [], timeseries: [] },
+      }));
+    }
+  }, [resolvePeriod]);
+
   const handleToggleChannelExpand = useCallback((channelIdValue) => {
     if (!channelIdValue) return;
-    setExpandedChannelIds((current) => ({
-      ...current,
-      [channelIdValue]: !current[channelIdValue],
-    }));
-  }, []);
+    setExpandedChannelId((current) => {
+      const next = current === channelIdValue ? null : channelIdValue;
+      if (next && !channelVideoCache[next]) {
+        fetchChannelVideosForExpand(next);
+      }
+      return next;
+    });
+  }, [channelVideoCache, fetchChannelVideosForExpand]);
 
   useEffect(() => {
     if (!showAllMode) {
-      setExpandedChannelIds({});
+      setExpandedChannelId(null);
+      setChannelVideoCache({});
     }
   }, [showAllMode]);
 
@@ -1527,36 +1520,59 @@ const ContentAnalytics = () => {
       metric === "estimatedMinutesWatched" ? "watch_hours" : "views";
 
     const allDatesSet = new Set();
-
-    deferredTimeseries.forEach(t => {
-
-      const d = dayjs(t.bucket).startOf('day').toDate().getTime();
-
-      allDatesSet.add(d);
-
-    });
-
+    for (let i = 0; i < deferredTimeseries.length; i++) {
+      allDatesSet.add(bucketTsMap.get(deferredTimeseries[i].bucket));
+    }
     const allDatesSorted = Array.from(allDatesSet).sort((a, b) => a - b).map(t => new Date(t));
 
     if (showAllMode) {
-      const visibleVideoIds = new Set(deferredRows.map((row) => row.id));
-      const dailyTotals = new Map();
+      // Khi có channel đang expand — hiển thị top 5 videos của channel đó
+      if (expandedChannelId) {
+        const expTs = expandedChannelTimeseries;
+        const expVideos = channelVideoCache[expandedChannelId]?.videos ?? [];
+        if (!expTs.length) return [];
 
-      deferredTimeseries.forEach((t) => {
-        const videoId = String(t.videoId || "").trim();
-        if (videoId && !visibleVideoIds.has(videoId)) return;
-        const d = dayjs(t.bucket).startOf("day").toDate().getTime();
-        dailyTotals.set(d, (dailyTotals.get(d) || 0) + n(t[lineMetricKey]));
-      });
+        const allExpDatesSet = new Set();
+        for (let i = 0; i < expTs.length; i++) allExpDatesSet.add(bucketTsMap.get(expTs[i].bucket));
+        const allExpDatesSorted = Array.from(allExpDatesSet).sort((a, b) => a - b).map(t => new Date(t));
 
-      if (!allDatesSorted.length) return [];
+        const topExpIds = expVideos
+          .slice()
+          .sort((a, b) => (b[lineMetricKey] ?? 0) - (a[lineMetricKey] ?? 0))
+          .slice(0, 5)
+          .map(v => String(v.id || v.videoId || "").trim())
+          .filter(Boolean);
+        const topExpSet = new Set(topExpIds);
 
+        const expMap = new Map();
+        for (const t of expTs) {
+          const id = String(t.videoId || "").trim();
+          if (!id || !topExpSet.has(id)) continue;
+          if (!expMap.has(id)) expMap.set(id, new Map());
+          const d = bucketTsMap.get(t.bucket);
+          expMap.get(id).set(d, n(t[lineMetricKey]));
+        }
+        const titleMap = new Map(expVideos.map(v => [String(v.id || v.videoId || "").trim(), v.displayTitle || v.title || ""]));
+        return topExpIds
+          .filter(id => expMap.has(id))
+          .map(id => ({
+            id,
+            data: allExpDatesSorted.map(d => ({
+              x: d,
+              y: expMap.get(id).get(d.getTime()) ?? 0,
+              title: titleMap.get(id) || id,
+            })),
+          }));
+      }
+
+      // Không có channel expand — hiển thị chart tổng
+      if (!allChannelTimeseries.length) return [];
       return [
         {
           id: CONTENT_ALL_CHANNELS_VALUE,
-          data: allDatesSorted.map((d) => ({
-            x: d,
-            y: dailyTotals.get(d.getTime()) || 0,
+          data: allChannelTimeseries.map((t) => ({
+            x: new Date(bucketTsMap.get(t.bucket)),
+            y: lineMetricKey === "watch_hours" ? n(t.watch_hours) : n(t.views),
             title: "All channels",
           })),
         },
@@ -1602,8 +1618,7 @@ const ContentAnalytics = () => {
         map.set(id, new Map());
 
       }
-      const d = dayjs(t.bucket).startOf('day').toDate().getTime();
-
+      const d = bucketTsMap.get(t.bucket);
       map.get(id).set(d, { y: n(t[lineMetricKey]), title });
 
     });
@@ -1640,7 +1655,7 @@ const ContentAnalytics = () => {
 
     });
 
-  }, [chartType, metric, deferredRows, showAllMode, deferredSortedRows, deferredTimeseries]);
+  }, [chartType, metric, deferredRows, showAllMode, expandedChannelId, expandedChannelTimeseries, channelVideoCache, deferredSortedRows, deferredTimeseries, allChannelTimeseries, bucketTsMap]);
 
 
 
@@ -1662,13 +1677,22 @@ const ContentAnalytics = () => {
 
   const xTickValues = useMemo(() => {
 
-    if (!deferredTimeseries.length) return [];
+    const source = showAllMode ? allChannelTimeseries : deferredTimeseries;
+    if (!source.length) return [];
 
-    const allDates = deferredTimeseries.map((t) => dayjs(t.bucket).startOf("day").toDate());
+    const seen = new Set();
+    const allDates = [];
+    for (let i = 0; i < source.length; i++) {
+      const ts = bucketTsMap.get(source[i].bucket);
+      if (ts !== undefined && !seen.has(ts)) {
+        seen.add(ts);
+        allDates.push(new Date(ts));
+      }
+    }
+    allDates.sort((a, b) => a - b);
+    return pickTicks(allDates, 7);
 
-    return pickTicks(allDates, 7); // tối đa 7 tick
-
-  }, [deferredTimeseries]);
+  }, [showAllMode, allChannelTimeseries, deferredTimeseries, bucketTsMap]);
 
 
 
@@ -1693,7 +1717,7 @@ const ContentAnalytics = () => {
     // 🔴 Limit to Top 5 for Bar chart too
 
     const sourceRows = showAllMode
-      ? [...channelSummaryRows].sort((a, b) => n(b[metricKey]) - n(a[metricKey]))
+      ? [...allChannelRows].sort((a, b) => n(b[metricKey]) - n(a[metricKey]))
       : deferredSortedRows;
 
     const topRows = sourceRows
@@ -1716,7 +1740,7 @@ const ContentAnalytics = () => {
 
     };
 
-  }, [channelSummaryRows, chartType, metric, showAllMode, deferredSortedRows]);
+  }, [allChannelRows, chartType, metric, showAllMode, deferredSortedRows]);
 
 
 
@@ -2042,22 +2066,24 @@ const ContentAnalytics = () => {
       <Stack direction="row" spacing={2} flexWrap="wrap">
 
         {/* Channel */}
-        <ChannelSwitcher
-          options={channelList.map((channelOption) => ({
-            value: channelOption.id,
-            label: channelOption.title,
-            avatar: channelOption.avatar,
-          }))}
-          value={channelId}
-          onChange={(option) => setChannelId(option?.value || "")}
-          sx={CHANNEL_SWITCHER_SX}
-          getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
-          showAllDisabled={!channelList.length}
-          showAllVisible={false}
-          showAllActive={showAllMode}
-          showAllSelectedLabel="All channels"
-          onShowAllClick={() => setChannelId(CONTENT_ALL_CHANNELS_VALUE)}
-        />
+        {!hideChannelSwitcher && (
+          <ChannelSwitcher
+            options={channelList.map((channelOption) => ({
+              value: channelOption.id,
+              label: channelOption.title,
+              avatar: channelOption.avatar,
+            }))}
+            value={channelId}
+            onChange={(option) => setChannelId(option?.value || "")}
+            sx={CHANNEL_SWITCHER_SX}
+            getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
+            showAllDisabled={!channelList.length}
+            showAllVisible={false}
+            showAllActive={showAllMode}
+            showAllSelectedLabel="All channels"
+            onShowAllClick={() => setChannelId(CONTENT_ALL_CHANNELS_VALUE)}
+          />
+        )}
 
         {/* Metric */}
         <FormControl size="small" sx={{ minWidth: 180 }}>
@@ -2922,7 +2948,7 @@ const ContentAnalytics = () => {
                   direction={sortKey === "published" ? sortDirection : "desc"}
                   onClick={() => handleSort("published")}
                 >
-                  {showAllMode ? "Latest Publish" : "Publish Date"}
+                  Publish Date
                 </TableSortLabel>
               </TableCell>
 
@@ -2981,8 +3007,30 @@ const ContentAnalytics = () => {
             </TableRow>
 
             {pagedRows.map((r) => {
-              const isExpanded = !!expandedChannelIds[r.id];
-              const expandedVideos = showAllMode ? channelExpandedVideos[r.id] || [] : [];
+              const isExpanded = showAllMode && expandedChannelId === r.id;
+              const cachedEntry = showAllMode ? channelVideoCache[r.id] : null;
+              const expandedVideosLoading = cachedEntry?.loading ?? false;
+              const expandedVideos = showAllMode
+                ? (() => {
+                    const raw = cachedEntry?.videos ?? [];
+                    if (!raw.length) return [];
+                    const childSortKey = sortKey === "videoCount" ? "views" : sortKey;
+                    const dirFactor = sortDirection === "asc" ? 1 : -1;
+                    return [...raw]
+                      .sort((a, b) => {
+                        const av = childSortKey === "title"
+                          ? String(a.displayTitle || a.title || "").toLowerCase()
+                          : (a[childSortKey] ?? Number.NEGATIVE_INFINITY);
+                        const bv = childSortKey === "title"
+                          ? String(b.displayTitle || b.title || "").toLowerCase()
+                          : (b[childSortKey] ?? Number.NEGATIVE_INFINITY);
+                        if (typeof av === "string" || typeof bv === "string")
+                          return String(av).localeCompare(String(bv)) * dirFactor;
+                        return (av - bv) * dirFactor;
+                      })
+                      .slice(0, 5);
+                  })()
+                : [];
 
               return (
                 <Fragment key={r.id}>
@@ -3051,10 +3099,10 @@ const ContentAnalytics = () => {
                           </Box>
                           <Avatar
                             src={r.channelAvatar || ""}
-                            alt={r.displayTitle || r.title}
+                            alt={r.displayTitle || r.title || r.channelTitle}
                             sx={{ width: 28, height: 28, fontSize: 13, fontWeight: 700 }}
                           >
-                            {String(r.displayTitle || r.title || "?").trim().charAt(0).toUpperCase()}
+                            {String(r.displayTitle || r.title || r.channelTitle || "?").trim().charAt(0).toUpperCase()}
                           </Avatar>
                           <Box sx={{ minWidth: 0 }}>
                             <Typography
@@ -3064,7 +3112,7 @@ const ContentAnalytics = () => {
                                 color: "text.primary",
                               }}
                             >
-                              {r.displayTitle || r.title}
+                              {r.displayTitle || r.title || r.channelTitle}
                             </Typography>
                           </Box>
                         </Stack>
@@ -3126,10 +3174,8 @@ const ContentAnalytics = () => {
 
                     <TableCell>
 
-                      {r.published
-
-                        ? dayjs(r.published).format("DD-MM-YYYY")
-
+                      {(r.published || r.latestPublishedAt)
+                        ? dayjs(r.published || r.latestPublishedAt).format("DD-MM-YYYY")
                         : ""}
 
                     </TableCell>
@@ -3146,7 +3192,14 @@ const ContentAnalytics = () => {
 
                   </TableRow>
 
-                  {showAllMode && isExpanded
+                  {showAllMode && isExpanded && expandedVideosLoading && (
+                    <TableRow>
+                      <TableCell colSpan={3 + selectedTableMetrics.length} sx={{ py: 1, pl: 7, color: "text.secondary", fontSize: "0.8rem" }}>
+                        Loading...
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {showAllMode && isExpanded && !expandedVideosLoading
                     ? expandedVideos.map((videoRow) => (
                         <TableRow
                           key={`${r.id}:${videoRow.id}`}
@@ -3202,8 +3255,8 @@ const ContentAnalytics = () => {
                           <TableCell align="right" />
 
                           <TableCell>
-                            {videoRow.published
-                              ? dayjs(videoRow.published).format("DD-MM-YYYY")
+                            {(videoRow.published || videoRow.publishedAt)
+                              ? dayjs(videoRow.published || videoRow.publishedAt).format("DD-MM-YYYY")
                               : ""}
                           </TableCell>
 
@@ -3215,6 +3268,13 @@ const ContentAnalytics = () => {
                         </TableRow>
                       ))
                     : null}
+                  {showAllMode && isExpanded && !expandedVideosLoading && expandedVideos.length === 0 && cachedEntry && (
+                    <TableRow>
+                      <TableCell colSpan={3 + selectedTableMetrics.length} sx={{ py: 1, pl: 7, color: "text.secondary", fontSize: "0.8rem" }}>
+                        No videos found for this period.
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </Fragment>
               );
             })}
@@ -3260,4 +3320,3 @@ const ContentAnalytics = () => {
 
 
 export default ContentAnalytics;
-

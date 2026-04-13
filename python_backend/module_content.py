@@ -505,6 +505,8 @@ def save_metadata(videos, account_tag: str, pg_url: str):
             );
         """))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_videos_account_tag ON videos(account_tag);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_videos_account_published ON videos(account_tag, published_at DESC);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_vds_video_day ON video_daily_stats(video_id, day);"))
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS tags TEXT;"))
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS card_impressions BIGINT DEFAULT 0;"))
         conn.execute(text("ALTER TABLE videos ADD COLUMN IF NOT EXISTS ad_impressions BIGINT DEFAULT 0;"))

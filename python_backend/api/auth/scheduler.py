@@ -31,6 +31,19 @@ from python_backend.token_store import (
 
 _STOP_EVENT = Event()
 _THREAD = None
+
+
+def _env_int(name: str, default: int, minimum: Optional[int] = None) -> int:
+    raw = str(os.getenv(name, str(default)) or "").strip()
+    try:
+        value = int(raw)
+    except Exception:
+        value = int(default)
+    if minimum is not None:
+        value = max(value, minimum)
+    return value
+
+
 _RUNS_MAX = int(os.getenv("SCHEDULE_RUNS_MAX", "200"))
 _LIVE_COUNTER_SNAPSHOTS_ENABLED = str(
     os.getenv("LIVE_COUNTER_SNAPSHOTS_ENABLED", "0")
@@ -46,13 +59,15 @@ _MAIL_AUTO_SYNC_ENABLED = str(os.getenv("MAIL_AUTO_SYNC_ENABLED", "1")).strip().
     "yes",
     "on",
 }
-_MAIL_AUTO_SYNC_INTERVAL_SECONDS = max(
-    int(os.getenv("MAIL_AUTO_SYNC_INTERVAL_SECONDS", "60")),
-    1,
+_MAIL_AUTO_SYNC_INTERVAL_SECONDS = _env_int(
+    "MAIL_AUTO_SYNC_INTERVAL_SECONDS",
+    60,
+    minimum=1,
 )
-_MAIL_AUTO_SYNC_FETCH_LIMIT = max(
-    int(os.getenv("MAIL_AUTO_SYNC_FETCH_LIMIT", "50")),
-    1,
+_MAIL_AUTO_SYNC_FETCH_LIMIT = _env_int(
+    "MAIL_AUTO_SYNC_FETCH_LIMIT",
+    50,
+    minimum=1,
 )
 _LAST_LIVE_COUNTER_SNAPSHOT_AT = None
 _LAST_TOKEN_PROGRESS_CLEANUP_AT = None
