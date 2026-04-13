@@ -844,7 +844,6 @@ const ContentAnalytics = () => {
 
 
   const [channelId, setChannelId] = useState(() => {
-
     try {
 
       return getStoredContentChannelId();
@@ -910,7 +909,6 @@ const ContentAnalytics = () => {
       }
 
     })();
-
   }, []);
 
   useEffect(() => {

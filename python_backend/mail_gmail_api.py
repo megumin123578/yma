@@ -332,7 +332,12 @@ def _initial_sync_account(service, label_specs: list[dict[str, str]], fetch_limi
         message_ids = _list_recent_message_ids(service, spec["label_id"], fetch_limit)
         for message_id in reversed(message_ids):
             if message_id not in message_cache:
-                message_cache[message_id] = _fetch_gmail_message(service, message_id)
+                try:
+                    message_cache[message_id] = _fetch_gmail_message(service, message_id)
+                except Exception as exc:
+                    if _gmail_http_status_code(exc) == 404:
+                        continue
+                    raise
             message = message_cache[message_id]
             label_ids = set(message.get("payload", {}).get("gmail_label_ids", []))
             if spec["label_id"] in label_ids:
@@ -342,7 +347,7 @@ def _initial_sync_account(service, label_specs: list[dict[str, str]], fetch_limi
     return messages_by_mailbox, str(profile.get("historyId") or "").strip()
 
 
-def _history_status_code(exc: Exception) -> Optional[int]:
+def _gmail_http_status_code(exc: Exception) -> Optional[int]:
     if isinstance(exc, HttpError):
         try:
             return int(getattr(exc.resp, "status", 0) or 0)
@@ -366,7 +371,7 @@ def _list_history_message_ids(service, start_history_id: str) -> tuple[list[str]
                 maxResults=500,
             ).execute()
         except Exception as exc:
-            if _history_status_code(exc) == 404:
+            if _gmail_http_status_code(exc) == 404:
                 raise GmailHistoryExpired(str(exc)) from exc
             raise
 
@@ -402,7 +407,12 @@ def _sync_account_from_history(service, label_specs: list[dict[str, str]], start
     message_cache = {}
     for message_id in message_ids:
         if message_id not in message_cache:
-            message_cache[message_id] = _fetch_gmail_message(service, message_id)
+            try:
+                message_cache[message_id] = _fetch_gmail_message(service, message_id)
+            except Exception as exc:
+                if _gmail_http_status_code(exc) == 404:
+                    continue
+                raise
         message = message_cache[message_id]
         label_ids = set(message.get("payload", {}).get("gmail_label_ids", []))
         for label_id, mailbox in label_map.items():
@@ -582,4 +592,3 @@ def delete_mail_account_integration(db: Session, account: MailAccount) -> None:
     delete_mail_account_rows(MAIL_SOURCE_ID, account.account_email)
     db.delete(account)
     db.commit()
-

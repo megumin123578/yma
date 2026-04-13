@@ -8,6 +8,7 @@ import { tokens } from "../../theme";
 
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import DatasetIcon from "@mui/icons-material/Dataset";
+import ViewModuleOutlinedIcon from "@mui/icons-material/ViewModuleOutlined";
 import DeviceUnknownIcon from "@mui/icons-material/DeviceUnknown";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 
@@ -296,6 +297,14 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
             />
 
             <SectionLabel isCollapsed={false}>Analytics</SectionLabel>
+
+            <Item
+              title="All Channels"
+              to="/all_channels"
+              icon={<ViewModuleOutlinedIcon />}
+              isActive={isActivePath("/all_channels")}
+              onClick={closeOnMobile}
+            />
 
             <Item
               title="Content"

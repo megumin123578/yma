@@ -4,6 +4,7 @@ import Topbar from "./scenes/global/Topbar";
 import Sidebar from "./scenes/global/Sidebar";
 import Dashboard from "./scenes/dashboard";
 import Daily from "./scenes/content";
+import AllChannelsScene from "./scenes/all_channels";
 import TrafficSource from "./scenes/traffic_source";
 import LoginPage from "./scenes/login";
 import RegisterPage from "./scenes/register";
@@ -51,6 +52,14 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         element={
           <ProtectedRoute user={user} loading={loading}>
             <Dashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/all_channels"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <AllChannelsScene />
           </ProtectedRoute>
         }
       />
