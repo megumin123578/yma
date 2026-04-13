@@ -704,8 +704,10 @@ def _mark_content_sync_complete(pg_url: str, account_tag: str, last_daily_sync_d
 
 
 # ===== Cache invalidation =====
-def invalidate_content_timeseries_cache(pg_url: str, account_tag: str) -> None:
+def invalidate_content_caches(pg_url: str, account_tag: str) -> None:
     engine = create_engine(pg_url, future=True)
+    safe_tag = sanitize_filename(account_tag)
+    list_tag = f"list:{safe_tag}"
     with engine.begin() as conn:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS content_timeseries_cache (
@@ -719,8 +721,26 @@ def invalidate_content_timeseries_cache(pg_url: str, account_tag: str) -> None:
         """))
         conn.execute(text("""
             DELETE FROM content_timeseries_cache
+            WHERE account_tag = :tag
+               OR account_tag = :list_tag
+               OR account_tag LIKE 'list:all_channels:%'
+               OR account_tag LIKE 'list:__multi__:%'
+               OR account_tag LIKE '__multi__:%';
+        """), {"tag": safe_tag, "list_tag": list_tag})
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS content_video_metrics_cache (
+                account_tag TEXT NOT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                payload JSONB NOT NULL,
+                updated_at TIMESTAMP DEFAULT NOW(),
+                PRIMARY KEY (account_tag, start_date, end_date)
+            );
+        """))
+        conn.execute(text("""
+            DELETE FROM content_video_metrics_cache
             WHERE account_tag = :tag;
-        """), {"tag": account_tag})
+        """), {"tag": safe_tag})
 
 
 def _fetch_daily_rows_for_video(
@@ -847,7 +867,7 @@ def run_content_v3_hybrid(
     print("→ Saving daily stats...")
     save_daily_stats(daily_rows, pg_url)
     _mark_content_sync_complete(pg_url, account_tag, end_date)
-    invalidate_content_timeseries_cache(pg_url, account_tag)
+    invalidate_content_caches(pg_url, account_tag)
 
     print("[DONE] Metadata + DAILY stats saved successfully")
 

@@ -354,14 +354,30 @@ def _mark_report_processed(
 
 
 def _clear_content_caches(conn, account_tag: str) -> None:
-    for table_name in ("content_timeseries_cache", "content_video_metrics_cache"):
-        try:
-            conn.execute(
-                text(f"DELETE FROM {table_name} WHERE account_tag = :account_tag"),
-                {"account_tag": account_tag},
-            )
-        except Exception:
-            pass
+    try:
+        conn.execute(
+            text("""
+                DELETE FROM content_timeseries_cache
+                WHERE account_tag = :account_tag
+                   OR account_tag = :list_tag
+                   OR account_tag LIKE 'list:all_channels:%'
+                   OR account_tag LIKE 'list:__multi__:%'
+                   OR account_tag LIKE '__multi__:%'
+            """),
+            {
+                "account_tag": account_tag,
+                "list_tag": f"list:{account_tag}",
+            },
+        )
+    except Exception:
+        pass
+    try:
+        conn.execute(
+            text("DELETE FROM content_video_metrics_cache WHERE account_tag = :account_tag"),
+            {"account_tag": account_tag},
+        )
+    except Exception:
+        pass
 
 
 def run_thumbnail_reach_sync(

@@ -770,7 +770,13 @@ LineChart.displayName = "LineChart";
 
 
 
-const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
+const ContentAnalytics = ({
+  hideChannelSwitcher = false,
+  forcedChannelId = "",
+}) => {
+  const normalizedForcedChannelId =
+    forcedChannelId === CONTENT_ALL_CHANNELS_VALUE ? CONTENT_ALL_CHANNELS_VALUE : "";
+  const hasForcedChannelId = !!normalizedForcedChannelId;
 
   const theme = useTheme();
   const storedFilters = useMemo(() => loadStoredContentFilters(), []);
@@ -847,6 +853,7 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
 
   const [channelId, setChannelId] = useState(() => {
     try {
+      if (hasForcedChannelId) return normalizedForcedChannelId;
 
       return getStoredContentChannelId();
 
@@ -857,6 +864,11 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
     }
 
   });
+
+  useEffect(() => {
+    if (!hasForcedChannelId) return;
+    setChannelId(normalizedForcedChannelId);
+  }, [hasForcedChannelId, normalizedForcedChannelId]);
 
   const [startDate, setStartDate] = useState(() => storedFilters?.startDate || "");
 
@@ -893,6 +905,9 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
         setChannelList(finalChannels);
 
         setChannelId((current) => {
+          if (hasForcedChannelId) {
+            return finalChannels.length ? normalizedForcedChannelId : "";
+          }
           const preferredChannel = getStoredContentChannelId() || current;
           if (preferredChannel === CONTENT_ALL_CHANNELS_VALUE) {
             return finalChannels.length ? CONTENT_ALL_CHANNELS_VALUE : "";
@@ -911,9 +926,10 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
       }
 
     })();
-  }, []);
+  }, [hasForcedChannelId, normalizedForcedChannelId]);
 
   useEffect(() => {
+    if (hasForcedChannelId) return;
 
     if (channelId === CONTENT_ALL_CHANNELS_VALUE) {
       try {
@@ -926,7 +942,7 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
 
     setStoredSharedChannelId(channelId, CONTENT_LOCAL_CHANNEL_STORAGE_KEY);
 
-  }, [channelId]);
+  }, [channelId, hasForcedChannelId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -949,6 +965,7 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
   }, [chartType, period, selectedTableMetrics, rowsPerPage, sortKey, startDate, endDate]);
 
   useEffect(() => {
+    if (hasForcedChannelId) return undefined;
     return listenSharedChannelId((nextChannelId) => {
       setChannelId((current) => {
         if (
@@ -962,7 +979,7 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
         return nextChannelId;
       });
     });
-  }, [channelList]);
+  }, [channelList, hasForcedChannelId]);
 
   const showAllMode = channelId === CONTENT_ALL_CHANNELS_VALUE;
 

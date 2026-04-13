@@ -24,7 +24,7 @@ from python_backend.module_trafficsource import sanitize_filename  # dùng lại
 router = APIRouter(prefix="/api/content", tags=["content"])
 
 ALL_CHANNELS_VALUE = "__all__"
-CONTENT_CACHE_VERSION = 3
+CONTENT_CACHE_VERSION = 4
 _VIDEO_DAILY_STATS_COLUMNS_CACHE = None
 
 
