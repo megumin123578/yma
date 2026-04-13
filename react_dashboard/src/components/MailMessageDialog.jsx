@@ -10,15 +10,9 @@ import {
   Typography,
 } from "@mui/material";
 import EastRoundedIcon from "@mui/icons-material/EastRounded";
+import { formatDateTimeInSaigon } from "../utils/dateTime";
 
-const formatDateTime = (value) => {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return String(value);
-  return parsed.toLocaleString("vi-VN", {
-    timeZone: "Asia/Ho_Chi_Minh",
-  });
-};
+const formatDateTime = (value) => formatDateTimeInSaigon(value, String(value || "-"));
 
 const MailMessageDialog = ({ open, onClose, loading = false, error = "", message = null }) => {
   const messagePayload =

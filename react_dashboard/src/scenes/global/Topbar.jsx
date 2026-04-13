@@ -23,6 +23,7 @@ import ProfileDialog from "../../components/dialogs/ProfileDialog";
 import MailMessageDialog from "../../components/MailMessageDialog";
 import { startMailOAuth, uploadCredentials } from "../../services/userService";
 import api from "../../services/api";
+import { formatShortDateTimeInSaigon } from "../../utils/dateTime";
 
 const MAIL_NOTIFICATION_STORAGE_KEY = "mailMonitor.matchedSeenIds";
 const MAIL_NOTIFICATION_POLL_MS = 30000;
@@ -57,19 +58,7 @@ const persistStoredIds = (key, ids, limit = 500) => {
   }
 };
 
-const formatNotificationTime = (value) => {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toLocaleString("vi-VN", {
-    timeZone: "Asia/Ho_Chi_Minh",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-};
+const formatNotificationTime = (value) => formatShortDateTimeInSaigon(value, "");
 
 const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
   const theme = useTheme();

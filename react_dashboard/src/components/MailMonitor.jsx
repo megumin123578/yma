@@ -15,6 +15,7 @@ import {
   MenuItem,
   Paper,
   Select,
+  Switch,
   Stack,
   Tab,
   Table,
@@ -34,6 +35,7 @@ import { useSearchParams } from "react-router-dom";
 import api from "../services/api";
 import { startMailOAuth } from "../services/userService";
 import { UserContext } from "../context/UserContext";
+import { formatDateTimeInSaigon } from "../utils/dateTime";
 
 const MAILS_PER_PAGE = 50;
 const MAIL_OAUTH_POLL_MS = 2000;
@@ -45,12 +47,7 @@ const MAIL_LABEL_OPTIONS = [
   { value: "CATEGORY_FORUMS", label: "Forums" },
 ];
 
-const formatDateTime = (value) => {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return String(value);
-  return parsed.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
-};
+const formatDateTime = (value) => formatDateTimeInSaigon(value, String(value || "-"));
 
 const formatNumber = (value) => Number(value || 0).toLocaleString();
 
@@ -799,6 +796,7 @@ const MailMonitor = () => {
                 <TableRow>
                   <TableCell>Account</TableCell>
                   <TableCell>Inbox</TableCell>
+                  <TableCell>Auto Sync</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Last Sync</TableCell>
                   <TableCell align="right" sx={{ minWidth: 340 }}>Actions</TableCell>
@@ -807,7 +805,7 @@ const MailMonitor = () => {
               <TableBody>
                 {filteredMailAccounts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center">
+                    <TableCell colSpan={6} align="center">
                       {mailAccounts.length === 0 ? "No accounts connected." : "No accounts found."}
                     </TableCell>
                   </TableRow>
@@ -845,6 +843,22 @@ const MailMonitor = () => {
                               ))}
                             </Select>
                           </FormControl>
+                        </TableCell>
+                        <TableCell sx={{ minWidth: 150 }}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Switch
+                              size="small"
+                              checked={Boolean(account.enabled)}
+                              onChange={(event) =>
+                                handleUpdateMailAccount(account, { enabled: event.target.checked })
+                              }
+                              disabled={accountActionId === updateActionId}
+                              color="secondary"
+                            />
+                            <Typography variant="body2" fontWeight={700}>
+                              {account.enabled ? "On" : "Off"}
+                            </Typography>
+                          </Stack>
                         </TableCell>
                         <TableCell>
                           <Stack spacing={0.75} alignItems="flex-start">
