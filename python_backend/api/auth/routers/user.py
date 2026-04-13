@@ -304,6 +304,11 @@ def _get_admin_users() -> set:
     return {u.strip().lower() for u in raw.split(",") if u.strip()}
 
 
+def _get_admin_usernames_in_order() -> list[str]:
+    raw = os.getenv(_ADMIN_ENV_KEY, "admin")
+    return [u.strip().lower() for u in raw.split(",") if u.strip()]
+
+
 def _is_env_admin_username(username: str | None) -> bool:
     return (username or "").lower() in _get_admin_users()
 
@@ -312,6 +317,22 @@ def _is_admin_user(user: User | None) -> bool:
     if not user:
         return False
     return bool(getattr(user, "is_admin", False) or _is_env_admin_username(user.username))
+
+
+def _resolve_oauth_owner_user(db: Session, current_user: User | None) -> User:
+    if current_user:
+        return current_user
+
+    for username in _get_admin_usernames_in_order():
+        owner = db.query(User).filter(User.username.ilike(username)).first()
+        if owner:
+            return owner
+
+    owner = db.query(User).filter(User.is_admin.is_(True)).order_by(User.id.asc()).first()
+    if owner:
+        return owner
+
+    raise HTTPException(status_code=503, detail="No owner user configured for public OAuth")
 
 def _pick_token_group_color(group_name: str, existing_colors: Optional[set[str]] = None) -> str:
     existing = {
@@ -623,16 +644,17 @@ def upload_avatar(
 
 @router.post("/credentials")
 def start_oauth(
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
+    owner_user = _resolve_oauth_owner_user(db, current_user)
     auto_name = True
-    account_tag = f"pending_{current_user.id}_{int(time.time() * 1000)}"
+    account_tag = f"pending_{owner_user.id}_{int(time.time() * 1000)}"
 
     cred_row = (
         db.query(UserCredential)
         .filter(
-            UserCredential.user_id == current_user.id,
+            UserCredential.user_id == owner_user.id,
             UserCredential.account_tag == account_tag,
         )
         .first()
@@ -644,7 +666,7 @@ def start_oauth(
     else:
         db.add(
             UserCredential(
-                user_id=current_user.id,
+                user_id=owner_user.id,
                 account_tag=account_tag,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
@@ -662,7 +684,7 @@ def start_oauth(
     db.add(
         OAuthState(
             state=state,
-            user_id=current_user.id,
+            user_id=owner_user.id,
             account_tag=account_tag,
             auto_name=auto_name,
             status="pending",
@@ -923,6 +945,8 @@ def list_tokens(
 
     files = []
     for name in list_token_names():
+        if str(name or "").strip().lower().startswith("mail__"):
+            continue
         base = account_tag_from_token_name(name)
         files.append(
             {

@@ -1,5 +1,5 @@
 import { memo, useState, useContext, useEffect } from "react";
-import { Routes, Route, useLocation, Navigate, useNavigate } from "react-router-dom";
+import { Routes, Route, useLocation, Navigate } from "react-router-dom";
 import Topbar from "./scenes/global/Topbar";
 import Sidebar from "./scenes/global/Sidebar";
 import Dashboard from "./scenes/dashboard";
@@ -27,7 +27,7 @@ import PrivacyPage from "./scenes/privacy";
 import TermsPage from "./scenes/terms";
 import LandingPage from "./scenes/landing";
 import { AnimatePresence, motion } from "framer-motion";
-import { uploadCredentials } from "./services/userService";
+import { startMailOAuth, uploadCredentials } from "./services/userService";
 
 const ProtectedRoute = memo(function ProtectedRoute({ children, user, loading }) {
   if (loading) return null;
@@ -160,8 +160,8 @@ function App() {
   const colorMode = useContext(ColorModeContext);
   const [isSidebar, setIsSidebar] = useState(!isMobile);
   const [addingChannel, setAddingChannel] = useState(false);
+  const [addingMail, setAddingMail] = useState(false);
   const location = useLocation();
-  const navigate = useNavigate();
   const { user, loading } = useContext(UserContext);
 
   const noLayoutRoutes = [
@@ -185,10 +185,6 @@ function App() {
 
   const handleAddChannel = async () => {
     if (addingChannel) return;
-    if (!user) {
-      navigate("/login");
-      return;
-    }
     setAddingChannel(true);
     try {
       const data = await uploadCredentials();
@@ -196,12 +192,22 @@ function App() {
       if (nextUrl) {
         window.open(nextUrl, "_blank", "noopener");
       }
-    } catch (error) {
-      if (error?.response?.status === 401) {
-        navigate("/login");
-      }
     } finally {
       setAddingChannel(false);
+    }
+  };
+
+  const handleAddGmail = async () => {
+    if (addingMail) return;
+    setAddingMail(true);
+    try {
+      const data = await startMailOAuth();
+      const nextUrl = data?.auth_url || "";
+      if (nextUrl) {
+        window.open(nextUrl, "_blank", "noopener");
+      }
+    } finally {
+      setAddingMail(false);
     }
   };
 
@@ -257,6 +263,39 @@ function App() {
               }}
             >
               Add Channel
+            </Button>
+            <Button
+              variant="contained"
+              size="small"
+              onClick={handleAddGmail}
+              disabled={addingMail}
+              sx={{
+                borderRadius: 999,
+                textTransform: "none",
+                fontWeight: 700,
+                minWidth: 0,
+                px: 1.25,
+                py: 0.45,
+                lineHeight: 1.2,
+                minHeight: 30,
+                bgcolor: theme.palette.mode === "dark" ? "#b45309" : "#ea4335",
+                color: "#fff",
+                boxShadow:
+                  theme.palette.mode === "dark"
+                    ? "0 10px 22px rgba(180,83,9,0.28)"
+                    : "0 10px 22px rgba(234,67,53,0.22)",
+                transition: "all 180ms ease",
+                "&:hover": {
+                  bgcolor: theme.palette.mode === "dark" ? "#92400e" : "#d93025",
+                  transform: "translateY(-1px)",
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? "0 14px 26px rgba(180,83,9,0.34)"
+                      : "0 14px 26px rgba(234,67,53,0.28)",
+                },
+              }}
+            >
+              {addingMail ? "Adding..." : "Add Gmail"}
             </Button>
             <IconButton onClick={colorMode.toggleColorMode}>
               {theme.palette.mode === "dark" ? (

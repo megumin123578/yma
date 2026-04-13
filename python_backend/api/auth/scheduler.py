@@ -6,11 +6,12 @@ from datetime import datetime, time as dtime, timedelta, timezone
 from typing import Optional
 from threading import Event, Thread
 
-from sqlalchemy import text
+from sqlalchemy import or_, text
 
 from python_backend.api.auth.database import SessionLocal
 from python_backend.api.auth.models import (
     LiveCounterSnapshot,
+    MailAccount,
     TokenProgress,
     VideoLiveCounterSnapshot,
     UserCredential,
@@ -18,6 +19,7 @@ from python_backend.api.auth.models import (
     UserScheduleRun,
 )
 from python_backend.db import engine as analytics_engine
+from python_backend.mail_gmail_api import sync_mail_account
 from python_backend.progress_state import write_progress
 from python_backend.token_store import (
     account_tag_from_token_name,
@@ -38,6 +40,20 @@ _LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS = int(
 )
 _LIVE_COUNTER_RETENTION_DAYS = int(os.getenv("LIVE_COUNTER_RETENTION_DAYS", "7"))
 _TOKEN_PROGRESS_RETENTION_DAYS = int(os.getenv("TOKEN_PROGRESS_RETENTION_DAYS", "10"))
+_MAIL_AUTO_SYNC_ENABLED = str(os.getenv("MAIL_AUTO_SYNC_ENABLED", "1")).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+_MAIL_AUTO_SYNC_INTERVAL_SECONDS = max(
+    int(os.getenv("MAIL_AUTO_SYNC_INTERVAL_SECONDS", "60")),
+    1,
+)
+_MAIL_AUTO_SYNC_FETCH_LIMIT = max(
+    int(os.getenv("MAIL_AUTO_SYNC_FETCH_LIMIT", "50")),
+    1,
+)
 _LAST_LIVE_COUNTER_SNAPSHOT_AT = None
 _LAST_TOKEN_PROGRESS_CLEANUP_AT = None
 SAIGON_TZ = timezone(timedelta(hours=7))
@@ -161,6 +177,37 @@ def _cleanup_token_progress(db, now: datetime) -> None:
         .delete(synchronize_session=False)
     )
     db.commit()
+
+
+def _sync_due_mail_accounts(db, now_utc: datetime) -> None:
+    if not _MAIL_AUTO_SYNC_ENABLED or _MAIL_AUTO_SYNC_INTERVAL_SECONDS <= 0:
+        return
+
+    cutoff = now_utc - timedelta(seconds=_MAIL_AUTO_SYNC_INTERVAL_SECONDS)
+    rows = (
+        db.query(MailAccount)
+        .filter(MailAccount.enabled.is_(True))
+        .filter(
+            or_(
+                MailAccount.last_synced_at.is_(None),
+                MailAccount.last_synced_at <= cutoff,
+            )
+        )
+        .order_by(MailAccount.account_email.asc())
+        .all()
+    )
+    if not rows:
+        return
+
+    print(
+        f"[INFO] auto-syncing {len(rows)} Gmail account(s) "
+        f"every {_MAIL_AUTO_SYNC_INTERVAL_SECONDS}s"
+    )
+    for row in rows:
+        try:
+            sync_mail_account(db, row, fetch_limit=_MAIL_AUTO_SYNC_FETCH_LIMIT)
+        except Exception as exc:
+            print(f"[WARN] mail auto-sync failed for {row.account_email}: {exc}")
 
 
 def _load_scheduler_token_credentials(token_name: str):
@@ -437,8 +484,10 @@ def _run_loop():
 
     while not _STOP_EVENT.is_set():
         now = datetime.now()
+        now_utc = datetime.utcnow()
         db = SessionLocal()
         try:
+            _sync_due_mail_accounts(db, now_utc)
             rows = db.query(UserSchedule).all()
             for row in rows:
                 if not _should_run(row, now):

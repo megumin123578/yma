@@ -21,7 +21,7 @@ import { ColorModeContext } from "../../theme";
 import { UserContext } from "../../context/UserContext";
 import ProfileDialog from "../../components/dialogs/ProfileDialog";
 import MailMessageDialog from "../../components/MailMessageDialog";
-import { uploadCredentials } from "../../services/userService";
+import { startMailOAuth, uploadCredentials } from "../../services/userService";
 import api from "../../services/api";
 
 const MAIL_NOTIFICATION_STORAGE_KEY = "mailMonitor.matchedSeenIds";
@@ -79,6 +79,7 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
 
   const [openProfile, setOpenProfile] = useState(false);
   const [addingChannel, setAddingChannel] = useState(false);
+  const [addingMail, setAddingMail] = useState(false);
   const [notificationAnchorEl, setNotificationAnchorEl] = useState(null);
   const [notificationItems, setNotificationItems] = useState([]);
   const [visibleNotificationCount, setVisibleNotificationCount] = useState(
@@ -151,6 +152,20 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
       }
     } finally {
       setAddingChannel(false);
+    }
+  };
+
+  const handleAddGmail = async () => {
+    if (addingMail) return;
+    setAddingMail(true);
+    try {
+      const data = await startMailOAuth();
+      const nextUrl = data?.auth_url || "";
+      if (nextUrl) {
+        window.open(nextUrl, "_blank", "noopener");
+      }
+    } finally {
+      setAddingMail(false);
     }
   };
 
@@ -286,7 +301,7 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
             </IconButton>
           </Box>
 
-          <Box display="flex" alignItems="center">
+          <Box display="flex" alignItems="center" gap={1}>
             <Button
               variant="contained"
               size="small"
@@ -294,7 +309,6 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
               disabled={addingChannel}
               sx={{
                 ...shimmerSx,
-                mx: 1,
                 borderRadius: 999,
                 textTransform: "none",
                 fontWeight: 700,
@@ -321,6 +335,41 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
               }}
             >
               Add Channel
+            </Button>
+
+            <Button
+              variant="contained"
+              size="small"
+              onClick={handleAddGmail}
+              disabled={addingMail}
+              sx={{
+                ...shimmerSx,
+                borderRadius: 999,
+                textTransform: "none",
+                fontWeight: 700,
+                minWidth: 0,
+                px: 1.25,
+                py: 0.45,
+                lineHeight: 1.2,
+                minHeight: 30,
+                bgcolor: theme.palette.mode === "dark" ? "#b45309" : "#ea4335",
+                color: "#fff",
+                boxShadow:
+                  theme.palette.mode === "dark"
+                    ? "0 10px 22px rgba(180,83,9,0.28)"
+                    : "0 10px 22px rgba(234,67,53,0.22)",
+                transition: "all 180ms ease",
+                "&:hover": {
+                  bgcolor: theme.palette.mode === "dark" ? "#92400e" : "#d93025",
+                  transform: "translateY(-1px)",
+                  boxShadow:
+                    theme.palette.mode === "dark"
+                      ? "0 14px 26px rgba(180,83,9,0.34)"
+                      : "0 14px 26px rgba(234,67,53,0.28)",
+                },
+              }}
+            >
+              {addingMail ? "Adding..." : isMobile ? "Gmail" : "Add Gmail"}
             </Button>
 
             {isMailAdmin ? (

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional
 from python_backend.api.auth.database import get_db
-from python_backend.api.auth.models import MailAccount, MailOAuthState
+from python_backend.api.auth.models import MailAccount, MailOAuthState, User
 from python_backend.mail_gmail_api import (
     MAIL_OAUTH_TTL_MINUTES,
     build_mail_oauth_flow,
@@ -50,6 +50,11 @@ def _get_admin_users() -> set[str]:
     return {item.strip().lower() for item in raw.split(",") if item.strip()}
 
 
+def _get_admin_usernames_in_order() -> list[str]:
+    raw = os.getenv(_ADMIN_ENV_KEY, "admin")
+    return [item.strip().lower() for item in raw.split(",") if item.strip()]
+
+
 def _is_admin_user(current_user) -> bool:
     username = str(getattr(current_user, "username", "") or "").strip().lower()
     return bool(getattr(current_user, "is_admin", False) or username in _get_admin_users())
@@ -68,6 +73,32 @@ def _get_mail_admin_user_optional(current_user=Depends(get_current_user_optional
     if _is_admin_user(current_user):
         return current_user
     return None
+
+
+def _resolve_mail_owner_user(db: Session, current_user: User | None) -> User:
+    if current_user:
+        return current_user
+
+    for username in _get_admin_usernames_in_order():
+        owner = db.query(User).filter(User.username.ilike(username)).first()
+        if owner:
+            return owner
+
+    owner = db.query(User).filter(User.is_admin.is_(True)).order_by(User.id.asc()).first()
+    if owner:
+        return owner
+
+    raise HTTPException(status_code=503, detail="No admin user configured for public Gmail OAuth.")
+
+
+def _list_mail_account_emails_for_user(db: Session, user_id: int) -> list[str]:
+    rows = (
+        db.query(MailAccount.account_email)
+        .filter(MailAccount.user_id == user_id)
+        .order_by(MailAccount.account_email.asc())
+        .all()
+    )
+    return [str(row[0] or "").strip().lower() for row in rows if str(row[0] or "").strip()]
 
 
 def _resolve_mail_oauth_redirect_url(request: Request) -> str:
@@ -118,10 +149,8 @@ def _mail_oauth_state_response(row: MailOAuthState) -> dict[str, Any]:
 @router.get("/accounts")
 def list_mail_accounts(
     db: Session = Depends(get_db),
-    current_user=Depends(_get_mail_admin_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
-    if not current_user:
-        return {"items": []}
     rows = (
         db.query(MailAccount)
         .filter(MailAccount.user_id == current_user.id)
@@ -136,8 +165,9 @@ def start_mail_oauth(
     payload: MailAccountOAuthStartRequest,
     request: Request,
     db: Session = Depends(get_db),
-    current_user=Depends(_require_mail_admin_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
+    owner_user = _resolve_mail_owner_user(db, current_user)
     flow = build_mail_oauth_flow(_resolve_mail_oauth_redirect_url(request))
     auth_url, state = flow.authorization_url(
         access_type="offline",
@@ -149,7 +179,7 @@ def start_mail_oauth(
     db.add(
         MailOAuthState(
             state=state,
-            user_id=current_user.id,
+            user_id=owner_user.id,
             status="pending",
             label_ids_json=serialize_mail_label_ids(payload.label_ids),
             created_at=now,
@@ -232,12 +262,12 @@ def complete_mail_oauth(
 def get_mail_oauth_state(
     state: str,
     db: Session = Depends(get_db),
-    _: object = Depends(_get_mail_admin_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
-    if not _:
-        return {"ready": False}
     row = db.query(MailOAuthState).filter(MailOAuthState.state == state).first()
     if not row:
+        return {"ready": False}
+    if row.user_id != getattr(current_user, "id", None) and not _is_admin_user(current_user):
         return {"ready": False}
     if row.expires_at and row.expires_at < datetime.utcnow() and row.status == "pending":
         row.status = "expired"
@@ -253,7 +283,7 @@ def update_mail_account(
     account_id: int,
     payload: MailAccountUpdateRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(_require_mail_admin_user),
+    current_user: User = Depends(get_current_user),
 ):
     row = (
         db.query(MailAccount)
@@ -278,7 +308,7 @@ def update_mail_account(
 def sync_one_mail_account(
     account_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(_require_mail_admin_user),
+    current_user: User = Depends(get_current_user),
 ):
     row = (
         db.query(MailAccount)
@@ -297,18 +327,17 @@ def sync_one_mail_account(
 @router.post("/sync")
 def sync_mail_accounts(
     db: Session = Depends(get_db),
-    current_user=Depends(_require_mail_admin_user),
+    current_user: User = Depends(get_current_user),
 ):
     return sync_all_mail_accounts(db, user_id=current_user.id)
 
 
 @router.get("/overview")
 def mail_overview(
-    _: object = Depends(_get_mail_admin_user_optional),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    if not _:
-        return {"summary": {}, "items": []}
-    return get_mail_overview()
+    return get_mail_overview(account_emails=_list_mail_account_emails_for_user(db, current_user.id))
 
 
 @router.get("/messages")
@@ -321,13 +350,13 @@ def mail_messages(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     per_account_limit: Optional[int] = Query(default=None, ge=1, le=500),
-    _: object = Depends(_get_mail_admin_user_optional),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    if not _:
-        return {"items": [], "total": 0}
     return list_mail_messages(
         vps_id=vps_id,
         account_email=account_email,
+        account_emails=_list_mail_account_emails_for_user(db, current_user.id),
         mailbox=mailbox,
         status=status_value,
         search=search,
@@ -340,11 +369,13 @@ def mail_messages(
 @router.get("/messages/{message_id}")
 def mail_message_detail(
     message_id: int,
-    _: object = Depends(_get_mail_admin_user_optional),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    if not _:
-        raise HTTPException(status_code=404, detail="Message not found.")
-    item = get_mail_message_detail(message_id)
+    item = get_mail_message_detail(
+        message_id,
+        account_emails=_list_mail_account_emails_for_user(db, current_user.id),
+    )
     if not item:
         raise HTTPException(status_code=404, detail="Message not found.")
     return item
@@ -356,13 +387,13 @@ def mail_runs(
     account_email: Optional[str] = Query(default=None),
     mailbox: Optional[str] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
-    _: object = Depends(_get_mail_admin_user_optional),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    if not _:
-        return {"items": []}
     return list_mail_runs(
         vps_id=vps_id,
         account_email=account_email,
+        account_emails=_list_mail_account_emails_for_user(db, current_user.id),
         mailbox=mailbox,
         limit=limit,
     )
@@ -372,7 +403,7 @@ def mail_runs(
 def remove_mail_account(
     account_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(_require_mail_admin_user),
+    current_user: User = Depends(get_current_user),
 ):
     row = (
         db.query(MailAccount)

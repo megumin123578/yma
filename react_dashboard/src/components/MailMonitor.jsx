@@ -10,7 +10,6 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
-  IconButton,
   InputLabel,
   ListItemText,
   MenuItem,
@@ -27,15 +26,13 @@ import {
   TableRow,
   Tabs,
   TextField,
-  Tooltip,
   Typography,
 } from "@mui/material";
-import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import EastRoundedIcon from "@mui/icons-material/EastRounded";
-import SyncRoundedIcon from "@mui/icons-material/SyncRounded";
 import { useSearchParams } from "react-router-dom";
 
 import api from "../services/api";
+import { startMailOAuth } from "../services/userService";
 import { UserContext } from "../context/UserContext";
 
 const MAILS_PER_PAGE = 50;
@@ -110,46 +107,60 @@ const greenOutlinedButtonSx = {
   },
 };
 
-const greenContainedButtonSx = {
-  backgroundColor: "secondary.main",
-  color: "#04140f",
+const topbarLikeButtonSx = (theme) => ({
+  position: "relative",
+  overflow: "hidden",
+  borderRadius: 999,
+  textTransform: "none",
+  fontWeight: 700,
+  minWidth: 0,
+  px: 1.25,
+  py: 0.45,
+  lineHeight: 1.2,
+  minHeight: 30,
+  bgcolor: theme.palette.mode === "dark" ? "#2b8a7b" : theme.palette.primary.main,
+  color: "#fff",
+  boxShadow:
+    theme.palette.mode === "dark"
+      ? "0 10px 22px rgba(43,138,123,0.28)"
+      : "0 10px 22px rgba(25,118,210,0.22)",
+  transition: "all 180ms ease",
+  "&:before": {
+    content: '""',
+    position: "absolute",
+    top: "-50%",
+    left: "-120%",
+    width: "80%",
+    height: "200%",
+    background:
+      "linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.45) 45%, transparent 90%)",
+    transform: "translateX(0)",
+    transition: "transform 0.7s ease",
+    opacity: 0.8,
+    pointerEvents: "none",
+  },
   "&:hover": {
-    backgroundColor: "secondary.main",
-    filter: "brightness(0.92)",
+    bgcolor: theme.palette.mode === "dark" ? "#247468" : theme.palette.primary.dark,
+    transform: "translateY(-1px)",
+    boxShadow:
+      theme.palette.mode === "dark"
+        ? "0 14px 26px rgba(43,138,123,0.34)"
+        : "0 14px 26px rgba(25,118,210,0.28)",
+  },
+  "&:hover:before": {
+    transform: "translateX(260%)",
   },
   "&.Mui-disabled": {
-    backgroundColor: "rgba(148, 163, 184, 0.24)",
+    bgcolor: "rgba(148, 163, 184, 0.24)",
     color: "text.disabled",
+    boxShadow: "none",
   },
-};
+});
 
-const greenIconButtonSx = {
-  border: "1px solid",
-  borderColor: "secondary.main",
-  color: "secondary.main",
-  backgroundColor: "rgba(76, 206, 172, 0.08)",
-  borderRadius: 1,
-  "&:hover": {
-    backgroundColor: "rgba(76, 206, 172, 0.16)",
-  },
-  "&.Mui-disabled": {
-    borderColor: "rgba(148, 163, 184, 0.35)",
-    color: "text.disabled",
-  },
-};
-
-const redIconButtonSx = {
-  border: "1px solid",
-  borderColor: "error.main",
-  color: "error.main",
+const redOutlinedButtonSx = {
   backgroundColor: "rgba(219, 79, 74, 0.08)",
-  borderRadius: 1,
   "&:hover": {
     backgroundColor: "rgba(219, 79, 74, 0.16)",
-  },
-  "&.Mui-disabled": {
-    borderColor: "rgba(148, 163, 184, 0.35)",
-    color: "text.disabled",
   },
 };
 
@@ -162,7 +173,6 @@ const greenCheckboxSx = {
 
 const MailMonitor = () => {
   const { user, loading } = useContext(UserContext);
-  const isAdmin = !!user?.is_admin;
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(() =>
     searchParams.get("tab") === "accounts" ? "accounts" : "messages"
@@ -182,7 +192,6 @@ const MailMonitor = () => {
   const [selectedMessageDetail, setSelectedMessageDetail] = useState(null);
   const [selectedMessageLoading, setSelectedMessageLoading] = useState(false);
   const [selectedMessageError, setSelectedMessageError] = useState("");
-  const [mailAccessDenied, setMailAccessDenied] = useState(false);
   const [mailAccounts, setMailAccounts] = useState([]);
   const [mailOAuthState, setMailOAuthState] = useState("");
   const [mailOAuthStatus, setMailOAuthStatus] = useState({ type: "", message: "" });
@@ -232,7 +241,7 @@ const MailMonitor = () => {
   }, [filters.accountEmail, overviewItems]);
 
   const loadData = useCallback(async () => {
-    if (loading || !isAdmin || mailAccessDenied) {
+    if (loading) {
       setError("");
       setOverview({ summary: {}, items: [] });
       setMessages({ items: [], total: 0 });
@@ -262,28 +271,18 @@ const MailMonitor = () => {
       setMessages(messagesResp.data || { items: [], total: 0 });
       setMailAccounts(Array.isArray(accountsResp.data?.items) ? accountsResp.data.items : []);
     } catch (err) {
-      if (err?.response?.status === 403) {
-        setMailAccessDenied(true);
-        setOverview({ summary: {}, items: [] });
-        setMessages({ items: [], total: 0 });
-        setMailAccounts([]);
-        setError("Admin access required.");
-        return;
-      }
       setError(err?.response?.data?.detail || err?.message || "Failed to load email manager data.");
     }
-  }, [filters.accountEmail, filters.mailbox, filters.search, filters.status, isAdmin, loading, mailAccessDenied, mailPage]);
+  }, [filters.accountEmail, filters.mailbox, filters.search, filters.status, loading, mailPage]);
 
   const handleStartMailOAuth = useCallback(async () => {
     if (connectingMail) return;
     setConnectingMail(true);
     setMailOAuthStatus({ type: "", message: "" });
     try {
-      const response = await api.post("/api/mail/accounts/oauth/start", {
-        label_ids: ["INBOX"],
-      });
-      const nextUrl = response.data?.auth_url || "";
-      const nextState = response.data?.state || "";
+      const response = await startMailOAuth();
+      const nextUrl = response?.auth_url || "";
+      const nextState = response?.state || "";
       setMailOAuthState(nextState);
       setMailOAuthStatus({
         type: "info",
@@ -444,23 +443,23 @@ const MailMonitor = () => {
   }, [setSearchParams]);
 
   useEffect(() => {
-    if (loading || !isAdmin || mailAccessDenied) return undefined;
+    if (loading) return undefined;
     loadData();
     return undefined;
-  }, [isAdmin, loadData, loading, mailAccessDenied]);
+  }, [loadData, loading]);
 
   useEffect(() => {
     setMailPage(0);
   }, [filters.accountEmail, filters.mailbox, filters.status, filters.search]);
 
   useEffect(() => {
-    if (loading || !isAdmin || mailAccessDenied) return undefined;
+    if (loading) return undefined;
     const timer = window.setInterval(() => loadData(), 45000);
     return () => window.clearInterval(timer);
-  }, [isAdmin, loadData, loading, mailAccessDenied]);
+  }, [loadData, loading]);
 
   useEffect(() => {
-    if (!mailOAuthState || loading || !isAdmin || mailAccessDenied) return undefined;
+    if (!mailOAuthState || loading) return undefined;
 
     let stopped = false;
 
@@ -512,10 +511,9 @@ const MailMonitor = () => {
       stopped = true;
       window.clearInterval(intervalId);
     };
-  }, [isAdmin, loadData, loading, mailAccessDenied, mailOAuthState]);
+  }, [loadData, loading, mailOAuthState]);
 
   useEffect(() => {
-    setMailAccessDenied(false);
     setMailOAuthState("");
     setMailOAuthStatus({ type: "", message: "" });
     setAccountActionStatus({ type: "", message: "" });
@@ -567,10 +565,6 @@ const MailMonitor = () => {
     return null;
   }
 
-  if (!isAdmin || mailAccessDenied) {
-    return <Alert severity="warning">Email Manager is available to admin accounts only.</Alert>;
-  }
-
   return (
     <Box>
       {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
@@ -586,18 +580,20 @@ const MailMonitor = () => {
           onChange={handleTabChange}
           variant="scrollable"
           allowScrollButtonsMobile
-          sx={{
+          sx={(theme) => ({
             "& .MuiTab-root": {
-              color: "#60a5fa",
               fontWeight: 700,
+              color: theme.palette.mode === "light" ? theme.palette.primary.main : "#60a5fa",
+              opacity: 1,
             },
-            "& .Mui-selected": {
-              color: "#60a5fa",
+            "& .MuiTab-root.Mui-selected": {
+              color: theme.palette.mode === "light" ? theme.palette.primary.main : "#60a5fa",
             },
             "& .MuiTabs-indicator": {
-              backgroundColor: "#ffffff",
+              backgroundColor:
+                theme.palette.mode === "light" ? theme.palette.primary.main : "#ffffff",
             },
-          }}
+          })}
         >
           <Tab value="messages" label="Messages" />
           <Tab value="accounts" label="Accounts" />
@@ -787,13 +783,13 @@ const MailMonitor = () => {
                 {accountActionId === "sync-all" ? "Syncing..." : "Sync All"}
               </Button>
               <Button
-                  variant="contained"
-                  onClick={handleStartMailOAuth}
-                  disabled={connectingMail || Boolean(mailOAuthState)}
-                  sx={greenContainedButtonSx}
-                >
-                  {connectingMail || mailOAuthState ? "Adding..." : "Add Gmail"}
-                </Button>
+                variant="contained"
+                onClick={handleStartMailOAuth}
+                disabled={connectingMail || Boolean(mailOAuthState)}
+                sx={topbarLikeButtonSx}
+              >
+                {connectingMail || mailOAuthState ? "Adding..." : "Add Gmail"}
+              </Button>
             </Stack>
           </Stack>
 
@@ -871,32 +867,25 @@ const MailMonitor = () => {
                         <TableCell>{formatDateTime(account.last_synced_at)}</TableCell>
                         <TableCell align="right" sx={{ minWidth: 340 }}>
                           <Stack direction="row" spacing={1} justifyContent="flex-end" useFlexGap flexWrap="wrap">
-                            <Tooltip title={accountActionId === syncActionId ? "Syncing" : "Sync"}>
-                              <span>
-                                <IconButton
-                                  size="small"
-                                  aria-label="Sync account"
-                                  onClick={() => handleSyncMailAccount(account)}
-                                  disabled={accountActionId === syncActionId}
-                                  sx={greenIconButtonSx}
-                                >
-                                  <SyncRoundedIcon fontSize="small" />
-                                </IconButton>
-                              </span>
-                            </Tooltip>
-                            <Tooltip title={accountActionId === deleteActionId ? "Removing" : "Remove"}>
-                              <span>
-                                <IconButton
-                                  size="small"
-                                  aria-label="Remove account"
-                                  onClick={() => handleDeleteMailAccount(account)}
-                                  disabled={accountActionId === deleteActionId}
-                                  sx={redIconButtonSx}
-                                >
-                                  <DeleteOutlineRoundedIcon fontSize="small" />
-                                </IconButton>
-                              </span>
-                            </Tooltip>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => handleSyncMailAccount(account)}
+                              disabled={accountActionId === syncActionId}
+                              sx={greenOutlinedButtonSx}
+                            >
+                              {accountActionId === syncActionId ? "Syncing..." : "Sync"}
+                            </Button>
+                            <Button
+                              size="small"
+                              color="error"
+                              variant="outlined"
+                              onClick={() => handleDeleteMailAccount(account)}
+                              disabled={accountActionId === deleteActionId}
+                              sx={redOutlinedButtonSx}
+                            >
+                              {accountActionId === deleteActionId ? "Removing..." : "Remove"}
+                            </Button>
                           </Stack>
                         </TableCell>
                       </TableRow>

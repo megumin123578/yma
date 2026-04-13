@@ -24,6 +24,12 @@ export const uploadCredentials = () => {
     .then((res) => res.data);
 };
 
+export const startMailOAuth = (payload = { label_ids: ["INBOX"] }) => {
+  return api
+    .post("/api/mail/accounts/oauth/start", payload)
+    .then((res) => res.data);
+};
+
 export const getOAuthState = async (state) => {
   const res = await api.get(`/api/users/credentials/state/${encodeURIComponent(state)}`);
   return res.data;

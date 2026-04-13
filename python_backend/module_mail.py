@@ -11,6 +11,40 @@ from sqlalchemy import bindparam, text
 from python_backend.db import engine
 
 
+def _normalize_account_email_scope(account_emails: Optional[list[str]]) -> Optional[list[str]]:
+    if account_emails is None:
+        return None
+    normalized = [
+        str(item or "").strip().lower()
+        for item in account_emails
+        if str(item or "").strip()
+    ]
+    return list(dict.fromkeys(normalized))
+
+
+def _append_account_email_scope(
+    where_clauses: list[str],
+    params: dict[str, Any],
+    account_emails: Optional[list[str]],
+    *,
+    column_name: str = "account_email",
+) -> None:
+    normalized = _normalize_account_email_scope(account_emails)
+    if normalized is None:
+        return
+    if not normalized:
+        where_clauses.append("1 = 0")
+        return
+    where_clauses.append(f"{column_name} IN :account_emails")
+    params["account_emails"] = normalized
+
+
+def _bind_expanding_params(statement, params: dict[str, Any]):
+    if "account_emails" in params:
+        return statement.bindparams(bindparam("account_emails", expanding=True))
+    return statement
+
+
 def _infer_mail_match(*, from_name: Optional[str], from_email: Optional[str]) -> tuple[str, Optional[str]]:
     sender_parts = [str(from_name or "").strip().lower(), str(from_email or "").strip().lower()]
     sender_text = " ".join(part for part in sender_parts if part)
@@ -40,8 +74,6 @@ def _send_telegram_match_alert(
         return
 
     lines = [
-        "<b>Email Manager</b>",
-        f"Source: <code>{escape(vps_id or '-')}</code>",
         f"Account: <code>{escape(account_email or '-')}</code>",
         f"Mailbox: <code>{escape(mailbox or '-')}</code>",
         f"New matched emails: <b>{len(matched_messages)}</b>",
@@ -605,17 +637,23 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def get_mail_overview() -> dict[str, Any]:
+def get_mail_overview(*, account_emails: Optional[list[str]] = None) -> dict[str, Any]:
     ensure_mail_tables()
+    scope_clauses = []
+    scope_params: dict[str, Any] = {}
+    _append_account_email_scope(scope_clauses, scope_params, account_emails, column_name="account_email")
+    scope_sql = f"WHERE {' AND '.join(scope_clauses)}" if scope_clauses else ""
 
     with engine.begin() as conn:
-        rows = conn.execute(
+        rows_stmt = _bind_expanding_params(
             text(
                 """
                 WITH mailbox_keys AS (
                     SELECT DISTINCT vps_id, account_email, mailbox FROM mail_monitor_messages
+                    {scope_sql}
                     UNION
                     SELECT DISTINCT vps_id, account_email, mailbox FROM mail_monitor_runs
+                    {scope_sql}
                 ),
                 message_stats AS (
                     SELECT
@@ -672,16 +710,21 @@ def get_mail_overview() -> dict[str, Any]:
                          k.account_email,
                          k.mailbox
                 """
-            )
-        ).mappings().all()
+                .format(scope_sql=scope_sql)
+            ),
+            scope_params,
+        )
+        rows = conn.execute(rows_stmt, scope_params).mappings().all()
 
-        summary_row = conn.execute(
+        summary_stmt = _bind_expanding_params(
             text(
                 """
                 WITH mailbox_keys AS (
                     SELECT DISTINCT vps_id, account_email, mailbox FROM mail_monitor_messages
+                    {scope_sql}
                     UNION
                     SELECT DISTINCT vps_id, account_email, mailbox FROM mail_monitor_runs
+                    {scope_sql}
                 ),
                 message_stats AS (
                     SELECT
@@ -715,8 +758,11 @@ def get_mail_overview() -> dict[str, Any]:
                 LEFT JOIN latest_runs r
                   ON r.vps_id = k.vps_id AND r.account_email = k.account_email AND r.mailbox = k.mailbox
                 """
-            )
-        ).mappings().first()
+                .format(scope_sql=scope_sql)
+            ),
+            scope_params,
+        )
+        summary_row = conn.execute(summary_stmt, scope_params).mappings().first()
 
     return {
         "summary": dict(summary_row or {}),
@@ -776,6 +822,7 @@ def list_mail_messages(
     *,
     vps_id: Optional[str] = None,
     account_email: Optional[str] = None,
+    account_emails: Optional[list[str]] = None,
     mailbox: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
@@ -801,6 +848,7 @@ def list_mail_messages(
     if account_email:
         where_clauses.append("account_email = :account_email")
         params["account_email"] = str(account_email).strip().lower()
+    _append_account_email_scope(where_clauses, params, account_emails, column_name="account_email")
     if mailbox:
         where_clauses.append("mailbox = :mailbox")
         params["mailbox"] = mailbox
@@ -825,7 +873,7 @@ def list_mail_messages(
 
     with engine.begin() as conn:
         if normalized_per_account_limit is not None:
-            rows = conn.execute(
+            rows_stmt = _bind_expanding_params(
                 text(
                     f"""
                     WITH ranked_messages AS (
@@ -887,9 +935,10 @@ def list_mail_messages(
                     """
                 ),
                 params,
-            ).mappings().all()
+            )
+            rows = conn.execute(rows_stmt, params).mappings().all()
 
-            total_row = conn.execute(
+            total_stmt = _bind_expanding_params(
                 text(
                     f"""
                     WITH ranked_messages AS (
@@ -907,9 +956,13 @@ def list_mail_messages(
                     """
                 ),
                 {k: v for k, v in params.items() if k not in {"limit", "offset"}},
+            )
+            total_row = conn.execute(
+                total_stmt,
+                {k: v for k, v in params.items() if k not in {"limit", "offset"}},
             ).mappings().first()
         else:
-            rows = conn.execute(
+            rows_stmt = _bind_expanding_params(
                 text(
                     f"""
                     SELECT
@@ -940,9 +993,10 @@ def list_mail_messages(
                     """
                 ),
                 params,
-            ).mappings().all()
+            )
+            rows = conn.execute(rows_stmt, params).mappings().all()
 
-            total_row = conn.execute(
+            total_stmt = _bind_expanding_params(
                 text(
                     f"""
                     SELECT COUNT(*)::bigint AS total
@@ -950,6 +1004,10 @@ def list_mail_messages(
                     {where_sql}
                     """
                 ),
+                {k: v for k, v in params.items() if k not in {"limit", "offset"}},
+            )
+            total_row = conn.execute(
+                total_stmt,
                 {k: v for k, v in params.items() if k not in {"limit", "offset"}},
             ).mappings().first()
 
@@ -959,11 +1017,15 @@ def list_mail_messages(
     }
 
 
-def get_mail_message_detail(message_id: int) -> Optional[dict[str, Any]]:
+def get_mail_message_detail(message_id: int, *, account_emails: Optional[list[str]] = None) -> Optional[dict[str, Any]]:
     ensure_mail_tables()
+    where_clauses = ["id = :message_id"]
+    params: dict[str, Any] = {"message_id": int(message_id)}
+    _append_account_email_scope(where_clauses, params, account_emails, column_name="account_email")
+    where_sql = f"WHERE {' AND '.join(where_clauses)}"
 
     with engine.begin() as conn:
-        row = conn.execute(
+        stmt = _bind_expanding_params(
             text(
                 """
                 SELECT
@@ -990,12 +1052,14 @@ def get_mail_message_detail(message_id: int) -> Optional[dict[str, Any]]:
                     created_at,
                     updated_at
                 FROM mail_monitor_messages
-                WHERE id = :message_id
+                {where_sql}
                 LIMIT 1
                 """
+                .format(where_sql=where_sql)
             ),
-            {"message_id": int(message_id)},
-        ).mappings().first()
+            params,
+        )
+        row = conn.execute(stmt, params).mappings().first()
 
     return dict(row) if row else None
 
@@ -1086,6 +1150,7 @@ def list_mail_runs(
     *,
     vps_id: Optional[str] = None,
     account_email: Optional[str] = None,
+    account_emails: Optional[list[str]] = None,
     mailbox: Optional[str] = None,
     limit: int = 50,
 ) -> dict[str, Any]:
@@ -1102,6 +1167,7 @@ def list_mail_runs(
     if account_email:
         where_clauses.append("account_email = :account_email")
         params["account_email"] = str(account_email).strip().lower()
+    _append_account_email_scope(where_clauses, params, account_emails, column_name="account_email")
     if mailbox:
         where_clauses.append("mailbox = :mailbox")
         params["mailbox"] = mailbox
@@ -1109,7 +1175,7 @@ def list_mail_runs(
     where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
     with engine.begin() as conn:
-        rows = conn.execute(
+        stmt = _bind_expanding_params(
             text(
                 f"""
                 SELECT
@@ -1135,6 +1201,7 @@ def list_mail_runs(
                 """
             ),
             params,
-        ).mappings().all()
+        )
+        rows = conn.execute(stmt, params).mappings().all()
 
     return {"items": [dict(row) for row in rows]}

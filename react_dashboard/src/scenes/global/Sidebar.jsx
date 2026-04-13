@@ -20,7 +20,6 @@ import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import WebhookIcon from '@mui/icons-material/Webhook';
 import SettingsIcon from "@mui/icons-material/Settings";
 import { UserContext } from "../../context/UserContext";
-
 const Item = ({ title, to, icon, isActive, onClick }) => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
@@ -69,7 +68,6 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
   const theme = useTheme();
   const location = useLocation();
   const { user } = useContext(UserContext);
-  const isMailAdmin = !!user?.is_admin;
   const pathname = location.pathname || "/dashboard";
   const desktopSidebarWidth = 280;
   const sidebarWidth = isMobile
@@ -383,15 +381,13 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
               onClick={closeOnMobile}
             />
 
-            {isMailAdmin ? (
-              <Item
-                title="Email Manager"
-                to="/mail_monitor"
-                icon={<MailOutlineRoundedIcon />}
-                isActive={isActivePath("/mail_monitor")}
-                onClick={closeOnMobile}
-              />
-            ) : null}
+            <Item
+              title="Email Manager"
+              to="/mail_monitor"
+              icon={<MailOutlineRoundedIcon />}
+              isActive={isActivePath("/mail_monitor")}
+              onClick={closeOnMobile}
+            />
 
             <SectionLabel isCollapsed={false}>Setting</SectionLabel>
 
