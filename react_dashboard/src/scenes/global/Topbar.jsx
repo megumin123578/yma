@@ -16,7 +16,9 @@ import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import NotificationsNoneOutlinedIcon from "@mui/icons-material/NotificationsNoneOutlined";
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 
+import { useNavigate } from "react-router-dom";
 import { ColorModeContext } from "../../theme";
 import { UserContext } from "../../context/UserContext";
 import ProfileDialog from "../../components/dialogs/ProfileDialog";
@@ -62,6 +64,7 @@ const formatNotificationTime = (value) => formatShortDateTimeInSaigon(value, "")
 
 const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
   const theme = useTheme();
+  const navigate = useNavigate();
   const colorMode = useContext(ColorModeContext);
   const { user, loading } = useContext(UserContext);
   const isMailAdmin = !!user?.is_admin;
@@ -385,6 +388,14 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
               ) : (
                 <LightModeOutlinedIcon fontSize="medium" />
               )}
+            </IconButton>
+
+            <IconButton
+              size="medium"
+              onClick={() => navigate("/config")}
+              aria-label="Settings"
+            >
+              <SettingsOutlinedIcon fontSize="medium" />
             </IconButton>
 
             <IconButton size="medium" onClick={() => setOpenProfile(true)}>

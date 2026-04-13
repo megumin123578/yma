@@ -112,7 +112,7 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         }
       />
       <Route
-        path="smmstore_analytics"
+        path="/smmstore_analytics"
         element={
           <ProtectedRoute user={user} loading={loading}>
             <SmmstoreAnalyticsScene />

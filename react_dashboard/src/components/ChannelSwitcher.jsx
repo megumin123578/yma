@@ -134,6 +134,7 @@ const ChannelSwitcher = ({
   showAllLabel = "Show all",
   showAllSelectedLabel = "All channels",
   showAllDisabled = true,
+  showAllVisible = true,
   showAllActive = false,
   onShowAllClick,
 }) => {
@@ -416,6 +417,8 @@ const ChannelSwitcher = ({
     normalizedInputQuery !== normalizedSelectedLabel &&
     normalizedInputQuery !== normalizedSelectedValue;
   const showHierarchyMenu = !hasTypedQuery && hierarchyMenu.hasHierarchy;
+  const showDropdownFooter =
+    hiddenOptions.length > 0 || (showAllVisible && typeof onShowAllClick === "function");
 
   const selectedHierarchyPath = useMemo(() => {
     for (const rootEntry of topLevelHierarchyEntries) {
@@ -800,7 +803,7 @@ const ChannelSwitcher = ({
   const renderDropdownPaper = (paperProps) => (
     <Paper {...paperProps}>
       {showHierarchyMenu ? renderHierarchyMenu() : paperProps.children}
-      {visibilityReady ? (
+      {visibilityReady && showDropdownFooter ? (
         <>
           <Divider />
           <Box
@@ -861,67 +864,71 @@ const ChannelSwitcher = ({
             ) : (
               <Box sx={{ minWidth: 12, minHeight: 1 }} />
             )}
-            <Box
-              onMouseDown={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onClick={() => {
-                if (showAllDisabled || typeof onShowAllClick !== "function") return;
-                onShowAllClick();
-                setOpen(false);
-                setStickyHiddenValues([]);
-              }}
-              sx={{
-                color: showAllActive
-                  ? isDark
-                    ? "#7dd3fc"
-                    : "#1565c0"
-                  : "text.secondary",
-                fontSize: 13,
-                fontWeight: 700,
-                px: 1,
-                py: 0.45,
-                borderRadius: 1.5,
-                opacity: showAllDisabled ? 0.56 : 1,
-                cursor: showAllDisabled ? "not-allowed" : "pointer",
-                border: "1px solid",
-                borderColor: showAllActive
-                  ? isDark
-                    ? "rgba(125,211,252,0.45)"
-                    : "rgba(21,101,192,0.28)"
-                  : isDark
-                    ? "rgba(148,163,184,0.22)"
-                    : "rgba(15,23,42,0.1)",
-                bgcolor: showAllActive
-                  ? isDark
-                    ? "rgba(125,211,252,0.12)"
-                    : "rgba(21,101,192,0.08)"
-                  : isDark
-                    ? "rgba(148,163,184,0.08)"
-                    : "rgba(15,23,42,0.03)",
-                "&:hover": showAllDisabled
-                  ? undefined
-                  : {
-                      bgcolor: showAllActive
-                        ? isDark
-                          ? "rgba(125,211,252,0.18)"
-                          : "rgba(21,101,192,0.12)"
-                        : "action.hover",
-                    },
-              }}
-            >
-              <Typography
-                variant="body2"
+            {showAllVisible ? (
+              <Box
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onClick={() => {
+                  if (showAllDisabled || typeof onShowAllClick !== "function") return;
+                  onShowAllClick();
+                  setOpen(false);
+                  setStickyHiddenValues([]);
+                }}
                 sx={{
-                  color: "inherit",
-                  fontSize: "inherit",
-                  fontWeight: "inherit",
+                  color: showAllActive
+                    ? isDark
+                      ? "#7dd3fc"
+                      : "#1565c0"
+                    : "text.secondary",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  px: 1,
+                  py: 0.45,
+                  borderRadius: 1.5,
+                  opacity: showAllDisabled ? 0.56 : 1,
+                  cursor: showAllDisabled ? "not-allowed" : "pointer",
+                  border: "1px solid",
+                  borderColor: showAllActive
+                    ? isDark
+                      ? "rgba(125,211,252,0.45)"
+                      : "rgba(21,101,192,0.28)"
+                    : isDark
+                      ? "rgba(148,163,184,0.22)"
+                      : "rgba(15,23,42,0.1)",
+                  bgcolor: showAllActive
+                    ? isDark
+                      ? "rgba(125,211,252,0.12)"
+                      : "rgba(21,101,192,0.08)"
+                    : isDark
+                      ? "rgba(148,163,184,0.08)"
+                      : "rgba(15,23,42,0.03)",
+                  "&:hover": showAllDisabled
+                    ? undefined
+                    : {
+                        bgcolor: showAllActive
+                          ? isDark
+                            ? "rgba(125,211,252,0.18)"
+                            : "rgba(21,101,192,0.12)"
+                          : "action.hover",
+                      },
                 }}
               >
-                {showAllLabel}
-              </Typography>
-            </Box>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: "inherit",
+                    fontSize: "inherit",
+                    fontWeight: "inherit",
+                  }}
+                >
+                  {showAllLabel}
+                </Typography>
+              </Box>
+            ) : (
+              <Box sx={{ minWidth: 12, minHeight: 1 }} />
+            )}
           </Box>
         </>
       ) : null}

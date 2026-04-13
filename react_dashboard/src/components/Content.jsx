@@ -2053,6 +2053,7 @@ const ContentAnalytics = () => {
           sx={CHANNEL_SWITCHER_SX}
           getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
           showAllDisabled={!channelList.length}
+          showAllVisible={false}
           showAllActive={showAllMode}
           showAllSelectedLabel="All channels"
           onShowAllClick={() => setChannelId(CONTENT_ALL_CHANNELS_VALUE)}

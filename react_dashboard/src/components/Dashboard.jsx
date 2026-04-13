@@ -11,9 +11,6 @@ import {
     TextField,
     MenuItem,
     CircularProgress,
-    Dialog,
-    DialogContent,
-    IconButton,
     useTheme,
 } from "@mui/material";
 import { motion } from "framer-motion";
@@ -21,12 +18,10 @@ import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
 import AssessmentOutlinedIcon from "@mui/icons-material/AssessmentOutlined";
 import InsightsIcon from "@mui/icons-material/Insights";
-import CloseIcon from "@mui/icons-material/Close";
 import { ResponsiveChoropleth } from "@nivo/geo";
 import { tokens } from "../theme";
 import Header from "./Header";
 import api from "../services/api";
-import LiveViews from "./LiveViews";
 import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { geoFeatures } from "../data/mockGeoFeatures";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
@@ -116,7 +111,6 @@ const VideoList = () => {
     const [subscribersSeries, setSubscribersSeries] = useState([]);
     const [revenueRows, setRevenueRows] = useState([]);
     const [animateOverviewBars, setAnimateOverviewBars] = useState(false);
-    const [liveViewsOpen, setLiveViewsOpen] = useState(false);
     const [error, setError] = useState("");
     const activeRange =
         OVERVIEW_RANGES.find((range) => range.value === overviewRange) ||
@@ -1528,47 +1522,6 @@ const VideoList = () => {
                     </Box>
                 </>
             )}
-
-            <Dialog
-                open={liveViewsOpen}
-                onClose={() => setLiveViewsOpen(false)}
-                fullWidth
-                maxWidth="xl"
-                scroll="paper"
-                PaperProps={{
-                    sx: {
-                        borderRadius: 3,
-                        overflow: "hidden",
-                        background:
-                            theme.palette.mode === "dark"
-                                ? "linear-gradient(180deg, rgba(2,6,23,0.98) 0%, rgba(15,23,42,0.98) 100%)"
-                                : "linear-gradient(180deg, rgba(248,250,252,0.98) 0%, rgba(255,255,255,0.98) 100%)",
-                    },
-                }}
-            >
-                <Box
-                    sx={{
-                        px: 2.5,
-                        py: 1.5,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        borderBottom: "1px solid",
-                        borderColor:
-                            theme.palette.mode === "dark"
-                                ? "rgba(148,163,184,0.18)"
-                                : "rgba(15,23,42,0.08)",
-                    }}
-                >
-                    <Box />
-                    <IconButton onClick={() => setLiveViewsOpen(false)}>
-                        <CloseIcon />
-                    </IconButton>
-                </Box>
-                <DialogContent sx={{ p: 2.5 }}>
-                    <LiveViews />
-                </DialogContent>
-            </Dialog>
         </Box>
     );
 };
