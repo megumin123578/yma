@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l \"D:/dev/yt_manage_app/react_dashboard/src/components\"/*)",
+      "Bash(xargs wc:*)"
+    ]
+  }
+}

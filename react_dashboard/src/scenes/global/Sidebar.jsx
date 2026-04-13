@@ -17,7 +17,6 @@ import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
-// import FileUploadIcon from "@mui/icons-material/FileUpload";
 import WebhookIcon from '@mui/icons-material/Webhook';
 import SettingsIcon from "@mui/icons-material/Settings";
 import { UserContext } from "../../context/UserContext";
@@ -408,13 +407,6 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
               onClick={closeOnMobile}
             />
 
-            {/* <Item
-              title="Tool Upload Short"
-              to="/tool_upload_short"
-              icon={<FileUploadIcon />}
-              selected={selected}
-              setSelected={setSelected}
-            /> */}
           </Box>
         </Menu>
       </ProSidebar>
