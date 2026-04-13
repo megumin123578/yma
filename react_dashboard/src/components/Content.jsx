@@ -65,9 +65,6 @@ import { formatDuration } from './Module';
 
 
 import {
-
-  METRIC_OPTIONS,
-
   PERIOD_OPTIONS,
 
   getRangeForPeriod,
@@ -166,9 +163,6 @@ const loadStoredContentFilters = () => {
 
 const normalizeContentChartType = (value) => (value === "bar" ? "bar" : "line");
 
-const normalizeContentMetric = (value) =>
-  METRIC_OPTIONS.some((option) => option.value === value) ? value : "views";
-
 const normalizeContentPeriod = (value) =>
   CONTENT_PERIOD_OPTIONS.some((option) => option.value === value) ? value : "last28";
 
@@ -185,7 +179,7 @@ const normalizeRowsPerPage = (value) => {
 };
 
 const normalizeSortKey = (value) => {
-  const allowed = new Set(["videoCount", "published", ...TABLE_METRIC_OPTIONS.map((item) => item.value)]);
+  const allowed = new Set(["videoCount", "published", "revenue", ...TABLE_METRIC_OPTIONS.map((item) => item.value)]);
   return allowed.has(value) ? value : "views";
 };
 
@@ -199,20 +193,6 @@ const TABLE_METRIC_OPTIONS = [
 
   { value: "engagedViews", label: "Engaged views", type: "number" },
 
-  { value: "stayedToWatch", label: "Stayed to watch", type: "percent" },
-
-  { value: "uniqueViewers", label: "Unique viewers", type: "number" },
-
-  { value: "averageViewsPerViewer", label: "Average views per viewer", type: "decimal" },
-
-  { value: "newViewers", label: "New viewers", type: "number" },
-
-  { value: "returningViewers", label: "Returning viewers", type: "number" },
-
-  { value: "casualViewers", label: "Casual viewers", type: "number" },
-
-  { value: "regularViewers", label: "Regular viewers", type: "number" },
-
   { value: "views", label: "Views", type: "number" },
 
   { value: "watchTimeHours", label: "Watch time (hours)", type: "hours" },
@@ -221,7 +201,7 @@ const TABLE_METRIC_OPTIONS = [
 
   { value: "impressions", label: "Impressions", type: "number" },
 
-  { value: "impressionsClickThroughRate", label: "Impressions click-through rate", type: "percent" },
+  { value: "impressionsClickThroughRate", label: "CTR", type: "percent" },
 
 ];
 
@@ -241,6 +221,8 @@ const DEFAULT_TABLE_METRICS = [
 
 ];
 
+const DEFAULT_CONTENT_METRIC = "views";
+
 
 
 const NON_SUM_METRICS = new Set([
@@ -248,10 +230,6 @@ const NON_SUM_METRICS = new Set([
   "averageViewDuration",
 
   "averagePercentageViewed",
-
-  "stayedToWatch",
-
-  "averageViewsPerViewer",
 
   "impressionsClickThroughRate",
 
@@ -284,6 +262,14 @@ const formatMetricValue = (metric, v) => {
 
   }
 
+  if (metric === "averageViewDuration") {
+    return formatDuration(v);
+  }
+
+  if (metric === "averageViewPercentage") {
+    return `${n(v).toFixed(2)}%`;
+  }
+
   return formatNumber(v);
 };
 
@@ -291,6 +277,27 @@ const toNullableNumber = (value) => {
   if (value === null || value === undefined || value === "") return null;
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
+};
+
+const buildChannelRevenueAmountMap = (items = []) => {
+  const map = {};
+  items.forEach((item) => {
+    const value = item?.value || item?.id || "";
+    const estimatedRevenue = toNullableNumber(item?.estimated_revenue ?? item?.estimatedRevenue);
+    if (!value || estimatedRevenue === null) return;
+    map[value] = estimatedRevenue;
+  });
+  return map;
+};
+
+const formatCurrencyValue = (value) => {
+  if (value === null || value === undefined) return "-";
+  const safe = Number(value);
+  if (!Number.isFinite(safe)) return "-";
+  return `$${safe.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 };
 
 const formatTableMetricValue = (metricKey, value) => {
@@ -303,7 +310,7 @@ const formatTableMetricValue = (metricKey, value) => {
 
   if (meta.type === "hours") return formatWatchHours(safe);
 
-  if (meta.type === "currency") return `$${formatNumber(safe)}`;
+  if (meta.type === "currency") return formatCurrencyValue(safe);
 
   if (meta.type === "percent") return `${safe.toFixed(2)}%`;
 
@@ -794,6 +801,7 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
 
   const [channelList, setChannelList] = useState([]);
   const [channelRevenueMap, setChannelRevenueMap] = useState({});
+  const [channelRevenueAmountMap, setChannelRevenueAmountMap] = useState({});
 
   const [channelMetrics, setChannelMetrics] = useState(null);
 
@@ -812,9 +820,7 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
     normalizeContentChartType(storedFilters?.chartType)
   );
 
-  const [metric, setMetric] = useState(() =>
-    normalizeContentMetric(storedFilters?.metric)
-  );
+  const metric = DEFAULT_CONTENT_METRIC;
 
   const [period, setPeriod] = useState(() =>
     normalizeContentPeriod(storedFilters?.period)
@@ -929,7 +935,6 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
         CONTENT_FILTERS_STORAGE_KEY,
         JSON.stringify({
           chartType,
-          metric,
           period,
           selectedTableMetrics,
           rowsPerPage,
@@ -941,7 +946,7 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
     } catch {
       // ignore storage errors
     }
-  }, [chartType, metric, period, selectedTableMetrics, rowsPerPage, sortKey, startDate, endDate]);
+  }, [chartType, period, selectedTableMetrics, rowsPerPage, sortKey, startDate, endDate]);
 
   useEffect(() => {
     return listenSharedChannelId((nextChannelId) => {
@@ -1197,13 +1202,35 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
 
   useEffect(() => {
     let active = true;
-    getChannelRevenueMap().then((map) => {
-      if (active) setChannelRevenueMap(map || {});
-    });
+    const { start, end } = resolvePeriod();
+    const revenueRequest =
+      start && end
+        ? api
+            .get("/api/revenue/channels", {
+              params: {
+                startDate: start,
+                endDate: end,
+                include_hidden: true,
+              },
+            })
+            .then((resp) => buildChannelRevenueAmountMap(resp?.data?.items || []))
+        : Promise.resolve({});
+
+    Promise.allSettled([getChannelRevenueMap(), revenueRequest]).then(
+      ([badgeResult, revenueResult]) => {
+        if (!active) return;
+        setChannelRevenueMap(
+          badgeResult.status === "fulfilled" ? badgeResult.value || {} : {}
+        );
+        setChannelRevenueAmountMap(
+          revenueResult.status === "fulfilled" ? revenueResult.value || {} : {}
+        );
+      }
+    );
     return () => {
       active = false;
     };
-  }, [period, resolvePeriod]);
+  }, [resolvePeriod]);
 
 
 
@@ -1244,13 +1271,6 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
           averageViewDuration: toNullableNumber(v.averageViewDuration ?? v.average_view_duration),
           averagePercentageViewed: toNullableNumber(v.averagePercentageViewed ?? v.average_view_percentage),
           engagedViews: toNullableNumber(v.engagedViews ?? v.engaged_views),
-          stayedToWatch: toNullableNumber(v.stayedToWatch ?? v.stayed_to_watch),
-          uniqueViewers: toNullableNumber(v.uniqueViewers ?? v.unique_viewers),
-          averageViewsPerViewer: toNullableNumber(v.averageViewsPerViewer ?? v.average_views_per_viewer),
-          newViewers: toNullableNumber(v.newViewers ?? v.new_viewers),
-          returningViewers: toNullableNumber(v.returningViewers ?? v.returning_viewers),
-          casualViewers: toNullableNumber(v.casualViewers ?? v.casual_viewers),
-          regularViewers: toNullableNumber(v.regularViewers ?? v.regular_viewers),
           subscribers: toNullableNumber(v.subscribers),
           impressions: toNullableNumber(v.impressions),
           impressionsClickThroughRate: toNullableNumber(v.impressionsClickThroughRate ?? v.impressions_click_through_rate),
@@ -1265,51 +1285,22 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
   );
   const deferredRows = useDeferredValue(rows);
 
-  const tableRows = showAllMode ? allChannelRows : deferredRows;
+  const allChannelTableRows = useMemo(
+    () =>
+      allChannelRows.map((row) => {
+        const revenueKey = String(row.channelId || row.id || "").trim();
+        return {
+          ...row,
+          revenue:
+            revenueKey && Object.prototype.hasOwnProperty.call(channelRevenueAmountMap, revenueKey)
+              ? channelRevenueAmountMap[revenueKey]
+              : null,
+        };
+      }),
+    [allChannelRows, channelRevenueAmountMap]
+  );
 
-  const channelExpandedVideos = useMemo(() => {
-    const compareVideoRows = (left, right) => {
-      const childSortKey = sortKey === "videoCount" ? "views" : sortKey;
-
-      const getComparableValue = (row, key) => {
-        if (key === "title") return String(row.displayTitle || row.title || "").toLowerCase();
-        if (key === "published") {
-          return row.published ? new Date(row.published).getTime() : Number.NEGATIVE_INFINITY;
-        }
-        const value = row[key];
-        if (value === null || value === undefined || value === "") {
-          return Number.NEGATIVE_INFINITY;
-        }
-        if (typeof value === "number") return value;
-        return String(value).toLowerCase();
-      };
-
-      const leftValue = getComparableValue(left, childSortKey);
-      const rightValue = getComparableValue(right, childSortKey);
-      const directionFactor = sortDirection === "asc" ? 1 : -1;
-
-      if (typeof leftValue === "string" || typeof rightValue === "string") {
-        return String(leftValue).localeCompare(String(rightValue)) * directionFactor;
-      }
-      if (leftValue === rightValue) return 0;
-      return (leftValue - rightValue) * directionFactor;
-    };
-
-    const grouped = deferredRows.reduce((acc, row) => {
-      const channelKey = String(row.channelId || "").trim();
-      if (!channelKey) return acc;
-      if (!acc[channelKey]) acc[channelKey] = [];
-      acc[channelKey].push(row);
-      return acc;
-    }, {});
-
-    return Object.fromEntries(
-      Object.entries(grouped).map(([channelKey, channelRows]) => [
-        channelKey,
-        [...channelRows].sort(compareVideoRows).slice(0, 5),
-      ])
-    );
-  }, [deferredRows, sortDirection, sortKey]);
+  const tableRows = showAllMode ? allChannelTableRows : deferredRows;
 
   const sortedRows = useMemo(() => {
     const getComparableValue = (row, key) => {
@@ -1343,6 +1334,19 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
   }, [sortDirection, sortKey, tableRows]);
   const deferredSortedRows = useDeferredValue(sortedRows);
 
+  const totalRevenue = useMemo(() => {
+    if (!showAllMode) return null;
+    let sum = 0;
+    let hasValue = false;
+    allChannelTableRows.forEach((row) => {
+      const value = toNullableNumber(row.revenue);
+      if (value === null) return;
+      hasValue = true;
+      sum += value;
+    });
+    return hasValue ? sum : null;
+  }, [showAllMode, allChannelTableRows]);
+
   const totals = useMemo(() => {
     const acc = TABLE_METRIC_OPTIONS.reduce((out, item) => {
       if (NON_SUM_METRICS.has(item.value)) {
@@ -1351,7 +1355,7 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
       }
       let sum = 0;
       let hasValue = false;
-      const source = showAllMode ? allChannelRows : deferredRows;
+      const source = showAllMode ? allChannelTableRows : deferredRows;
       source.forEach((row) => {
         const value = toNullableNumber(row[item.value]);
         if (value === null) return;
@@ -1373,7 +1377,7 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
     }
 
     return acc;
-  }, [showAllMode, allChannelRows, deferredRows, channelMetrics]);
+  }, [showAllMode, allChannelTableRows, deferredRows, channelMetrics]);
 
   const showAllSummaryCards = useMemo(
     () => [
@@ -1467,7 +1471,7 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
     try {
       const { start, end } = resolvePeriod();
       const [videosResp, tsResp] = await Promise.all([
-        api.post("/api/content/list", { start, end, channelId: channelIdValue }),
+        api.post("/api/content/list", { start, end, channelId: channelIdValue }, { params: { skip_enrich: true } }),
         api.post("/api/content/timeseries", { start, end, channelId: channelIdValue }),
       ]);
       setChannelVideoCache((prev) => ({
@@ -1504,6 +1508,12 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
     }
   }, [showAllMode]);
 
+  useEffect(() => {
+    if (!showAllMode && sortKey === "revenue") {
+      setSortKey("views");
+    }
+  }, [showAllMode, sortKey]);
+
 
 
   /* ================================
@@ -1517,7 +1527,9 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
     if (chartType !== "line") return [];
 
     const lineMetricKey =
-      metric === "estimatedMinutesWatched" ? "watch_hours" : "views";
+      metric === "estimatedMinutesWatched" ? "watch_hours" : getChartMetricRowKey(metric);
+    const lineRowMetricKey =
+      metric === "estimatedMinutesWatched" ? "watchTimeHours" : getChartMetricRowKey(metric);
 
     const allDatesSet = new Set();
     for (let i = 0; i < deferredTimeseries.length; i++) {
@@ -1538,7 +1550,7 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
 
         const topExpIds = expVideos
           .slice()
-          .sort((a, b) => (b[lineMetricKey] ?? 0) - (a[lineMetricKey] ?? 0))
+          .sort((a, b) => (b[lineRowMetricKey] ?? 0) - (a[lineRowMetricKey] ?? 0))
           .slice(0, 5)
           .map(v => String(v.id || v.videoId || "").trim())
           .filter(Boolean);
@@ -1572,7 +1584,7 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
           id: CONTENT_ALL_CHANNELS_VALUE,
           data: allChannelTimeseries.map((t) => ({
             x: new Date(bucketTsMap.get(t.bucket)),
-            y: lineMetricKey === "watch_hours" ? n(t.watch_hours) : n(t.views),
+            y: n(t[lineMetricKey]),
             title: "All channels",
           })),
         },
@@ -1709,6 +1721,12 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
         views: "views",
 
         estimatedMinutesWatched: "watchHours",
+
+        averageViewDuration: "averageViewDuration",
+
+        averageViewPercentage: "averagePercentageViewed",
+
+        engagedViews: "engagedViews",
 
       }[metric] ?? "views");
 
@@ -2084,22 +2102,6 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
             onShowAllClick={() => setChannelId(CONTENT_ALL_CHANNELS_VALUE)}
           />
         )}
-
-        {/* Metric */}
-        <FormControl size="small" sx={{ minWidth: 180 }}>
-          <InputLabel>Metric</InputLabel>
-          <Select
-            value={metric}
-            label="Metric"
-            onChange={(e) => setMetric(e.target.value)}
-          >
-            {METRIC_OPTIONS.map((m) => (
-              <MenuItem key={m.value} value={m.value}>
-                {m.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
 
         {/* Chart */}
         <FormControl size="small" sx={{ minWidth: 140 }}>
@@ -2980,6 +2982,18 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
 
               })}
 
+              {showAllMode ? (
+                <TableCell sortDirection={sortKey === "revenue" ? sortDirection : false} align="right">
+                  <TableSortLabel
+                    active={sortKey === "revenue"}
+                    direction={sortKey === "revenue" ? sortDirection : "desc"}
+                    onClick={() => handleSort("revenue")}
+                  >
+                    Revenue
+                  </TableSortLabel>
+                </TableCell>
+              ) : null}
+
             </TableRow>
 
           </TableHead>
@@ -2993,7 +3007,9 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
               <TableCell sx={{ fontWeight: 700 }}>TOTAL</TableCell>
               {showAllMode ? (
                 <TableCell align="right" sx={{ fontWeight: 700 }}>
-                  {formatNumber(rows.length)}
+                  {formatNumber(
+                    allChannelTableRows.reduce((sum, row) => sum + n(row.videoCount), 0)
+                  )}
                 </TableCell>
               ) : null}
               <TableCell />
@@ -3004,6 +3020,11 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
                     : formatTableMetricValue(metricKey, totals[metricKey])}
                 </TableCell>
               ))}
+              {showAllMode ? (
+                <TableCell align="right" sx={{ fontWeight: 700 }}>
+                  {formatCurrencyValue(totalRevenue)}
+                </TableCell>
+              ) : null}
             </TableRow>
 
             {pagedRows.map((r) => {
@@ -3014,7 +3035,8 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
                 ? (() => {
                     const raw = cachedEntry?.videos ?? [];
                     if (!raw.length) return [];
-                    const childSortKey = sortKey === "videoCount" ? "views" : sortKey;
+                    const childSortKey =
+                      sortKey === "videoCount" || sortKey === "revenue" ? "views" : sortKey;
                     const dirFactor = sortDirection === "asc" ? 1 : -1;
                     return [...raw]
                       .sort((a, b) => {
@@ -3190,11 +3212,15 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
 
                     ))}
 
+                    {showAllMode ? (
+                      <TableCell align="right">{formatCurrencyValue(r.revenue)}</TableCell>
+                    ) : null}
+
                   </TableRow>
 
                   {showAllMode && isExpanded && expandedVideosLoading && (
                     <TableRow>
-                      <TableCell colSpan={3 + selectedTableMetrics.length} sx={{ py: 1, pl: 7, color: "text.secondary", fontSize: "0.8rem" }}>
+                      <TableCell colSpan={4 + selectedTableMetrics.length} sx={{ py: 1, pl: 7, color: "text.secondary", fontSize: "0.8rem" }}>
                         Loading...
                       </TableCell>
                     </TableRow>
@@ -3265,12 +3291,14 @@ const ContentAnalytics = ({ hideChannelSwitcher = false }) => {
                               {formatTableMetricValue(metricKey, videoRow[metricKey])}
                             </TableCell>
                           ))}
+
+                          <TableCell align="right" />
                         </TableRow>
                       ))
                     : null}
                   {showAllMode && isExpanded && !expandedVideosLoading && expandedVideos.length === 0 && cachedEntry && (
                     <TableRow>
-                      <TableCell colSpan={3 + selectedTableMetrics.length} sx={{ py: 1, pl: 7, color: "text.secondary", fontSize: "0.8rem" }}>
+                      <TableCell colSpan={4 + selectedTableMetrics.length} sx={{ py: 1, pl: 7, color: "text.secondary", fontSize: "0.8rem" }}>
                         No videos found for this period.
                       </TableCell>
                     </TableRow>

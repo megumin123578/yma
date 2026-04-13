@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
-from sqlalchemy import text
+from sqlalchemy import text, inspect
 from python_backend.db import engine
 from sqlalchemy.orm import Session
 
@@ -24,6 +24,8 @@ from python_backend.module_trafficsource import sanitize_filename  # dùng lại
 router = APIRouter(prefix="/api/content", tags=["content"])
 
 ALL_CHANNELS_VALUE = "__all__"
+CONTENT_CACHE_VERSION = 3
+_VIDEO_DAILY_STATS_COLUMNS_CACHE = None
 
 
 def _ensure_thumbnail_daily_table() -> None:
@@ -52,6 +54,106 @@ def _ensure_thumbnail_daily_table() -> None:
             """))
     except Exception as e:
         print("[content.thumbnail_daily] create table failed:", e)
+
+
+def _ensure_video_daily_stats_metrics_columns() -> None:
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS video_daily_stats (
+                    video_id TEXT NOT NULL,
+                    day DATE NOT NULL,
+                    views INTEGER,
+                    estimated_minutes INTEGER,
+                    average_view_duration INTEGER,
+                    average_view_percentage DOUBLE PRECISION,
+                    engaged_views INTEGER,
+                    likes INTEGER,
+                    subscribers_gained INTEGER DEFAULT 0,
+                    estimated_revenue NUMERIC DEFAULT 0,
+                    card_impressions INTEGER DEFAULT 0,
+                    card_clicks INTEGER DEFAULT 0,
+                    PRIMARY KEY (video_id, day)
+                );
+            """))
+            conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS average_view_percentage DOUBLE PRECISION;"))
+            conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS engaged_views INTEGER;"))
+            conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS subscribers_gained INTEGER DEFAULT 0;"))
+        return
+    except Exception as e:
+        print("[content.video_daily_stats] ensure columns failed:", e)
+
+
+def _get_video_daily_stats_columns() -> set[str]:
+    global _VIDEO_DAILY_STATS_COLUMNS_CACHE
+    if _VIDEO_DAILY_STATS_COLUMNS_CACHE is not None:
+        return _VIDEO_DAILY_STATS_COLUMNS_CACHE
+    try:
+        inspector = inspect(engine)
+        columns = inspector.get_columns("video_daily_stats")
+        _VIDEO_DAILY_STATS_COLUMNS_CACHE = {
+            str(col.get("name") or "").strip()
+            for col in columns
+            if col.get("name")
+        }
+    except Exception as e:
+        print("[content.video_daily_stats] inspect failed:", e)
+        _VIDEO_DAILY_STATS_COLUMNS_CACHE = set()
+    return _VIDEO_DAILY_STATS_COLUMNS_CACHE
+
+
+def _sql_average_view_percentage_expr(alias: str = "s", output_alias: str = '"averagePercentageViewed"') -> str:
+    columns = _get_video_daily_stats_columns()
+    if "average_view_percentage" not in columns:
+        return f'NULL::numeric AS {output_alias}'
+    return f"""
+        CASE
+            WHEN COALESCE(SUM(CASE WHEN {alias}.average_view_percentage IS NOT NULL THEN COALESCE({alias}.views, 0) ELSE 0 END), 0) > 0
+                THEN ROUND(
+                    SUM(COALESCE({alias}.average_view_percentage, 0) * COALESCE({alias}.views, 0))::numeric
+                    / NULLIF(SUM(CASE WHEN {alias}.average_view_percentage IS NOT NULL THEN COALESCE({alias}.views, 0) ELSE 0 END), 0),
+                    4
+                )
+            ELSE NULL
+        END AS {output_alias}
+    """.strip()
+
+
+def _sql_engaged_views_expr(alias: str = "s", output_alias: str = '"engagedViews"') -> str:
+    columns = _get_video_daily_stats_columns()
+    if "engaged_views" not in columns:
+        return f'NULL::bigint AS {output_alias}'
+    return f"""
+        CASE
+            WHEN COUNT({alias}.engaged_views) > 0
+                THEN COALESCE(SUM({alias}.engaged_views), 0)
+            ELSE NULL
+        END AS {output_alias}
+    """.strip()
+
+
+def _sql_timeseries_average_view_percentage_expr(alias: str = "s", output_alias: str = '"averagePercentageViewed"') -> str:
+    columns = _get_video_daily_stats_columns()
+    if "average_view_percentage" not in columns:
+        return f'NULL::numeric AS {output_alias}'
+    return f'{alias}.average_view_percentage AS {output_alias}'
+
+
+def _sql_timeseries_average_view_duration_expr(alias: str = "s", output_alias: str = '"averageViewDuration"') -> str:
+    return f"""
+        CASE
+            WHEN SUM({alias}.views) > 0
+                THEN ROUND(SUM(COALESCE({alias}.average_view_duration, 0) * COALESCE({alias}.views, 0))::numeric / NULLIF(SUM({alias}.views), 0), 2)
+            ELSE NULL
+        END AS {output_alias}
+    """.strip()
+
+
+def _sql_timeseries_engaged_views_expr(alias: str = "s", output_alias: str = '"engagedViews"') -> str:
+    columns = _get_video_daily_stats_columns()
+    if "engaged_views" not in columns:
+        return f'NULL::bigint AS {output_alias}'
+    return f'{alias}.engaged_views AS {output_alias}'
 
 # cache table for per-video analytics (not daily)
 def _ensure_video_metrics_cache_table() -> None:
@@ -143,15 +245,18 @@ def _normalize_video_metrics_cache_payload(payload):
     if "video_metrics" in payload:
         metrics = payload.get("video_metrics")
         meta = payload.get("_meta") or {}
+        if meta.get("version") != CONTENT_CACHE_VERSION:
+            return None, None
         thumbnail_supported = meta.get("thumbnail_supported")
         return metrics if isinstance(metrics, dict) else None, bool(thumbnail_supported)
-    return payload, None
+    return None, None
 
 
 def _build_video_metrics_cache_payload(video_metrics: dict, thumbnail_supported: bool):
     return {
         "video_metrics": video_metrics,
         "_meta": {
+            "version": CONTENT_CACHE_VERSION,
             "thumbnail_supported": bool(thumbnail_supported),
         },
     }
@@ -160,8 +265,9 @@ def _build_video_metrics_cache_payload(video_metrics: dict, thumbnail_supported:
 def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start_date, end_date):
     """
     Fetch per-video aggregated metrics (no day dimension).
-    Returns tuple: ({video_id: {views, watch_time_hours, average_view_duration, subscribers,
-    impressions, impressions_click_through_rate}}, thumbnail_supported)
+    Returns tuple: ({video_id: {views, watch_time_hours, average_view_duration,
+    average_view_percentage, engaged_views, subscribers, impressions,
+    impressions_click_through_rate}}, thumbnail_supported)
     """
     if not video_ids:
         return {}, False
@@ -198,6 +304,40 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
         except HttpError as e:
             if e.resp.status != 403: # Only log if not a permission issue
                 print(f"[content.video-metrics] Core metrics failed for chunk: {e}")
+        except Exception:
+            pass
+
+        try:
+            resp = yta.reports().query(
+                ids=ids,
+                startDate=start_date,
+                endDate=end_date,
+                dimensions="video",
+                filters=chunk_filter,
+                metrics="averageViewPercentage,engagedViews",
+            ).execute() or {}
+
+            rows = resp.get("rows") or []
+            headers = resp.get("columnHeaders", []) or []
+            if rows and headers:
+                idx = {h["name"]: i for i, h in enumerate(headers)}
+                for r in rows:
+                    vid = r[idx["video"]]
+                    if vid not in out:
+                        out[vid] = {}
+                    out[vid]["average_view_percentage"] = (
+                        float(r[idx["averageViewPercentage"]] or 0.0)
+                        if "averageViewPercentage" in idx
+                        else None
+                    )
+                    out[vid]["engaged_views"] = (
+                        int(r[idx["engagedViews"]] or 0)
+                        if "engagedViews" in idx
+                        else None
+                    )
+        except HttpError as e:
+            if e.resp.status != 403:
+                print(f"[content.video-metrics] Engagement metrics failed for chunk: {e}")
         except Exception:
             pass
 
@@ -262,6 +402,8 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
                 "views": None,
                 "watch_time_hours": None,
                 "average_view_duration": None,
+                "average_view_percentage": None,
+                "engaged_views": None,
                 "subscribers": None,
                 "impressions": None,
                 "impressions_click_through_rate": None,
@@ -271,6 +413,8 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
                 "views",
                 "watch_time_hours",
                 "average_view_duration",
+                "average_view_percentage",
+                "engaged_views",
                 "subscribers",
                 "impressions",
                 "impressions_click_through_rate",
@@ -382,6 +526,10 @@ def _apply_video_metrics_to_content_rows(rows_mutable, video_metrics: dict, thum
             row["watchTimeHours"] = float(metrics["watch_time_hours"])
         if metrics.get("average_view_duration") is not None:
             row["averageViewDuration"] = float(metrics["average_view_duration"])
+        if metrics.get("average_view_percentage") is not None:
+            row["averagePercentageViewed"] = float(metrics["average_view_percentage"])
+        if metrics.get("engaged_views") is not None:
+            row["engagedViews"] = int(metrics["engaged_views"])
         if metrics.get("subscribers") is not None:
             row["subscribers"] = int(metrics["subscribers"])
         if metrics.get("impressions") is not None:
@@ -393,6 +541,42 @@ def _apply_video_metrics_to_content_rows(rows_mutable, video_metrics: dict, thum
             row["impressionsClickThroughRate"] = metrics.get("impressions_click_through_rate")
         elif thumbnail_supported:
             row["impressionsClickThroughRate"] = None
+
+
+def _aggregate_supported_video_metrics(video_metrics: dict):
+    weighted_average_percentage = 0.0
+    weighted_average_percentage_views = 0
+    engaged_views_total = 0
+    has_engaged_views = False
+
+    for metrics in (video_metrics or {}).values():
+        views_value = metrics.get("views")
+        average_percentage_value = metrics.get("average_view_percentage")
+        if average_percentage_value is not None and views_value is not None:
+            try:
+                views_int = int(views_value or 0)
+                if views_int > 0:
+                    weighted_average_percentage += float(average_percentage_value) * views_int
+                    weighted_average_percentage_views += views_int
+            except Exception:
+                pass
+
+        engaged_views_value = metrics.get("engaged_views")
+        if engaged_views_value is not None:
+            has_engaged_views = True
+            try:
+                engaged_views_total += int(engaged_views_value or 0)
+            except Exception:
+                pass
+
+    return {
+        "averagePercentageViewed": (
+            weighted_average_percentage / weighted_average_percentage_views
+            if weighted_average_percentage_views > 0
+            else None
+        ),
+        "engagedViews": engaged_views_total if has_engaged_views else None,
+    }
 
 
 def _should_hide_private_content_row(row: dict) -> bool:
@@ -474,8 +658,11 @@ def _load_timeseries_cache(account_tag: str, start_date, end_date):
             return None
         payload = row.get("payload")
         if isinstance(payload, str):
-            return json.loads(payload)
-        return payload
+            payload = json.loads(payload)
+        if not isinstance(payload, dict) or payload.get("version") != CONTENT_CACHE_VERSION:
+            return None
+        rows = payload.get("rows")
+        return rows if isinstance(rows, list) else []
     except Exception as e:
         print("[content.cache] load failed:", e)
         return None
@@ -485,7 +672,13 @@ def _save_timeseries_cache(account_tag: str, start_date, end_date, rows):
     _ensure_timeseries_cache_table()
     try:
         payload_rows = [dict(r) for r in rows]
-        payload = json.dumps(payload_rows, default=str)
+        payload = json.dumps(
+            {
+                "version": CONTENT_CACHE_VERSION,
+                "rows": payload_rows,
+            },
+            default=str,
+        )
         with engine.begin() as conn:
             conn.execute(
                 text("""
@@ -543,8 +736,11 @@ def _load_list_cache(cache_key: str, start_date, end_date):
             return None
         payload = row.get("payload")
         if isinstance(payload, str):
-            return json.loads(payload)
-        return payload
+            payload = json.loads(payload)
+        if not isinstance(payload, dict) or payload.get("version") != CONTENT_CACHE_VERSION:
+            return None
+        data = payload.get("data")
+        return data if isinstance(data, dict) else None
     except Exception as e:
         print("[content.list_cache] load failed:", e)
         return None
@@ -554,7 +750,13 @@ def _save_list_cache(cache_key: str, start_date, end_date, payload: dict):
     """Save cache cho /list endpoint."""
     _ensure_timeseries_cache_table()
     try:
-        payload_json = json.dumps(payload, default=str)
+        payload_json = json.dumps(
+            {
+                "version": CONTENT_CACHE_VERSION,
+                "data": payload,
+            },
+            default=str,
+        )
         with engine.begin() as conn:
             conn.execute(
                 text("""
@@ -657,6 +859,7 @@ class ContentListRequest(BaseModel):
 @router.post("/list")
 def content_list(
     req: ContentListRequest,
+    skip_enrich: bool = False,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
@@ -673,15 +876,19 @@ def content_list(
         requested_tags[0] if len(requested_tags) == 1
         else _make_multi_tag_cache_key(requested_tags)
     )
-    cached_list = _load_list_cache(list_cache_key, req.start, req.end)
-    if cached_list is not None:
-        return cached_list
+    if not skip_enrich:
+        cached_list = _load_list_cache(list_cache_key, req.start, req.end)
+        if cached_list is not None:
+            return cached_list
 
     account_filter_sql, account_filter_params = _build_account_tag_filter(
         "v.account_tag",
         requested_tags,
     )
     _ensure_thumbnail_daily_table()
+    _ensure_video_daily_stats_metrics_columns()
+    average_view_percentage_expr = _sql_average_view_percentage_expr()
+    engaged_views_expr = _sql_engaged_views_expr()
     sql = f"""
     SELECT
         v.video_id      AS "videoId",
@@ -700,16 +907,8 @@ def content_list(
         END AS "averageViewDuration",
 
         COALESCE(SUM(s.likes), 0) AS likes,
-        NULL::numeric AS "averagePercentageViewed",
-        NULL::bigint AS "engagedViews",
-        NULL::numeric AS "stayedToWatch",
-        NULL::bigint AS "uniqueViewers",
-        NULL::numeric AS "averageViewsPerViewer",
-        NULL::bigint AS "newViewers",
-        NULL::bigint AS "returningViewers",
-        NULL::bigint AS "casualViewers",
-        NULL::bigint AS "regularViewers",
-        
+        {average_view_percentage_expr},
+        {engaged_views_expr},
         -- Sum daily stats for engagement and reach metrics
         COALESCE(SUM(s.subscribers_gained), 0) AS "subscribers",
         MAX(tr.thumbnail_impressions) AS impressions,
@@ -782,11 +981,43 @@ def content_list(
         row["channelTitle"] = label_map.get(channel_id) or channel_id
         row["channelAvatar"] = avatar_map.get(channel_id)
 
+    metrics_by_channel = {}
+    thumbnail_supported_by_channel = {}
+    rows_by_channel = {}
+    for row in rows_mutable:
+        channel_id = str(row.get("channelId") or "").strip()
+        if not channel_id or not row.get("videoId"):
+            continue
+        rows_by_channel.setdefault(channel_id, []).append(row)
+
+    if not skip_enrich:
+        for channel_id, channel_rows in rows_by_channel.items():
+            video_ids = [str(row.get("videoId")) for row in channel_rows if row.get("videoId")]
+            if not video_ids:
+                continue
+            video_metrics, thumbnail_supported = _load_or_fetch_video_metrics(
+                db,
+                channel_id,
+                req.start,
+                req.end,
+                video_ids,
+            )
+            metrics_by_channel[channel_id] = video_metrics
+            thumbnail_supported_by_channel[channel_id] = thumbnail_supported
+            _apply_video_metrics_to_content_rows(channel_rows, video_metrics, thumbnail_supported)
+
     channel_metrics_payload = _compute_channel_metrics_from_db_for_accounts(
         requested_tags,
         req.start,
         req.end,
     )
+    if not skip_enrich and len(requested_tags) == 1:
+        selected_tag = requested_tags[0]
+        selected_video_metrics = metrics_by_channel.get(selected_tag)
+        if selected_video_metrics:
+            api_channel_metrics = _compute_channel_metrics_from_video_metrics(selected_video_metrics)
+            if api_channel_metrics.get("supported"):
+                channel_metrics_payload = api_channel_metrics
 
     rows_mutable = [row for row in rows_mutable if not _should_hide_private_content_row(row)]
 
@@ -794,7 +1025,8 @@ def content_list(
         "items": rows_mutable,
         "channelMetrics": channel_metrics_payload,
     }
-    _save_list_cache(list_cache_key, req.start, req.end, result)
+    if not skip_enrich:
+        _save_list_cache(list_cache_key, req.start, req.end, result)
     return result
 
 class TimeSeriesRequest(BaseModel):
@@ -846,6 +1078,9 @@ def content_timeseries(
         requested_tags,
     )
     _ensure_thumbnail_daily_table()
+    _ensure_video_daily_stats_metrics_columns()
+    timeseries_average_view_percentage_expr = _sql_timeseries_average_view_percentage_expr()
+    timeseries_engaged_views_expr = _sql_timeseries_engaged_views_expr()
     sql = f"""
         SELECT
             s.day                  AS bucket,
@@ -855,6 +1090,9 @@ def content_timeseries(
 
             s.views                AS views,
             (s.estimated_minutes / 60.0) AS watch_hours,
+            s.average_view_duration AS "averageViewDuration",
+            {timeseries_average_view_percentage_expr},
+            {timeseries_engaged_views_expr},
 
             s.likes                AS likes,
             0::numeric             AS revenue,
@@ -927,6 +1165,7 @@ def _compute_channel_metrics_from_db_for_accounts(account_tags, start_date: date
         account_tags,
     )
     _ensure_thumbnail_daily_table()
+    _ensure_video_daily_stats_metrics_columns()
     sql = f"""
         WITH per_video AS (
             SELECT
@@ -1046,19 +1285,27 @@ def content_all_channels(
 
     account_filter_sql, account_filter_params = _build_account_tag_filter("v.account_tag", requested_tags)
     _ensure_thumbnail_daily_table()
+    _ensure_video_daily_stats_metrics_columns()
+    average_view_percentage_expr = _sql_average_view_percentage_expr()
+    engaged_views_expr = _sql_engaged_views_expr()
+    all_channels_timeseries_average_view_duration_expr = _sql_timeseries_average_view_duration_expr()
+    all_channels_timeseries_average_view_percentage_expr = _sql_average_view_percentage_expr(output_alias='"averagePercentageViewed"')
+    all_channels_timeseries_engaged_views_expr = _sql_engaged_views_expr(output_alias='"engagedViews"')
     params = {"start": req.start, "end": req.end, **account_filter_params}
 
     channels_sql = f"""
         SELECT
             v.account_tag AS "channelId",
             COUNT(DISTINCT v.video_id) AS "videoCount",
-            COALESCE(SUM(s.views), 0) AS views,
+            COALESCE(SUM(s.views), MAX(v.views), 0) AS views,
             COALESCE(SUM(s.estimated_minutes) / 60.0, 0) AS "watchTimeHours",
             COALESCE(SUM(s.likes), 0) AS likes,
             COALESCE(SUM(s.subscribers_gained), 0) AS subscribers,
             CASE WHEN SUM(s.views) > 0
                 THEN ROUND(SUM(COALESCE(s.average_view_duration, 0) * COALESCE(s.views, 0))::numeric / NULLIF(SUM(s.views), 0), 2)
                 ELSE NULL END AS "averageViewDuration",
+            {average_view_percentage_expr},
+            {engaged_views_expr},
             COALESCE(SUM(tr.thumbnail_impressions), 0) AS impressions,
             CASE WHEN SUM(tr.thumbnail_impressions) > 0
                 THEN ROUND(SUM(COALESCE(tr.thumbnail_ctr, 0) * COALESCE(tr.thumbnail_impressions, 0))::numeric / NULLIF(SUM(tr.thumbnail_impressions), 0) * 100.0, 4)
@@ -1078,8 +1325,8 @@ def content_all_channels(
         ) tr ON tr.video_id = v.video_id AND tr.account_tag = v.account_tag
         WHERE {account_filter_sql}
         GROUP BY v.account_tag
-        HAVING COALESCE(SUM(s.views), 0) > 0
-        ORDER BY COALESCE(SUM(s.views), 0) DESC;
+        HAVING COALESCE(SUM(s.views), 0) > 0 OR MAX(COALESCE(v.views, 0)) > 0
+        ORDER BY COALESCE(SUM(s.views), MAX(v.views), 0) DESC;
     """
 
     timeseries_sql = f"""
@@ -1087,6 +1334,9 @@ def content_all_channels(
             s.day AS bucket,
             SUM(s.views) AS views,
             SUM(s.estimated_minutes) / 60.0 AS watch_hours,
+            {all_channels_timeseries_average_view_duration_expr},
+            {all_channels_timeseries_average_view_percentage_expr},
+            {all_channels_timeseries_engaged_views_expr},
             SUM(s.likes) AS likes
         FROM video_daily_stats s
         JOIN videos v ON v.video_id = s.video_id
@@ -1105,6 +1355,17 @@ def content_all_channels(
         ch["title"] = ch["channelTitle"]
         ch["displayTitle"] = ch["channelTitle"]
         ch["published"] = ch.get("latestPublishedAt")
+        # Only enrich with video metrics from cache — do NOT make new YouTube API calls here
+        # to avoid blocking the all_channels response for 30-60s per channel.
+        # averagePercentageViewed and engagedViews are already computed from video_daily_stats SQL above.
+        cached_payload = _load_video_metrics_cache(cid, req.start, req.end)
+        cached_metrics, _ = _normalize_video_metrics_cache_payload(cached_payload)
+        if cached_metrics:
+            aggregated_metrics = _aggregate_supported_video_metrics(cached_metrics)
+            if aggregated_metrics.get("averagePercentageViewed") is not None:
+                ch["averagePercentageViewed"] = aggregated_metrics["averagePercentageViewed"]
+            if aggregated_metrics.get("engagedViews") is not None:
+                ch["engagedViews"] = aggregated_metrics["engagedViews"]
 
     timeseries = [dict(r) for r in query_all_safe(timeseries_sql, params)]
     channel_metrics = _compute_channel_metrics_from_db_for_accounts(requested_tags, req.start, req.end)
@@ -1156,6 +1417,9 @@ def _prewarm_worker() -> None:
         if _load_list_cache(cache_key, start, end) is None:
             try:
                 _ensure_thumbnail_daily_table()
+                _ensure_video_daily_stats_metrics_columns()
+                average_view_percentage_expr = _sql_average_view_percentage_expr()
+                engaged_views_expr = _sql_engaged_views_expr()
                 list_sql = f"""
                     SELECT
                         v.video_id      AS "videoId",
@@ -1171,15 +1435,8 @@ def _prewarm_worker() -> None:
                             ELSE NULL END AS "averageViewDuration",
                         COALESCE(SUM(s.likes), 0) AS likes,
                         COALESCE(SUM(s.subscribers_gained), 0) AS "subscribers",
-                        NULL::numeric AS "averagePercentageViewed",
-                        NULL::bigint AS "engagedViews",
-                        NULL::numeric AS "stayedToWatch",
-                        NULL::bigint AS "uniqueViewers",
-                        NULL::numeric AS "averageViewsPerViewer",
-                        NULL::bigint AS "newViewers",
-                        NULL::bigint AS "returningViewers",
-                        NULL::bigint AS "casualViewers",
-                        NULL::bigint AS "regularViewers",
+                        {average_view_percentage_expr},
+                        {engaged_views_expr},
                         NULL::numeric AS "impressionsClickThroughRate",
                         COALESCE(v.card_impressions, 0) AS "cardImpressions",
                         COALESCE(v.ad_impressions, 0) AS "adImpressions"
@@ -1205,6 +1462,9 @@ def _prewarm_worker() -> None:
         if _load_timeseries_cache(cache_key, start, end) is None:
             try:
                 _ensure_thumbnail_daily_table()
+                _ensure_video_daily_stats_metrics_columns()
+                timeseries_average_view_percentage_expr = _sql_timeseries_average_view_percentage_expr()
+                timeseries_engaged_views_expr = _sql_timeseries_engaged_views_expr()
                 ts_sql = f"""
                     SELECT
                         s.day           AS bucket,
@@ -1213,6 +1473,9 @@ def _prewarm_worker() -> None:
                         v.title         AS title,
                         s.views         AS views,
                         (s.estimated_minutes / 60.0) AS watch_hours,
+                        s.average_view_duration AS "averageViewDuration",
+                        {timeseries_average_view_percentage_expr},
+                        {timeseries_engaged_views_expr},
                         s.likes         AS likes,
                         0::numeric      AS revenue,
                         t.thumbnail_impressions::bigint AS impressions

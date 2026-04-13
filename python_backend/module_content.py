@@ -451,6 +451,22 @@ def get_video_daily_analytics(
         except Exception:
             return 0.0
 
+    def _to_optional_int(v):
+        if v is None or v == "":
+            return None
+        try:
+            return int(v)
+        except Exception:
+            return None
+
+    def _to_optional_float(v):
+        if v is None or v == "":
+            return None
+        try:
+            return float(v)
+        except Exception:
+            return None
+
     # Core metrics first (must-have). If this fails, no daily row should be saved.
     core = _query_daily(
         ["views", "estimatedMinutesWatched", "averageViewDuration", "likes", "subscribersGained"],
@@ -460,10 +476,16 @@ def get_video_daily_analytics(
         print(f"[ERROR] Failed core daily analytics for {video_id}")
         return []
 
+    engagement_extra = _query_daily(
+        ["averageViewPercentage", "engagedViews"],
+        "engagement_extra",
+    )
+
     all_days = sorted(core.keys())
     results = []
     for day in all_days:
         c = core.get(day, {})
+        extra = engagement_extra.get(day, {})
         results.append(
             {
                 "video_id": video_id,
@@ -471,6 +493,8 @@ def get_video_daily_analytics(
                 "views": _to_int(c.get("views")),
                 "estimated_minutes": _to_int(c.get("estimatedMinutesWatched")),
                 "average_view_duration": _to_int(c.get("averageViewDuration")),
+                "average_view_percentage": _to_optional_float(extra.get("averageViewPercentage")),
+                "engaged_views": _to_optional_int(extra.get("engagedViews")),
                 "likes": _to_int(c.get("likes")),
                 "subscribers_gained": _to_int(c.get("subscribersGained")),
                 "estimated_revenue": 0.0,
@@ -568,6 +592,8 @@ def save_daily_stats(daily_rows, pg_url: str):
                 views INTEGER,
                 estimated_minutes INTEGER,
                 average_view_duration INTEGER,
+                average_view_percentage DOUBLE PRECISION,
+                engaged_views INTEGER,
                 likes INTEGER,
                 subscribers_gained INTEGER DEFAULT 0,
                 estimated_revenue NUMERIC DEFAULT 0,
@@ -578,6 +604,8 @@ def save_daily_stats(daily_rows, pg_url: str):
         """))
         # Migration for existing tables
         try:
+            conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS average_view_percentage DOUBLE PRECISION;"))
+            conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS engaged_views INTEGER;"))
             conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS subscribers_gained INTEGER DEFAULT 0;"))
             conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS estimated_revenue NUMERIC DEFAULT 0;"))
             conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS card_impressions INTEGER DEFAULT 0;"))
@@ -596,6 +624,8 @@ def save_daily_stats(daily_rows, pg_url: str):
                 "views": r["views"],
                 "emw": r["estimated_minutes"],
                 "avd": r["average_view_duration"],
+                "avp": r.get("average_view_percentage"),
+                "eng": r.get("engaged_views"),
                 "likes": r["likes"],
                 "subs": r["subscribers_gained"],
                 "rev": r["estimated_revenue"],
@@ -606,16 +636,19 @@ def save_daily_stats(daily_rows, pg_url: str):
         ]
         upsert_stmt = text("""
             INSERT INTO video_daily_stats
-                (video_id, day, views, estimated_minutes, average_view_duration, likes, 
+                (video_id, day, views, estimated_minutes, average_view_duration,
+                 average_view_percentage, engaged_views, likes, 
                  subscribers_gained, estimated_revenue,
                  card_impressions, card_clicks)
             VALUES
-                (:id, :day, :views, :emw, :avd, :likes, :subs, :rev, :ci, :cc)
+                (:id, :day, :views, :emw, :avd, :avp, :eng, :likes, :subs, :rev, :ci, :cc)
             ON CONFLICT (video_id, day)
             DO UPDATE SET
                 views = EXCLUDED.views,
                 estimated_minutes = EXCLUDED.estimated_minutes,
                 average_view_duration = EXCLUDED.average_view_duration,
+                average_view_percentage = EXCLUDED.average_view_percentage,
+                engaged_views = EXCLUDED.engaged_views,
                 likes = EXCLUDED.likes,
                 subscribers_gained = EXCLUDED.subscribers_gained,
                 estimated_revenue = EXCLUDED.estimated_revenue,

@@ -177,6 +177,20 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
     );
   };
 
+  const handleMarkNotificationAsRead = (event, messageId) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!messageId) return;
+    markNotificationIdsAsRead([messageId]);
+  };
+
+  const handleMarkAllNotificationsAsRead = () => {
+    const ids = notificationItems
+      .map((item) => String(item?.id || "").trim())
+      .filter(Boolean);
+    markNotificationIdsAsRead(ids);
+  };
+
   const handleOpenNotificationItem = async (item) => {
     if (!isMailAdmin) return;
     const messageId = item?.id;
@@ -438,6 +452,43 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
             },
           }}
         >
+          {notificationItems.length > 0 ? (
+            <Box
+              px={1.75}
+              py={1.25}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 1,
+                borderBottom: "1px solid",
+                borderColor:
+                  theme.palette.mode === "dark"
+                    ? "rgba(148,163,184,0.14)"
+                    : "rgba(15,23,42,0.08)",
+              }}
+            >
+              <Typography variant="subtitle2" fontWeight={700}>
+                Notifications
+              </Typography>
+              {unreadCount > 0 ? (
+                <Button
+                  size="small"
+                  onClick={handleMarkAllNotificationsAsRead}
+                  sx={{
+                    textTransform: "none",
+                    fontWeight: 700,
+                    minWidth: 0,
+                    px: 0,
+                    color: theme.palette.mode === "dark" ? "#67e8f9" : "#1d4ed8",
+                  }}
+                >
+                  Mark all as read
+                </Button>
+              ) : null}
+            </Box>
+          ) : null}
+
           {notificationItems.length === 0 ? (
             <Box px={2} py={2.5}>
               <Typography variant="body2" color="text.secondary">
@@ -473,51 +524,77 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
                   },
                 }}
               >
-              <Box
-                sx={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: "50%",
-                  bgcolor:
-                    item.__read
-                      ? "transparent"
-                      : theme.palette.mode === "dark"
-                        ? "#67e8f9"
-                        : "#16a34a",
-                  flexShrink: 0,
-                  mt: 0.9,
-                  mr: 1.25,
-                  border: item.__read ? "1px solid transparent" : "none",
-                }}
-              />
-              <ListItemText
-                primary={
-                  <Typography variant="body2" fontWeight={700} noWrap>
-                    {item.subject || "(no subject)"}
-                  </Typography>
-                }
-                secondary={
-                  <>
-                    <Typography
-                      component="span"
-                      variant="body2"
-                      color="text.primary"
-                      sx={{ display: "block" }}
-                      noWrap
+                <Box
+                  sx={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: "50%",
+                    bgcolor:
+                      item.__read
+                        ? "transparent"
+                        : theme.palette.mode === "dark"
+                          ? "#67e8f9"
+                          : "#16a34a",
+                    flexShrink: 0,
+                    mt: 0.9,
+                    mr: 1.25,
+                    border: item.__read ? "1px solid transparent" : "none",
+                  }}
+                />
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 1,
+                    minWidth: 0,
+                    width: "100%",
+                  }}
+                >
+                  <ListItemText
+                    primary={
+                      <Typography variant="body2" fontWeight={700} noWrap>
+                        {item.subject || "(no subject)"}
+                      </Typography>
+                    }
+                    secondary={
+                      <>
+                        <Typography
+                          component="span"
+                          variant="body2"
+                          color="text.primary"
+                          sx={{ display: "block" }}
+                          noWrap
+                        >
+                          {item.from_name || item.from_email || "Unknown sender"}
+                        </Typography>
+                        <Typography
+                          component="span"
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block", mt: 0.35 }}
+                        >
+                          {formatNotificationTime(item.received_at || item.last_seen_at)}
+                        </Typography>
+                      </>
+                    }
+                  />
+                  {!item.__read ? (
+                    <Button
+                      size="small"
+                      onClick={(event) => handleMarkNotificationAsRead(event, item.id)}
+                      sx={{
+                        textTransform: "none",
+                        fontWeight: 700,
+                        minWidth: 0,
+                        flexShrink: 0,
+                        px: 0,
+                        color: theme.palette.mode === "dark" ? "#67e8f9" : "#1d4ed8",
+                      }}
                     >
-                      {item.from_name || item.from_email || "Unknown sender"}
-                    </Typography>
-                    <Typography
-                      component="span"
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ display: "block", mt: 0.35 }}
-                    >
-                      {formatNotificationTime(item.received_at || item.last_seen_at)}
-                    </Typography>
-                  </>
-                }
-              />
+                      Mark as read
+                    </Button>
+                  ) : null}
+                </Box>
               </MenuItem>
             ))
           )}
