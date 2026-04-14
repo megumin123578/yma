@@ -10,7 +10,6 @@ from sqlalchemy import bindparam, text
 
 from python_backend.db import engine
 
-
 def _normalize_account_email_scope(account_emails: Optional[list[str]]) -> Optional[list[str]]:
     if account_emails is None:
         return None
@@ -58,9 +57,59 @@ def _is_telegram_enabled() -> bool:
     return raw not in {"0", "false", "no", "off"}
 
 
+def _mail_record(item: Optional[dict[str, Any]]) -> dict[str, Any]:
+    return dict(item or {})
+
+
+def _build_telegram_match_alert_lines(
+    *,
+    account_email: str,
+    mailbox: str,
+    matched_messages: list[dict[str, Any]],
+) -> list[str]:
+    normalized_mailbox = str(mailbox or "").strip()
+    lines = [f"Account: <code>{escape(account_email or '-')}</code>"]
+    if normalized_mailbox and normalized_mailbox.upper() != "INBOX":
+        lines.append(f"Mailbox: <code>{escape(normalized_mailbox)}</code>")
+    lines.extend(
+        [
+            f"New matched emails: <b>{len(matched_messages)}</b>",
+            "",
+        ]
+    )
+
+    for index, item in enumerate(matched_messages[:5], start=1):
+        sender = item.get("from_name") or item.get("from_email") or "-"
+        subject = item.get("subject") or "(no subject)"
+        lines.append(f"{index}. {escape(str(sender))} | {escape(str(subject))}")
+
+    if len(matched_messages) > 5:
+        lines.append(f"... and {len(matched_messages) - 5} more")
+
+    return lines
+
+
+def build_telegram_match_alert_payload(
+    *,
+    account_email: str,
+    mailbox: str,
+    matched_messages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "text": "\n".join(
+            _build_telegram_match_alert_lines(
+                account_email=account_email,
+                mailbox=mailbox,
+                matched_messages=matched_messages,
+            )
+        ),
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+
+
 def _send_telegram_match_alert(
     *,
-    vps_id: str,
     account_email: str,
     mailbox: str,
     matched_messages: list[dict[str, Any]],
@@ -73,29 +122,18 @@ def _send_telegram_match_alert(
     if not bot_token or not chat_id:
         return
 
-    lines = [
-        f"Account: <code>{escape(account_email or '-')}</code>",
-        f"Mailbox: <code>{escape(mailbox or '-')}</code>",
-        f"New matched emails: <b>{len(matched_messages)}</b>",
-        "",
-    ]
-
-    for index, item in enumerate(matched_messages[:5], start=1):
-        sender = item.get("from_name") or item.get("from_email") or "-"
-        subject = item.get("subject") or "(no subject)"
-        lines.append(f"{index}. {escape(str(sender))} | {escape(str(subject))}")
-
-    if len(matched_messages) > 5:
-        lines.append(f"... and {len(matched_messages) - 5} more")
+    payload = build_telegram_match_alert_payload(
+        account_email=account_email,
+        mailbox=mailbox,
+        matched_messages=matched_messages,
+    )
 
     try:
         requests.post(
             f"https://api.telegram.org/bot{bot_token}/sendMessage",
             json={
                 "chat_id": chat_id,
-                "text": "\n".join(lines),
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True,
+                **payload,
             },
             timeout=10,
         ).raise_for_status()
@@ -115,20 +153,13 @@ def send_test_telegram_notification() -> dict[str, Any]:
     if not chat_id:
         raise ValueError("Missing TELEGRAM_CHAT_ID.")
 
-    lines = [
-        "<b>Email Manager</b>",
-        "Telegram test notification",
-        f"Time: <code>{datetime.utcnow().isoformat()}Z</code>",
-        "Status: <b>ok</b>",
-    ]
+    payload = build_test_telegram_message_payload()
 
     response = requests.post(
         f"https://api.telegram.org/bot{bot_token}/sendMessage",
         json={
             "chat_id": chat_id,
-            "text": "\n".join(lines),
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
+            **payload,
         },
         timeout=10,
     )
@@ -141,6 +172,20 @@ def send_test_telegram_notification() -> dict[str, Any]:
     }
 
 
+def build_test_telegram_message_payload(*, triggered_at: Optional[str] = None) -> dict[str, Any]:
+    lines = [
+        "<b>Email Manager</b>",
+        "Telegram test notification",
+        f"Time: <code>{str(triggered_at or f'{datetime.utcnow().isoformat()}Z').strip()}</code>",
+        "Status: <b>ok</b>",
+    ]
+    return {
+        "text": "\n".join(lines),
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+
+
 def ensure_mail_tables() -> None:
     with engine.begin() as conn:
         conn.execute(
@@ -148,7 +193,6 @@ def ensure_mail_tables() -> None:
                 """
                 CREATE TABLE IF NOT EXISTS mail_monitor_messages (
                     id BIGSERIAL PRIMARY KEY,
-                    vps_id TEXT NOT NULL,
                     account_email TEXT NOT NULL DEFAULT '',
                     provider TEXT NOT NULL DEFAULT 'imap',
                     mailbox TEXT NOT NULL,
@@ -168,8 +212,7 @@ def ensure_mail_tables() -> None:
                     first_seen_at TIMESTAMP NOT NULL DEFAULT NOW(),
                     last_seen_at TIMESTAMP NOT NULL DEFAULT NOW(),
                     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                    UNIQUE (vps_id, account_email, mailbox, provider_message_id)
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
                 );
                 """
             )
@@ -185,24 +228,97 @@ def ensure_mail_tables() -> None:
         conn.execute(
             text(
                 """
+                WITH ranked_duplicates AS (
+                    SELECT
+                        id,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY
+                                COALESCE(account_email, ''),
+                                COALESCE(mailbox, ''),
+                                COALESCE(provider_message_id, '')
+                            ORDER BY
+                                COALESCE(received_at, updated_at, last_seen_at, created_at) DESC NULLS LAST,
+                                updated_at DESC NULLS LAST,
+                                id DESC
+                        ) AS row_num
+                    FROM mail_monitor_messages
+                )
+                DELETE FROM mail_monitor_messages messages
+                USING ranked_duplicates duplicates
+                WHERE messages.id = duplicates.id
+                  AND duplicates.row_num > 1;
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                DO $$
+                DECLARE constraint_name TEXT;
+                BEGIN
+                    FOR constraint_name IN
+                        SELECT con.conname
+                        FROM pg_constraint con
+                        JOIN pg_class rel ON rel.oid = con.conrelid
+                        WHERE rel.relname = 'mail_monitor_messages'
+                          AND con.contype = 'u'
+                          AND pg_get_constraintdef(con.oid) ILIKE '%vps_id%'
+                    LOOP
+                        EXECUTE format(
+                            'ALTER TABLE mail_monitor_messages DROP CONSTRAINT IF EXISTS %I',
+                            constraint_name
+                        );
+                    END LOOP;
+                END $$;
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                DO $$
+                DECLARE index_name TEXT;
+                BEGIN
+                    FOR index_name IN
+                        SELECT indexname
+                        FROM pg_indexes
+                        WHERE tablename = 'mail_monitor_messages'
+                          AND indexdef ILIKE '%vps_id%'
+                    LOOP
+                        EXECUTE format('DROP INDEX IF EXISTS %I', index_name);
+                    END LOOP;
+                END $$;
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
+                DROP INDEX IF EXISTS idx_mail_monitor_messages_account_mailbox_message;
+                """
+            )
+        )
+        conn.execute(
+            text(
+                """
                 ALTER TABLE mail_monitor_messages
-                DROP CONSTRAINT IF EXISTS mail_monitor_messages_vps_id_mailbox_provider_message_id_key;
+                DROP COLUMN IF EXISTS vps_id;
                 """
             )
         )
         conn.execute(
             text(
                 """
-                CREATE INDEX IF NOT EXISTS idx_mail_monitor_messages_vps_mailbox
-                ON mail_monitor_messages (vps_id, mailbox);
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_mail_monitor_messages_account_mailbox_message
+                ON mail_monitor_messages (account_email, mailbox, provider_message_id);
                 """
             )
         )
         conn.execute(
             text(
                 """
-                CREATE INDEX IF NOT EXISTS idx_mail_monitor_messages_machine_account_mailbox
-                ON mail_monitor_messages (vps_id, account_email, mailbox);
+                CREATE INDEX IF NOT EXISTS idx_mail_monitor_messages_account_mailbox
+                ON mail_monitor_messages (account_email, mailbox);
                 """
             )
         )
@@ -227,7 +343,6 @@ def ensure_mail_tables() -> None:
                 """
                 CREATE TABLE IF NOT EXISTS mail_monitor_runs (
                     id BIGSERIAL PRIMARY KEY,
-                    vps_id TEXT NOT NULL,
                     account_email TEXT NOT NULL DEFAULT '',
                     provider TEXT NOT NULL DEFAULT 'imap',
                     mailbox TEXT NOT NULL,
@@ -257,33 +372,34 @@ def ensure_mail_tables() -> None:
         conn.execute(
             text(
                 """
-                CREATE INDEX IF NOT EXISTS idx_mail_monitor_runs_vps_mailbox
-                ON mail_monitor_runs (vps_id, mailbox, run_finished_at DESC);
+                DO $$
+                DECLARE index_name TEXT;
+                BEGIN
+                    FOR index_name IN
+                        SELECT indexname
+                        FROM pg_indexes
+                        WHERE tablename = 'mail_monitor_runs'
+                          AND indexdef ILIKE '%vps_id%'
+                    LOOP
+                        EXECUTE format('DROP INDEX IF EXISTS %I', index_name);
+                    END LOOP;
+                END $$;
                 """
             )
         )
         conn.execute(
             text(
                 """
-                CREATE INDEX IF NOT EXISTS idx_mail_monitor_runs_machine_account_mailbox
-                ON mail_monitor_runs (vps_id, account_email, mailbox, run_finished_at DESC);
+                ALTER TABLE mail_monitor_runs
+                DROP COLUMN IF EXISTS vps_id;
                 """
             )
         )
         conn.execute(
             text(
                 """
-                CREATE UNIQUE INDEX IF NOT EXISTS uq_mail_monitor_messages_machine_account_mailbox_message
-                ON mail_monitor_messages (vps_id, account_email, mailbox, provider_message_id);
-                """
-            )
-        )
-        conn.execute(
-            text(
-                """
-                CREATE SEQUENCE IF NOT EXISTS mail_monitor_vps_seq
-                START WITH 1
-                INCREMENT BY 1;
+                CREATE INDEX IF NOT EXISTS idx_mail_monitor_runs_account_mailbox
+                ON mail_monitor_runs (account_email, mailbox, run_finished_at DESC);
                 """
             )
         )
@@ -308,7 +424,6 @@ def ensure_mail_tables() -> None:
 
 
 def _normalize_message_id(
-    vps_id: str,
     account_email: str,
     mailbox: str,
     raw_message_id: Optional[str],
@@ -323,7 +438,6 @@ def _normalize_message_id(
         return f"uid:{uid}"
     seed = "|".join(
         [
-            vps_id,
             account_email,
             mailbox,
             str(subject or ""),
@@ -336,7 +450,6 @@ def _normalize_message_id(
 
 def _normalize_message(
     *,
-    vps_id: str,
     account_email: str,
     provider: str,
     mailbox: str,
@@ -362,7 +475,6 @@ def _normalize_message(
         uid = None
 
     provider_message_id = _normalize_message_id(
-        vps_id=vps_id,
         account_email=account_email,
         mailbox=mailbox,
         raw_message_id=item.get("provider_message_id"),
@@ -382,7 +494,6 @@ def _normalize_message(
         status = "matched"
 
     return {
-        "vps_id": vps_id,
         "account_email": account_email,
         "provider": provider or "imap",
         "mailbox": mailbox,
@@ -405,7 +516,6 @@ def _normalize_message(
 def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
     ensure_mail_tables()
 
-    vps_id = str(payload.get("vps_id") or "").strip()
     account_email = str(payload.get("account_email") or "").strip().lower()
     mailbox = str(payload.get("mailbox") or "INBOX").strip() or "INBOX"
     provider = str(payload.get("provider") or "imap").strip() or "imap"
@@ -419,9 +529,6 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
     run_payload = payload.get("payload")
     if not isinstance(run_payload, dict):
         run_payload = {}
-
-    if not vps_id:
-        raise ValueError("Missing vps_id")
 
     if isinstance(run_started_at, str):
         run_started_at = datetime.fromisoformat(run_started_at.replace("Z", "+00:00"))
@@ -437,7 +544,6 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(item, dict):
             continue
         normalized = _normalize_message(
-            vps_id=vps_id,
             account_email=account_email,
             provider=provider,
             mailbox=mailbox,
@@ -459,8 +565,7 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
                 """
                 SELECT provider_message_id, status, matched_rule
                 FROM mail_monitor_messages
-                WHERE vps_id = :vps_id
-                  AND account_email = :account_email
+                WHERE account_email = :account_email
                   AND mailbox = :mailbox
                   AND provider_message_id IN :provider_message_ids
                 """
@@ -468,7 +573,6 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
             rows = conn.execute(
                 existing_query,
                 {
-                    "vps_id": vps_id,
                     "account_email": account_email,
                     "mailbox": mailbox,
                     "provider_message_ids": provider_message_ids,
@@ -484,7 +588,6 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
             upsert_statement = text(
                 """
                 INSERT INTO mail_monitor_messages (
-                    vps_id,
                     account_email,
                     provider,
                     mailbox,
@@ -507,7 +610,6 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
                     updated_at
                 )
                 VALUES (
-                    :vps_id,
                     :account_email,
                     :provider,
                     :mailbox,
@@ -529,7 +631,7 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
                     NOW(),
                     NOW()
                 )
-                ON CONFLICT (vps_id, account_email, mailbox, provider_message_id)
+                ON CONFLICT (account_email, mailbox, provider_message_id)
                 DO UPDATE SET
                     provider = EXCLUDED.provider,
                     uid = EXCLUDED.uid,
@@ -565,7 +667,6 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
             text(
                 """
                 INSERT INTO mail_monitor_runs (
-                    vps_id,
                     account_email,
                     provider,
                     mailbox,
@@ -582,7 +683,6 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
                     created_at
                 )
                 VALUES (
-                    :vps_id,
                     :account_email,
                     :provider,
                     :mailbox,
@@ -601,7 +701,6 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
                 """
             ),
             {
-                "vps_id": vps_id,
                 "account_email": account_email,
                 "provider": provider,
                 "mailbox": mailbox,
@@ -619,22 +718,61 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
         )
 
     _send_telegram_match_alert(
-        vps_id=vps_id,
         account_email=account_email,
         mailbox=mailbox,
         matched_messages=newly_matched_messages,
     )
 
-    return {
+    return _mail_record({
         "ok": True,
-        "vps_id": vps_id,
         "account_email": account_email,
         "mailbox": mailbox,
         "message_count": len(normalized_messages),
         "inserted_count": inserted_count,
         "updated_count": updated_count,
         "status": status,
-    }
+    })
+
+
+def _canonical_mail_messages_cte() -> str:
+    return """
+        WITH canonical_messages AS (
+            SELECT DISTINCT ON (
+                COALESCE(account_email, ''),
+                COALESCE(mailbox, ''),
+                COALESCE(provider_message_id, '')
+            )
+                id,
+                account_email,
+                provider,
+                mailbox,
+                provider_message_id,
+                uid,
+                thread_id,
+                subject,
+                from_email,
+                from_name,
+                to_email,
+                received_at,
+                seen,
+                status,
+                matched_rule,
+                snippet,
+                payload,
+                first_seen_at,
+                last_seen_at,
+                created_at,
+                updated_at
+            FROM mail_monitor_messages
+            ORDER BY
+                COALESCE(account_email, ''),
+                COALESCE(mailbox, ''),
+                COALESCE(provider_message_id, ''),
+                COALESCE(received_at, updated_at, last_seen_at, created_at) DESC NULLS LAST,
+                updated_at DESC NULLS LAST,
+                id DESC
+        )
+    """.strip()
 
 
 def get_mail_overview(*, account_emails: Optional[list[str]] = None) -> dict[str, Any]:
@@ -643,21 +781,22 @@ def get_mail_overview(*, account_emails: Optional[list[str]] = None) -> dict[str
     scope_params: dict[str, Any] = {}
     _append_account_email_scope(scope_clauses, scope_params, account_emails, column_name="account_email")
     scope_sql = f"WHERE {' AND '.join(scope_clauses)}" if scope_clauses else ""
+    canonical_messages_cte = _canonical_mail_messages_cte()
 
     with engine.begin() as conn:
         rows_stmt = _bind_expanding_params(
             text(
                 """
-                WITH mailbox_keys AS (
-                    SELECT DISTINCT vps_id, account_email, mailbox FROM mail_monitor_messages
+                {canonical_messages_cte},
+                mailbox_keys AS (
+                    SELECT DISTINCT account_email, mailbox FROM canonical_messages
                     {scope_sql}
                     UNION
-                    SELECT DISTINCT vps_id, account_email, mailbox FROM mail_monitor_runs
+                    SELECT DISTINCT account_email, mailbox FROM mail_monitor_runs
                     {scope_sql}
                 ),
                 message_stats AS (
                     SELECT
-                        vps_id,
                         account_email,
                         mailbox,
                         MAX(provider) AS provider,
@@ -666,12 +805,11 @@ def get_mail_overview(*, account_emails: Optional[list[str]] = None) -> dict[str
                         COUNT(*) FILTER (WHERE status = 'error')::bigint AS error_messages,
                         MAX(received_at) AS latest_received_at,
                         MAX(last_seen_at) AS latest_seen_at
-                    FROM mail_monitor_messages
-                    GROUP BY vps_id, account_email, mailbox
+                    FROM canonical_messages
+                    GROUP BY account_email, mailbox
                 ),
                 latest_runs AS (
-                    SELECT DISTINCT ON (vps_id, account_email, mailbox)
-                        vps_id,
+                    SELECT DISTINCT ON (account_email, mailbox)
                         account_email,
                         mailbox,
                         provider,
@@ -682,10 +820,9 @@ def get_mail_overview(*, account_emails: Optional[list[str]] = None) -> dict[str
                         inserted_count,
                         updated_count
                     FROM mail_monitor_runs
-                    ORDER BY vps_id, account_email, mailbox, run_finished_at DESC, id DESC
+                    ORDER BY account_email, mailbox, run_finished_at DESC, id DESC
                 )
                 SELECT
-                    k.vps_id,
                     k.account_email,
                     k.mailbox,
                     COALESCE(r.provider, m.provider, 'imap') AS provider,
@@ -702,15 +839,14 @@ def get_mail_overview(*, account_emails: Optional[list[str]] = None) -> dict[str
                     COALESCE(r.updated_count, 0) AS last_run_updated_count
                 FROM mailbox_keys k
                 LEFT JOIN message_stats m
-                  ON m.vps_id = k.vps_id AND m.account_email = k.account_email AND m.mailbox = k.mailbox
+                  ON m.account_email = k.account_email AND m.mailbox = k.mailbox
                 LEFT JOIN latest_runs r
-                  ON r.vps_id = k.vps_id AND r.account_email = k.account_email AND r.mailbox = k.mailbox
+                  ON r.account_email = k.account_email AND r.mailbox = k.mailbox
                 ORDER BY COALESCE(r.run_finished_at, m.latest_seen_at, m.latest_received_at) DESC NULLS LAST,
-                         k.vps_id,
                          k.account_email,
                          k.mailbox
                 """
-                .format(scope_sql=scope_sql)
+                .format(scope_sql=scope_sql, canonical_messages_cte=canonical_messages_cte)
             ),
             scope_params,
         )
@@ -719,34 +855,32 @@ def get_mail_overview(*, account_emails: Optional[list[str]] = None) -> dict[str
         summary_stmt = _bind_expanding_params(
             text(
                 """
-                WITH mailbox_keys AS (
-                    SELECT DISTINCT vps_id, account_email, mailbox FROM mail_monitor_messages
+                {canonical_messages_cte},
+                mailbox_keys AS (
+                    SELECT DISTINCT account_email, mailbox FROM canonical_messages
                     {scope_sql}
                     UNION
-                    SELECT DISTINCT vps_id, account_email, mailbox FROM mail_monitor_runs
+                    SELECT DISTINCT account_email, mailbox FROM mail_monitor_runs
                     {scope_sql}
                 ),
                 message_stats AS (
                     SELECT
-                        vps_id,
                         account_email,
                         mailbox,
                         COUNT(*)::bigint AS total_messages,
                         COUNT(*) FILTER (WHERE COALESCE(seen, FALSE) = FALSE)::bigint AS unread_messages
-                    FROM mail_monitor_messages
-                    GROUP BY vps_id, account_email, mailbox
+                    FROM canonical_messages
+                    GROUP BY account_email, mailbox
                 ),
                 latest_runs AS (
-                    SELECT DISTINCT ON (vps_id, account_email, mailbox)
-                        vps_id,
+                    SELECT DISTINCT ON (account_email, mailbox)
                         account_email,
                         mailbox,
                         status AS last_run_status
                     FROM mail_monitor_runs
-                    ORDER BY vps_id, account_email, mailbox, run_finished_at DESC, id DESC
+                    ORDER BY account_email, mailbox, run_finished_at DESC, id DESC
                 )
                 SELECT
-                    COUNT(DISTINCT k.vps_id)::bigint AS vps_count,
                     COUNT(DISTINCT NULLIF(k.account_email, ''))::bigint AS account_count,
                     COUNT(*)::bigint AS mailbox_count,
                     COALESCE(SUM(m.total_messages), 0)::bigint AS total_messages,
@@ -754,73 +888,24 @@ def get_mail_overview(*, account_emails: Optional[list[str]] = None) -> dict[str
                     COUNT(*) FILTER (WHERE COALESCE(r.last_run_status, '') = 'error')::bigint AS error_messages
                 FROM mailbox_keys k
                 LEFT JOIN message_stats m
-                  ON m.vps_id = k.vps_id AND m.account_email = k.account_email AND m.mailbox = k.mailbox
+                  ON m.account_email = k.account_email AND m.mailbox = k.mailbox
                 LEFT JOIN latest_runs r
-                  ON r.vps_id = k.vps_id AND r.account_email = k.account_email AND r.mailbox = k.mailbox
+                  ON r.account_email = k.account_email AND r.mailbox = k.mailbox
                 """
-                .format(scope_sql=scope_sql)
+                .format(scope_sql=scope_sql, canonical_messages_cte=canonical_messages_cte)
             ),
             scope_params,
         )
         summary_row = conn.execute(summary_stmt, scope_params).mappings().first()
 
     return {
-        "summary": dict(summary_row or {}),
-        "items": [dict(row) for row in rows],
+        "summary": _mail_record(summary_row),
+        "items": [_mail_record(row) for row in rows],
     }
-
-
-def get_next_vps_id() -> str:
-    ensure_mail_tables()
-
-    with engine.begin() as conn:
-        existing_max_row = conn.execute(
-            text(
-                """
-                SELECT COALESCE(MAX(suffix), 0)::bigint AS highest_suffix
-                FROM (
-                    SELECT CAST(SUBSTRING(LOWER(vps_id) FROM '^vps-(\d+)$') AS BIGINT) AS suffix
-                    FROM mail_monitor_messages
-                    UNION ALL
-                    SELECT CAST(SUBSTRING(LOWER(vps_id) FROM '^vps-(\d+)$') AS BIGINT) AS suffix
-                    FROM mail_monitor_runs
-                ) AS ids
-                WHERE suffix IS NOT NULL
-                """
-            )
-        ).mappings().first()
-
-        sequence_row = conn.execute(
-            text(
-                """
-                SELECT last_value, is_called
-                FROM mail_monitor_vps_seq
-                """
-            )
-        ).mappings().first()
-
-        highest_existing = int((existing_max_row or {}).get("highest_suffix") or 0)
-        sequence_last = int((sequence_row or {}).get("last_value") or 0)
-        sequence_is_called = bool((sequence_row or {}).get("is_called"))
-        if not sequence_is_called:
-            sequence_last = 0
-
-        if sequence_last < highest_existing:
-            conn.execute(
-                text("SELECT setval('mail_monitor_vps_seq', :value, true)"),
-                {"value": highest_existing},
-            )
-
-        next_value = conn.execute(
-            text("SELECT nextval('mail_monitor_vps_seq') AS next_value")
-        ).scalar_one()
-
-    return f"vps-{int(next_value):02d}"
 
 
 def list_mail_messages(
     *,
-    vps_id: Optional[str] = None,
     account_email: Optional[str] = None,
     account_emails: Optional[list[str]] = None,
     mailbox: Optional[str] = None,
@@ -831,6 +916,7 @@ def list_mail_messages(
     per_account_limit: Optional[int] = None,
 ) -> dict[str, Any]:
     ensure_mail_tables()
+    canonical_messages_cte = _canonical_mail_messages_cte()
 
     where_clauses = []
     params: dict[str, Any] = {
@@ -842,9 +928,6 @@ def list_mail_messages(
         normalized_per_account_limit = max(1, min(int(per_account_limit), 500))
         params["per_account_limit"] = normalized_per_account_limit
 
-    if vps_id:
-        where_clauses.append("vps_id = :vps_id")
-        params["vps_id"] = vps_id
     if account_email:
         where_clauses.append("account_email = :account_email")
         params["account_email"] = str(account_email).strip().lower()
@@ -876,10 +959,33 @@ def list_mail_messages(
             rows_stmt = _bind_expanding_params(
                 text(
                     f"""
-                    WITH ranked_messages AS (
+                    {canonical_messages_cte},
+                    filtered_messages AS (
                         SELECT
                             id,
-                            vps_id,
+                            account_email,
+                            provider,
+                            mailbox,
+                            provider_message_id,
+                            uid,
+                            thread_id,
+                            subject,
+                            from_email,
+                            from_name,
+                            to_email,
+                            received_at,
+                            seen,
+                            status,
+                            matched_rule,
+                            snippet,
+                            last_seen_at,
+                            updated_at
+                        FROM canonical_messages
+                        {where_sql}
+                    ),
+                    ranked_messages AS (
+                        SELECT
+                            id,
                             account_email,
                             provider,
                             mailbox,
@@ -901,12 +1007,10 @@ def list_mail_messages(
                                 PARTITION BY COALESCE(account_email, '')
                                 ORDER BY COALESCE(received_at, updated_at) DESC NULLS LAST, id DESC
                             ) AS row_num
-                        FROM mail_monitor_messages
-                        {where_sql}
+                        FROM filtered_messages
                     )
                     SELECT
                         id,
-                        vps_id,
                         account_email,
                         provider,
                         mailbox,
@@ -941,14 +1045,23 @@ def list_mail_messages(
             total_stmt = _bind_expanding_params(
                 text(
                     f"""
-                    WITH ranked_messages AS (
+                    {canonical_messages_cte},
+                    filtered_messages AS (
+                        SELECT
+                            id,
+                            account_email,
+                            received_at,
+                            updated_at
+                        FROM canonical_messages
+                        {where_sql}
+                    ),
+                    ranked_messages AS (
                         SELECT
                             ROW_NUMBER() OVER (
                                 PARTITION BY COALESCE(account_email, '')
                                 ORDER BY COALESCE(received_at, updated_at) DESC NULLS LAST, id DESC
                             ) AS row_num
-                        FROM mail_monitor_messages
-                        {where_sql}
+                        FROM filtered_messages
                     )
                     SELECT COUNT(*)::bigint AS total
                     FROM ranked_messages
@@ -965,9 +1078,32 @@ def list_mail_messages(
             rows_stmt = _bind_expanding_params(
                 text(
                     f"""
+                    {canonical_messages_cte},
+                    filtered_messages AS (
+                        SELECT
+                            id,
+                            account_email,
+                            provider,
+                            mailbox,
+                            provider_message_id,
+                            uid,
+                            thread_id,
+                            subject,
+                            from_email,
+                            from_name,
+                            to_email,
+                            received_at,
+                            seen,
+                            status,
+                            matched_rule,
+                            snippet,
+                            last_seen_at,
+                            updated_at
+                        FROM canonical_messages
+                        {where_sql}
+                    )
                     SELECT
                         id,
-                        vps_id,
                         account_email,
                         provider,
                         mailbox,
@@ -985,8 +1121,7 @@ def list_mail_messages(
                         snippet,
                         last_seen_at,
                         updated_at
-                    FROM mail_monitor_messages
-                    {where_sql}
+                    FROM filtered_messages
                     ORDER BY COALESCE(received_at, updated_at) DESC NULLS LAST, id DESC
                     LIMIT :limit
                     OFFSET :offset
@@ -999,9 +1134,14 @@ def list_mail_messages(
             total_stmt = _bind_expanding_params(
                 text(
                     f"""
+                    {canonical_messages_cte},
+                    filtered_messages AS (
+                        SELECT id
+                        FROM canonical_messages
+                        {where_sql}
+                    )
                     SELECT COUNT(*)::bigint AS total
-                    FROM mail_monitor_messages
-                    {where_sql}
+                    FROM filtered_messages
                     """
                 ),
                 {k: v for k, v in params.items() if k not in {"limit", "offset"}},
@@ -1012,7 +1152,7 @@ def list_mail_messages(
             ).mappings().first()
 
     return {
-        "items": [dict(row) for row in rows],
+        "items": [_mail_record(row) for row in rows],
         "total": int((total_row or {}).get("total") or 0),
     }
 
@@ -1030,7 +1170,6 @@ def get_mail_message_detail(message_id: int, *, account_emails: Optional[list[st
                 """
                 SELECT
                     id,
-                    vps_id,
                     account_email,
                     provider,
                     mailbox,
@@ -1061,52 +1200,13 @@ def get_mail_message_detail(message_id: int, *, account_emails: Optional[list[st
         )
         row = conn.execute(stmt, params).mappings().first()
 
-    return dict(row) if row else None
+    return _mail_record(row) if row else None
 
 
-def delete_mail_machine(vps_id: str) -> dict[str, Any]:
+def delete_mail_account(account_email: str) -> dict[str, Any]:
     ensure_mail_tables()
 
-    normalized_vps_id = str(vps_id or "").strip()
-    if not normalized_vps_id:
-        raise ValueError("Machine is required.")
-
-    with engine.begin() as conn:
-        message_deleted = conn.execute(
-            text(
-                """
-                DELETE FROM mail_monitor_messages
-                WHERE vps_id = :vps_id
-                """
-            ),
-            {"vps_id": normalized_vps_id},
-        ).rowcount or 0
-
-        run_deleted = conn.execute(
-            text(
-                """
-                DELETE FROM mail_monitor_runs
-                WHERE vps_id = :vps_id
-                """
-            ),
-            {"vps_id": normalized_vps_id},
-        ).rowcount or 0
-
-    return {
-        "ok": True,
-        "vps_id": normalized_vps_id,
-        "deleted_messages": int(message_deleted),
-        "deleted_runs": int(run_deleted),
-    }
-
-
-def delete_mail_account(vps_id: str, account_email: str) -> dict[str, Any]:
-    ensure_mail_tables()
-
-    normalized_vps_id = str(vps_id or "").strip()
     normalized_account_email = str(account_email or "").strip().lower()
-    if not normalized_vps_id:
-        raise ValueError("Machine is required.")
     if not normalized_account_email:
         raise ValueError("Account email is required.")
 
@@ -1115,12 +1215,10 @@ def delete_mail_account(vps_id: str, account_email: str) -> dict[str, Any]:
             text(
                 """
                 DELETE FROM mail_monitor_messages
-                WHERE vps_id = :vps_id
-                  AND account_email = :account_email
+                WHERE account_email = :account_email
                 """
             ),
             {
-                "vps_id": normalized_vps_id,
                 "account_email": normalized_account_email,
             },
         ).rowcount or 0
@@ -1129,26 +1227,24 @@ def delete_mail_account(vps_id: str, account_email: str) -> dict[str, Any]:
             text(
                 """
                 DELETE FROM mail_monitor_runs
-                WHERE vps_id = :vps_id
-                  AND account_email = :account_email
+                WHERE account_email = :account_email
                 """
             ),
             {
-                "vps_id": normalized_vps_id,
                 "account_email": normalized_account_email,
             },
         ).rowcount or 0
 
     return {
         "ok": True,
-        "vps_id": normalized_vps_id,
         "account_email": normalized_account_email,
         "deleted_messages": int(message_deleted),
         "deleted_runs": int(run_deleted),
     }
+
+
 def list_mail_runs(
     *,
-    vps_id: Optional[str] = None,
     account_email: Optional[str] = None,
     account_emails: Optional[list[str]] = None,
     mailbox: Optional[str] = None,
@@ -1161,9 +1257,6 @@ def list_mail_runs(
         "limit": max(1, min(int(limit or 50), 200)),
     }
 
-    if vps_id:
-        where_clauses.append("vps_id = :vps_id")
-        params["vps_id"] = vps_id
     if account_email:
         where_clauses.append("account_email = :account_email")
         params["account_email"] = str(account_email).strip().lower()
@@ -1180,7 +1273,6 @@ def list_mail_runs(
                 f"""
                 SELECT
                     id,
-                    vps_id,
                     account_email,
                     provider,
                     mailbox,
@@ -1204,4 +1296,4 @@ def list_mail_runs(
         )
         rows = conn.execute(stmt, params).mappings().all()
 
-    return {"items": [dict(row) for row in rows]}
+    return {"items": [_mail_record(row) for row in rows]}

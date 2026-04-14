@@ -23,8 +23,6 @@ from python_backend.token_store import (
     store_token_credentials,
 )
 
-
-MAIL_SOURCE_ID = "gmail-api"
 MAIL_AGENT_VERSION = "mail-backend-v1"
 MAIL_GMAIL_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 MAIL_OAUTH_TTL_MINUTES = 15
@@ -452,7 +450,6 @@ def sync_mail_account(db: Session, account: MailAccount, fetch_limit: int = 50) 
             total_messages += len(messages)
             save_mail_ingest(
                 {
-                    "vps_id": MAIL_SOURCE_ID,
                     "account_email": account.account_email,
                     "provider": account.provider or "gmail_api",
                     "mailbox": mailbox,
@@ -495,7 +492,6 @@ def sync_mail_account(db: Session, account: MailAccount, fetch_limit: int = 50) 
             try:
                 save_mail_ingest(
                     {
-                        "vps_id": MAIL_SOURCE_ID,
                         "account_email": account.account_email,
                         "provider": account.provider or "gmail_api",
                         "mailbox": mailbox,
@@ -589,6 +585,6 @@ def upsert_mail_account(
 
 def delete_mail_account_integration(db: Session, account: MailAccount) -> None:
     delete_token_credentials(account.token_name)
-    delete_mail_account_rows(MAIL_SOURCE_ID, account.account_email)
+    delete_mail_account_rows(account.account_email)
     db.delete(account)
     db.commit()

@@ -205,6 +205,7 @@ const MailMonitor = () => {
     () => (Array.isArray(messages?.items) ? messages.items : []).filter(Boolean),
     [messages]
   );
+  const isMailAdmin = !!user?.is_admin;
   const summary = overview?.summary || {};
   const connectedAccountCount = mailAccounts.length || Number(summary.account_count || 0);
   const filteredMailAccounts = useMemo(() => {
@@ -386,6 +387,25 @@ const MailMonitor = () => {
       setAccountActionId("");
     }
   }, [loadData]);
+
+  const handleTestMailLog = useCallback(async () => {
+    setAccountActionId("test-log");
+    setAccountActionStatus({ type: "", message: "" });
+    try {
+      const response = await api.post("/api/mail/test-log");
+      setAccountActionStatus({
+        type: "success",
+        message: response?.data?.message || "Backend mail test log emitted.",
+      });
+    } catch (err) {
+      setAccountActionStatus({
+        type: "error",
+        message: err?.response?.data?.detail || err?.message || "Failed to emit backend mail test log.",
+      });
+    } finally {
+      setAccountActionId("");
+    }
+  }, []);
 
   const handleDeleteMailAccount = useCallback(async (account) => {
     if (!account?.id) return;
@@ -779,6 +799,16 @@ const MailMonitor = () => {
               >
                 {accountActionId === "sync-all" ? "Syncing..." : "Sync All"}
               </Button>
+              {isMailAdmin ? (
+                <Button
+                  variant="outlined"
+                  onClick={handleTestMailLog}
+                  disabled={accountActionId === "test-log"}
+                  sx={greenOutlinedButtonSx}
+                >
+                  {accountActionId === "test-log" ? "Testing..." : "Test Email"}
+                </Button>
+              ) : null}
               <Button
                 variant="contained"
                 onClick={handleStartMailOAuth}

@@ -1,5 +1,7 @@
 import os
+import re
 from datetime import datetime, timedelta
+from html import unescape
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -24,6 +26,7 @@ from python_backend.mail_gmail_api import (
     upsert_mail_account,
 )
 from python_backend.module_mail import (
+    build_telegram_match_alert_payload,
     get_mail_message_detail,
     get_mail_overview,
     list_mail_messages,
@@ -342,7 +345,6 @@ def mail_overview(
 
 @router.get("/messages")
 def mail_messages(
-    vps_id: Optional[str] = Query(default=None),
     account_email: Optional[str] = Query(default=None),
     mailbox: Optional[str] = Query(default=None),
     status_value: Optional[str] = Query(default=None, alias="status"),
@@ -354,7 +356,6 @@ def mail_messages(
     current_user: User = Depends(get_current_user),
 ):
     return list_mail_messages(
-        vps_id=vps_id,
         account_email=account_email,
         account_emails=_list_mail_account_emails_for_user(db, current_user.id),
         mailbox=mailbox,
@@ -383,7 +384,6 @@ def mail_message_detail(
 
 @router.get("/runs")
 def mail_runs(
-    vps_id: Optional[str] = Query(default=None),
     account_email: Optional[str] = Query(default=None),
     mailbox: Optional[str] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
@@ -391,7 +391,6 @@ def mail_runs(
     current_user: User = Depends(get_current_user),
 ):
     return list_mail_runs(
-        vps_id=vps_id,
         account_email=account_email,
         account_emails=_list_mail_account_emails_for_user(db, current_user.id),
         mailbox=mailbox,
@@ -426,3 +425,56 @@ def mail_test_telegram(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Telegram send failed: {exc}")
+
+
+@router.post("/test-log")
+def mail_test_log(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(_require_mail_admin_user),
+):
+    account_emails = _list_mail_account_emails_for_user(db, current_user.id)
+    latest_result = list_mail_messages(
+        account_emails=account_emails,
+        status="matched",
+        limit=1,
+    )
+    latest_items = latest_result.get("items") or []
+    latest_item = latest_items[0] if latest_items else None
+
+    used_sample = False
+    if latest_item:
+        account_email = str(latest_item.get("account_email") or "").strip() or "-"
+        mailbox = str(latest_item.get("mailbox") or "").strip() or "INBOX"
+        matched_result = list_mail_messages(
+            account_email=account_email,
+            account_emails=account_emails,
+            mailbox=mailbox,
+            status="matched",
+            limit=5,
+        )
+        matched_messages = matched_result.get("items") or []
+    else:
+        used_sample = True
+        account_email = "onechampvexhp@gmail.com"
+        mailbox = "INBOX"
+        matched_messages = [
+            {
+                "from_name": "YouTube Shopping",
+                "subject": "Earn a performance bonus from YouTube Shopping",
+            }
+        ]
+
+    payload = build_telegram_match_alert_payload(
+        account_email=account_email,
+        mailbox=mailbox,
+        matched_messages=matched_messages,
+    )
+    rendered_text = unescape(re.sub(r"</?[^>]+>", "", payload["text"]))
+    print("[MAIL][TEST_LOG] BEGIN")
+    print(rendered_text)
+    print("[MAIL][TEST_LOG] END")
+    return {
+        "ok": True,
+        "message": "Backend logged the exact Telegram alert preview.",
+        "used_sample": used_sample,
+    }

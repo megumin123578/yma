@@ -1,4 +1,7 @@
 # routes/content.py
+import base64
+import gzip
+import hashlib
 import json
 import os
 import threading
@@ -26,6 +29,8 @@ router = APIRouter(prefix="/api/content", tags=["content"])
 ALL_CHANNELS_VALUE = "__all__"
 CONTENT_CACHE_VERSION = 4
 _VIDEO_DAILY_STATS_COLUMNS_CACHE = None
+_CONTENT_CACHE_COMPRESS_MIN_BYTES = 2 * 1024 * 1024
+_CONTENT_CACHE_MAX_JSONB_BYTES = 240 * 1024 * 1024
 
 
 def _ensure_thumbnail_daily_table() -> None:
@@ -622,6 +627,51 @@ def _compute_channel_metrics_from_video_metrics(video_metrics: dict):
     }
 
 
+def _decode_content_cache_payload(payload):
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("encoding") != "gzip+base64":
+        return payload
+
+    encoded = str(payload.get("data") or "").strip()
+    if not encoded:
+        return None
+
+    raw_bytes = gzip.decompress(base64.b64decode(encoded))
+    decoded = json.loads(raw_bytes.decode("utf-8"))
+    return decoded if isinstance(decoded, dict) else None
+
+
+def _encode_content_cache_payload(payload: dict, cache_label: str) -> str:
+    raw_json = json.dumps(payload, default=str)
+    raw_bytes = raw_json.encode("utf-8")
+    if len(raw_bytes) <= _CONTENT_CACHE_COMPRESS_MIN_BYTES:
+        if len(raw_bytes) > _CONTENT_CACHE_MAX_JSONB_BYTES:
+            raise ValueError(
+                f"{cache_label} payload is too large for JSONB ({len(raw_bytes)} bytes)"
+            )
+        return raw_json
+
+    compressed_bytes = gzip.compress(raw_bytes, compresslevel=5)
+    wrapped_json = json.dumps(
+        {
+            "version": payload.get("version", CONTENT_CACHE_VERSION),
+            "encoding": "gzip+base64",
+            "size_bytes": len(raw_bytes),
+            "data": base64.b64encode(compressed_bytes).decode("ascii"),
+        }
+    )
+    wrapped_bytes = wrapped_json.encode("utf-8")
+    if len(wrapped_bytes) > _CONTENT_CACHE_MAX_JSONB_BYTES:
+        raise ValueError(
+            f"{cache_label} payload is too large for JSONB even after compression "
+            f"({len(wrapped_bytes)} bytes)"
+        )
+    return wrapped_json
+
+
 def _ensure_timeseries_cache_table() -> None:
     try:
         with engine.begin() as conn:
@@ -656,9 +706,7 @@ def _load_timeseries_cache(account_tag: str, start_date, end_date):
             ).mappings().first()
         if not row:
             return None
-        payload = row.get("payload")
-        if isinstance(payload, str):
-            payload = json.loads(payload)
+        payload = _decode_content_cache_payload(row.get("payload"))
         if not isinstance(payload, dict) or payload.get("version") != CONTENT_CACHE_VERSION:
             return None
         rows = payload.get("rows")
@@ -672,12 +720,12 @@ def _save_timeseries_cache(account_tag: str, start_date, end_date, rows):
     _ensure_timeseries_cache_table()
     try:
         payload_rows = [dict(r) for r in rows]
-        payload = json.dumps(
+        payload = _encode_content_cache_payload(
             {
                 "version": CONTENT_CACHE_VERSION,
                 "rows": payload_rows,
             },
-            default=str,
+            "content timeseries cache",
         )
         with engine.begin() as conn:
             conn.execute(
@@ -713,7 +761,14 @@ def _save_timeseries_cache(account_tag: str, start_date, end_date, rows):
 
 def _make_multi_tag_cache_key(tags: list[str]) -> str:
     """Tạo cache key duy nhất cho tập hợp nhiều account_tag."""
-    return "__multi__:" + "|".join(sorted(tags))
+    normalized = sorted({
+        str(tag or "").strip()
+        for tag in (tags or [])
+        if str(tag or "").strip()
+    })
+    joined = "|".join(normalized)
+    digest = hashlib.sha1(joined.encode("utf-8")).hexdigest()
+    return f"__multi__:{len(normalized)}:{digest}"
 
 
 def _load_list_cache(cache_key: str, start_date, end_date):
@@ -734,9 +789,7 @@ def _load_list_cache(cache_key: str, start_date, end_date):
             ).mappings().first()
         if not row:
             return None
-        payload = row.get("payload")
-        if isinstance(payload, str):
-            payload = json.loads(payload)
+        payload = _decode_content_cache_payload(row.get("payload"))
         if not isinstance(payload, dict) or payload.get("version") != CONTENT_CACHE_VERSION:
             return None
         data = payload.get("data")
@@ -750,12 +803,12 @@ def _save_list_cache(cache_key: str, start_date, end_date, payload: dict):
     """Save cache cho /list endpoint."""
     _ensure_timeseries_cache_table()
     try:
-        payload_json = json.dumps(
+        payload_json = _encode_content_cache_payload(
             {
                 "version": CONTENT_CACHE_VERSION,
                 "data": payload,
             },
-            default=str,
+            "content list cache",
         )
         with engine.begin() as conn:
             conn.execute(
