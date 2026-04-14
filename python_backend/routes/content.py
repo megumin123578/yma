@@ -27,7 +27,7 @@ from python_backend.module_trafficsource import sanitize_filename  # dùng lại
 router = APIRouter(prefix="/api/content", tags=["content"])
 
 ALL_CHANNELS_VALUE = "__all__"
-CONTENT_CACHE_VERSION = 4
+CONTENT_CACHE_VERSION = 5
 _VIDEO_DAILY_STATS_COLUMNS_CACHE = None
 _CONTENT_CACHE_COMPRESS_MIN_BYTES = 2 * 1024 * 1024
 _CONTENT_CACHE_MAX_JSONB_BYTES = 240 * 1024 * 1024
@@ -541,14 +541,16 @@ def _apply_video_metrics_to_content_rows(rows_mutable, video_metrics: dict, thum
             row["engagedViews"] = int(metrics["engaged_views"])
         if metrics.get("subscribers") is not None:
             row["subscribers"] = int(metrics["subscribers"])
-        if metrics.get("impressions") is not None:
+        existing_impressions = row.get("impressions")
+        if existing_impressions is None and metrics.get("impressions") is not None:
             row["impressions"] = int(metrics["impressions"])
-        elif thumbnail_supported:
+        elif existing_impressions is None and thumbnail_supported:
             row["impressions"] = 0
 
-        if "impressions_click_through_rate" in metrics:
+        existing_ctr = row.get("impressionsClickThroughRate")
+        if existing_ctr is None and "impressions_click_through_rate" in metrics:
             row["impressionsClickThroughRate"] = metrics.get("impressions_click_through_rate")
-        elif thumbnail_supported:
+        elif existing_ctr is None and thumbnail_supported:
             row["impressionsClickThroughRate"] = None
 
 
@@ -1068,13 +1070,6 @@ def content_list(
         req.start,
         req.end,
     )
-    if not skip_enrich and len(requested_tags) == 1:
-        selected_tag = requested_tags[0]
-        selected_video_metrics = metrics_by_channel.get(selected_tag)
-        if selected_video_metrics:
-            api_channel_metrics = _compute_channel_metrics_from_video_metrics(selected_video_metrics)
-            if api_channel_metrics.get("supported"):
-                channel_metrics_payload = api_channel_metrics
 
     rows_mutable = [row for row in rows_mutable if not _should_hide_private_content_row(row)]
 
@@ -1494,12 +1489,34 @@ def _prewarm_worker() -> None:
                         COALESCE(SUM(s.subscribers_gained), 0) AS "subscribers",
                         {average_view_percentage_expr},
                         {engaged_views_expr},
-                        NULL::numeric AS "impressionsClickThroughRate",
+                        MAX(tr.thumbnail_impressions) AS impressions,
+                        CASE
+                            WHEN MAX(tr.thumbnail_impressions) IS NOT NULL
+                                THEN MAX(tr.thumbnail_ctr) * 100.0
+                            ELSE NULL
+                        END AS "impressionsClickThroughRate",
                         COALESCE(v.card_impressions, 0) AS "cardImpressions",
                         COALESCE(v.ad_impressions, 0) AS "adImpressions"
                     FROM videos v
                     LEFT JOIN video_daily_stats s
                       ON s.video_id = v.video_id AND s.day BETWEEN :start AND :end
+                    LEFT JOIN (
+                        SELECT
+                            account_tag,
+                            video_id,
+                            SUM(thumbnail_impressions) AS thumbnail_impressions,
+                            CASE
+                                WHEN SUM(thumbnail_impressions) > 0
+                                    THEN SUM(COALESCE(thumbnail_ctr, 0) * thumbnail_impressions)
+                                         / SUM(thumbnail_impressions)
+                                ELSE NULL
+                            END AS thumbnail_ctr
+                        FROM video_thumbnail_daily
+                        WHERE day BETWEEN :start AND :end
+                        GROUP BY account_tag, video_id
+                    ) tr
+                      ON tr.video_id = v.video_id
+                     AND tr.account_tag = v.account_tag
                     WHERE {account_filter_sql}
                     GROUP BY v.video_id, v.account_tag, v.title, v.thumbnail,
                              v.published_at, v.duration, v.ctr, v.card_impressions, v.ad_impressions
