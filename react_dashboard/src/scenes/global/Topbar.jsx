@@ -4,6 +4,7 @@ import {
   Box,
   Button,
   IconButton,
+  ListItemIcon,
   ListItemText,
   Menu,
   MenuItem,
@@ -17,6 +18,10 @@ import NotificationsNoneOutlinedIcon from "@mui/icons-material/NotificationsNone
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import MenuOutlinedIcon from "@mui/icons-material/MenuOutlined";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import SmartDisplayRoundedIcon from "@mui/icons-material/SmartDisplayRounded";
+import AlternateEmailRoundedIcon from "@mui/icons-material/AlternateEmailRounded";
+import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
+import { alpha } from "@mui/material/styles";
 
 import { useNavigate } from "react-router-dom";
 import { ColorModeContext } from "../../theme";
@@ -72,6 +77,7 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
   const [openProfile, setOpenProfile] = useState(false);
   const [addingChannel, setAddingChannel] = useState(false);
   const [addingMail, setAddingMail] = useState(false);
+  const [addMenuAnchorEl, setAddMenuAnchorEl] = useState(null);
   const [notificationAnchorEl, setNotificationAnchorEl] = useState(null);
   const [notificationItems, setNotificationItems] = useState([]);
   const [visibleNotificationCount, setVisibleNotificationCount] = useState(
@@ -96,6 +102,58 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
   ).length;
   const visibleNotificationItems = notificationItems.slice(0, visibleNotificationCount);
   const hasMoreNotifications = notificationItems.length > visibleNotificationCount;
+  const addMenuOpen = Boolean(addMenuAnchorEl);
+  const isAddingAny = addingChannel || addingMail;
+  const addButtonLabel = isAddingAny ? "Adding..." : "+ Add";
+  const nextThemeLabel =
+    theme.palette.mode === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  const addMenuPaperSx = {
+    mt: 1,
+    minWidth: 284,
+    borderRadius: 3,
+    overflow: "hidden",
+    border: "1px solid",
+    borderColor:
+      theme.palette.mode === "dark"
+        ? alpha("#e2e8f0", 0.14)
+        : alpha("#0f172a", 0.08),
+    bgcolor:
+      theme.palette.mode === "dark"
+        ? alpha("#0f172a", 0.94)
+        : alpha("#ffffff", 0.98),
+    backdropFilter: "blur(14px)",
+    WebkitBackdropFilter: "blur(14px)",
+    boxShadow:
+      theme.palette.mode === "dark"
+        ? "0 22px 44px rgba(2,6,23,0.46)"
+        : "0 22px 44px rgba(15,23,42,0.14)",
+  };
+  const buildAddMenuItemSx = (accentColor) => ({
+    mx: 1,
+    my: 0.5,
+    px: 1.2,
+    py: 1,
+    borderRadius: 2,
+    alignItems: "flex-start",
+    gap: 1.25,
+    transition: "all 160ms ease",
+    "&:hover": {
+      backgroundColor: alpha(accentColor, theme.palette.mode === "dark" ? 0.18 : 0.1),
+      transform: "translateY(-1px)",
+    },
+    "&.Mui-disabled": {
+      opacity: 0.7,
+    },
+  });
+  const buildAddMenuIconSx = (accentColor) => ({
+    minWidth: 0,
+    mt: 0.2,
+    color: accentColor,
+    p: 0.9,
+    borderRadius: 1.6,
+    backgroundColor: alpha(accentColor, theme.palette.mode === "dark" ? 0.18 : 0.12),
+    boxShadow: `inset 0 0 0 1px ${alpha(accentColor, theme.palette.mode === "dark" ? 0.24 : 0.16)}`,
+  });
 
   const shimmerSx = {
     position: "relative",
@@ -159,6 +217,24 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
     } finally {
       setAddingMail(false);
     }
+  };
+
+  const handleOpenAddMenu = (event) => {
+    if (isAddingAny) return;
+    setAddMenuAnchorEl(event.currentTarget);
+  };
+
+  const handleCloseAddMenu = () => {
+    setAddMenuAnchorEl(null);
+  };
+
+  const handleSelectAddAction = async (type) => {
+    handleCloseAddMenu();
+    if (type === "gmail") {
+      await handleAddGmail();
+      return;
+    }
+    await handleAddChannel();
   };
 
   const handleOpenNotifications = (event) => {
@@ -311,8 +387,12 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
             <Button
               variant="contained"
               size="small"
-              onClick={handleAddChannel}
-              disabled={addingChannel}
+              onClick={handleOpenAddMenu}
+              disabled={isAddingAny}
+              endIcon={<KeyboardArrowDownRoundedIcon />}
+              aria-controls={addMenuOpen ? "topbar-add-menu" : undefined}
+              aria-haspopup="menu"
+              aria-expanded={addMenuOpen ? "true" : undefined}
               sx={{
                 ...shimmerSx,
                 borderRadius: 999,
@@ -336,46 +416,11 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
                   boxShadow:
                     theme.palette.mode === "dark"
                       ? "0 14px 26px rgba(43,138,123,0.34)"
-                      : "0 14px 26px rgba(25,118,210,0.28)",
+                    : "0 14px 26px rgba(25,118,210,0.28)",
                 },
               }}
             >
-              Add Channel
-            </Button>
-
-            <Button
-              variant="contained"
-              size="small"
-              onClick={handleAddGmail}
-              disabled={addingMail}
-              sx={{
-                ...shimmerSx,
-                borderRadius: 999,
-                textTransform: "none",
-                fontWeight: 700,
-                minWidth: 0,
-                px: 1.25,
-                py: 0.45,
-                lineHeight: 1.2,
-                minHeight: 30,
-                bgcolor: theme.palette.mode === "dark" ? "#b45309" : "#ea4335",
-                color: "#fff",
-                boxShadow:
-                  theme.palette.mode === "dark"
-                    ? "0 10px 22px rgba(180,83,9,0.28)"
-                    : "0 10px 22px rgba(234,67,53,0.22)",
-                transition: "all 180ms ease",
-                "&:hover": {
-                  bgcolor: theme.palette.mode === "dark" ? "#92400e" : "#d93025",
-                  transform: "translateY(-1px)",
-                  boxShadow:
-                    theme.palette.mode === "dark"
-                      ? "0 14px 26px rgba(180,83,9,0.34)"
-                      : "0 14px 26px rgba(234,67,53,0.28)",
-                },
-              }}
-            >
-              {addingMail ? "Adding..." : isMobile ? "Gmail" : "Add Gmail"}
+              {addButtonLabel}
             </Button>
 
             {isMailAdmin ? (
@@ -395,12 +440,12 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
             <IconButton
               size="medium"
               onClick={colorMode.toggleColorMode}
-              aria-label="Toggle theme"
+              aria-label={nextThemeLabel}
             >
               {theme.palette.mode === "dark" ? (
-                <DarkModeOutlinedIcon fontSize="medium" />
-              ) : (
                 <LightModeOutlinedIcon fontSize="medium" />
+              ) : (
+                <DarkModeOutlinedIcon fontSize="medium" />
               )}
             </IconButton>
 
@@ -636,6 +681,49 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
           ) : null}
         </Menu>
       ) : null}
+
+      <Menu
+        id="topbar-add-menu"
+        anchorEl={addMenuAnchorEl}
+        open={addMenuOpen}
+        onClose={handleCloseAddMenu}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
+        PaperProps={{
+          sx: addMenuPaperSx,
+        }}
+      >
+        <MenuItem
+          onClick={() => handleSelectAddAction("channel")}
+          disabled={isAddingAny}
+          sx={buildAddMenuItemSx("#ff0033")}
+        >
+          <ListItemIcon sx={buildAddMenuIconSx("#ff0033")}>
+            <SmartDisplayRoundedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary={addingChannel ? "Adding channel..." : "Add Channel"}
+            secondary="Connect a YouTube channel"
+            primaryTypographyProps={{ fontWeight: 700 }}
+            secondaryTypographyProps={{ sx: { mt: 0.2 } }}
+          />
+        </MenuItem>
+        <MenuItem
+          onClick={() => handleSelectAddAction("gmail")}
+          disabled={isAddingAny}
+          sx={buildAddMenuItemSx("#ea4335")}
+        >
+          <ListItemIcon sx={buildAddMenuIconSx("#ea4335")}>
+            <AlternateEmailRoundedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary={addingMail ? "Adding Gmail..." : "Add Gmail"}
+            secondary="Connect a Gmail inbox"
+            primaryTypographyProps={{ fontWeight: 700 }}
+            secondaryTypographyProps={{ sx: { mt: 0.2 } }}
+          />
+        </MenuItem>
+      </Menu>
 
       <MailMessageDialog
         open={Boolean(selectedMessageId)}
