@@ -75,12 +75,7 @@ def _build_telegram_match_alert_lines(
         lines.append(f"Channel: <code>{escape(normalized_channel_name)}</code>")
     if normalized_mailbox and normalized_mailbox.upper() != "INBOX":
         lines.append(f"Mailbox: <code>{escape(normalized_mailbox)}</code>")
-    lines.extend(
-        [
-            f"New matched emails: <b>{len(matched_messages)}</b>",
-            "",
-        ]
-    )
+    lines.append("")
 
     for index, item in enumerate(matched_messages[:5], start=1):
         sender = item.get("from_name") or item.get("from_email") or "-"

@@ -1027,8 +1027,8 @@ const MailMonitor = () => {
                   <TableCell>Channel Name</TableCell>
                   <TableCell align="right">Total Mails</TableCell>
                   <TableCell>Inbox</TableCell>
-                  <TableCell>Auto Sync</TableCell>
                   <TableCell>Last Sync</TableCell>
+                  <TableCell>Auto Sync</TableCell>
                   <TableCell align="right" sx={{ minWidth: 340 }}>Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -1119,6 +1119,7 @@ const MailMonitor = () => {
                             </Select>
                           </FormControl>
                         </TableCell>
+                        <TableCell>{formatTimeInSaigon(account.last_synced_at)}</TableCell>
                         <TableCell sx={{ minWidth: 150 }}>
                           <Stack direction="row" spacing={1} alignItems="center">
                             <Switch
@@ -1135,7 +1136,6 @@ const MailMonitor = () => {
                             </Typography>
                           </Stack>
                         </TableCell>
-                        <TableCell>{formatTimeInSaigon(account.last_synced_at)}</TableCell>
                         <TableCell align="right" sx={{ minWidth: 340 }}>
                           <Stack direction="row" spacing={1} justifyContent="flex-end" useFlexGap flexWrap="wrap">
                             <Button
