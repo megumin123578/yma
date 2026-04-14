@@ -347,13 +347,15 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
             pass
 
     thumbnail_supported = False
-    for vid in video_ids:
+    for chunk in _chunked(video_ids, 50):
+        chunk_filter = f"video=={','.join(chunk)}"
         try:
             resp = yta.reports().query(
                 ids=ids,
                 startDate=start_date,
                 endDate=end_date,
-                filters=f"video=={vid}",
+                dimensions="video",
+                filters=chunk_filter,
                 metrics="videoThumbnailImpressions,videoThumbnailImpressionsClickRate"
             ).execute() or {}
         except HttpError as e:
@@ -362,7 +364,7 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
                 thumbnail_supported = False
                 break
             if e.resp.status != 403:
-                print(f"[content.video-metrics] Thumbnail metrics failed for {vid}: {e}")
+                print(f"[content.video-metrics] Thumbnail metrics failed for chunk: {e}")
             continue
         except Exception:
             continue
@@ -375,21 +377,23 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
         thumbnail_supported = True
         rows = resp.get("rows") or []
         idx = {h["name"]: i for i, h in enumerate(headers)}
-        if not rows:
+        i_video = idx.get("video")
+        if i_video is None:
             continue
-        row = rows[0]
-        if vid not in out:
-            out[vid] = {}
-        try:
-            out[vid]["impressions"] = int(row[idx["videoThumbnailImpressions"]] or 0)
-        except Exception:
-            out[vid]["impressions"] = 0
-        try:
-            out[vid]["impressions_click_through_rate"] = (
-                float(row[idx["videoThumbnailImpressionsClickRate"]] or 0.0) * 100.0
-            )
-        except Exception:
-            out[vid]["impressions_click_through_rate"] = None
+        for row in rows:
+            vid = row[i_video]
+            if vid not in out:
+                out[vid] = {}
+            try:
+                out[vid]["impressions"] = int(row[idx["videoThumbnailImpressions"]] or 0)
+            except Exception:
+                out[vid]["impressions"] = 0
+            try:
+                out[vid]["impressions_click_through_rate"] = (
+                    float(row[idx["videoThumbnailImpressionsClickRate"]] or 0.0) * 100.0
+                )
+            except Exception:
+                out[vid]["impressions_click_through_rate"] = None
 
     if thumbnail_supported:
         for vid in video_ids:

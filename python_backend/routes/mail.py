@@ -46,6 +46,7 @@ class MailAccountOAuthStartRequest(BaseModel):
 class MailAccountUpdateRequest(BaseModel):
     label_ids: Optional[list[str]] = None
     enabled: Optional[bool] = None
+    channel_name: Optional[str] = None
 
 
 def _get_admin_users() -> set[str]:
@@ -127,6 +128,7 @@ def _serialize_mail_account(row: MailAccount) -> dict[str, Any]:
         "id": row.id,
         "user_id": row.user_id,
         "account_email": row.account_email,
+        "channel_name": row.channel_name,
         "provider": row.provider,
         "token_name": row.token_name,
         "label_ids": deserialize_mail_label_ids(row.label_ids_json),
@@ -296,10 +298,15 @@ def update_mail_account(
     if not row:
         raise HTTPException(status_code=404, detail="Mail account not found.")
 
-    if payload.label_ids is not None:
+    payload_data = payload.dict(exclude_unset=True)
+
+    if "label_ids" in payload_data:
         row.label_ids_json = serialize_mail_label_ids(payload.label_ids)
-    if payload.enabled is not None:
+    if "enabled" in payload_data:
         row.enabled = bool(payload.enabled)
+    if "channel_name" in payload_data:
+        normalized_channel_name = str(payload.channel_name or "").strip()
+        row.channel_name = normalized_channel_name or None
     row.updated_at = datetime.utcnow()
     db.add(row)
     db.commit()
@@ -432,6 +439,12 @@ def mail_test_log(
     db: Session = Depends(get_db),
     current_user: User = Depends(_require_mail_admin_user),
 ):
+    mail_accounts = (
+        db.query(MailAccount)
+        .filter(MailAccount.user_id == current_user.id)
+        .order_by(MailAccount.account_email.asc())
+        .all()
+    )
     account_emails = _list_mail_account_emails_for_user(db, current_user.id)
     latest_result = list_mail_messages(
         account_emails=account_emails,
@@ -444,6 +457,11 @@ def mail_test_log(
     used_sample = False
     if latest_item:
         account_email = str(latest_item.get("account_email") or "").strip() or "-"
+        account_row = next(
+            (row for row in mail_accounts if str(row.account_email or "").strip().lower() == account_email.lower()),
+            None,
+        )
+        channel_name = str(getattr(account_row, "channel_name", "") or "").strip() or None
         mailbox = str(latest_item.get("mailbox") or "").strip() or "INBOX"
         matched_result = list_mail_messages(
             account_email=account_email,
@@ -455,7 +473,9 @@ def mail_test_log(
         matched_messages = matched_result.get("items") or []
     else:
         used_sample = True
-        account_email = "onechampvexhp@gmail.com"
+        sample_account = mail_accounts[0] if mail_accounts else None
+        account_email = str(getattr(sample_account, "account_email", "") or "onechampvexhp@gmail.com").strip()
+        channel_name = str(getattr(sample_account, "channel_name", "") or "").strip() or None
         mailbox = "INBOX"
         matched_messages = [
             {
@@ -466,6 +486,7 @@ def mail_test_log(
 
     payload = build_telegram_match_alert_payload(
         account_email=account_email,
+        channel_name=channel_name,
         mailbox=mailbox,
         matched_messages=matched_messages,
     )

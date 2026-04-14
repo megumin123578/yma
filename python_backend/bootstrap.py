@@ -63,6 +63,16 @@ def ensure_video_live_counter_snapshots_channel_name(db_engine: Engine) -> None:
             )
 
 
+def ensure_mail_accounts_channel_name(db_engine: Engine) -> None:
+    with db_engine.begin() as conn:
+        cols = conn.exec_driver_sql("PRAGMA table_info(mail_accounts)").fetchall()
+        has_column = any(row[1] == "channel_name" for row in cols)
+        if not has_column:
+            conn.exec_driver_sql(
+                "ALTER TABLE mail_accounts ADD COLUMN channel_name VARCHAR"
+            )
+
+
 def ensure_user_schedule_run_columns(db_engine: Engine) -> None:
     with db_engine.begin() as conn:
         columns = conn.exec_driver_sql("PRAGMA table_info(user_schedule_runs)").fetchall()
@@ -420,6 +430,7 @@ def initialize_app_state() -> None:
     ensure_token_progress_table(engine)
     ensure_users_is_admin_column(engine)
     ensure_video_live_counter_snapshots_channel_name(engine)
+    ensure_mail_accounts_channel_name(engine)
     ensure_user_schedule_run_columns(engine)
     ensure_user_smmstore_column(engine)
     ensure_user_credential_group_column(engine)

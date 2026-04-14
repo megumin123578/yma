@@ -451,6 +451,7 @@ def sync_mail_account(db: Session, account: MailAccount, fetch_limit: int = 50) 
             save_mail_ingest(
                 {
                     "account_email": account.account_email,
+                    "channel_name": account.channel_name,
                     "provider": account.provider or "gmail_api",
                     "mailbox": mailbox,
                     "agent_version": MAIL_AGENT_VERSION,
@@ -493,6 +494,7 @@ def sync_mail_account(db: Session, account: MailAccount, fetch_limit: int = 50) 
                 save_mail_ingest(
                     {
                         "account_email": account.account_email,
+                        "channel_name": account.channel_name,
                         "provider": account.provider or "gmail_api",
                         "mailbox": mailbox,
                         "agent_version": MAIL_AGENT_VERSION,

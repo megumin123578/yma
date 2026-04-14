@@ -35,10 +35,17 @@ import { useSearchParams } from "react-router-dom";
 import api from "../services/api";
 import { startMailOAuth } from "../services/userService";
 import { UserContext } from "../context/UserContext";
-import { formatDateTimeInSaigon } from "../utils/dateTime";
+import { formatDateTimeInSaigon, formatTimeInSaigon } from "../utils/dateTime";
 
 const MAILS_PER_PAGE = 50;
 const MAIL_OAUTH_POLL_MS = 2000;
+const MAIL_MONITOR_STORAGE_KEY = "mailMonitor.uiState";
+const DEFAULT_MAIL_FILTERS = {
+  accountEmail: "",
+  mailbox: "",
+  status: "matched",
+  search: "",
+};
 const MAIL_LABEL_OPTIONS = [
   { value: "INBOX", label: "Inbox" },
   { value: "CATEGORY_UPDATES", label: "Updates" },
@@ -81,6 +88,77 @@ const truncatePreviewText = (value, maxLength = 90) => {
   return `${raw.slice(0, maxLength).trimEnd()}...`;
 };
 
+const normalizeAccountEmail = (value) => String(value || "").trim().toLowerCase();
+
+const getMailAccountKey = (account) => String(account?.id ?? account?.account_email ?? "");
+
+const hasMailStateInSearchParams = (searchParams) =>
+  ["account", "mailbox", "status", "search", "page", "accountSearch"].some((key) =>
+    searchParams.has(key)
+  );
+
+const readMailMonitorStateFromStorage = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    const rawValue = window.localStorage.getItem(MAIL_MONITOR_STORAGE_KEY);
+    if (!rawValue) return null;
+    const parsed = JSON.parse(rawValue);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const readMailFiltersFromSearchParams = (searchParams) => ({
+  accountEmail: searchParams.get("account") || DEFAULT_MAIL_FILTERS.accountEmail,
+  mailbox: searchParams.get("mailbox") || DEFAULT_MAIL_FILTERS.mailbox,
+  status: searchParams.get("status") ?? DEFAULT_MAIL_FILTERS.status,
+  search: searchParams.get("search") || DEFAULT_MAIL_FILTERS.search,
+});
+
+const normalizeMailFilters = (value) => ({
+  accountEmail: String(value?.accountEmail || ""),
+  mailbox: String(value?.mailbox || ""),
+  status: String(value?.status ?? DEFAULT_MAIL_FILTERS.status),
+  search: String(value?.search || ""),
+});
+
+const areMailFiltersEqual = (left, right) =>
+  left.accountEmail === right.accountEmail &&
+  left.mailbox === right.mailbox &&
+  left.status === right.status &&
+  left.search === right.search;
+
+const readMailPageFromSearchParams = (searchParams) => {
+  const rawValue = searchParams.get("page");
+  const page = Number(rawValue);
+  return Number.isInteger(page) && page >= 0 ? page : 0;
+};
+
+const readAccountSearchFromSearchParams = (searchParams) => searchParams.get("accountSearch") || "";
+
+const readInitialMailFilters = (searchParams) => {
+  if (hasMailStateInSearchParams(searchParams)) {
+    return readMailFiltersFromSearchParams(searchParams);
+  }
+  return normalizeMailFilters(readMailMonitorStateFromStorage()?.filters);
+};
+
+const readInitialMailPage = (searchParams) => {
+  if (hasMailStateInSearchParams(searchParams)) {
+    return readMailPageFromSearchParams(searchParams);
+  }
+  const page = Number(readMailMonitorStateFromStorage()?.mailPage);
+  return Number.isInteger(page) && page >= 0 ? page : 0;
+};
+
+const readInitialAccountSearch = (searchParams) => {
+  if (hasMailStateInSearchParams(searchParams)) {
+    return readAccountSearchFromSearchParams(searchParams);
+  }
+  return String(readMailMonitorStateFromStorage()?.accountSearch || "");
+};
+
 const statusChipColor = (status) => {
   const normalized = String(status || "").toLowerCase();
   if (normalized === "error") return "error";
@@ -88,6 +166,15 @@ const statusChipColor = (status) => {
   if (normalized === "matched") return "info";
   if (normalized === "pending") return "warning";
   return "default";
+};
+
+const statusDotColor = (status) => {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "error") return "error.main";
+  if (normalized === "ok" || normalized === "completed") return "success.main";
+  if (normalized === "matched") return "info.main";
+  if (normalized === "pending") return "warning.main";
+  return "text.disabled";
 };
 
 const greenOutlinedButtonSx = {
@@ -177,13 +264,8 @@ const MailMonitor = () => {
 
   const [overview, setOverview] = useState({ summary: {}, items: [] });
   const [messages, setMessages] = useState({ items: [], total: 0 });
-  const [filters, setFilters] = useState({
-    accountEmail: "",
-    mailbox: "",
-    status: "matched",
-    search: "",
-  });
-  const [mailPage, setMailPage] = useState(0);
+  const [filters, setFilters] = useState(() => readInitialMailFilters(searchParams));
+  const [mailPage, setMailPage] = useState(() => readInitialMailPage(searchParams));
   const [error, setError] = useState("");
   const [selectedMessageId, setSelectedMessageId] = useState(null);
   const [selectedMessageDetail, setSelectedMessageDetail] = useState(null);
@@ -193,9 +275,10 @@ const MailMonitor = () => {
   const [mailOAuthState, setMailOAuthState] = useState("");
   const [mailOAuthStatus, setMailOAuthStatus] = useState({ type: "", message: "" });
   const [connectingMail, setConnectingMail] = useState(false);
-  const [accountSearch, setAccountSearch] = useState("");
+  const [accountSearch, setAccountSearch] = useState(() => readInitialAccountSearch(searchParams));
   const [accountActionStatus, setAccountActionStatus] = useState({ type: "", message: "" });
   const [accountActionId, setAccountActionId] = useState("");
+  const [channelNameDrafts, setChannelNameDrafts] = useState({});
 
   const overviewItems = useMemo(
     () => (Array.isArray(overview?.items) ? overview.items : []).filter(Boolean),
@@ -208,11 +291,20 @@ const MailMonitor = () => {
   const isMailAdmin = !!user?.is_admin;
   const summary = overview?.summary || {};
   const connectedAccountCount = mailAccounts.length || Number(summary.account_count || 0);
+  const accountMailTotals = useMemo(() => {
+    return overviewItems.reduce((totals, item) => {
+      const accountEmail = normalizeAccountEmail(item?.account_email);
+      if (!accountEmail) return totals;
+      totals[accountEmail] = (totals[accountEmail] || 0) + Number(item?.total_messages || 0);
+      return totals;
+    }, {});
+  }, [overviewItems]);
   const filteredMailAccounts = useMemo(() => {
     const searchText = accountSearch.trim().toLowerCase();
     if (!searchText) return mailAccounts;
     return mailAccounts.filter((account) =>
-      String(account?.account_email || "").toLowerCase().includes(searchText)
+      String(account?.account_email || "").toLowerCase().includes(searchText) ||
+      String(account?.channel_name || "").toLowerCase().includes(searchText)
     );
   }, [accountSearch, mailAccounts]);
 
@@ -259,7 +351,6 @@ const MailMonitor = () => {
             search: filters.search || undefined,
             limit: MAILS_PER_PAGE,
             offset: mailPage * MAILS_PER_PAGE,
-            per_account_limit: MAILS_PER_PAGE,
           },
         }),
         api.get("/api/mail/accounts"),
@@ -272,6 +363,16 @@ const MailMonitor = () => {
       setError(err?.response?.data?.detail || err?.message || "Failed to load email manager data.");
     }
   }, [filters.accountEmail, filters.mailbox, filters.search, filters.status, loading, mailPage]);
+
+  const updateFilters = useCallback((updater) => {
+    setMailPage(0);
+    setFilters((current) => {
+      if (typeof updater === "function") {
+        return updater(current);
+      }
+      return { ...current, ...updater };
+    });
+  }, []);
 
   const handleStartMailOAuth = useCallback(async () => {
     if (connectingMail) return;
@@ -466,10 +567,6 @@ const MailMonitor = () => {
   }, [loadData, loading]);
 
   useEffect(() => {
-    setMailPage(0);
-  }, [filters.accountEmail, filters.mailbox, filters.status, filters.search]);
-
-  useEffect(() => {
     if (loading) return undefined;
     const timer = window.setInterval(() => loadData(), 45000);
     return () => window.clearInterval(timer);
@@ -538,6 +635,86 @@ const MailMonitor = () => {
   }, [user?.id, user?.username]);
 
   useEffect(() => {
+    if (!hasMailStateInSearchParams(searchParams)) return;
+
+    const nextFilters = readMailFiltersFromSearchParams(searchParams);
+    setFilters((current) => (areMailFiltersEqual(current, nextFilters) ? current : nextFilters));
+
+    const nextMailPage = readMailPageFromSearchParams(searchParams);
+    setMailPage((current) => (current === nextMailPage ? current : nextMailPage));
+
+    const nextAccountSearch = readAccountSearchFromSearchParams(searchParams);
+    setAccountSearch((current) => (current === nextAccountSearch ? current : nextAccountSearch));
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      MAIL_MONITOR_STORAGE_KEY,
+      JSON.stringify({
+        filters,
+        mailPage,
+        accountSearch,
+      })
+    );
+  }, [accountSearch, filters, mailPage]);
+
+  useEffect(() => {
+    setSearchParams((currentParams) => {
+      const nextParams = new URLSearchParams(currentParams);
+
+      if (filters.accountEmail) nextParams.set("account", filters.accountEmail);
+      else nextParams.delete("account");
+
+      if (filters.mailbox) nextParams.set("mailbox", filters.mailbox);
+      else nextParams.delete("mailbox");
+
+      if (filters.status && filters.status !== DEFAULT_MAIL_FILTERS.status) {
+        nextParams.set("status", filters.status);
+      } else {
+        nextParams.delete("status");
+      }
+
+      const searchValue = filters.search.trim();
+      if (searchValue) nextParams.set("search", searchValue);
+      else nextParams.delete("search");
+
+      if (mailPage > 0) nextParams.set("page", String(mailPage));
+      else nextParams.delete("page");
+
+      const accountSearchValue = accountSearch.trim();
+      if (accountSearchValue) nextParams.set("accountSearch", accountSearchValue);
+      else nextParams.delete("accountSearch");
+
+      return nextParams;
+    }, { replace: true });
+  }, [
+    accountSearch,
+    filters.accountEmail,
+    filters.mailbox,
+    filters.search,
+    filters.status,
+    mailPage,
+    setSearchParams,
+  ]);
+
+  useEffect(() => {
+    setChannelNameDrafts((current) => {
+      const next = {};
+      mailAccounts.forEach((account) => {
+        const key = getMailAccountKey(account);
+        if (!key) return;
+        if (Object.prototype.hasOwnProperty.call(current, key)) {
+          next[key] = current[key];
+          return;
+        }
+        next[key] = String(account?.channel_name || "");
+      });
+      return next;
+    });
+  }, [mailAccounts]);
+
+  useEffect(() => {
     const tabParam = searchParams.get("tab");
     if (!tabParam) {
       setActiveTab("messages");
@@ -581,6 +758,28 @@ const MailMonitor = () => {
   if (loading) {
     return null;
   }
+
+  const handleChannelNameDraftChange = (account, value) => {
+    const key = getMailAccountKey(account);
+    if (!key) return;
+    setChannelNameDrafts((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  };
+
+  const handleCommitChannelName = async (account) => {
+    const key = getMailAccountKey(account);
+    if (!key) return;
+    const nextValue = String(channelNameDrafts[key] ?? account?.channel_name ?? "").trim();
+    const currentValue = String(account?.channel_name || "").trim();
+    if (nextValue === currentValue) return;
+    await handleUpdateMailAccount(account, { channel_name: nextValue || null });
+    setChannelNameDrafts((current) => ({
+      ...current,
+      [key]: nextValue,
+    }));
+  };
 
   return (
     <Box>
@@ -646,7 +845,7 @@ const MailMonitor = () => {
                   label="Account"
                   value={filters.accountEmail}
                   onChange={(event) =>
-                    setFilters((current) => ({
+                    updateFilters((current) => ({
                       ...current,
                       accountEmail: event.target.value,
                       mailbox:
@@ -670,7 +869,7 @@ const MailMonitor = () => {
                 <Select
                   label="Mailbox"
                   value={filters.mailbox}
-                  onChange={(event) => setFilters((current) => ({ ...current, mailbox: event.target.value }))}
+                  onChange={(event) => updateFilters((current) => ({ ...current, mailbox: event.target.value }))}
                 >
                   <MenuItem value="">All Mailboxes</MenuItem>
                   {mailboxOptions.map((value) => (
@@ -684,7 +883,7 @@ const MailMonitor = () => {
                 <Select
                   label="Status"
                   value={filters.status}
-                  onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value }))}
+                  onChange={(event) => updateFilters((current) => ({ ...current, status: event.target.value }))}
                 >
                   <MenuItem value="">All Status</MenuItem>
                   <MenuItem value="received">received</MenuItem>
@@ -698,7 +897,7 @@ const MailMonitor = () => {
                 label="Search"
                 placeholder="Subject, sender..."
                 value={filters.search}
-                onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+                onChange={(event) => updateFilters((current) => ({ ...current, search: event.target.value }))}
                 sx={{ flex: 1 }}
               />
             </Stack>
@@ -825,9 +1024,10 @@ const MailMonitor = () => {
               <TableHead>
                 <TableRow>
                   <TableCell>Account</TableCell>
+                  <TableCell>Channel Name</TableCell>
+                  <TableCell align="right">Total Mails</TableCell>
                   <TableCell>Inbox</TableCell>
                   <TableCell>Auto Sync</TableCell>
-                  <TableCell>Status</TableCell>
                   <TableCell>Last Sync</TableCell>
                   <TableCell align="right" sx={{ minWidth: 340 }}>Actions</TableCell>
                 </TableRow>
@@ -835,12 +1035,17 @@ const MailMonitor = () => {
               <TableBody>
                 {filteredMailAccounts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} align="center">
+                    <TableCell colSpan={7} align="center">
                       {mailAccounts.length === 0 ? "No accounts connected." : "No accounts found."}
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredMailAccounts.map((account) => {
+                    const accountKey = getMailAccountKey(account);
+                    const draftChannelName = channelNameDrafts[accountKey] ?? String(account?.channel_name || "");
+                    const totalMailCount = Number(
+                      accountMailTotals[normalizeAccountEmail(account?.account_email)] || 0
+                    );
                     const labelValue = normalizeLabelIds(account.label_ids || ["INBOX"]);
                     const updateActionId = `${account.id}:update`;
                     const syncActionId = `${account.id}:sync`;
@@ -848,8 +1053,48 @@ const MailMonitor = () => {
 
                     return (
                       <TableRow key={account.id || account.account_email}>
+                        <TableCell sx={{ minWidth: 260 }}>
+                          <Stack spacing={0.5}>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <Box
+                                component="span"
+                                title={account.last_sync_status || "pending"}
+                                sx={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: "50%",
+                                  flexShrink: 0,
+                                  bgcolor: statusDotColor(account.last_sync_status || "pending"),
+                                }}
+                              />
+                              <Typography fontWeight={700}>{account.account_email || "-"}</Typography>
+                            </Stack>
+                            {account.last_error_message ? (
+                              <Typography variant="body2" color="error">
+                                {account.last_error_message}
+                              </Typography>
+                            ) : null}
+                          </Stack>
+                        </TableCell>
                         <TableCell sx={{ minWidth: 220 }}>
-                          <Typography fontWeight={700}>{account.account_email || "-"}</Typography>
+                          <TextField
+                            size="small"
+                            fullWidth
+                            placeholder="Channel name"
+                            value={draftChannelName}
+                            onChange={(event) => handleChannelNameDraftChange(account, event.target.value)}
+                            onBlur={() => handleCommitChannelName(account)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                event.currentTarget.blur();
+                              }
+                            }}
+                            disabled={accountActionId === updateActionId}
+                          />
+                        </TableCell>
+                        <TableCell align="right" sx={{ minWidth: 120 }}>
+                          <Typography fontWeight={700}>{formatNumber(totalMailCount)}</Typography>
                         </TableCell>
                         <TableCell sx={{ minWidth: 260 }}>
                           <FormControl size="small" fullWidth>
@@ -890,25 +1135,7 @@ const MailMonitor = () => {
                             </Typography>
                           </Stack>
                         </TableCell>
-                        <TableCell>
-                          <Stack spacing={0.75} alignItems="flex-start">
-                            {account.last_sync_status ? (
-                              <Chip
-                                size="small"
-                                label={account.last_sync_status}
-                                color={statusChipColor(account.last_sync_status)}
-                              />
-                            ) : (
-                              <Chip size="small" label="pending" color="warning" />
-                            )}
-                            {account.last_error_message ? (
-                              <Typography variant="body2" color="error">
-                                {account.last_error_message}
-                              </Typography>
-                            ) : null}
-                          </Stack>
-                        </TableCell>
-                        <TableCell>{formatDateTime(account.last_synced_at)}</TableCell>
+                        <TableCell>{formatTimeInSaigon(account.last_synced_at)}</TableCell>
                         <TableCell align="right" sx={{ minWidth: 340 }}>
                           <Stack direction="row" spacing={1} justifyContent="flex-end" useFlexGap flexWrap="wrap">
                             <Button

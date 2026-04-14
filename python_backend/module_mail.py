@@ -64,11 +64,15 @@ def _mail_record(item: Optional[dict[str, Any]]) -> dict[str, Any]:
 def _build_telegram_match_alert_lines(
     *,
     account_email: str,
+    channel_name: Optional[str] = None,
     mailbox: str,
     matched_messages: list[dict[str, Any]],
 ) -> list[str]:
     normalized_mailbox = str(mailbox or "").strip()
     lines = [f"Account: <code>{escape(account_email or '-')}</code>"]
+    normalized_channel_name = str(channel_name or "").strip()
+    if normalized_channel_name:
+        lines.append(f"Channel: <code>{escape(normalized_channel_name)}</code>")
     if normalized_mailbox and normalized_mailbox.upper() != "INBOX":
         lines.append(f"Mailbox: <code>{escape(normalized_mailbox)}</code>")
     lines.extend(
@@ -92,6 +96,7 @@ def _build_telegram_match_alert_lines(
 def build_telegram_match_alert_payload(
     *,
     account_email: str,
+    channel_name: Optional[str] = None,
     mailbox: str,
     matched_messages: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -99,6 +104,7 @@ def build_telegram_match_alert_payload(
         "text": "\n".join(
             _build_telegram_match_alert_lines(
                 account_email=account_email,
+                channel_name=channel_name,
                 mailbox=mailbox,
                 matched_messages=matched_messages,
             )
@@ -111,6 +117,7 @@ def build_telegram_match_alert_payload(
 def _send_telegram_match_alert(
     *,
     account_email: str,
+    channel_name: Optional[str] = None,
     mailbox: str,
     matched_messages: list[dict[str, Any]],
 ) -> None:
@@ -124,6 +131,7 @@ def _send_telegram_match_alert(
 
     payload = build_telegram_match_alert_payload(
         account_email=account_email,
+        channel_name=channel_name,
         mailbox=mailbox,
         matched_messages=matched_messages,
     )
@@ -529,6 +537,7 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
     run_payload = payload.get("payload")
     if not isinstance(run_payload, dict):
         run_payload = {}
+    channel_name = str(payload.get("channel_name") or run_payload.get("channel_name") or "").strip() or None
 
     if isinstance(run_started_at, str):
         run_started_at = datetime.fromisoformat(run_started_at.replace("Z", "+00:00"))
@@ -719,6 +728,7 @@ def save_mail_ingest(payload: dict[str, Any]) -> dict[str, Any]:
 
     _send_telegram_match_alert(
         account_email=account_email,
+        channel_name=channel_name,
         mailbox=mailbox,
         matched_messages=newly_matched_messages,
     )

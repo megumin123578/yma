@@ -44,3 +44,14 @@ export const formatShortDateTimeInSaigon = (value, fallback = "") => {
     minute: "2-digit",
   });
 };
+
+export const formatTimeInSaigon = (value, fallback = "-") => {
+  const parsed = parseApiDateTime(value);
+  if (!parsed) return fallback;
+  return parsed.toLocaleTimeString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+};

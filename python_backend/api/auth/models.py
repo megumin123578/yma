@@ -225,6 +225,7 @@ class MailAccount(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     account_email = Column(String, nullable=False, index=True)
+    channel_name = Column(String, nullable=True)
     provider = Column(String, nullable=False, default="gmail_api")
     token_name = Column(String, nullable=False, index=True)
     label_ids_json = Column(Text, nullable=False, default='["INBOX"]')
