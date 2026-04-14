@@ -25,6 +25,7 @@ import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import AutoModeIcon from "@mui/icons-material/AutoMode";
 
 import { UserContext } from "../../context/UserContext";
+import { tokens } from "../../theme";
 
 const Item = ({ title, to, icon, isActive, onClick, isCompact = false }) => (
   <MenuItem
@@ -48,6 +49,7 @@ const Sidebar = ({
   const theme = useTheme();
   const location = useLocation();
   const { user } = useContext(UserContext);
+  const colorTokens = tokens(theme.palette.mode);
 
   const pathname = location.pathname || "/dashboard";
   const desktopSidebarWidth = 280;
@@ -64,9 +66,10 @@ const Sidebar = ({
         ? `${desktopCompactSidebarWidth}px`
         : `${desktopSidebarWidth}px`;
 
-  const accentColor = theme.palette.mode === "dark" ? "#7de0d2" : "#2563eb";
-  const textColor = theme.palette.mode === "dark" ? "#f8fafc" : "#0f172a";
-  const mutedColor = theme.palette.mode === "dark" ? "#94a3b8" : "#64748b";
+  const accentColor =
+    theme.palette.mode === "dark" ? colorTokens.greenAccent[400] : colorTokens.blueAccent[500];
+  const textColor = theme.palette.text.primary;
+  const mutedColor = theme.palette.text.secondary;
   const hoverBg =
     theme.palette.mode === "dark"
       ? "rgba(255,255,255,0.06)"
@@ -197,7 +200,7 @@ const Sidebar = ({
         ? {
             background: popperBackground,
             border: `1px solid ${alpha(
-              theme.palette.mode === "dark" ? "#ffffff" : "#0f172a",
+              theme.palette.mode === "dark" ? theme.palette.common.white : textColor,
               0.08
             )}`,
             borderRadius: 16,
@@ -275,16 +278,16 @@ const Sidebar = ({
             [`.${sidebarClasses.container}`]: {
               background: sidebarBackground,
               borderRight: `1px solid ${alpha(
-                theme.palette.mode === "dark" ? "#ffffff" : "#0f172a",
+                theme.palette.mode === "dark" ? theme.palette.common.white : textColor,
                 0.08
               )}`,
               overflowY: "auto",
               overflowX: "hidden",
               boxShadow: isMobile
-                ? "0 20px 50px rgba(2,6,23,0.45)"
+                ? `0 20px 50px ${alpha(theme.palette.common.black, 0.45)}`
                 : isDesktopCompact
-                  ? "0 12px 28px rgba(2,6,23,0.14)"
-                  : "0 18px 48px rgba(2,6,23,0.18)",
+                  ? `0 12px 28px ${alpha(theme.palette.common.black, 0.14)}`
+                  : `0 18px 48px ${alpha(theme.palette.common.black, 0.18)}`,
             },
           }}
         >
@@ -304,7 +307,9 @@ const Sidebar = ({
                     flexShrink: 0,
                     border: `2px solid ${alpha(accentColor, 0.28)}`,
                     boxShadow: `0 10px 24px ${alpha(
-                      theme.palette.mode === "dark" ? "#000000" : "#1e3a8a",
+                      theme.palette.mode === "dark"
+                        ? theme.palette.common.black
+                        : colorTokens.blueAccent[300],
                       0.16
                     )}`,
                   }}

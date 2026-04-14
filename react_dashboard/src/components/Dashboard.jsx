@@ -13,6 +13,7 @@ import {
     MenuItem,
     useTheme,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { motion } from "framer-motion";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
@@ -81,6 +82,57 @@ const VideoList = () => {
     const theme = useTheme();
     const isDark = theme.palette.mode === "dark";
     const colors = tokens(theme.palette.mode);
+    const dashboardPalette = useMemo(
+        () => ({
+            surface: alpha(theme.palette.background.paper, isDark ? 0.28 : 0.94),
+            surfaceStrong: alpha(theme.palette.background.paper, isDark ? 0.92 : 0.98),
+            tooltipBg: alpha(theme.palette.background.paper, isDark ? 0.92 : 0.98),
+            tooltipLabel: theme.palette.text.primary,
+            white: theme.palette.common.white,
+            black: theme.palette.common.black,
+            badgeBg: alpha(theme.palette.background.default, isDark ? 0.82 : 0.76),
+            badgeBorder: alpha(theme.palette.common.white, 0.12),
+            playOverlayBg: alpha(theme.palette.common.black, 0.3),
+            playButtonBg: alpha(theme.palette.common.white, 0.2),
+            playButtonBorder: alpha(theme.palette.common.white, 0.3),
+            positive: theme.palette.success.main,
+            info: theme.palette.info.main,
+            warning: theme.palette.warning.main,
+            warningSoft: theme.palette.warning.light,
+            error: theme.palette.error.main,
+            accent: theme.palette.primary.main,
+            accentAlt: colors.blueAccent[500],
+            accentSoft: colors.blueAccent[400],
+            accentLight: colors.blueAccent[300],
+            secondary: theme.palette.secondary.main,
+            muted: theme.palette.text.secondary,
+            revenueMetricColors: {
+                estimated: theme.palette.success.main,
+                ad: theme.palette.info.main,
+                gross: colors.blueAccent[400],
+                premium: theme.palette.warning.main,
+                monetized: theme.palette.secondary.main,
+                adImpressions: colors.blueAccent[500],
+                rpm: theme.palette.error.main,
+                cpm: theme.palette.text.secondary,
+                playbackCpm: colors.blueAccent[300],
+            },
+        }),
+        [colors, isDark, theme]
+    );
+    const actionButtonSx = {
+        transition: "transform 0.2s ease, box-shadow 0.2s ease",
+        color: theme.palette.text.primary,
+        borderColor: alpha(theme.palette.divider, isDark ? 0.7 : 0.55),
+        "&:hover": {
+            transform: "translateY(-1px)",
+            boxShadow: isDark
+                ? `0 8px 18px ${alpha(theme.palette.common.black, 0.5)}`
+                : `0 8px 18px ${alpha(colors.primary[200], 0.16)}`,
+            borderColor: alpha(theme.palette.divider, isDark ? 1 : 0.8),
+            backgroundColor: alpha(theme.palette.text.primary, isDark ? 0.08 : 0.04),
+        },
+    };
 
     const [channels, setChannels] = useState([]);
     const [channelAvatarMap, setChannelAvatarMap] = useState({});
@@ -324,10 +376,9 @@ const VideoList = () => {
         return [first, last];
     }, [subscribersSummary.chart]);
     const chartTooltipStyles = useMemo(() => {
-        const isDark = theme.palette.mode === "dark";
         return {
             contentStyle: {
-                backgroundColor: isDark ? "rgba(15,23,42,0.92)" : "#ffffff",
+                backgroundColor: dashboardPalette.tooltipBg,
                 border: isDark
                     ? "1px solid rgba(148,163,184,0.35)"
                     : "1px solid rgba(15,23,42,0.12)",
@@ -336,9 +387,9 @@ const VideoList = () => {
                     ? "0 10px 18px rgba(2,6,23,0.45)"
                     : "0 10px 18px rgba(15,23,42,0.12)",
             },
-            labelStyle: { color: isDark ? "#e2e8f0" : "#0f172a" },
+            labelStyle: { color: dashboardPalette.tooltipLabel },
         };
-    }, [theme.palette.mode]);
+    }, [dashboardPalette.tooltipBg, dashboardPalette.tooltipLabel, isDark]);
 
     // Fetch danh sách account_tag
     useEffect(() => {
@@ -624,53 +675,53 @@ const VideoList = () => {
                 : "rgba(248,250,252,0.9)",
     };
     const pctColor = (value) =>
-        value >= 0 ? "rgb(34,197,94)" : "rgb(239,68,68)";
+        value >= 0 ? dashboardPalette.positive : dashboardPalette.error;
     const formatPct = (value) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
     const revenueMetricCards = [
         {
             label: "Estimated Revenue",
             value: formatCurrency(revenueSummary.estimated),
-            color: "#22c55e",
+            color: dashboardPalette.revenueMetricColors.estimated,
         },
         {
             label: "Estimated Ad Revenue",
             value: formatCurrency(revenueSummary.ad),
-            color: "#38bdf8",
+            color: dashboardPalette.revenueMetricColors.ad,
         },
         {
             label: "Gross Revenue",
             value: formatCurrency(revenueSummary.gross),
-            color: "#a855f7",
+            color: dashboardPalette.revenueMetricColors.gross,
         },
         {
             label: "Premium Revenue",
             value: formatCurrency(revenueSummary.premium),
-            color: "#f59e0b",
+            color: dashboardPalette.revenueMetricColors.premium,
         },
         {
             label: "Monetized Playbacks",
             value: formatNumber(revenueSummary.monetized),
-            color: "#14b8a6",
+            color: dashboardPalette.revenueMetricColors.monetized,
         },
         {
             label: "Ad Impressions",
             value: formatNumber(revenueSummary.adImpressions),
-            color: "#6366f1",
+            color: dashboardPalette.revenueMetricColors.adImpressions,
         },
         {
             label: "RPM",
             value: formatCurrency(revenueSummary.rpm),
-            color: "#ef4444",
+            color: dashboardPalette.revenueMetricColors.rpm,
         },
         {
             label: "CPM",
             value: formatCurrency(revenueSummary.cpm),
-            color: "#64748b",
+            color: dashboardPalette.revenueMetricColors.cpm,
         },
         {
             label: "Playback CPM",
             value: formatCurrency(revenueSummary.playbackCpm),
-            color: "#ec4899",
+            color: dashboardPalette.revenueMetricColors.playbackCpm,
         },
     ];
 
@@ -705,7 +756,7 @@ const VideoList = () => {
                         borderRadius: 4,
                         border: "1px solid",
                         borderColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(15,23,42,0.1)",
-                        background: isDark ? "rgba(30,41,59,0.4)" : "#fff",
+                        background: dashboardPalette.surface,
                         overflow: "hidden",
                         cursor: "pointer",
                         display: "flex",
@@ -730,23 +781,23 @@ const VideoList = () => {
                             />
                         )}
                         <Box sx={{
-                            position: "absolute", top: 10, right: 10, bgcolor: "rgba(15,23,42,0.8)",
-                            color: "#fff", px: 1.2, py: 0.5, borderRadius: 1.5, fontSize: "0.65rem",
-                            fontWeight: 800, backdropFilter: "blur(4px)", border: '1px solid rgba(255,255,255,0.1)', zIndex: 2
+                            position: "absolute", top: 10, right: 10, bgcolor: dashboardPalette.badgeBg,
+                            color: dashboardPalette.white, px: 1.2, py: 0.5, borderRadius: 1.5, fontSize: "0.65rem",
+                            fontWeight: 800, backdropFilter: "blur(4px)", border: `1px solid ${dashboardPalette.badgeBorder}`, zIndex: 2
                         }}>
                             {formatDate(v.publish_date)}
                         </Box>
                         <Box className="play-overlay" sx={{
                             position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                            bgcolor: "rgba(0,0,0,0.3)", opacity: 0, transition: "opacity 0.3s ease", zIndex: 1,
+                            bgcolor: dashboardPalette.playOverlayBg, opacity: 0, transition: "opacity 0.3s ease", zIndex: 1,
                             ".MuiCard-root:hover &": { opacity: 1 }
                         }}>
                             <Box sx={{
-                                width: 50, height: 50, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.2)',
+                                width: 50, height: 50, borderRadius: '50%', bgcolor: dashboardPalette.playButtonBg,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)',
-                                border: '1px solid rgba(255,255,255,0.3)'
+                                border: `1px solid ${dashboardPalette.playButtonBorder}`
                             }}>
-                                <PlayArrowRoundedIcon sx={{ fontSize: 32, color: "#fff" }} />
+                                <PlayArrowRoundedIcon sx={{ fontSize: 32, color: dashboardPalette.white }} />
                             </Box>
                         </Box>
                     </Box>
@@ -764,7 +815,7 @@ const VideoList = () => {
                                 <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: '0.7rem' }}>Views</Typography>
                                 <Typography variant="body2" fontWeight={700} display="flex" alignItems="center" gap={0.5}>
                                     {formatNumber(v.views)}
-                                    <TrendingUpIcon sx={{ fontSize: 14, color: "#22c55e" }} />
+                                    <TrendingUpIcon sx={{ fontSize: 14, color: dashboardPalette.positive }} />
                                 </Typography>
                             </Box>
                             <Box>
@@ -787,7 +838,7 @@ const VideoList = () => {
                         variants={overlayVariants}
                         transition={{ type: "spring", damping: 25, stiffness: 120 }}
                         sx={{
-                            position: "absolute", inset: 0, background: isDark ? "rgba(15,23,42,0.92)" : "rgba(255,255,255,0.95)",
+                            position: "absolute", inset: 0, background: dashboardPalette.surfaceStrong,
                             backdropFilter: "blur(12px)", p: 2.5, display: "flex", flexDirection: "column", zIndex: 3,
                         }}
                     >
@@ -815,7 +866,17 @@ const VideoList = () => {
                             ))}
                         </Grid>
                         <Box mt="auto">
-                            <Button fullWidth variant="contained" size="small" startIcon={<PlayArrowRoundedIcon />} sx={{ borderRadius: 2, textTransform: 'none', background: "linear-gradient(90deg, #38bdf8, #6366f1)" }}>
+                            <Button
+                                fullWidth
+                                variant="contained"
+                                size="small"
+                                startIcon={<PlayArrowRoundedIcon />}
+                                sx={{
+                                    borderRadius: 2,
+                                    textTransform: 'none',
+                                    background: `linear-gradient(90deg, ${dashboardPalette.info}, ${dashboardPalette.accentAlt})`,
+                                }}
+                            >
                                 Watch on YouTube
                             </Button>
                         </Box>
@@ -833,7 +894,7 @@ const VideoList = () => {
                     borderRadius: 4,
                     border: "1px solid",
                     borderColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(15,23,42,0.1)",
-                    background: isDark ? "rgba(30,41,59,0.4)" : "#fff",
+                    background: dashboardPalette.surface,
                     overflow: "hidden",
                     display: "flex",
                     flexDirection: "column",
@@ -1127,7 +1188,7 @@ const VideoList = () => {
                                                                     {...chartTooltipStyles}
                                                                     labelFormatter={formatDateFull}
                                                                 />
-                                                                <Bar dataKey="gained" fill="#22c55e" radius={[6, 6, 0, 0]} />
+                                                                <Bar dataKey="gained" fill={dashboardPalette.positive} radius={[6, 6, 0, 0]} />
                                                             </BarChart>
                                                         </ResponsiveContainer>
                                                     </Box>
@@ -1160,7 +1221,7 @@ const VideoList = () => {
                                                                     {...chartTooltipStyles}
                                                                     labelFormatter={formatDateFull}
                                                                 />
-                                                                <Bar dataKey="change" fill="#7c3aed" radius={[6, 6, 0, 0]} />
+                                                                <Bar dataKey="change" fill={dashboardPalette.accentSoft} radius={[6, 6, 0, 0]} />
                                                             </BarChart>
                                                         </ResponsiveContainer>
                                                     </Box>
@@ -1283,7 +1344,7 @@ const VideoList = () => {
                                                             type="monotone"
                                                             dataKey="estimated"
                                                             name="Estimated Revenue"
-                                                            stroke="#22c55e"
+                                                            stroke={dashboardPalette.revenueMetricColors.estimated}
                                                             strokeWidth={2}
                                                             dot={false}
                                                         />
@@ -1291,7 +1352,7 @@ const VideoList = () => {
                                                             type="monotone"
                                                             dataKey="ad"
                                                             name="Estimated Ad Revenue"
-                                                            stroke="#38bdf8"
+                                                            stroke={dashboardPalette.revenueMetricColors.ad}
                                                             strokeWidth={2}
                                                             dot={false}
                                                         />
@@ -1299,7 +1360,7 @@ const VideoList = () => {
                                                             type="monotone"
                                                             dataKey="gross"
                                                             name="Gross Revenue"
-                                                            stroke="#a855f7"
+                                                            stroke={dashboardPalette.revenueMetricColors.gross}
                                                             strokeWidth={2}
                                                             dot={false}
                                                         />
@@ -1307,7 +1368,7 @@ const VideoList = () => {
                                                             type="monotone"
                                                             dataKey="premium"
                                                             name="Premium Revenue"
-                                                            stroke="#f59e0b"
+                                                            stroke={dashboardPalette.revenueMetricColors.premium}
                                                             strokeWidth={2}
                                                             dot={false}
                                                         />
@@ -1373,8 +1434,8 @@ const VideoList = () => {
                                                                 borderRadius: 999,
                                                                 background:
                                                                     theme.palette.mode === "dark"
-                                                                        ? "linear-gradient(90deg, #f59e0b, #f97316)"
-                                                                        : "linear-gradient(90deg, #f59e0b, #fb923c)",
+                                                                        ? `linear-gradient(90deg, ${dashboardPalette.warning}, ${dashboardPalette.warningSoft})`
+                                                                        : `linear-gradient(90deg, ${dashboardPalette.warning}, ${dashboardPalette.warningSoft})`,
                                                                 transition: "width 0.5s ease",
                                                             }}
                                                         />
@@ -1388,30 +1449,7 @@ const VideoList = () => {
                                             <Button
                                                 size="small"
                                                 variant="outlined"
-                                                sx={{
-                                                    transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                                                    color:
-                                                        theme.palette.mode === "dark" ? "#e2e8f0" : "#0f172a",
-                                                    borderColor:
-                                                        theme.palette.mode === "dark"
-                                                            ? "rgba(148,163,184,0.5)"
-                                                            : "rgba(15,23,42,0.25)",
-                                                    "&:hover": {
-                                                        transform: "translateY(-1px)",
-                                                        boxShadow:
-                                                            theme.palette.mode === "dark"
-                                                                ? "0 8px 18px rgba(2,6,23,0.5)"
-                                                                : "0 8px 18px rgba(15,23,42,0.12)",
-                                                        borderColor:
-                                                            theme.palette.mode === "dark"
-                                                                ? "rgba(148,163,184,0.9)"
-                                                                : "rgba(15,23,42,0.5)",
-                                                        backgroundColor:
-                                                            theme.palette.mode === "dark"
-                                                                ? "rgba(148,163,184,0.12)"
-                                                                : "rgba(15,23,42,0.04)",
-                                                    },
-                                                }}
+                                                sx={actionButtonSx}
                                                 onClick={() =>
                                                     setKeywordLimit((prev) =>
                                                         Math.min(prev + OVERVIEW_LIMIT_STEP, OVERVIEW_LIMIT_MAX)
@@ -1469,8 +1507,8 @@ const VideoList = () => {
                                                                 borderRadius: 999,
                                                                 background:
                                                                     theme.palette.mode === "dark"
-                                                                        ? "linear-gradient(90deg, #22c55e, #06b6d4)"
-                                                                        : "linear-gradient(90deg, #22c55e, #0ea5e9)",
+                                                                        ? `linear-gradient(90deg, ${dashboardPalette.positive}, ${dashboardPalette.info})`
+                                                                        : `linear-gradient(90deg, ${dashboardPalette.positive}, ${dashboardPalette.info})`,
                                                                 transition: "width 0.5s ease",
                                                             }}
                                                         />
@@ -1484,30 +1522,7 @@ const VideoList = () => {
                                             <Button
                                                 size="small"
                                                 variant="outlined"
-                                                sx={{
-                                                    transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                                                    color:
-                                                        theme.palette.mode === "dark" ? "#e2e8f0" : "#0f172a",
-                                                    borderColor:
-                                                        theme.palette.mode === "dark"
-                                                            ? "rgba(148,163,184,0.5)"
-                                                            : "rgba(15,23,42,0.25)",
-                                                    "&:hover": {
-                                                        transform: "translateY(-1px)",
-                                                        boxShadow:
-                                                            theme.palette.mode === "dark"
-                                                                ? "0 8px 18px rgba(2,6,23,0.5)"
-                                                                : "0 8px 18px rgba(15,23,42,0.12)",
-                                                        borderColor:
-                                                            theme.palette.mode === "dark"
-                                                                ? "rgba(148,163,184,0.9)"
-                                                                : "rgba(15,23,42,0.5)",
-                                                        backgroundColor:
-                                                            theme.palette.mode === "dark"
-                                                                ? "rgba(148,163,184,0.12)"
-                                                                : "rgba(15,23,42,0.04)",
-                                                    },
-                                                }}
+                                                sx={actionButtonSx}
                                                 onClick={() =>
                                                     setSourceLimit((prev) =>
                                                         Math.min(prev + OVERVIEW_LIMIT_STEP, OVERVIEW_LIMIT_MAX)
@@ -1553,8 +1568,8 @@ const VideoList = () => {
                                                             fontWeight: 600,
                                                             bgcolor:
                                                                 theme.palette.mode === "dark"
-                                                                    ? "rgba(0,0,0,0.75)"
-                                                                    : "rgba(255,255,255,0.95)",
+                                                                    ? alpha(dashboardPalette.black, 0.75)
+                                                                    : dashboardPalette.surfaceStrong,
                                                             boxShadow: 3,
                                                         }}
                                                     >
@@ -1563,11 +1578,11 @@ const VideoList = () => {
                                                     </Box>
                                                 );
                                             }}
-                                            unknownColor="#999"
+                                            unknownColor={theme.palette.action.disabled}
                                             projectionScale={80}
                                             projectionTranslation={[0.5, 0.65]}
                                             borderWidth={1}
-                                            borderColor="#fff"
+                                            borderColor={dashboardPalette.white}
                                         />
                                     </Box>
                                     <Box mt={2}>
@@ -1605,8 +1620,8 @@ const VideoList = () => {
                                                                     borderRadius: 999,
                                                                     background:
                                                                         theme.palette.mode === "dark"
-                                                                            ? "linear-gradient(90deg, #38bdf8, #a855f7)"
-                                                                            : "linear-gradient(90deg, #0ea5e9, #6366f1)",
+                                                                            ? `linear-gradient(90deg, ${dashboardPalette.info}, ${dashboardPalette.accentSoft})`
+                                                                            : `linear-gradient(90deg, ${dashboardPalette.info}, ${dashboardPalette.accentAlt})`,
                                                                 }}
                                                             />
                                                         </Box>

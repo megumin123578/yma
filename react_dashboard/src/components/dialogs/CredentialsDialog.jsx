@@ -672,19 +672,6 @@ const CredentialsDialog = ({
     };
   }, [open, tokens, loadTokens]);
 
-  // Hydrate visible token progress from the backend DB when the dialog reopens.
-  useEffect(() => {
-    if (!open || !tokens.length || hydratedProgressOnceRef.current) return;
-    hydratedProgressOnceRef.current = true;
-    const ownedTokens = tokens.filter((token) => {
-      if (typeof token === "string") return true;
-      return token.owned !== false;
-    });
-    hydrateTokenProgress(ownedTokens);
-    // hydrateTokenProgress intentionally stays outside deps to avoid rerunning on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, tokens]);
-
   useEffect(() => {
     if (!authUrl || !oauthState) return;
     let stopped = false;
@@ -1018,6 +1005,17 @@ const CredentialsDialog = ({
     reconcileRunProgress,
     toProgressEntry,
   ]);
+
+  // Hydrate visible token progress from the backend DB when the dialog reopens.
+  useEffect(() => {
+    if (!open || !tokens.length || hydratedProgressOnceRef.current) return;
+    hydratedProgressOnceRef.current = true;
+    const ownedTokens = tokens.filter((token) => {
+      if (typeof token === "string") return true;
+      return token.owned !== false;
+    });
+    hydrateTokenProgress(ownedTokens);
+  }, [open, tokens, hydrateTokenProgress]);
 
   useEffect(() => {
     if (!open || !tokens.length) return;

@@ -568,8 +568,8 @@ const MailMonitor = () => {
 
   useEffect(() => {
     if (loading) return undefined;
-    const timer = window.setInterval(() => loadData(), 45000);
-    return () => window.clearInterval(timer);
+    const timer = setInterval(() => loadData(), 45000);
+    return () => clearInterval(timer);
   }, [loadData, loading]);
 
   useEffect(() => {
@@ -609,12 +609,12 @@ const MailMonitor = () => {
       return false;
     };
 
-    const intervalId = window.setInterval(async () => {
+    const intervalId = setInterval(async () => {
       if (!stopped) {
         const done = await poll();
         if (done) {
           stopped = true;
-          window.clearInterval(intervalId);
+          clearInterval(intervalId);
         }
       }
     }, MAIL_OAUTH_POLL_MS);
@@ -623,7 +623,7 @@ const MailMonitor = () => {
 
     return () => {
       stopped = true;
-      window.clearInterval(intervalId);
+      clearInterval(intervalId);
     };
   }, [loadData, loading, mailOAuthState]);
 

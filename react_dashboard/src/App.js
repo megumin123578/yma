@@ -24,7 +24,7 @@ import {
   useTheme,
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
-import { ColorModeContext } from "./theme";
+import { ColorModeContext, tokens } from "./theme";
 import GeographyScene from "./scenes/geography";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
@@ -203,26 +203,35 @@ function App() {
   const addButtonLabel = isAddingAny ? "Adding..." : "+ Add";
   const nextThemeLabel =
     theme.palette.mode === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  const colorTokens = tokens(theme.palette.mode);
+  const addButtonBg =
+    theme.palette.mode === "dark" ? colorTokens.greenAccent[700] : theme.palette.primary.main;
+  const addButtonHoverBg =
+    theme.palette.mode === "dark" ? colorTokens.greenAccent[600] : theme.palette.primary.dark;
+  const addButtonShadowColor =
+    theme.palette.mode === "dark" ? colorTokens.greenAccent[500] : theme.palette.primary.main;
+  const addMenuPaperBorder = alpha(theme.palette.divider, theme.palette.mode === "dark" ? 0.3 : 0.7);
+  const addMenuPaperBg = alpha(
+    theme.palette.background.paper,
+    theme.palette.mode === "dark" ? 0.94 : 0.98
+  );
+  const addMenuPaperShadow =
+    theme.palette.mode === "dark"
+      ? `0 22px 44px ${alpha(theme.palette.common.black, 0.46)}`
+      : `0 22px 44px ${alpha(colorTokens.primary[200], 0.18)}`;
+  const addChannelAccent = theme.palette.error.main;
+  const addGmailAccent = colorTokens.redAccent[400];
   const addMenuPaperSx = {
     mt: 1,
     minWidth: 284,
     borderRadius: 3,
     overflow: "hidden",
     border: "1px solid",
-    borderColor:
-      theme.palette.mode === "dark"
-        ? alpha("#e2e8f0", 0.14)
-        : alpha("#0f172a", 0.08),
-    bgcolor:
-      theme.palette.mode === "dark"
-        ? alpha("#0f172a", 0.94)
-        : alpha("#ffffff", 0.98),
+    borderColor: addMenuPaperBorder,
+    bgcolor: addMenuPaperBg,
     backdropFilter: "blur(14px)",
     WebkitBackdropFilter: "blur(14px)",
-    boxShadow:
-      theme.palette.mode === "dark"
-        ? "0 22px 44px rgba(2,6,23,0.46)"
-        : "0 22px 44px rgba(15,23,42,0.14)",
+    boxShadow: addMenuPaperShadow,
   };
   const buildAddMenuItemSx = (accentColor) => ({
     mx: 1,
@@ -359,20 +368,14 @@ function App() {
                 py: 0.45,
                 lineHeight: 1.2,
                 minHeight: 30,
-                bgcolor: theme.palette.mode === "dark" ? "#2b8a7b" : theme.palette.primary.main,
-                color: "#fff",
-                boxShadow:
-                  theme.palette.mode === "dark"
-                    ? "0 10px 22px rgba(43,138,123,0.28)"
-                    : "0 10px 22px rgba(25,118,210,0.22)",
+                bgcolor: addButtonBg,
+                color: theme.palette.common.white,
+                boxShadow: `0 10px 22px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.28 : 0.22)}`,
                 transition: "all 180ms ease",
                 "&:hover": {
-                  bgcolor: theme.palette.mode === "dark" ? "#247468" : theme.palette.primary.dark,
+                  bgcolor: addButtonHoverBg,
                   transform: "translateY(-1px)",
-                  boxShadow:
-                    theme.palette.mode === "dark"
-                      ? "0 14px 26px rgba(43,138,123,0.34)"
-                      : "0 14px 26px rgba(25,118,210,0.28)",
+                  boxShadow: `0 14px 26px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.34 : 0.28)}`,
                   },
               }}
             >
@@ -399,9 +402,9 @@ function App() {
               <MenuItem
                 onClick={() => handleSelectAddAction("channel")}
                 disabled={isAddingAny}
-                sx={buildAddMenuItemSx("#ff0033")}
+                sx={buildAddMenuItemSx(addChannelAccent)}
               >
-                <ListItemIcon sx={buildAddMenuIconSx("#ff0033")}>
+                <ListItemIcon sx={buildAddMenuIconSx(addChannelAccent)}>
                   <SmartDisplayRoundedIcon fontSize="small" />
                 </ListItemIcon>
                 <ListItemText
@@ -414,9 +417,9 @@ function App() {
               <MenuItem
                 onClick={() => handleSelectAddAction("gmail")}
                 disabled={isAddingAny}
-                sx={buildAddMenuItemSx("#ea4335")}
+                sx={buildAddMenuItemSx(addGmailAccent)}
               >
-                <ListItemIcon sx={buildAddMenuIconSx("#ea4335")}>
+                <ListItemIcon sx={buildAddMenuIconSx(addGmailAccent)}>
                   <AlternateEmailRoundedIcon fontSize="small" />
                 </ListItemIcon>
                 <ListItemText

@@ -24,7 +24,7 @@ import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownR
 import { alpha } from "@mui/material/styles";
 
 import { useNavigate } from "react-router-dom";
-import { ColorModeContext } from "../../theme";
+import { ColorModeContext, tokens } from "../../theme";
 import { UserContext } from "../../context/UserContext";
 import ProfileDialog from "../../components/dialogs/ProfileDialog";
 import MailMessageDialog from "../../components/MailMessageDialog";
@@ -107,6 +107,28 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
   const addButtonLabel = isAddingAny ? "Adding..." : "+ Add";
   const nextThemeLabel =
     theme.palette.mode === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  const colorTokens = tokens(theme.palette.mode);
+  const addButtonBg =
+    theme.palette.mode === "dark" ? colorTokens.greenAccent[700] : theme.palette.primary.main;
+  const addButtonHoverBg =
+    theme.palette.mode === "dark" ? colorTokens.greenAccent[600] : theme.palette.primary.dark;
+  const addButtonShadowColor =
+    theme.palette.mode === "dark" ? colorTokens.greenAccent[500] : theme.palette.primary.main;
+  const menuPaperBorder = alpha(theme.palette.divider, theme.palette.mode === "dark" ? 0.3 : 0.7);
+  const menuPaperBg = alpha(
+    theme.palette.background.paper,
+    theme.palette.mode === "dark" ? 0.94 : 0.98
+  );
+  const menuPaperShadow =
+    theme.palette.mode === "dark"
+      ? `0 22px 44px ${alpha(theme.palette.common.black, 0.46)}`
+      : `0 22px 44px ${alpha(colorTokens.primary[200], 0.18)}`;
+  const notificationAccent =
+    theme.palette.mode === "dark" ? theme.palette.info.light : theme.palette.info.dark;
+  const unreadDotColor =
+    theme.palette.mode === "dark" ? theme.palette.info.light : theme.palette.success.main;
+  const addChannelAccent = theme.palette.error.main;
+  const addGmailAccent = colorTokens.redAccent[400];
   const sidebarToggleLabel = isMobile
     ? "Toggle sidebar"
     : desktopSidebarMode === "expanded"
@@ -120,20 +142,11 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
     borderRadius: 3,
     overflow: "hidden",
     border: "1px solid",
-    borderColor:
-      theme.palette.mode === "dark"
-        ? alpha("#e2e8f0", 0.14)
-        : alpha("#0f172a", 0.08),
-    bgcolor:
-      theme.palette.mode === "dark"
-        ? alpha("#0f172a", 0.94)
-        : alpha("#ffffff", 0.98),
+    borderColor: menuPaperBorder,
+    bgcolor: menuPaperBg,
     backdropFilter: "blur(14px)",
     WebkitBackdropFilter: "blur(14px)",
-    boxShadow:
-      theme.palette.mode === "dark"
-        ? "0 22px 44px rgba(2,6,23,0.46)"
-        : "0 22px 44px rgba(15,23,42,0.14)",
+    boxShadow: menuPaperShadow,
   };
   const buildAddMenuItemSx = (accentColor) => ({
     mx: 1,
@@ -362,7 +375,7 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
 
     const stopPolling = () => {
       if (timerId !== null) {
-        window.clearInterval(timerId);
+        clearInterval(timerId);
         timerId = null;
       }
     };
@@ -370,7 +383,7 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
     const startPolling = () => {
       if (document.visibilityState !== "visible" || timerId !== null) return;
       pollMatchedNotifications();
-      timerId = window.setInterval(() => {
+      timerId = setInterval(() => {
         if (document.visibilityState !== "visible") return;
         pollMatchedNotifications();
       }, MAIL_NOTIFICATION_POLL_MS);
@@ -444,20 +457,14 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
                 py: 0.45,
                 lineHeight: 1.2,
                 minHeight: 30,
-                bgcolor: theme.palette.mode === "dark" ? "#2b8a7b" : theme.palette.primary.main,
-                color: "#fff",
-                boxShadow:
-                  theme.palette.mode === "dark"
-                    ? "0 10px 22px rgba(43,138,123,0.28)"
-                    : "0 10px 22px rgba(25,118,210,0.22)",
+                bgcolor: addButtonBg,
+                color: theme.palette.common.white,
+                boxShadow: `0 10px 22px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.28 : 0.22)}`,
                 transition: "all 180ms ease",
                 "&:hover": {
-                  bgcolor: theme.palette.mode === "dark" ? "#247468" : theme.palette.primary.dark,
+                  bgcolor: addButtonHoverBg,
                   transform: "translateY(-1px)",
-                  boxShadow:
-                    theme.palette.mode === "dark"
-                      ? "0 14px 26px rgba(43,138,123,0.34)"
-                    : "0 14px 26px rgba(25,118,210,0.28)",
+                  boxShadow: `0 14px 26px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.34 : 0.28)}`,
                 },
               }}
             >
@@ -523,18 +530,12 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
               maxWidth: "calc(100vw - 24px)",
               borderRadius: 3,
               border: "1px solid",
-              borderColor:
-                theme.palette.mode === "dark"
-                  ? "rgba(148,163,184,0.18)"
-                  : "rgba(15,23,42,0.08)",
-              bgcolor:
-                theme.palette.mode === "dark"
-                  ? "rgba(15,23,42,0.96)"
-                  : "rgba(255,255,255,0.98)",
+              borderColor: menuPaperBorder,
+              bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === "dark" ? 0.96 : 0.98),
               boxShadow:
                 theme.palette.mode === "dark"
-                  ? "0 18px 40px rgba(2,6,23,0.46)"
-                  : "0 18px 36px rgba(148,163,184,0.22)",
+                  ? `0 18px 40px ${alpha(theme.palette.common.black, 0.46)}`
+                  : `0 18px 36px ${alpha(colorTokens.primary[200], 0.22)}`,
             },
           }}
         >
@@ -566,7 +567,7 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
                     fontWeight: 700,
                     minWidth: 0,
                     px: 0,
-                    color: theme.palette.mode === "dark" ? "#67e8f9" : "#1d4ed8",
+                    color: notificationAccent,
                   }}
                 >
                   Mark all as read
@@ -619,8 +620,8 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
                       item.__read
                         ? "transparent"
                         : theme.palette.mode === "dark"
-                          ? "#67e8f9"
-                          : "#16a34a",
+                          ? unreadDotColor
+                          : unreadDotColor,
                     flexShrink: 0,
                     mt: 0.9,
                     mr: 1.25,
@@ -674,7 +675,7 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
                         minWidth: 0,
                         flexShrink: 0,
                         px: 0,
-                        color: theme.palette.mode === "dark" ? "#67e8f9" : "#1d4ed8",
+                        color: notificationAccent,
                       }}
                     >
                       Mark as read
@@ -696,23 +697,18 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
                   fontWeight: 700,
                   borderRadius: 999,
                   borderColor:
-                    theme.palette.mode === "dark"
-                      ? "rgba(103,232,249,0.42)"
-                      : "rgba(37,99,235,0.24)",
-                  color: theme.palette.mode === "dark" ? "#67e8f9" : "#1d4ed8",
+                    alpha(notificationAccent, theme.palette.mode === "dark" ? 0.42 : 0.24),
+                  color: notificationAccent,
                   bgcolor:
                     theme.palette.mode === "dark"
-                      ? "rgba(8,47,73,0.34)"
-                      : "rgba(239,246,255,0.95)",
+                      ? alpha(theme.palette.info.dark, 0.34)
+                      : alpha(theme.palette.info.light, 0.95),
                   "&:hover": {
-                    borderColor:
-                      theme.palette.mode === "dark"
-                        ? "rgba(103,232,249,0.62)"
-                        : "rgba(37,99,235,0.38)",
+                    borderColor: alpha(notificationAccent, theme.palette.mode === "dark" ? 0.62 : 0.38),
                     bgcolor:
                       theme.palette.mode === "dark"
-                        ? "rgba(14,116,144,0.26)"
-                        : "rgba(219,234,254,0.98)",
+                        ? alpha(theme.palette.info.main, 0.26)
+                        : alpha(theme.palette.info.light, 0.98),
                   },
                 }}
               >
@@ -737,9 +733,9 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
         <MenuItem
           onClick={() => handleSelectAddAction("channel")}
           disabled={isAddingAny}
-          sx={buildAddMenuItemSx("#ff0033")}
+          sx={buildAddMenuItemSx(addChannelAccent)}
         >
-          <ListItemIcon sx={buildAddMenuIconSx("#ff0033")}>
+          <ListItemIcon sx={buildAddMenuIconSx(addChannelAccent)}>
             <SmartDisplayRoundedIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText
@@ -752,9 +748,9 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
         <MenuItem
           onClick={() => handleSelectAddAction("gmail")}
           disabled={isAddingAny}
-          sx={buildAddMenuItemSx("#ea4335")}
+          sx={buildAddMenuItemSx(addGmailAccent)}
         >
-          <ListItemIcon sx={buildAddMenuIconSx("#ea4335")}>
+          <ListItemIcon sx={buildAddMenuIconSx(addGmailAccent)}>
             <AlternateEmailRoundedIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText
