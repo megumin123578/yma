@@ -67,7 +67,7 @@ const persistStoredIds = (key, ids, limit = 500) => {
 
 const formatNotificationTime = (value) => formatShortDateTimeInSaigon(value, "");
 
-const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
+const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = false }) => {
   const theme = useTheme();
   const navigate = useNavigate();
   const colorMode = useContext(ColorModeContext);
@@ -107,6 +107,13 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
   const addButtonLabel = isAddingAny ? "Adding..." : "+ Add";
   const nextThemeLabel =
     theme.palette.mode === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  const sidebarToggleLabel = isMobile
+    ? "Toggle sidebar"
+    : desktopSidebarMode === "expanded"
+      ? "Collapse sidebar to icons"
+      : desktopSidebarMode === "compact"
+        ? "Hide sidebar"
+        : "Show full sidebar";
   const addMenuPaperSx = {
     mt: 1,
     minWidth: 284,
@@ -376,7 +383,8 @@ const Topbar = ({ setIsSidebar, isSidebar, isMobile = false }) => {
           <Box display="flex" alignItems="center">
             <IconButton
               size="medium"
-              onClick={() => setIsSidebar?.((prev) => !prev)}
+              onClick={onToggleSidebar}
+              aria-label={sidebarToggleLabel}
               sx={{ mr: 1 }}
             >
               <MenuOutlinedIcon fontSize="medium" />

@@ -44,6 +44,16 @@ import LandingPage from "./scenes/landing";
 import { AnimatePresence, motion } from "framer-motion";
 import { startMailOAuth, uploadCredentials } from "./services/userService";
 
+const DESKTOP_SIDEBAR_EXPANDED = "expanded";
+const DESKTOP_SIDEBAR_COMPACT = "compact";
+const DESKTOP_SIDEBAR_HIDDEN = "hidden";
+
+const getNextDesktopSidebarMode = (currentMode) => {
+  if (currentMode === DESKTOP_SIDEBAR_EXPANDED) return DESKTOP_SIDEBAR_COMPACT;
+  if (currentMode === DESKTOP_SIDEBAR_COMPACT) return DESKTOP_SIDEBAR_HIDDEN;
+  return DESKTOP_SIDEBAR_EXPANDED;
+};
+
 const ProtectedRoute = memo(function ProtectedRoute({ children, user, loading }) {
   if (loading) return null;
   if (!user) return <Navigate to="/" replace />;
@@ -181,7 +191,8 @@ function App() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const colorMode = useContext(ColorModeContext);
-  const [isSidebar, setIsSidebar] = useState(!isMobile);
+  const [desktopSidebarMode, setDesktopSidebarMode] = useState(DESKTOP_SIDEBAR_EXPANDED);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [addingChannel, setAddingChannel] = useState(false);
   const [addingMail, setAddingMail] = useState(false);
   const [addMenuAnchorEl, setAddMenuAnchorEl] = useState(null);
@@ -250,14 +261,18 @@ function App() {
   const isNoLayout = noLayoutRoutes.includes(location.pathname);
 
   useEffect(() => {
-    setIsSidebar((prev) => (isMobile ? false : prev));
-  }, [isMobile]);
-
-  useEffect(() => {
     if (isMobile) {
-      setIsSidebar(false);
+      setIsMobileSidebarOpen(false);
     }
-  }, [location.pathname, isMobile]);
+  }, [isMobile, location.pathname]);
+
+  const handleToggleSidebar = () => {
+    if (isMobile) {
+      setIsMobileSidebarOpen((current) => !current);
+      return;
+    }
+    setDesktopSidebarMode((current) => getNextDesktopSidebarMode(current));
+  };
 
   const handleAddChannel = async () => {
     if (addingChannel) return;
@@ -309,8 +324,9 @@ function App() {
     <div className="app">
       {!isNoLayout && (
         <Sidebar
-          isSidebar={isSidebar}
-          setIsSidebar={setIsSidebar}
+          desktopSidebarMode={desktopSidebarMode}
+          isMobileSidebarOpen={isMobileSidebarOpen}
+          setIsMobileSidebarOpen={setIsMobileSidebarOpen}
           isMobile={isMobile}
         />
       )}
@@ -318,8 +334,8 @@ function App() {
       <main className="content">
         {!isNoLayout && (
           <Topbar
-            setIsSidebar={setIsSidebar}
-            isSidebar={isSidebar}
+            onToggleSidebar={handleToggleSidebar}
+            desktopSidebarMode={desktopSidebarMode}
             isMobile={isMobile}
           />
         )}

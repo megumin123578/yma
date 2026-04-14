@@ -1,10 +1,14 @@
-import { ProSidebar, Menu, MenuItem, SubMenu } from "react-pro-sidebar";
 import { Box, Typography, useTheme } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { useContext } from "react";
 import { Link, useLocation } from "react-router-dom";
-import "react-pro-sidebar/dist/css/styles.css";
-import { tokens } from "../../theme";
+import {
+  Menu,
+  MenuItem,
+  Sidebar as ProSidebar,
+  sidebarClasses,
+  SubMenu,
+} from "react-pro-sidebar";
 
 import HomeOutlinedIcon from "@mui/icons-material/HomeOutlined";
 import DatasetIcon from "@mui/icons-material/Dataset";
@@ -19,36 +23,66 @@ import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import WebhookIcon from "@mui/icons-material/Webhook";
 import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import AutoModeIcon from "@mui/icons-material/AutoMode";
+
 import { UserContext } from "../../context/UserContext";
 
-const Item = ({ title, to, icon, isActive, onClick }) => {
-  const theme = useTheme();
-  const colors = tokens(theme.palette.mode);
+const Item = ({ title, to, icon, isActive, onClick, isCompact = false }) => (
+  <MenuItem
+    active={isActive}
+    icon={icon}
+    component={<Link to={to} />}
+    onClick={onClick}
+    title={isCompact ? title : undefined}
+    aria-label={title}
+  >
+    {title}
+  </MenuItem>
+);
 
-  return (
-    <MenuItem
-      active={isActive}
-      style={{ color: colors.grey[100] }}
-      icon={icon}
-      onClick={onClick}
-    >
-      <Typography sx={{ fontSize: "0.88rem", fontWeight: isActive ? 700 : 600 }}>
-        {title}
-      </Typography>
-      <Link to={to} />
-    </MenuItem>
-  );
-};
-
-const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
+const Sidebar = ({
+  desktopSidebarMode = "expanded",
+  isMobileSidebarOpen = false,
+  setIsMobileSidebarOpen,
+  isMobile = false,
+}) => {
   const theme = useTheme();
   const location = useLocation();
   const { user } = useContext(UserContext);
+
   const pathname = location.pathname || "/dashboard";
   const desktopSidebarWidth = 280;
-  const sidebarWidth = isMobile
-    ? "min(82vw, 320px)"
-    : `${isSidebar ? desktopSidebarWidth : 0}px`;
+  const desktopCompactSidebarWidth = 68;
+  const mobileSidebarWidth = "min(82vw, 320px)";
+
+  const isDesktopCompact = !isMobile && desktopSidebarMode === "compact";
+  const isDesktopHidden = !isMobile && desktopSidebarMode === "hidden";
+  const shellWidth = isMobile
+    ? mobileSidebarWidth
+    : isDesktopHidden
+      ? "0px"
+      : isDesktopCompact
+        ? `${desktopCompactSidebarWidth}px`
+        : `${desktopSidebarWidth}px`;
+
+  const accentColor = theme.palette.mode === "dark" ? "#7de0d2" : "#2563eb";
+  const textColor = theme.palette.mode === "dark" ? "#f8fafc" : "#0f172a";
+  const mutedColor = theme.palette.mode === "dark" ? "#94a3b8" : "#64748b";
+  const hoverBg =
+    theme.palette.mode === "dark"
+      ? "rgba(255,255,255,0.06)"
+      : "rgba(15,23,42,0.05)";
+  const activeBg =
+    theme.palette.mode === "dark"
+      ? "linear-gradient(90deg, rgba(125,224,210,0.18) 0%, rgba(59,130,246,0.14) 100%)"
+      : "linear-gradient(90deg, rgba(37,99,235,0.12) 0%, rgba(14,165,233,0.08) 100%)";
+  const sidebarBackground =
+    theme.palette.mode === "dark"
+      ? "linear-gradient(180deg, rgba(17,24,39,0.98) 0%, rgba(15,23,42,0.98) 62%, rgba(20,83,45,0.22) 100%)"
+      : "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(248,250,252,0.98) 68%, rgba(219,234,254,0.88) 100%)";
+  const popperBackground =
+    theme.palette.mode === "dark"
+      ? "linear-gradient(180deg, rgba(17,24,39,0.98) 0%, rgba(15,23,42,0.98) 100%)"
+      : "linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%)";
 
   const isActivePath = (to) => {
     if (!to) return false;
@@ -56,14 +90,25 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
     return pathname === to || pathname.startsWith(`${to}/`);
   };
 
-  const inGroup = (routes) => routes.some((r) => isActivePath(r));
-
-  const defaultOpenAnalytics = inGroup(["/all_channels", "/content", "/traffic_source", "/geography", "/audience_analytics", "/reach", "/revenue"]);
+  const inGroup = (routes) => routes.some((route) => isActivePath(route));
+  const defaultOpenAnalytics = inGroup([
+    "/all_channels",
+    "/content",
+    "/traffic_source",
+    "/geography",
+    "/audience_analytics",
+    "/reach",
+    "/revenue",
+  ]);
   const defaultOpenStatistics = inGroup(["/channel_compare", "/rivals"]);
-  const defaultOpenAutomation = inGroup(["/smmstore", "/smmstore_analytics", "/mail_monitor"]);
+  const defaultOpenAutomation = inGroup([
+    "/smmstore",
+    "/smmstore_analytics",
+    "/mail_monitor",
+  ]);
 
   const closeOnMobile = () => {
-    if (isMobile) setIsSidebar?.(false);
+    if (isMobile) setIsMobileSidebarOpen?.(false);
   };
 
   const sidebarAvatarSrc =
@@ -78,11 +123,107 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
     textTransform: "uppercase",
   };
 
+  const menuItemStyles = {
+    root: ({ level }) => ({
+      margin:
+        level === 0
+          ? isDesktopCompact
+            ? "4px 8px"
+            : "2px 10px"
+          : "2px 8px 2px 14px",
+    }),
+    button: ({ level, active, open, disabled }) => ({
+      position: "relative",
+      minHeight: "unset",
+      borderRadius: 12,
+      padding:
+        level === 0
+          ? isDesktopCompact
+            ? "9px 0"
+            : "7px 12px"
+          : "7px 12px",
+      justifyContent: level === 0 && isDesktopCompact ? "center" : "flex-start",
+      color: active || open ? textColor : mutedColor,
+      transition: "all 180ms ease",
+      ...(disabled
+        ? {}
+        : {
+            "&:hover": {
+              backgroundColor: hoverBg,
+              color: textColor,
+              transform:
+                level === 0 && isDesktopCompact ? "translateY(-1px)" : "translateX(3px)",
+            },
+          }),
+      "&:focus-visible": {
+        outline: `2px solid ${accentColor}`,
+        outlineOffset: 2,
+      },
+      ...(active && {
+        background: `${activeBg} !important`,
+        boxShadow:
+          theme.palette.mode === "dark"
+            ? "0 10px 24px rgba(15,23,42,0.28)"
+            : "0 10px 20px rgba(37,99,235,0.12)",
+        "&::before": {
+          content: '""',
+          position: "absolute",
+          left: level === 0 && isDesktopCompact ? 6 : 0,
+          top: level === 0 && isDesktopCompact ? 9 : 7,
+          bottom: level === 0 && isDesktopCompact ? 9 : 7,
+          width: 3,
+          borderRadius: 999,
+          background: accentColor,
+        },
+      }),
+    }),
+    label: ({ level, active }) => ({
+      fontSize: level === 0 ? "0.88rem" : "0.84rem",
+      fontWeight: active ? 700 : level === 0 ? 600 : 500,
+    }),
+    icon: ({ active }) => ({
+      width: 32,
+      minWidth: 32,
+      height: 32,
+      minHeight: 32,
+      borderRadius: 10,
+      display: "grid",
+      placeItems: "center",
+      color: active ? accentColor : undefined,
+    }),
+    subMenuContent: ({ level }) => ({
+      backgroundColor: "transparent",
+      ...(isDesktopCompact
+        ? {
+            background: popperBackground,
+            border: `1px solid ${alpha(
+              theme.palette.mode === "dark" ? "#ffffff" : "#0f172a",
+              0.08
+            )}`,
+            borderRadius: 16,
+            boxShadow:
+              theme.palette.mode === "dark"
+                ? "0 18px 36px rgba(2,6,23,0.46)"
+                : "0 18px 36px rgba(15,23,42,0.12)",
+            padding: "10px 8px",
+            overflow: "hidden",
+          }
+        : {
+            paddingTop: level === 0 ? 2 : 0,
+            paddingBottom: level === 0 ? 2 : 0,
+          }),
+    }),
+    SubMenuExpandIcon: ({ open }) => ({
+      color: open ? accentColor : mutedColor,
+      marginRight: isDesktopCompact ? 0 : 4,
+    }),
+  };
+
   return (
     <>
-      {isMobile && isSidebar && (
+      {isMobile && isMobileSidebarOpen ? (
         <Box
-          onClick={() => setIsSidebar?.(false)}
+          onClick={() => setIsMobileSidebarOpen?.(false)}
           sx={{
             position: "fixed",
             inset: 0,
@@ -91,7 +232,8 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
             zIndex: 1198,
           }}
         />
-      )}
+      ) : null}
+
       <Box
         sx={{
           height: "100vh",
@@ -99,176 +241,78 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
           top: isMobile ? 0 : "auto",
           left: isMobile ? 0 : "auto",
           zIndex: isMobile ? 1199 : "auto",
-          width: isMobile ? "auto" : sidebarWidth,
-          minWidth: isMobile ? "auto" : sidebarWidth,
+          width: isMobile ? "auto" : shellWidth,
+          minWidth: isMobile ? "auto" : shellWidth,
           flexShrink: 0,
           overflow: "hidden",
-          opacity: isMobile ? (isSidebar ? 1 : 0) : 1,
+          opacity: isMobile ? (isMobileSidebarOpen ? 1 : 0) : isDesktopHidden ? 0 : 1,
           pointerEvents: isMobile
-            ? isSidebar ? "auto" : "none"
-            : isSidebar ? "auto" : "none",
+            ? isMobileSidebarOpen
+              ? "auto"
+              : "none"
+            : isDesktopHidden
+              ? "none"
+              : "auto",
           transform: isMobile
-            ? isSidebar ? "translateX(0)" : "translateX(-110%)"
-            : "none",
-          transition: isMobile
-            ? "opacity 180ms ease, transform 240ms cubic-bezier(0.22, 1, 0.36, 1)"
-            : "none",
-          "& .pro-sidebar": {
-            height: "100vh",
-            width: sidebarWidth,
-            minWidth: sidebarWidth,
-            overflow: "hidden !important",
-            boxShadow: isMobile
-              ? "0 20px 50px rgba(2,6,23,0.45)"
-              : isSidebar
-                ? "0 18px 48px rgba(2,6,23,0.18)"
-                : "none",
-            transition: isMobile
-              ? "width 200ms cubic-bezier(0.22, 1, 0.36, 1) !important"
-              : "none !important",
-          },
-          "& .pro-sidebar-inner": {
-            background: `${
-              theme.palette.mode === "dark"
-                ? "linear-gradient(180deg, rgba(17,24,39,0.98) 0%, rgba(15,23,42,0.98) 62%, rgba(20,83,45,0.22) 100%)"
-                : "linear-gradient(180deg, rgba(255,255,255,0.96) 0%, rgba(248,250,252,0.98) 68%, rgba(219,234,254,0.88) 100%)"
-            } !important`,
-            borderRight: `1px solid ${
-              theme.palette.mode === "dark"
-                ? "rgba(255,255,255,0.08)"
-                : "rgba(15,23,42,0.08)"
-            }`,
-            overflowY: "auto !important",
-            overflowX: "hidden !important",
-          },
-          "& .pro-sidebar .pro-menu": {
-            overflow: "visible !important",
-          },
-          "& .pro-sidebar .pro-menu > ul": {
-            overflow: "visible !important",
-          },
-          "& .pro-icon-wrapper": {
-            backgroundColor: "transparent !important",
-            width: 32,
-            minWidth: 32,
-            height: 32,
-            minHeight: 32,
-            borderRadius: 10,
-            display: "grid",
-            placeItems: "center",
-            transition: "all 180ms ease",
-          },
-          "& .pro-inner-item": {
-            position: "relative",
-            margin: "2px 10px !important",
-            padding: "7px 12px !important",
-            minHeight: "unset !important",
-            borderRadius: "12px !important",
-            transition: "all 180ms ease !important",
-          },
-          "& .pro-inner-item:focus-visible": {
-            outline: `2px solid ${theme.palette.mode === "dark" ? "#7de0d2" : "#2563eb"}`,
-            outlineOffset: 2,
-          },
-          "& .pro-inner-item:hover": {
-            color: `${theme.palette.mode === "dark" ? "#f8fafc" : "#0f172a"} !important`,
-            background: `${
-              theme.palette.mode === "dark"
-                ? "rgba(255,255,255,0.06)"
-                : "rgba(15,23,42,0.05)"
-            } !important`,
-            transform: "translateX(3px)",
-          },
-          "& .pro-inner-item:hover .pro-icon-wrapper": {
-            backgroundColor: "transparent !important",
-          },
-          "& .pro-menu-item.active": {
-            color: `${theme.palette.mode === "dark" ? "#ffffff" : "#0f172a"} !important`,
-          },
-          "& .pro-menu-item.active > .pro-inner-item": {
-            background: `${
-              theme.palette.mode === "dark"
-                ? "linear-gradient(90deg, rgba(125,224,210,0.18) 0%, rgba(59,130,246,0.14) 100%)"
-                : "linear-gradient(90deg, rgba(37,99,235,0.12) 0%, rgba(14,165,233,0.08) 100%)"
-            } !important`,
-            boxShadow: `${
-              theme.palette.mode === "dark"
-                ? "0 10px 24px rgba(15,23,42,0.28)"
-                : "0 10px 20px rgba(37,99,235,0.12)"
-            }`,
-          },
-          "& .pro-menu-item.active > .pro-inner-item:before": {
-            content: '""',
-            position: "absolute",
-            left: 0,
-            top: 7,
-            bottom: 7,
-            width: 3,
-            borderRadius: 999,
-            background: theme.palette.mode === "dark" ? "#7de0d2" : "#2563eb",
-          },
-          "& .pro-menu-item.active .pro-icon-wrapper": {
-            backgroundColor: "transparent !important",
-            color: `${theme.palette.mode === "dark" ? "#7de0d2" : "#2563eb"} !important`,
-          },
-          "& .pro-menu-item > .pro-inner-item > .pro-item-content": {
-            transition: "opacity 150ms ease, transform 180ms ease",
-          },
-          // SubMenu styles
-          "& .pro-sub-menu > .pro-inner-item": {
-            color: `${theme.palette.mode === "dark" ? "#94a3b8" : "#64748b"} !important`,
-          },
-          "& .pro-sub-menu.open > .pro-inner-item": {
-            color: `${theme.palette.mode === "dark" ? "#7de0d2" : "#2563eb"} !important`,
-          },
-          "& .pro-inner-list-item": {
-            backgroundColor: "transparent !important",
-            paddingLeft: "0 !important",
-          },
-          "& .pro-inner-list-item > div > ul": {
-            paddingTop: "2px !important",
-            paddingBottom: "2px !important",
-          },
-          "& .pro-arrow-wrapper": {
-            paddingRight: "4px !important",
-          },
-          "& .pro-arrow": {
-            borderColor: `${theme.palette.mode === "dark" ? "#94a3b8" : "#64748b"} !important`,
-            borderWidth: "1.5px !important",
-          },
-          "& .pro-sub-menu.open > .pro-inner-item .pro-arrow": {
-            borderColor: `${theme.palette.mode === "dark" ? "#7de0d2" : "#2563eb"} !important`,
-          },
+            ? isMobileSidebarOpen
+              ? "translateX(0)"
+              : "translateX(-110%)"
+            : isDesktopHidden
+              ? "translateX(-12px)"
+              : "translateX(0)",
+          transition:
+            "width 220ms cubic-bezier(0.22, 1, 0.36, 1), min-width 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1)",
         }}
       >
-        <ProSidebar collapsed={false}>
-          <Menu iconShape="square">
-            <Box px="14px" pt="8px" pb="4px">
-              <Box sx={{ px: 0.75, py: 0.75 }}>
-                <Box display="flex" justifyContent="center">
-                  <Box
-                    component="img"
-                    alt="profile-user"
-                    src={sidebarAvatarSrc}
-                    sx={{
-                      width: 60,
-                      height: 60,
-                      borderRadius: "50%",
-                      objectFit: "cover",
-                      flexShrink: 0,
-                      border: `2px solid ${alpha(
-                        theme.palette.mode === "dark" ? "#7de0d2" : "#2563eb",
-                        0.28
-                      )}`,
-                      boxShadow: `0 10px 24px ${alpha(
-                        theme.palette.mode === "dark" ? "#000000" : "#1e3a8a",
-                        0.16
-                      )}`,
-                    }}
-                  />
-                </Box>
+        <ProSidebar
+          collapsed={isDesktopCompact}
+          width={`${desktopSidebarWidth}px`}
+          collapsedWidth={`${desktopCompactSidebarWidth}px`}
+          rootStyles={{
+            height: "100vh",
+            border: "none",
+            color: mutedColor,
+            [`.${sidebarClasses.container}`]: {
+              background: sidebarBackground,
+              borderRight: `1px solid ${alpha(
+                theme.palette.mode === "dark" ? "#ffffff" : "#0f172a",
+                0.08
+              )}`,
+              overflowY: "auto",
+              overflowX: "hidden",
+              boxShadow: isMobile
+                ? "0 20px 50px rgba(2,6,23,0.45)"
+                : isDesktopCompact
+                  ? "0 12px 28px rgba(2,6,23,0.14)"
+                  : "0 18px 48px rgba(2,6,23,0.18)",
+            },
+          }}
+        >
+          <Box px={isDesktopCompact ? "8px" : "14px"} pt="8px" pb={isDesktopCompact ? "6px" : "4px"}>
+            <Box sx={{ px: isDesktopCompact ? 0 : 0.75, py: isDesktopCompact ? 0.5 : 0.75 }}>
+              <Box display="flex" justifyContent="center">
+                <Box
+                  component="img"
+                  alt="profile-user"
+                  src={sidebarAvatarSrc}
+                  title={isDesktopCompact ? user?.name || "Admin" : undefined}
+                  sx={{
+                    width: isDesktopCompact ? 40 : 60,
+                    height: isDesktopCompact ? 40 : 60,
+                    borderRadius: "50%",
+                    objectFit: "cover",
+                    flexShrink: 0,
+                    border: `2px solid ${alpha(accentColor, 0.28)}`,
+                    boxShadow: `0 10px 24px ${alpha(
+                      theme.palette.mode === "dark" ? "#000000" : "#1e3a8a",
+                      0.16
+                    )}`,
+                  }}
+                />
+              </Box>
+              {!isDesktopCompact ? (
                 <Typography
-                  color={theme.palette.mode === "dark" ? "#f8fafc" : "#0f172a"}
+                  color={textColor}
                   sx={{
                     mt: 0.75,
                     fontSize: "0.88rem",
@@ -282,23 +326,27 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                 >
                   {user?.name || "Admin"}
                 </Typography>
-              </Box>
+              ) : null}
             </Box>
+          </Box>
 
-            {/* MENU */}
-            <Box paddingLeft="6px" paddingRight="6px" pt="2px" pb="8px">
+          <Box px={isDesktopCompact ? "4px" : "6px"} pt="2px" pb="8px">
+            <Menu closeOnClick={isDesktopCompact} menuItemStyles={menuItemStyles}>
               <Item
                 title="Dashboard"
                 to="/dashboard"
                 icon={<HomeOutlinedIcon />}
                 isActive={isActivePath("/dashboard")}
                 onClick={closeOnMobile}
+                isCompact={isDesktopCompact}
               />
 
               <SubMenu
-                title={<Typography sx={subMenuTitleSx}>Analytics</Typography>}
+                label={<Typography sx={subMenuTitleSx}>Analytics</Typography>}
                 icon={<BarChartOutlinedIcon />}
+                active={defaultOpenAnalytics}
                 defaultOpen={defaultOpenAnalytics}
+                title={isDesktopCompact ? "Analytics" : undefined}
               >
                 <Item
                   title="All Channels"
@@ -306,6 +354,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                   icon={<ViewModuleOutlinedIcon />}
                   isActive={isActivePath("/all_channels")}
                   onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
                 />
                 <Item
                   title="Content"
@@ -313,6 +362,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                   icon={<DatasetIcon />}
                   isActive={isActivePath("/content")}
                   onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
                 />
                 <Item
                   title="Traffic Source"
@@ -320,6 +370,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                   icon={<DeviceUnknownIcon />}
                   isActive={isActivePath("/traffic_source")}
                   onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
                 />
                 <Item
                   title="Geography Chart"
@@ -327,6 +378,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                   icon={<MapOutlinedIcon />}
                   isActive={isActivePath("/geography")}
                   onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
                 />
                 <Item
                   title="Audience Analytics"
@@ -334,6 +386,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                   icon={<GroupsOutlinedIcon />}
                   isActive={isActivePath("/audience_analytics")}
                   onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
                 />
                 <Item
                   title="Reach"
@@ -341,6 +394,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                   icon={<VisibilityOutlinedIcon />}
                   isActive={isActivePath("/reach")}
                   onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
                 />
                 <Item
                   title="Revenue"
@@ -348,13 +402,16 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                   icon={<AttachMoneyIcon />}
                   isActive={isActivePath("/revenue")}
                   onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
                 />
               </SubMenu>
 
               <SubMenu
-                title={<Typography sx={subMenuTitleSx}>Statistics</Typography>}
+                label={<Typography sx={subMenuTitleSx}>Statistics</Typography>}
                 icon={<QueryStatsIcon />}
+                active={defaultOpenStatistics}
                 defaultOpen={defaultOpenStatistics}
+                title={isDesktopCompact ? "Statistics" : undefined}
               >
                 <Item
                   title="Channel Compare"
@@ -362,6 +419,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                   icon={<BarChartOutlinedIcon />}
                   isActive={isActivePath("/channel_compare")}
                   onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
                 />
                 <Item
                   title="Rivals Channel"
@@ -369,13 +427,16 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                   icon={<WebhookIcon />}
                   isActive={isActivePath("/rivals")}
                   onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
                 />
               </SubMenu>
 
               <SubMenu
-                title={<Typography sx={subMenuTitleSx}>Automation</Typography>}
+                label={<Typography sx={subMenuTitleSx}>Automation</Typography>}
                 icon={<AutoModeIcon />}
+                active={defaultOpenAutomation}
                 defaultOpen={defaultOpenAutomation}
+                title={isDesktopCompact ? "Automation" : undefined}
               >
                 <Item
                   title="SMMStore Orders"
@@ -383,6 +444,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                   icon={<AttachMoneyIcon />}
                   isActive={isActivePath("/smmstore")}
                   onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
                 />
                 <Item
                   title="SMMStore Analytics"
@@ -390,6 +452,7 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                   icon={<BarChartOutlinedIcon />}
                   isActive={isActivePath("/smmstore_analytics")}
                   onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
                 />
                 <Item
                   title="Email Manager"
@@ -397,11 +460,11 @@ const Sidebar = ({ isSidebar, setIsSidebar, isMobile = false }) => {
                   icon={<MailOutlineRoundedIcon />}
                   isActive={isActivePath("/mail_monitor")}
                   onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
                 />
               </SubMenu>
-
-            </Box>
-          </Menu>
+            </Menu>
+          </Box>
         </ProSidebar>
       </Box>
     </>
