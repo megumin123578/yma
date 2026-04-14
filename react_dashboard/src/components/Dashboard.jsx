@@ -8,9 +8,9 @@ import {
     Typography,
     Stack,
     Button,
+    Skeleton,
     TextField,
     MenuItem,
-    CircularProgress,
     useTheme,
 } from "@mui/material";
 import { motion } from "framer-motion";
@@ -75,6 +75,7 @@ const OVERVIEW_RANGES = [
 const OVERVIEW_LIMIT_STEP = 10;
 const OVERVIEW_LIMIT_MAX = 50;
 const OVERVIEW_LIMIT_DEFAULT = 10;
+const LATEST_VIDEOS_PAGE_SIZE = 5;
 
 const VideoList = () => {
     const theme = useTheme();
@@ -112,6 +113,7 @@ const VideoList = () => {
     const [revenueRows, setRevenueRows] = useState([]);
     const [animateOverviewBars, setAnimateOverviewBars] = useState(false);
     const [error, setError] = useState("");
+    const [latestVisibleCount, setLatestVisibleCount] = useState(LATEST_VIDEOS_PAGE_SIZE);
     const activeRange =
         OVERVIEW_RANGES.find((range) => range.value === overviewRange) ||
         OVERVIEW_RANGES[1];
@@ -133,7 +135,7 @@ const VideoList = () => {
             return Number.isFinite(num) ? num : null;
         };
 
-        return sorted.slice(0, 5).map((video) => {
+        return sorted.map((video) => {
             const views = Math.max(0, toNumberOrNull(video?.views) ?? 0);
             const likes = Math.max(0, toNumberOrNull(video?.likes) ?? 0);
             const comments = Math.max(0, toNumberOrNull(video?.comments) ?? 0);
@@ -412,6 +414,7 @@ const VideoList = () => {
     useEffect(() => {
         setKeywordLimit(OVERVIEW_LIMIT_DEFAULT);
         setSourceLimit(OVERVIEW_LIMIT_DEFAULT);
+        setLatestVisibleCount(LATEST_VIDEOS_PAGE_SIZE);
     }, [selectedChannel, overviewRange]);
 
     // Fetch video theo accountTag
@@ -682,6 +685,9 @@ const VideoList = () => {
         gap: 3,
         width: "100%",
     };
+    const visibleLatestVideos = latestVideos.slice(0, latestVisibleCount);
+    const canLoadMoreLatestVideos = visibleLatestVideos.length < latestVideos.length;
+    const canCollapseLatestVideos = latestVisibleCount > LATEST_VIDEOS_PAGE_SIZE;
 
     const renderVideoCard = (v, idx) => {
         return (
@@ -819,6 +825,118 @@ const VideoList = () => {
         );
     };
 
+    const renderVideoCardSkeleton = (idx) => (
+        <Box key={`video-skeleton-${idx}`} sx={{ width: "100%" }}>
+            <Card
+                sx={{
+                    position: "relative",
+                    borderRadius: 4,
+                    border: "1px solid",
+                    borderColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(15,23,42,0.1)",
+                    background: isDark ? "rgba(30,41,59,0.4)" : "#fff",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                    height: "100%",
+                    boxShadow: isDark ? "0 10px 30px rgba(0,0,0,0.3)" : "0 8px 24px rgba(148,163,184,0.1)",
+                }}
+            >
+                <Skeleton variant="rectangular" sx={{ width: "100%", aspectRatio: "16/9" }} />
+                <CardContent sx={{ p: 2, flex: 1, display: "flex", flexDirection: "column" }}>
+                    <Skeleton variant="text" height={28} sx={{ mb: 0.25 }} />
+                    <Skeleton variant="text" width="74%" height={28} sx={{ mb: 2 }} />
+                    <Stack direction="row" spacing={1} justifyContent="space-between" mt="auto">
+                        {Array.from({ length: 3 }).map((_, metricIdx) => (
+                            <Box key={`video-skeleton-metric-${idx}-${metricIdx}`} sx={{ minWidth: 0, flex: 1 }}>
+                                <Skeleton variant="text" width="70%" height={16} />
+                                <Skeleton variant="text" width="82%" height={22} />
+                            </Box>
+                        ))}
+                    </Stack>
+                </CardContent>
+            </Card>
+        </Box>
+    );
+
+    const renderDashboardSkeleton = () => (
+        <>
+            <Box
+                mt={2}
+                sx={{
+                    display: "grid",
+                    gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+                    gap: 2,
+                    width: "100%",
+                }}
+            >
+                {Array.from({ length: 2 }).map((_, sectionIdx) => (
+                    <Box key={`dashboard-skeleton-top-${sectionIdx}`} sx={{ display: "flex" }}>
+                        <Box sx={{ ...sectionSx, p: 4, minHeight: 560, width: "100%" }}>
+                            <Skeleton variant="text" width="46%" height={40} sx={{ mb: 2 }} />
+                            <Grid container spacing={2} mb={2}>
+                                {Array.from({ length: 4 }).map((_, statIdx) => (
+                                    <Grid key={`dashboard-skeleton-stat-${sectionIdx}-${statIdx}`} size={{ xs: 12, md: 3 }}>
+                                        <Box sx={statCardSx}>
+                                            <Skeleton variant="text" width="62%" height={18} sx={{ mx: "auto" }} />
+                                            <Skeleton variant="text" width="54%" height={36} sx={{ mx: "auto" }} />
+                                            <Skeleton variant="text" width="42%" height={18} sx={{ mx: "auto" }} />
+                                        </Box>
+                                    </Grid>
+                                ))}
+                            </Grid>
+                            <Grid container spacing={2} sx={{ minWidth: 0 }}>
+                                {Array.from({ length: 2 }).map((_, chartIdx) => (
+                                    <Grid key={`dashboard-skeleton-chart-${sectionIdx}-${chartIdx}`} size={{ xs: 12, md: 6 }} sx={{ minWidth: 0 }}>
+                                        <Box sx={{ ...chartCardSx, minWidth: 0, width: "100%" }}>
+                                            <Skeleton variant="text" width="36%" height={28} sx={{ mb: 1 }} />
+                                            <Skeleton variant="rounded" height={320} />
+                                        </Box>
+                                    </Grid>
+                                ))}
+                            </Grid>
+                        </Box>
+                    </Box>
+                ))}
+            </Box>
+
+            <Box
+                mt={2}
+                sx={{
+                    display: "grid",
+                    gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)", xl: "repeat(3, 1fr)" },
+                    gap: 2,
+                    width: "100%",
+                }}
+            >
+                {Array.from({ length: 3 }).map((_, idx) => (
+                    <Box key={`dashboard-skeleton-mid-${idx}`} sx={{ ...sectionSx, p: 3 }}>
+                        <Skeleton variant="text" width="48%" height={30} sx={{ mb: 1.5 }} />
+                        <Stack spacing={1.5}>
+                            {Array.from({ length: 5 }).map((_, rowIdx) => (
+                                <Box key={`dashboard-skeleton-row-${idx}-${rowIdx}`}>
+                                    <Box display="flex" justifyContent="space-between" mb={0.5}>
+                                        <Skeleton variant="text" width={`${52 + rowIdx * 4}%`} height={20} />
+                                        <Skeleton variant="text" width="18%" height={20} />
+                                    </Box>
+                                    <Skeleton variant="rounded" height={8} />
+                                </Box>
+                            ))}
+                        </Stack>
+                    </Box>
+                ))}
+            </Box>
+
+            <Box mt={4} sx={{ ...sectionSx, p: 4 }}>
+                <Skeleton variant="text" width="34%" height={40} sx={{ mb: 3 }} />
+                <Box sx={latestRowSx}>
+                    {Array.from({ length: LATEST_VIDEOS_PAGE_SIZE }).map((_, idx) =>
+                        renderVideoCardSkeleton(idx)
+                    )}
+                </Box>
+            </Box>
+        </>
+    );
+
 
     return (
         <Box mx="20px" mt="0" mb="20px">
@@ -885,14 +1003,7 @@ const VideoList = () => {
 
             {/* Loading */}
             {loadingVideos && videos.length === 0 ? (
-                <Box
-                    mt={4}
-                    display="flex"
-                    justifyContent="center"
-                    alignItems="center"
-                >
-                    <CircularProgress />
-                </Box>
+                renderDashboardSkeleton()
             ) : videos.length === 0 ? (
                 <Box mt={4} textAlign="center">
                     <Typography color={colors.grey[300]}>
@@ -1509,15 +1620,50 @@ const VideoList = () => {
                         </Box>
                     </Box>
 
-                    {/* Latest 5 Videos Section - KEPT MODERN UPDATE */}
+                    {/* Latest Videos Section */}
                     <Box mt={4} sx={{ ...sectionSx, p: 4 }}>
-                        <Box display="flex" alignItems="center" mb={3}>
+                        <Box
+                            display="flex"
+                            alignItems={{ xs: "flex-start", md: "center" }}
+                            justifyContent="space-between"
+                            gap={2}
+                            mb={3}
+                            flexWrap="wrap"
+                        >
                             <Typography variant="h5" fontWeight={800} display="flex" alignItems="center" gap={1.5}>
                                 <InsightsIcon color="primary" /> Latest Video Performance
                             </Typography>
+                            {latestVideos.length > LATEST_VIDEOS_PAGE_SIZE ? (
+                                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                                    <Typography variant="body2" color="text.secondary">
+                                        {visibleLatestVideos.length}/{latestVideos.length} videos
+                                    </Typography>
+                                    {canLoadMoreLatestVideos ? (
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            onClick={() =>
+                                                setLatestVisibleCount((current) =>
+                                                    Math.min(current + LATEST_VIDEOS_PAGE_SIZE, latestVideos.length)
+                                                )
+                                            }
+                                        >
+                                            Xem thêm
+                                        </Button>
+                                    ) : canCollapseLatestVideos ? (
+                                        <Button
+                                            size="small"
+                                            variant="outlined"
+                                            onClick={() => setLatestVisibleCount(LATEST_VIDEOS_PAGE_SIZE)}
+                                        >
+                                            Thu gọn
+                                        </Button>
+                                    ) : null}
+                                </Stack>
+                            ) : null}
                         </Box>
                         <Box sx={latestRowSx}>
-                            {latestVideos.map((v, idx) => renderVideoCard(v, idx))}
+                            {visibleLatestVideos.map((v, idx) => renderVideoCard(v, idx))}
                         </Box>
                     </Box>
                 </>

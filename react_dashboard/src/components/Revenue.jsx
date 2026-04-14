@@ -25,7 +25,7 @@ import {
 import dayjs from "dayjs";
 import api from "../services/api";
 import { tokens } from "../theme";
-import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
+import { formatNumber, getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 import {
   getStoredSharedChannelId,
@@ -42,15 +42,6 @@ const RANGE_OPTIONS = [
   { value: "365d", label: "Last 365 days" },
   { value: "lifetime", label: "Lifetime" },
 ];
-
-const formatNumber = (value) => {
-  if (value == null) return "-";
-  const num = Number(value);
-  if (Number.isNaN(num)) return "-";
-  if (Math.abs(num) >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(num) >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
-  return num.toString();
-};
 
 const formatCurrency = (value) => {
   if (value == null) return "-";

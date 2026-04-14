@@ -318,6 +318,9 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
       return undefined;
     }
 
+    let isActive = true;
+    let timerId = null;
+
     const pollMatchedNotifications = async () => {
       try {
         const response = await api.get("/api/mail/messages", {
@@ -326,6 +329,7 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
             limit: MAIL_NOTIFICATION_LIMIT,
           },
         });
+        if (!isActive) return;
         const items = Array.isArray(response?.data?.items) ? response.data.items : [];
         const latestIds = items
           .map((item) => String(item?.id || ""))
@@ -347,6 +351,7 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
           }))
         );
       } catch (error) {
+        if (!isActive) return;
         if (error?.response?.status === 403) {
           setMailAccessDenied(true);
           setNotificationItems([]);
@@ -355,9 +360,37 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
       }
     };
 
-    pollMatchedNotifications();
-    const timer = window.setInterval(pollMatchedNotifications, MAIL_NOTIFICATION_POLL_MS);
-    return () => window.clearInterval(timer);
+    const stopPolling = () => {
+      if (timerId !== null) {
+        window.clearInterval(timerId);
+        timerId = null;
+      }
+    };
+
+    const startPolling = () => {
+      if (document.visibilityState !== "visible" || timerId !== null) return;
+      pollMatchedNotifications();
+      timerId = window.setInterval(() => {
+        if (document.visibilityState !== "visible") return;
+        pollMatchedNotifications();
+      }, MAIL_NOTIFICATION_POLL_MS);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        startPolling();
+        return;
+      }
+      stopPolling();
+    };
+
+    handleVisibilityChange();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      isActive = false;
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [isMailAdmin, loading, mailAccessDenied, notificationStorageKey, user]);
 
   return (
