@@ -427,6 +427,11 @@ const ContentAnalytics = ({
 
   const theme = useTheme();
   const storedFilters = useMemo(() => loadStoredContentFilters(), []);
+  const initialContentType = normalizeContentType(storedFilters?.contentType);
+  const initialSelectedTableMetrics = normalizeSelectedTableMetrics(
+    storedFilters?.selectedTableMetrics,
+    initialContentType
+  );
 
   const LINE_MARGIN = useMemo(
 
@@ -473,9 +478,7 @@ const ContentAnalytics = ({
     normalizeContentChartType(storedFilters?.chartType)
   );
 
-  const [contentType, setContentType] = useState(() =>
-    normalizeContentType(storedFilters?.contentType)
-  );
+  const [contentType, setContentType] = useState(() => initialContentType);
 
   const metric =
     contentType === CONTENT_TYPE_SHORTS ? "engagedViews" : DEFAULT_CONTENT_METRIC;
@@ -484,12 +487,14 @@ const ContentAnalytics = ({
     normalizeContentPeriod(storedFilters?.period)
   );
 
-  const [selectedTableMetrics, setSelectedTableMetrics] = useState(() =>
-    normalizeSelectedTableMetrics(
-      storedFilters?.selectedTableMetrics,
-      normalizeContentType(storedFilters?.contentType)
-    )
+  const [selectedTableMetrics, setSelectedTableMetrics] = useState(
+    () => initialSelectedTableMetrics
   );
+  const selectedTableMetricsRef = useRef(initialSelectedTableMetrics);
+  const selectedTableMetricsByTypeRef = useRef({
+    [initialContentType]: initialSelectedTableMetrics,
+  });
+  const previousContentTypeRef = useRef(initialContentType);
 
   const [page, setPage] = useState(0);
 
@@ -529,12 +534,24 @@ const ContentAnalytics = ({
   }, [hasForcedChannelId, normalizedForcedChannelId]);
 
   useEffect(() => {
-    setSelectedTableMetrics((current) =>
-      normalizeSelectedTableMetrics(current, contentType)
+    const previousContentType = previousContentTypeRef.current;
+    selectedTableMetricsByTypeRef.current[previousContentType] =
+      normalizeSelectedTableMetrics(selectedTableMetricsRef.current, previousContentType);
+
+    const rememberedMetrics = selectedTableMetricsByTypeRef.current[contentType];
+    setSelectedTableMetrics(
+      normalizeSelectedTableMetrics(rememberedMetrics, contentType)
     );
     setSortKey((current) => normalizeSortKey(current, contentType));
     setPage(0);
+    previousContentTypeRef.current = contentType;
   }, [contentType]);
+
+  useEffect(() => {
+    selectedTableMetricsRef.current = selectedTableMetrics;
+    selectedTableMetricsByTypeRef.current[contentType] =
+      normalizeSelectedTableMetrics(selectedTableMetrics, contentType);
+  }, [contentType, selectedTableMetrics]);
 
   const [startDate, setStartDate] = useState(() => storedFilters?.startDate || "");
 

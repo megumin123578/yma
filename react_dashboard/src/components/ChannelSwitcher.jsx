@@ -137,6 +137,7 @@ const ChannelSwitcher = ({
   showAllVisible = true,
   showAllActive = false,
   onShowAllClick,
+  textFieldSx,
 }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
@@ -991,6 +992,7 @@ const ChannelSwitcher = ({
             {...params}
             label={label}
             placeholder={placeholder}
+            sx={textFieldSx}
             InputProps={{
               ...params.InputProps,
               startAdornment: (
