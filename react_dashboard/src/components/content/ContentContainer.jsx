@@ -17,6 +17,7 @@ import {
   Avatar,
   Box,
   Stack,
+  Tab,
   Typography,
   Paper,
   Table,
@@ -27,6 +28,7 @@ import {
   TablePagination,
   TableRow,
   TableSortLabel,
+  Tabs,
 } from "@mui/material";
 
 
@@ -112,6 +114,14 @@ const CONTENT_ALL_CHANNELS_VALUE = "__all__";
 const CONTENT_LOCAL_CHANNEL_STORAGE_KEY = "content.selectedChannelId";
 const CONTENT_FILTERS_STORAGE_KEY = "content.filters";
 const CONTENT_ROWS_PER_PAGE_OPTIONS = [20, 50, 100, 200];
+const CONTENT_TYPE_ALL = "all";
+const CONTENT_TYPE_LONG = "long";
+const CONTENT_TYPE_SHORTS = "shorts";
+const CONTENT_TYPE_OPTIONS = [
+  { value: CONTENT_TYPE_ALL, label: "All Content" },
+  { value: CONTENT_TYPE_LONG, label: "Long-video" },
+  { value: CONTENT_TYPE_SHORTS, label: "Short-video" },
+];
 
 const getChartMetricRowKey = (selectedMetric) =>
   (
@@ -136,6 +146,22 @@ const getStoredContentChannelId = () => {
   return getStoredSharedChannelId(CONTENT_LOCAL_CHANNEL_STORAGE_KEY);
 };
 
+const parseIsoDurationSeconds = (value) => {
+  const input = String(value || "").trim();
+  if (!input) return null;
+  const match = input.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+  if (!match) return null;
+  const [, hoursRaw, minutesRaw, secondsRaw] = match;
+  const hours = Number(hoursRaw || 0);
+  const minutes = Number(minutesRaw || 0);
+  const seconds = Number(secondsRaw || 0);
+  if (![hours, minutes, seconds].every((item) => Number.isFinite(item))) return null;
+  return hours * 3600 + minutes * 60 + seconds;
+};
+
+const normalizeContentType = (value) =>
+  CONTENT_TYPE_OPTIONS.some((option) => option.value === value) ? value : CONTENT_TYPE_ALL;
+
 const loadStoredContentFilters = () => {
   if (typeof window === "undefined") return null;
   try {
@@ -151,26 +177,7 @@ const normalizeContentChartType = (value) => (value === "bar" ? "bar" : "line");
 const normalizeContentPeriod = (value) =>
   CONTENT_PERIOD_OPTIONS.some((option) => option.value === value) ? value : "last28";
 
-const normalizeSelectedTableMetrics = (value) => {
-  if (!Array.isArray(value)) return DEFAULT_TABLE_METRICS;
-  const allowed = new Set(TABLE_METRIC_OPTIONS.map((item) => item.value));
-  const filtered = value.filter((metricKey) => allowed.has(metricKey));
-  return Array.from(new Set(filtered));
-};
-
-const normalizeRowsPerPage = (value) => {
-  const parsed = Number(value);
-  return CONTENT_ROWS_PER_PAGE_OPTIONS.includes(parsed) ? parsed : 20;
-};
-
-const normalizeSortKey = (value) => {
-  const allowed = new Set(["videoCount", "published", "revenue", ...TABLE_METRIC_OPTIONS.map((item) => item.value)]);
-  return allowed.has(value) ? value : "views";
-};
-
-
-
-const TABLE_METRIC_OPTIONS = [
+const LONG_FORM_TABLE_METRIC_OPTIONS = [
 
   { value: "averageViewDuration", label: "Average view duration", type: "duration" },
 
@@ -190,21 +197,63 @@ const TABLE_METRIC_OPTIONS = [
 
 ];
 
-
-
-const DEFAULT_TABLE_METRICS = [
-
-  "views",
-
-  "watchTimeHours",
-
-  "subscribers",
-
-  "impressions",
-
-  "impressionsClickThroughRate",
-
+const SHORTS_TABLE_METRIC_OPTIONS = [
+  { value: "engagedViews", label: "Engaged views", type: "number" },
+  { value: "views", label: "Views", type: "number" },
+  { value: "watchTimeHours", label: "Watch time (hours)", type: "hours" },
+  { value: "averageViewDuration", label: "Average view duration", type: "duration" },
+  { value: "averagePercentageViewed", label: "Average percentage viewed", type: "percent" },
+  { value: "subscribers", label: "Subscribers", type: "number" },
 ];
+
+const getTableMetricOptions = (contentType) =>
+  contentType === CONTENT_TYPE_SHORTS
+    ? SHORTS_TABLE_METRIC_OPTIONS
+    : LONG_FORM_TABLE_METRIC_OPTIONS;
+
+const DEFAULT_TABLE_METRICS_BY_TYPE = {
+  [CONTENT_TYPE_ALL]: [
+    "views",
+    "watchTimeHours",
+    "subscribers",
+    "impressions",
+    "impressionsClickThroughRate",
+  ],
+  [CONTENT_TYPE_LONG]: [
+    "views",
+    "watchTimeHours",
+    "subscribers",
+    "impressions",
+    "impressionsClickThroughRate",
+  ],
+  [CONTENT_TYPE_SHORTS]: [
+    "engagedViews",
+    "views",
+    "watchTimeHours",
+    "averagePercentageViewed",
+    "subscribers",
+  ],
+};
+
+const normalizeSelectedTableMetrics = (value, contentType = CONTENT_TYPE_ALL) => {
+  const options = getTableMetricOptions(contentType);
+  const defaultMetrics = DEFAULT_TABLE_METRICS_BY_TYPE[contentType] || DEFAULT_TABLE_METRICS_BY_TYPE[CONTENT_TYPE_ALL];
+  if (!Array.isArray(value)) return defaultMetrics;
+  const allowed = new Set(options.map((item) => item.value));
+  const filtered = value.filter((metricKey) => allowed.has(metricKey));
+  return filtered.length ? Array.from(new Set(filtered)) : defaultMetrics;
+};
+
+const normalizeRowsPerPage = (value) => {
+  const parsed = Number(value);
+  return CONTENT_ROWS_PER_PAGE_OPTIONS.includes(parsed) ? parsed : 20;
+};
+
+const normalizeSortKey = (value, contentType = CONTENT_TYPE_ALL) => {
+  const options = getTableMetricOptions(contentType);
+  const allowed = new Set(["videoCount", "published", "revenue", ...options.map((item) => item.value)]);
+  return allowed.has(value) ? value : "views";
+};
 
 const DEFAULT_CONTENT_METRIC = "views";
 
@@ -280,6 +329,14 @@ const normalizeContentVideoRow = (item, { includeChannelTitle = false } = {}) =>
   const channelTitle = item?.channelTitle || "";
   const title = item?.title || "";
   const watchTimeHours = n(item?.watchTimeHours ?? item?.watchHours);
+  const durationSeconds = parseIsoDurationSeconds(item?.duration);
+  const averagePercentageViewed = toNullableNumber(
+    item?.averagePercentageViewed ?? item?.average_view_percentage
+  );
+  const engagedViews = toNullableNumber(item?.engagedViews ?? item?.engaged_views);
+  const views = n(item?.views);
+  const isShort =
+    typeof item?.isShort === "boolean" ? item.isShort : durationSeconds !== null && durationSeconds <= 60;
 
   return {
     id: videoId,
@@ -296,12 +353,14 @@ const normalizeContentVideoRow = (item, { includeChannelTitle = false } = {}) =>
     published: item?.publishedAt ?? item?.published ?? "",
     publishedAt: item?.publishedAt ?? item?.published ?? "",
     duration: item?.duration,
-    views: n(item?.views),
+    durationSeconds,
+    isShort,
+    views,
     watchHours: watchTimeHours,
     watchTimeHours,
     averageViewDuration: toNullableNumber(item?.averageViewDuration ?? item?.average_view_duration),
-    averagePercentageViewed: toNullableNumber(item?.averagePercentageViewed ?? item?.average_view_percentage),
-    engagedViews: toNullableNumber(item?.engagedViews ?? item?.engaged_views),
+    averagePercentageViewed,
+    engagedViews,
     subscribers: toNullableNumber(item?.subscribers),
     impressions: toNullableNumber(item?.impressions),
     impressionsClickThroughRate: toNullableNumber(
@@ -323,9 +382,19 @@ const formatCurrencyValue = (value) => {
   })}`;
 };
 
+const getYouTubeVideoHref = (row) => {
+  const videoId = String(row?.id || row?.videoId || "").trim();
+  if (!videoId) return "https://www.youtube.com";
+  return row?.isShort
+    ? `https://www.youtube.com/shorts/${videoId}`
+    : `https://www.youtube.com/watch?v=${videoId}`;
+};
+
 const formatTableMetricValue = (metricKey, value) => {
   if (value === null || value === undefined) return "-";
-  const meta = TABLE_METRIC_OPTIONS.find((m) => m.value === metricKey);
+  const meta = [...LONG_FORM_TABLE_METRIC_OPTIONS, ...SHORTS_TABLE_METRIC_OPTIONS].find(
+    (m) => m.value === metricKey
+  );
   const safe = n(value);
   if (!meta) return formatNumber(safe);
 
@@ -401,14 +470,22 @@ const ContentAnalytics = ({
     normalizeContentChartType(storedFilters?.chartType)
   );
 
-  const metric = DEFAULT_CONTENT_METRIC;
+  const [contentType, setContentType] = useState(() =>
+    normalizeContentType(storedFilters?.contentType)
+  );
+
+  const metric =
+    contentType === CONTENT_TYPE_SHORTS ? "engagedViews" : DEFAULT_CONTENT_METRIC;
 
   const [period, setPeriod] = useState(() =>
     normalizeContentPeriod(storedFilters?.period)
   );
 
   const [selectedTableMetrics, setSelectedTableMetrics] = useState(() =>
-    normalizeSelectedTableMetrics(storedFilters?.selectedTableMetrics)
+    normalizeSelectedTableMetrics(
+      storedFilters?.selectedTableMetrics,
+      normalizeContentType(storedFilters?.contentType)
+    )
   );
 
   const [page, setPage] = useState(0);
@@ -420,7 +497,10 @@ const ContentAnalytics = ({
   const [expandedChannelId, setExpandedChannelId] = useState(null);
   const [channelVideoCache, setChannelVideoCache] = useState({});
   const [sortKey, setSortKey] = useState(() =>
-    normalizeSortKey(storedFilters?.sortKey)
+    normalizeSortKey(
+      storedFilters?.sortKey,
+      normalizeContentType(storedFilters?.contentType)
+    )
   );
   const [sortDirection] = useState("desc");
 
@@ -444,6 +524,14 @@ const ContentAnalytics = ({
     if (!hasForcedChannelId) return;
     setChannelId(normalizedForcedChannelId);
   }, [hasForcedChannelId, normalizedForcedChannelId]);
+
+  useEffect(() => {
+    setSelectedTableMetrics((current) =>
+      normalizeSelectedTableMetrics(current, contentType)
+    );
+    setSortKey((current) => normalizeSortKey(current, contentType));
+    setPage(0);
+  }, [contentType]);
 
   const [startDate, setStartDate] = useState(() => storedFilters?.startDate || "");
 
@@ -526,6 +614,7 @@ const ContentAnalytics = ({
         CONTENT_FILTERS_STORAGE_KEY,
         JSON.stringify({
           chartType,
+          contentType,
           period,
           selectedTableMetrics,
           rowsPerPage,
@@ -537,7 +626,7 @@ const ContentAnalytics = ({
     } catch {
       // ignore storage errors
     }
-  }, [chartType, period, selectedTableMetrics, rowsPerPage, sortKey, startDate, endDate]);
+  }, [chartType, contentType, period, selectedTableMetrics, rowsPerPage, sortKey, startDate, endDate]);
 
   useEffect(() => {
     if (hasForcedChannelId) return undefined;
@@ -582,6 +671,8 @@ const ContentAnalytics = ({
 
           channelId,
 
+          contentType,
+
         });
 
 
@@ -608,7 +699,7 @@ const ContentAnalytics = ({
 
     },
 
-    [channelId]
+    [channelId, contentType]
 
   );
 
@@ -630,6 +721,8 @@ const ContentAnalytics = ({
 
           channelId,
 
+          contentType,
+
         });
 
 
@@ -650,7 +743,7 @@ const ContentAnalytics = ({
 
     },
 
-    [channelId]
+    [channelId, contentType]
 
   );
 
@@ -661,7 +754,7 @@ const ContentAnalytics = ({
   const fetchAllChannels = useCallback(
     async (start, end, requestSeq) => {
       try {
-        const resp = await api.post("/api/content/all_channels", { start, end });
+        const resp = await api.post("/api/content/all_channels", { start, end, contentType });
         if (requestSeq !== contentRequestSeqRef.current) return;
         const raw = resp.data;
         startTransition(() => {
@@ -675,7 +768,7 @@ const ContentAnalytics = ({
         setAllChannelTimeseries([]);
       }
     },
-    []
+    [contentType]
   );
 
   /* ================================
@@ -843,6 +936,10 @@ const ContentAnalytics = ({
     [showAllMode, videos]
 
   );
+  const tableMetricOptions = useMemo(
+    () => getTableMetricOptions(contentType),
+    [contentType]
+  );
   const deferredRows = useDeferredValue(rows);
 
   const allChannelTableRows = useMemo(
@@ -908,14 +1005,14 @@ const ContentAnalytics = ({
   }, [showAllMode, allChannelTableRows]);
 
   const totals = useMemo(() => {
-    const acc = TABLE_METRIC_OPTIONS.reduce((out, item) => {
+    const source = showAllMode ? allChannelTableRows : deferredRows;
+    const acc = tableMetricOptions.reduce((out, item) => {
       if (NON_SUM_METRICS.has(item.value)) {
         out[item.value] = null;
         return out;
       }
       let sum = 0;
       let hasValue = false;
-      const source = showAllMode ? allChannelTableRows : deferredRows;
       source.forEach((row) => {
         const value = toNullableNumber(row[item.value]);
         if (value === null) return;
@@ -925,6 +1022,45 @@ const ContentAnalytics = ({
       out[item.value] = hasValue ? sum : null;
       return out;
     }, {});
+
+    let weightedAverageDuration = 0;
+    let weightedAverageDurationViews = 0;
+    let weightedAveragePercentage = 0;
+    let weightedAveragePercentageViews = 0;
+    source.forEach((row) => {
+      const viewsValue = toNullableNumber(row.views);
+      const averageViewDurationValue = toNullableNumber(row.averageViewDuration);
+      if (viewsValue !== null && viewsValue > 0 && averageViewDurationValue !== null) {
+        weightedAverageDuration += averageViewDurationValue * viewsValue;
+        weightedAverageDurationViews += viewsValue;
+      }
+      const averagePercentageValue = toNullableNumber(row.averagePercentageViewed);
+      if (viewsValue !== null && viewsValue > 0 && averagePercentageValue !== null) {
+        weightedAveragePercentage += averagePercentageValue * viewsValue;
+        weightedAveragePercentageViews += viewsValue;
+      }
+    });
+
+    const needsAverageViewDuration = tableMetricOptions.some(
+      (item) => item.value === "averageViewDuration"
+    );
+    const needsAveragePercentageViewed = tableMetricOptions.some(
+      (item) => item.value === "averagePercentageViewed"
+    );
+
+    if (needsAverageViewDuration) {
+      acc.averageViewDuration =
+        weightedAverageDurationViews > 0
+          ? weightedAverageDuration / weightedAverageDurationViews
+          : null;
+    }
+
+    if (needsAveragePercentageViewed) {
+      acc.averagePercentageViewed =
+        weightedAveragePercentageViews > 0
+          ? weightedAveragePercentage / weightedAveragePercentageViews
+          : null;
+    }
 
     // Impressions/CTR are channel-level only (TOTAL row)
     if (channelMetrics?.supported) {
@@ -937,47 +1073,115 @@ const ContentAnalytics = ({
     }
 
     return acc;
-  }, [showAllMode, allChannelTableRows, deferredRows, channelMetrics]);
+  }, [showAllMode, allChannelTableRows, deferredRows, channelMetrics, tableMetricOptions]);
 
-  const showAllSummaryCards = useMemo(
-    () => [
-      {
-        label: "Channels",
-        value: formatNumber(allChannelRows.length),
-      },
-      {
-        label: "Videos",
-        value: formatNumber(showAllMode ? allChannelRows.reduce((s, r) => s + (r.videoCount || 0), 0) : deferredRows.length),
-      },
-      {
-        label: "Views",
-        value:
-          totals.views == null ? "-" : formatTableMetricValue("views", totals.views),
-      },
-      {
-        label: "Watch time (hours)",
-        value:
-          totals.watchTimeHours == null
-            ? "-"
-            : formatTableMetricValue("watchTimeHours", totals.watchTimeHours),
-      },
-      {
-        label: "Subscribers",
-        value:
-          totals.subscribers == null
-            ? "-"
-            : formatTableMetricValue("subscribers", totals.subscribers),
-      },
-      {
-        label: "Impressions",
-        value:
-          totals.impressions == null
-            ? "-"
-            : formatTableMetricValue("impressions", totals.impressions),
-      },
-    ],
-    [allChannelRows, deferredRows.length, showAllMode, totals]
-  );
+  const summaryCards = useMemo(() => {
+    const leadingCards = showAllMode
+      ? [
+          {
+            label: "Channels",
+            value: formatNumber(allChannelRows.length),
+          },
+          {
+            label: "Videos",
+            value: formatNumber(
+              allChannelRows.reduce((sum, row) => sum + n(row.videoCount), 0)
+            ),
+          },
+        ]
+      : [
+          {
+            label:
+              contentType === CONTENT_TYPE_SHORTS
+                ? "Short-videos"
+                : contentType === CONTENT_TYPE_LONG
+                  ? "Long-videos"
+                  : "Videos",
+            value: formatNumber(deferredRows.length),
+          },
+        ];
+
+    const trailingCards =
+      contentType === CONTENT_TYPE_SHORTS
+        ? [
+            {
+              label: "Views",
+              value: totals.views == null ? "-" : formatTableMetricValue("views", totals.views),
+            },
+            ...(!showAllMode
+              ? [
+                  {
+                    label: "Engaged views",
+                    value:
+                      totals.engagedViews == null
+                        ? "-"
+                        : formatTableMetricValue("engagedViews", totals.engagedViews),
+                  },
+                ]
+              : []),
+            {
+              label: "Average percentage viewed",
+              value:
+                totals.averagePercentageViewed == null
+                  ? "-"
+                  : formatTableMetricValue("averagePercentageViewed", totals.averagePercentageViewed),
+            },
+            {
+              label: "Watch time (hours)",
+              value:
+                totals.watchTimeHours == null
+                  ? "-"
+                  : formatTableMetricValue("watchTimeHours", totals.watchTimeHours),
+            },
+            {
+              label: "Subscribers",
+              value:
+                totals.subscribers == null
+                  ? "-"
+                  : formatTableMetricValue("subscribers", totals.subscribers),
+            },
+          ]
+        : [
+            {
+              label: "Views",
+              value:
+                totals.views == null ? "-" : formatTableMetricValue("views", totals.views),
+            },
+            {
+              label: "Watch time (hours)",
+              value:
+                totals.watchTimeHours == null
+                  ? "-"
+                  : formatTableMetricValue("watchTimeHours", totals.watchTimeHours),
+            },
+            {
+              label: "Subscribers",
+              value:
+                totals.subscribers == null
+                  ? "-"
+                  : formatTableMetricValue("subscribers", totals.subscribers),
+            },
+            {
+              label: "Impressions",
+              value:
+                totals.impressions == null
+                  ? "-"
+                  : formatTableMetricValue("impressions", totals.impressions),
+            },
+            {
+              label: "CTR",
+              value:
+                totals.impressionsClickThroughRate == null
+                  ? "-"
+                  : formatTableMetricValue(
+                      "impressionsClickThroughRate",
+                      totals.impressionsClickThroughRate
+                    ),
+            },
+          ];
+
+    return [...leadingCards, ...trailingCards];
+  }, [allChannelRows, contentType, deferredRows.length, showAllMode, totals]);
 
 
 
@@ -1031,8 +1235,12 @@ const ContentAnalytics = ({
     try {
       const { start, end } = resolvePeriod();
       const [videosResp, tsResp] = await Promise.all([
-        api.post("/api/content/list", { start, end, channelId: channelIdValue }, { params: { skip_enrich: true } }),
-        api.post("/api/content/timeseries", { start, end, channelId: channelIdValue }),
+        api.post(
+          "/api/content/list",
+          { start, end, channelId: channelIdValue, contentType },
+          { params: { skip_enrich: true } }
+        ),
+        api.post("/api/content/timeseries", { start, end, channelId: channelIdValue, contentType }),
       ]);
       const normalizedVideos = (videosResp.data?.items ?? []).map((item) =>
         normalizeContentVideoRow(item)
@@ -1051,7 +1259,7 @@ const ContentAnalytics = ({
         [channelIdValue]: { loading: false, videos: [], timeseries: [] },
       }));
     }
-  }, [resolvePeriod]);
+  }, [contentType, resolvePeriod]);
 
   const handleToggleChannelExpand = useCallback((channelIdValue) => {
     if (!channelIdValue) return;
@@ -1069,7 +1277,7 @@ const ContentAnalytics = ({
       setExpandedChannelId(null);
       setChannelVideoCache({});
     }
-  }, [showAllMode]);
+  }, [contentType, showAllMode]);
 
   useEffect(() => {
     if (!showAllMode && sortKey === "revenue") {
@@ -1642,6 +1850,77 @@ const ContentAnalytics = ({
 
     <Stack spacing={2}>
 
+      <Paper
+        elevation={0}
+        sx={{
+          borderRadius: 3,
+          border: "1px solid",
+          borderColor:
+            theme.palette.mode === "dark"
+              ? "rgba(148,163,184,0.2)"
+              : "rgba(15,23,42,0.1)",
+          background:
+            theme.palette.mode === "dark"
+              ? "linear-gradient(180deg, rgba(15,23,42,0.92), rgba(15,23,42,0.72))"
+              : "linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,0.92))",
+          boxShadow:
+            theme.palette.mode === "dark"
+              ? "0 14px 28px rgba(2,6,23,0.34)"
+              : "0 12px 24px rgba(148,163,184,0.18)",
+          overflow: "hidden",
+        }}
+      >
+        <Tabs
+          value={contentType}
+          onChange={(_, nextValue) => setContentType(nextValue)}
+          variant="scrollable"
+          allowScrollButtonsMobile
+          sx={{
+            px: 1,
+            minHeight: 58,
+            "& .MuiTabs-indicator": {
+              height: 3,
+              borderRadius: 999,
+              backgroundColor:
+                theme.palette.mode === "dark"
+                  ? theme.palette.info.light
+                  : theme.palette.primary.main,
+            },
+            "& .MuiTab-root": {
+              minHeight: 54,
+              borderRadius: 2,
+              fontWeight: 700,
+              textTransform: "none",
+              color:
+                theme.palette.mode === "dark"
+                  ? "rgba(226,232,240,0.72)"
+                  : "rgba(51,65,85,0.76)",
+              transition: "background-color 0.2s ease, color 0.2s ease",
+            },
+            "& .MuiTab-root:hover": {
+              backgroundColor:
+                theme.palette.mode === "dark"
+                  ? "rgba(59,130,246,0.10)"
+                  : "rgba(37,99,235,0.06)",
+            },
+            "& .Mui-selected": {
+              color:
+                theme.palette.mode === "dark"
+                  ? theme.palette.info.light
+                  : theme.palette.primary.main,
+              backgroundColor:
+                theme.palette.mode === "dark"
+                  ? "rgba(56,189,248,0.12)"
+                  : "rgba(37,99,235,0.08)",
+            },
+          }}
+        >
+          {CONTENT_TYPE_OPTIONS.map((option) => (
+            <Tab key={option.value} value={option.value} label={option.label} />
+          ))}
+        </Tabs>
+      </Paper>
+
       {/* FILTERS */}
 
       <ContentFilters
@@ -1659,14 +1938,14 @@ const ContentAnalytics = ({
         contentPeriodOptions={CONTENT_PERIOD_OPTIONS}
         selectedTableMetrics={selectedTableMetrics}
         setSelectedTableMetrics={setSelectedTableMetrics}
-        tableMetricOptions={TABLE_METRIC_OPTIONS}
+        tableMetricOptions={tableMetricOptions}
         startDate={startDate}
         setStartDate={setStartDate}
         endDate={endDate}
         setEndDate={setEndDate}
       />
 
-      {showAllMode && <ContentSummaryCards items={showAllSummaryCards} />}
+      <ContentSummaryCards items={summaryCards} />
 
 
 
@@ -2345,7 +2624,7 @@ const ContentAnalytics = ({
 
                 const label =
 
-                  TABLE_METRIC_OPTIONS.find((m) => m.value === metricKey)?.label || metricKey;
+                  tableMetricOptions.find((m) => m.value === metricKey)?.label || metricKey;
 
                 return (
 
@@ -2530,7 +2809,7 @@ const ContentAnalytics = ({
 
                           <a
 
-                            href={`https://www.youtube.com/watch?v=${r.id}`}
+                            href={getYouTubeVideoHref(r)}
 
                             target="_blank"
 
@@ -2546,7 +2825,7 @@ const ContentAnalytics = ({
 
                           <a
 
-                            href={`https://www.youtube.com/watch?v=${r.id}`}
+                            href={getYouTubeVideoHref(r)}
 
                             target="_blank"
 
@@ -2632,7 +2911,7 @@ const ContentAnalytics = ({
                           <TableCell sx={{ pl: 5.5 }}>
                             <Stack direction="row" spacing={1} alignItems="center">
                               <a
-                                href={`https://www.youtube.com/watch?v=${videoRow.id}`}
+                                href={getYouTubeVideoHref(videoRow)}
                                 target="_blank"
                                 rel="noreferrer"
                                 style={{ display: "inline-flex" }}
@@ -2644,7 +2923,7 @@ const ContentAnalytics = ({
                                 />
                               </a>
                               <a
-                                href={`https://www.youtube.com/watch?v=${videoRow.id}`}
+                                href={getYouTubeVideoHref(videoRow)}
                                 target="_blank"
                                 rel="noreferrer"
                                 style={{ color: "inherit", textDecoration: "none", minWidth: 0 }}

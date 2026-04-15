@@ -31,6 +31,9 @@ CONTENT_CACHE_VERSION = 6
 _VIDEO_DAILY_STATS_COLUMNS_CACHE = None
 _CONTENT_CACHE_COMPRESS_MIN_BYTES = 2 * 1024 * 1024
 _CONTENT_CACHE_MAX_JSONB_BYTES = 240 * 1024 * 1024
+CONTENT_TYPE_ALL = "all"
+CONTENT_TYPE_LONG = "long"
+CONTENT_TYPE_SHORTS = "shorts"
 
 
 def _ensure_thumbnail_daily_table() -> None:
@@ -159,6 +162,42 @@ def _sql_timeseries_engaged_views_expr(alias: str = "s", output_alias: str = '"e
     if "engaged_views" not in columns:
         return f'NULL::bigint AS {output_alias}'
     return f'{alias}.engaged_views AS {output_alias}'
+
+
+def _normalize_content_type(value: Optional[str]) -> str:
+    normalized = str(value or CONTENT_TYPE_ALL).strip().lower()
+    if normalized in {CONTENT_TYPE_ALL, CONTENT_TYPE_LONG, CONTENT_TYPE_SHORTS}:
+        return normalized
+    return CONTENT_TYPE_ALL
+
+
+def _sql_duration_seconds_expr(alias: str = "v") -> str:
+    return f"""
+        (
+            COALESCE(NULLIF(SUBSTRING({alias}.duration FROM 'PT([0-9]+)H'), ''), '0')::integer * 3600 +
+            COALESCE(NULLIF(SUBSTRING({alias}.duration FROM 'PT(?:[0-9]+H)?([0-9]+)M'), ''), '0')::integer * 60 +
+            COALESCE(NULLIF(SUBSTRING({alias}.duration FROM 'PT(?:[0-9]+H)?(?:[0-9]+M)?([0-9]+)S'), ''), '0')::integer
+        )
+    """.strip()
+
+
+def _build_content_type_filter_sql(
+    content_type: Optional[str],
+    alias: str = "v",
+) -> tuple[str, dict]:
+    normalized = _normalize_content_type(content_type)
+    if normalized == CONTENT_TYPE_ALL:
+        return "1 = 1", {}
+
+    duration_seconds_expr = _sql_duration_seconds_expr(alias)
+    if normalized == CONTENT_TYPE_SHORTS:
+        return f"({duration_seconds_expr}) <= 60", {}
+
+    return f"({alias}.duration IS NULL OR {alias}.duration = '' OR ({duration_seconds_expr}) > 60)", {}
+
+
+def _compose_content_cache_key(base_key: str, content_type: Optional[str]) -> str:
+    return f"{base_key}:type={_normalize_content_type(content_type)}"
 
 # cache table for per-video analytics (not daily)
 def _ensure_video_metrics_cache_table() -> None:
@@ -859,6 +898,7 @@ class ContentListRequest(BaseModel):
     start: date
     end: date
     channelId: str
+    contentType: str = CONTENT_TYPE_ALL
 
 
 @router.post("/list")
@@ -868,6 +908,7 @@ def content_list(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
+    content_type = _normalize_content_type(req.contentType)
     channel_items = _list_content_channels(db, current_user)
     all_channel_items = _list_content_channels(db, current_user, include_hidden=True)
     requested_tags = _resolve_content_account_tags(req.channelId, channel_items, all_channel_items)
@@ -881,6 +922,7 @@ def content_list(
         requested_tags[0] if len(requested_tags) == 1
         else _make_multi_tag_cache_key(requested_tags)
     )
+    list_cache_key = _compose_content_cache_key(list_cache_key, content_type)
     if not skip_enrich:
         cached_list = _load_list_cache(list_cache_key, req.start, req.end)
         if cached_list is not None:
@@ -890,6 +932,7 @@ def content_list(
         "v.account_tag",
         requested_tags,
     )
+    content_type_filter_sql, _ = _build_content_type_filter_sql(content_type, "v")
     _ensure_thumbnail_daily_table()
     _ensure_video_daily_stats_metrics_columns()
     average_view_percentage_expr = _sql_average_view_percentage_expr()
@@ -944,10 +987,11 @@ def content_list(
         FROM video_thumbnail_daily
         WHERE day BETWEEN :start AND :end
         GROUP BY account_tag, video_id
-    ) tr
+        ) tr
       ON tr.video_id = v.video_id
      AND tr.account_tag = v.account_tag
     WHERE {account_filter_sql}
+      AND {content_type_filter_sql}
     GROUP BY
         v.video_id,
         v.account_tag,
@@ -1015,6 +1059,7 @@ def content_list(
         requested_tags,
         req.start,
         req.end,
+        content_type=content_type,
     )
 
     rows_mutable = [row for row in rows_mutable if not _should_hide_private_content_row(row)]
@@ -1031,12 +1076,14 @@ class TimeSeriesRequest(BaseModel):
     start: date
     end: date
     channelId: str  # = account_tag
+    contentType: str = CONTENT_TYPE_ALL
 
 
 class ChannelMetricsRequest(BaseModel):
     start: date
     end: date
     channelId: str
+    contentType: str = CONTENT_TYPE_ALL
 
 
 @router.post("/timeseries")
@@ -1045,6 +1092,7 @@ def content_timeseries(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
+    content_type = _normalize_content_type(req.contentType)
     channel_items = _list_content_channels(db, current_user)
     all_channel_items = _list_content_channels(db, current_user, include_hidden=True)
     requested_tags = _resolve_content_account_tags(req.channelId, channel_items, all_channel_items)
@@ -1061,6 +1109,7 @@ def content_timeseries(
         requested_tags[0] if len(requested_tags) == 1
         else _make_multi_tag_cache_key(requested_tags)
     )
+    ts_cache_key = _compose_content_cache_key(ts_cache_key, content_type)
     cached = _load_timeseries_cache(ts_cache_key, req.start, req.end)
     if cached is not None:
             cached_rows = [dict(row) for row in cached]
@@ -1075,6 +1124,7 @@ def content_timeseries(
         "v.account_tag",
         requested_tags,
     )
+    content_type_filter_sql, _ = _build_content_type_filter_sql(content_type, "v")
     _ensure_thumbnail_daily_table()
     _ensure_video_daily_stats_metrics_columns()
     timeseries_average_view_percentage_expr = _sql_timeseries_average_view_percentage_expr()
@@ -1103,6 +1153,7 @@ def content_timeseries(
          AND t.video_id = v.video_id
          AND t.day = s.day
         WHERE {account_filter_sql}
+          AND {content_type_filter_sql}
           AND s.day BETWEEN :start AND :end
         ORDER BY
             bucket ASC,
@@ -1153,15 +1204,31 @@ def _find_credential_row(db: Session, account_tag: str) -> Optional[UserCredenti
     return None
 
 
-def _compute_channel_metrics_from_db(account_tag: str, start_date: date, end_date: date):
-    return _compute_channel_metrics_from_db_for_accounts([account_tag], start_date, end_date)
+def _compute_channel_metrics_from_db(
+    account_tag: str,
+    start_date: date,
+    end_date: date,
+    content_type: str = CONTENT_TYPE_ALL,
+):
+    return _compute_channel_metrics_from_db_for_accounts(
+        [account_tag],
+        start_date,
+        end_date,
+        content_type=content_type,
+    )
 
 
-def _compute_channel_metrics_from_db_for_accounts(account_tags, start_date: date, end_date: date):
+def _compute_channel_metrics_from_db_for_accounts(
+    account_tags,
+    start_date: date,
+    end_date: date,
+    content_type: str = CONTENT_TYPE_ALL,
+):
     account_filter_sql, account_filter_params = _build_account_tag_filter(
         "v.account_tag",
         account_tags,
     )
+    content_type_filter_sql, _ = _build_content_type_filter_sql(content_type, "v")
     _ensure_thumbnail_daily_table()
     _ensure_video_daily_stats_metrics_columns()
     sql = f"""
@@ -1199,9 +1266,10 @@ def _compute_channel_metrics_from_db_for_accounts(account_tags, start_date: date
                 WHERE day BETWEEN :start_date AND :end_date
                 GROUP BY account_tag, video_id
             ) tr
-              ON tr.video_id = v.video_id
+             ON tr.video_id = v.video_id
              AND tr.account_tag = v.account_tag
             WHERE {account_filter_sql}
+              AND {content_type_filter_sql}
             GROUP BY v.account_tag, v.video_id
         )
         SELECT
@@ -1243,12 +1311,18 @@ def channel_metrics(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
+    content_type = _normalize_content_type(req.contentType)
     channel_items = _list_content_channels(db, current_user)
     all_channel_items = _list_content_channels(db, current_user, include_hidden=True)
     requested_tags = _resolve_content_account_tags(req.channelId, channel_items, all_channel_items)
     if not requested_tags:
         return {"impressions": 0, "ctr": None, "supported": False}
-    return _compute_channel_metrics_from_db_for_accounts(requested_tags, req.start, req.end)
+    return _compute_channel_metrics_from_db_for_accounts(
+        requested_tags,
+        req.start,
+        req.end,
+        content_type=content_type,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1258,6 +1332,7 @@ def channel_metrics(
 class AllChannelsSummaryRequest(BaseModel):
     start: date
     end: date
+    contentType: str = CONTENT_TYPE_ALL
 
 
 @router.post("/all_channels")
@@ -1266,6 +1341,7 @@ def content_all_channels(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
+    content_type = _normalize_content_type(req.contentType)
     channel_items = _list_content_channels(db, current_user)
     all_channel_items = _list_content_channels(db, current_user, include_hidden=True)
     requested_tags = _resolve_content_account_tags(ALL_CHANNELS_VALUE, channel_items, all_channel_items)
@@ -1277,11 +1353,13 @@ def content_all_channels(
     avatar_map = {str(item.get("value") or ""): item.get("avatar") or None for item in all_channel_items if item.get("value")}
 
     cache_key = f"all_channels:{_make_multi_tag_cache_key(requested_tags) if len(requested_tags) > 1 else requested_tags[0]}"
+    cache_key = _compose_content_cache_key(cache_key, content_type)
     cached = _load_list_cache(cache_key, req.start, req.end)
     if cached is not None:
         return cached
 
     account_filter_sql, account_filter_params = _build_account_tag_filter("v.account_tag", requested_tags)
+    content_type_filter_sql, _ = _build_content_type_filter_sql(content_type, "v")
     _ensure_thumbnail_daily_table()
     _ensure_video_daily_stats_metrics_columns()
     average_view_percentage_expr = _sql_average_view_percentage_expr()
@@ -1322,6 +1400,7 @@ def content_all_channels(
             GROUP BY account_tag, video_id
         ) tr ON tr.video_id = v.video_id AND tr.account_tag = v.account_tag
         WHERE {account_filter_sql}
+          AND {content_type_filter_sql}
         GROUP BY v.account_tag
         HAVING COALESCE(SUM(s.views), 0) > 0 OR MAX(COALESCE(v.views, 0)) > 0
         ORDER BY COALESCE(SUM(s.views), MAX(v.views), 0) DESC;
@@ -1339,6 +1418,7 @@ def content_all_channels(
         FROM video_daily_stats s
         JOIN videos v ON v.video_id = s.video_id
         WHERE {account_filter_sql}
+          AND {content_type_filter_sql}
           AND s.day BETWEEN :start AND :end
         GROUP BY s.day
         ORDER BY s.day ASC;
@@ -1366,7 +1446,12 @@ def content_all_channels(
                 ch["engagedViews"] = aggregated_metrics["engagedViews"]
 
     timeseries = [dict(r) for r in query_all_safe(timeseries_sql, params)]
-    channel_metrics = _compute_channel_metrics_from_db_for_accounts(requested_tags, req.start, req.end)
+    channel_metrics = _compute_channel_metrics_from_db_for_accounts(
+        requested_tags,
+        req.start,
+        req.end,
+        content_type=content_type,
+    )
 
     result = {"channels": channels, "timeseries": timeseries, "channelMetrics": channel_metrics}
     _save_list_cache(cache_key, req.start, req.end, result)
@@ -1404,6 +1489,7 @@ def _prewarm_worker() -> None:
         return
 
     cache_key = _make_multi_tag_cache_key(all_tags) if len(all_tags) > 1 else all_tags[0]
+    cache_key = _compose_content_cache_key(cache_key, CONTENT_TYPE_ALL)
     account_filter_sql, account_filter_params = _build_account_tag_filter("v.account_tag", all_tags)
     today = date.today()
 
