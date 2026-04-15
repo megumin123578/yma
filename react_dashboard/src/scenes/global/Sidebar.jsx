@@ -6,6 +6,7 @@ import {
   Menu,
   MenuItem,
   Sidebar as ProSidebar,
+  menuClasses,
   sidebarClasses,
   SubMenu,
 } from "react-pro-sidebar";
@@ -138,6 +139,9 @@ const Sidebar = ({
     button: ({ level, active, open, disabled }) => ({
       position: "relative",
       minHeight: "unset",
+      width: "100%",
+      maxWidth: "100%",
+      boxSizing: "border-box",
       borderRadius: 12,
       padding:
         level === 0
@@ -155,7 +159,11 @@ const Sidebar = ({
               backgroundColor: hoverBg,
               color: textColor,
               transform:
-                level === 0 && isDesktopCompact ? "translateY(-1px)" : "translateX(3px)",
+                level === 0
+                  ? isDesktopCompact
+                    ? "translateY(-1px)"
+                    : "translateX(3px)"
+                  : "none",
             },
           }),
       "&:focus-visible": {
@@ -195,6 +203,11 @@ const Sidebar = ({
       color: active ? accentColor : undefined,
     }),
     subMenuContent: ({ level }) => ({
+      width: "100%",
+      maxWidth: "100%",
+      minWidth: 0,
+      boxSizing: "border-box",
+      overflowX: "hidden !important",
       backgroundColor: "transparent",
       ...(isDesktopCompact
         ? {
@@ -288,6 +301,48 @@ const Sidebar = ({
                 : isDesktopCompact
                   ? `0 12px 28px ${alpha(theme.palette.common.black, 0.14)}`
                   : `0 18px 48px ${alpha(theme.palette.common.black, 0.18)}`,
+            },
+            [`.${menuClasses.root}`]: {
+              overflowX: "hidden",
+              maxWidth: "100%",
+            },
+            [`.${menuClasses.menuItemRoot}`]: {
+              maxWidth: "100%",
+              minWidth: 0,
+              boxSizing: "border-box",
+            },
+            [`.${menuClasses.button}`]: {
+              width: "100%",
+              maxWidth: "100%",
+              minWidth: 0,
+              boxSizing: "border-box",
+            },
+            [`.${menuClasses.label}`]: {
+              minWidth: 0,
+              maxWidth: "100%",
+            },
+            [`.${menuClasses.subMenuContent}`]: {
+              overflowX: "hidden !important",
+              width: "100%",
+              maxWidth: "100%",
+              minWidth: 0,
+              boxSizing: "border-box",
+            },
+            [`.${menuClasses.subMenuContent} > ul`]: {
+              width: "100%",
+              maxWidth: "100%",
+              minWidth: 0,
+              overflowX: "hidden",
+            },
+            [`.${menuClasses.subMenuContent} .${menuClasses.menuItemRoot}`]: {
+              width: "100%",
+              maxWidth: "100%",
+              minWidth: 0,
+            },
+            [`.${menuClasses.subMenuContent} .${menuClasses.button}`]: {
+              width: "100%",
+              maxWidth: "100%",
+              minWidth: 0,
             },
           }}
         >

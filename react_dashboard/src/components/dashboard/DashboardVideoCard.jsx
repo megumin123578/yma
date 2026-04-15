@@ -157,8 +157,15 @@ export const DashboardVideoCard = ({ video, index, isDark, dashboardPalette }) =
                         {video.title}
                     </Typography>
 
-                    <Stack direction="row" spacing={1} justifyContent="space-between" mt="auto">
-                        <Box>
+                    <Box
+                        mt="auto"
+                        sx={{
+                            display: "grid",
+                            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                            gap: 1,
+                        }}
+                    >
+                        <Box sx={{ minWidth: 0 }}>
                             <Typography
                                 variant="caption"
                                 color="text.secondary"
@@ -180,7 +187,7 @@ export const DashboardVideoCard = ({ video, index, isDark, dashboardPalette }) =
                                 />
                             </Typography>
                         </Box>
-                        <Box>
+                        <Box sx={{ minWidth: 0 }}>
                             <Typography
                                 variant="caption"
                                 color="text.secondary"
@@ -193,7 +200,20 @@ export const DashboardVideoCard = ({ video, index, isDark, dashboardPalette }) =
                                 {formatNumber(video.likes)}
                             </Typography>
                         </Box>
-                        <Box>
+                        <Box sx={{ minWidth: 0 }}>
+                            <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                display="block"
+                                sx={{ fontSize: "0.7rem" }}
+                            >
+                                CTR
+                            </Typography>
+                            <Typography variant="body2" fontWeight={700} color="info.main">
+                                {formatRate(video.thumbnail_ctr)}
+                            </Typography>
+                        </Box>
+                        <Box sx={{ minWidth: 0 }}>
                             <Typography
                                 variant="caption"
                                 color="text.secondary"
@@ -210,7 +230,7 @@ export const DashboardVideoCard = ({ video, index, isDark, dashboardPalette }) =
                                 {formatRate(video.engagementRate)}
                             </Typography>
                         </Box>
-                    </Stack>
+                    </Box>
                 </CardContent>
 
                 <Box
