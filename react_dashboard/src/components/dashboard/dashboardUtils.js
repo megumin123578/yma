@@ -1,7 +1,10 @@
 export const OVERVIEW_RANGES = [
     { value: "7d", label: "Last 7 days", days: 7 },
+    { value: "14d", label: "Last 14 days", days: 14 },
     { value: "28d", label: "Last 28 days", days: 28 },
     { value: "90d", label: "Last 90 days", days: 90 },
+    { value: "180d", label: "Last 180 days", days: 180 },
+    { value: "365d", label: "Last 365 days", days: 365 },
 ];
 
 export const OVERVIEW_LIMIT_STEP = 10;

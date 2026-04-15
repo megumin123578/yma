@@ -19,6 +19,10 @@ import api from "../services/api";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 import {
+  getSharedFilterControlSx,
+  getSharedSelectMenuProps,
+} from "./filterStyles";
+import {
   getStoredSharedChannelId,
   listenSharedChannelId,
   resolvePreferredSharedChannelId,
@@ -38,6 +42,8 @@ const AudienceAnalytics = () => {
   const theme = useTheme();
   const chartRef = useRef(null);
   const isDark = theme.palette.mode === "dark";
+  const filterControlSx = getSharedFilterControlSx(theme);
+  const selectMenuProps = getSharedSelectMenuProps(theme);
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [accountTag, setAccountTag] = useState(() =>
     getStoredSharedChannelId("audience.selectedChannelId")
@@ -359,15 +365,17 @@ const AudienceAnalytics = () => {
           sx={CHANNEL_SWITCHER_SX}
           getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
           getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
+          textFieldSx={filterControlSx}
         />
 
-        <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 260 }, flex: 1 }}>
+        <FormControl size="small" sx={{ ...filterControlSx, minWidth: { xs: "100%", sm: 260 }, flex: 1 }}>
           <InputLabel>Video</InputLabel>
           <Select
             label="Video"
             value={videoId}
             onChange={(event) => setVideoId(event.target.value)}
             disabled={!videos.length}
+            MenuProps={selectMenuProps}
             renderValue={(value) => {
               const selected = videos.find((v) => v.video_id === value);
               if (!selected) return "";

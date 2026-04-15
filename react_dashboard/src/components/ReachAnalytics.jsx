@@ -21,6 +21,7 @@ import api from "../services/api";
 import { formatNumber } from "./Module";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
+import { getSharedFilterControlSx } from "./filterStyles";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
 import {
   getStoredSharedChannelId,
@@ -38,6 +39,7 @@ const formatPct = (value) => {
 
 const ReachAnalytics = () => {
   const theme = useTheme();
+  const filterControlSx = getSharedFilterControlSx(theme);
   const isDark = theme.palette.mode === "dark";
 
   // === Styles ===
@@ -263,10 +265,11 @@ const ReachAnalytics = () => {
             options={accounts}
             value={accountTag}
             onChange={(option) => setAccountTag(option?.value || "")}
-          sx={CHANNEL_SWITCHER_SX}
-          getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
-          getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
-        />
+            sx={CHANNEL_SWITCHER_SX}
+            getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
+            getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
+            textFieldSx={filterControlSx}
+          />
 
           {loading && (
             <motion.div

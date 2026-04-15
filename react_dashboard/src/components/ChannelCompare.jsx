@@ -30,6 +30,11 @@ import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import dayjs from "dayjs";
 import { API_BASE } from "../config";
 import { METRIC_OPTIONS, getRangeForPeriod, formatNumber, getChannelAvatarMap } from "./Module";
+import {
+  getSharedDatePickerSlotProps,
+  getSharedFilterControlSx,
+  getSharedSelectMenuProps,
+} from "./filterStyles";
 
 const PERIOD_OPTIONS = [
   { value: "last7", label: "Last 7 days" },
@@ -55,6 +60,13 @@ const loadStoredCompare = () => {
 const ChannelCompare = () => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
+  const filterControlSx = getSharedFilterControlSx(theme);
+  const selectMenuProps = getSharedSelectMenuProps(theme);
+  const datePickerSlotProps = getSharedDatePickerSlotProps(theme, {
+    width: 170,
+    minWidth: 170,
+    flex: undefined,
+  });
   const stored = loadStoredCompare();
 
   const [metric, setMetric] = useState("views");
@@ -390,13 +402,14 @@ const ChannelCompare = () => {
           </Box>
 
           <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-            <FormControl size="small" sx={{ minWidth: 200 }}>
+            <FormControl size="small" sx={{ ...filterControlSx, minWidth: 200 }}>
               <InputLabel id="metric-label">Metric</InputLabel>
               <Select
                 labelId="metric-label"
                 label="Metric"
                 value={metric}
                 onChange={(e) => setMetric(e.target.value)}
+                MenuProps={selectMenuProps}
               >
                 {METRIC_OPTIONS.map((opt) => (
                   <MenuItem key={opt.value} value={opt.value}>
@@ -406,13 +419,14 @@ const ChannelCompare = () => {
               </Select>
             </FormControl>
 
-            <FormControl size="small" sx={{ minWidth: 190 }}>
+            <FormControl size="small" sx={{ ...filterControlSx, minWidth: 190 }}>
               <InputLabel id="period-label">Period</InputLabel>
               <Select
                 labelId="period-label"
                 label="Period"
                 value={period}
                 onChange={(e) => setPeriod(e.target.value)}
+                MenuProps={selectMenuProps}
               >
                 {PERIOD_OPTIONS.map((opt) => (
                   <MenuItem key={opt.value} value={opt.value}>
@@ -431,30 +445,27 @@ const ChannelCompare = () => {
                     setStartDate(v ? v.format("YYYY-MM-DD") : "")
                   }
                   format="DD/MM/YYYY"
-                  slotProps={{
-                    textField: { size: "small", sx: { width: 170 } },
-                  }}
+                  slotProps={datePickerSlotProps}
                 />
                 <DatePicker
                   label="End"
                   value={endDate ? dayjs(endDate) : null}
                   onChange={(v) => setEndDate(v ? v.format("YYYY-MM-DD") : "")}
                   format="DD/MM/YYYY"
-                  slotProps={{
-                    textField: { size: "small", sx: { width: 170 } },
-                  }}
+                  slotProps={datePickerSlotProps}
                 />
               </LocalizationProvider>
             )}
 
             {!manualPick ? (
-              <FormControl size="small" sx={{ minWidth: 120 }}>
+              <FormControl size="small" sx={{ ...filterControlSx, minWidth: 120 }}>
                 <InputLabel id="limit-label">Top</InputLabel>
                 <Select
                   labelId="limit-label"
                   label="Top"
                   value={limit}
                   onChange={(e) => setLimit(Number(e.target.value))}
+                  MenuProps={selectMenuProps}
                 >
                   {[10, 20, 30, 50].map((n) => (
                     <MenuItem key={n} value={n}>
@@ -464,7 +475,7 @@ const ChannelCompare = () => {
                 </Select>
               </FormControl>
             ) : (
-              <FormControl size="small" sx={{ minWidth: 260 }}>
+              <FormControl size="small" sx={{ ...filterControlSx, minWidth: 260 }}>
                 <InputLabel id="channel-pick-label">Channels</InputLabel>
                 <Select
                   labelId="channel-pick-label"
@@ -472,6 +483,7 @@ const ChannelCompare = () => {
                   multiple
                   value={selectedChannels}
                   onChange={(e) => setSelectedChannels(e.target.value)}
+                  MenuProps={selectMenuProps}
                   renderValue={(selected) =>
                     selected.length
                       ? selected.slice(0, 2).join(", ") +

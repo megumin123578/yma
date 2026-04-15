@@ -30,6 +30,10 @@ import api from "../services/api";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 import {
+  getSharedFilterControlSx,
+  getSharedSelectMenuProps,
+} from "./filterStyles";
+import {
   getStoredSharedChannelId,
   listenSharedChannelId,
   resolvePreferredSharedChannelId,
@@ -307,6 +311,8 @@ const GeographyChart = ({ isDashboard = false }) => {
     borderColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
     boxShadow: isDark ? "0 8px 32px rgba(0,0,0,0.4)" : "0 8px 24px rgba(15,23,42,0.08)",
   };
+  const filterControlSx = getSharedFilterControlSx(theme);
+  const selectMenuProps = getSharedSelectMenuProps(theme);
 
   return (
     <motion.div
@@ -333,13 +339,14 @@ const GeographyChart = ({ isDashboard = false }) => {
                 ? option.label
                 : channelLabelFallback || String(option?.value || "").replace(/_+/g, " ").trim()
             }
+            textFieldSx={filterControlSx}
           />
 
-          <FormControl size="small" sx={{ minWidth: 150 }}>
+          <FormControl size="small" sx={{ ...filterControlSx, minWidth: 150 }}>
             <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
               <CalendarMonthIcon sx={{ fontSize: 16 }} /> Period
             </InputLabel>
-            <Select label="Period" value={range} onChange={(e) => setRange(e.target.value)}>
+            <Select label="Period" value={range} onChange={(e) => setRange(e.target.value)} MenuProps={selectMenuProps}>
               <MenuItem value="7d">Last 7 days</MenuItem>
               <MenuItem value="28d">Last 28 days</MenuItem>
               <MenuItem value="90d">Last 90 days</MenuItem>
@@ -348,11 +355,11 @@ const GeographyChart = ({ isDashboard = false }) => {
             </Select>
           </FormControl>
 
-          <FormControl size="small" sx={{ minWidth: 150 }}>
+          <FormControl size="small" sx={{ ...filterControlSx, minWidth: 150 }}>
             <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
               <BarChartIcon sx={{ fontSize: 16 }} /> Metrics
             </InputLabel>
-            <Select multiple label="Metrics" value={metricsSelectValue} renderValue={() => `Metrics (${Object.values(visibleColumns).filter(Boolean).length})`}>
+            <Select multiple label="Metrics" value={metricsSelectValue} renderValue={() => `Metrics (${Object.values(visibleColumns).filter(Boolean).length})`} MenuProps={selectMenuProps}>
               <ListSubheader>Main Map Metric</ListSubheader>
               {METRIC_OPTIONS.map(o => (
                 <MenuItem key={o.value} onClick={() => setMetric(o.value)}>

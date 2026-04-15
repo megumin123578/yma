@@ -103,10 +103,14 @@ def _range_to_dates(range_key: str):
     today = date.today()
     if range_key == "7d":
         return today - timedelta(days=6), today
+    if range_key == "14d":
+        return today - timedelta(days=13), today
     if range_key == "28d":
         return today - timedelta(days=27), today
     if range_key == "90d":
         return today - timedelta(days=89), today
+    if range_key == "180d":
+        return today - timedelta(days=179), today
     if range_key == "365d":
         return today - timedelta(days=364), today
     if range_key == "lifetime":
@@ -455,16 +459,20 @@ def views_by_country(
         return {"rows": []}
     if range == "7d":
         start_date, end_date = "7d", None
+    elif range == "14d":
+        start_date, end_date = "14d", None
     elif range == "28d":
         start_date, end_date = "28d", None
     elif range == "90d":
         start_date, end_date = "90d", None
+    elif range == "180d":
+        start_date, end_date = "180d", None
     elif range == "365d":
         start_date, end_date = "365d", None
     else:
         start_date, end_date = "28d", None
     creds = create_token_from_credentials(cred_path)
-    if start_date in {"7d", "28d", "90d", "365d"}:
+    if start_date in {"7d", "14d", "28d", "90d", "180d", "365d"}:
         from datetime import datetime, timedelta
         today = datetime.today().date()
         days = int(start_date[:-1])

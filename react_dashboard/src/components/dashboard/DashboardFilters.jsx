@@ -1,5 +1,10 @@
 import { Box, MenuItem, TextField, Typography } from "@mui/material";
+import { useTheme } from "@mui/material/styles";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "../ChannelSwitcher";
+import {
+    getSharedFilterControlSx,
+    getSharedSelectMenuProps,
+} from "../filterStyles";
 import { OVERVIEW_RANGES } from "./dashboardUtils";
 
 const DashboardFilters = ({
@@ -14,6 +19,10 @@ const DashboardFilters = ({
     totalVideos,
     colors,
 }) => {
+    const theme = useTheme();
+    const filterControlSx = getSharedFilterControlSx(theme);
+    const selectMenuProps = getSharedSelectMenuProps(theme);
+
     return (
         <Box
             mb={2}
@@ -40,15 +49,22 @@ const DashboardFilters = ({
                     noOptionsText={loadingChannels ? "Loading channels..." : "No channels found"}
                     getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
                     getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
+                    textFieldSx={filterControlSx}
                 />
 
                 <TextField
                     select
                     size="small"
-                    label="Date range"
+                    label="Period"
                     value={overviewRange}
                     onChange={(e) => onOverviewRangeChange(e.target.value)}
-                    sx={{ minWidth: { xs: "100%", sm: 160 } }}
+                    sx={getSharedFilterControlSx(theme, {
+                        ...CHANNEL_SWITCHER_SX,
+                        minWidth: { xs: "100%", sm: 270 },
+                        flex: "0 1 312px",
+                        maxWidth: 356,
+                    })}
+                    SelectProps={{ MenuProps: selectMenuProps }}
                 >
                     {OVERVIEW_RANGES.map((range) => (
                         <MenuItem key={range.value} value={range.value}>

@@ -28,6 +28,10 @@ import { tokens } from "../theme";
 import { formatNumber, getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
 import {
+  getSharedFilterControlSx,
+  getSharedSelectMenuProps,
+} from "./filterStyles";
+import {
   getStoredSharedChannelId,
   listenSharedChannelId,
   resolvePreferredSharedChannelId,
@@ -487,6 +491,8 @@ const RevenueAnalytics = () => {
         ? "0 18px 38px rgba(2,6,23,0.32)"
         : "0 18px 34px rgba(148,163,184,0.24)",
   };
+  const filterControlSx = getSharedFilterControlSx(theme);
+  const selectMenuProps = getSharedSelectMenuProps(theme);
 
   return (
     <Stack spacing={2}>
@@ -498,13 +504,24 @@ const RevenueAnalytics = () => {
           sx={CHANNEL_SWITCHER_SX}
           getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
           getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
+          textFieldSx={filterControlSx}
         />
-        <FormControl size="small" sx={{ minWidth: 180 }}>
+        <FormControl
+          size="small"
+          sx={{
+            ...filterControlSx,
+            ...CHANNEL_SWITCHER_SX,
+            minWidth: { xs: "100%", sm: 270 },
+            flex: "0 1 312px",
+            maxWidth: 356,
+          }}
+        >
           <InputLabel>Range</InputLabel>
           <Select
             value={range}
             label="Range"
             onChange={(event) => setRange(event.target.value)}
+            MenuProps={selectMenuProps}
           >
             {RANGE_OPTIONS.map((opt) => (
               <MenuItem key={opt.value} value={opt.value}>

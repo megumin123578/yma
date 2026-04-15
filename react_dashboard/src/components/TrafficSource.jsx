@@ -41,6 +41,11 @@ import {
   getChannelRevenueMap,
 } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
+import {
+  getSharedDatePickerSlotProps,
+  getSharedFilterControlSx,
+  getSharedSelectMenuProps,
+} from "./filterStyles";
 
 import dayjs from "dayjs";
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
@@ -852,6 +857,9 @@ const TrafficSourceChart = () => {
       }}
     />
   );
+  const filterControlSx = getSharedFilterControlSx(theme);
+  const selectMenuProps = getSharedSelectMenuProps(theme);
+  const datePickerSlotProps = getSharedDatePickerSlotProps(theme);
 
   return (
     <motion.div
@@ -869,13 +877,14 @@ const TrafficSourceChart = () => {
             sx={CHANNEL_SWITCHER_SX}
             getOptionAvatar={(option) => channelAvatarMap[option?.value] || option?.avatar || ""}
             getOptionMeta={(option) => channelRevenueMap[option?.value] || ""}
+            textFieldSx={filterControlSx}
           />
 
-          <FormControl size="small" sx={{ minWidth: 140 }}>
+          <FormControl size="small" sx={{ ...filterControlSx, minWidth: 140 }}>
             <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
               <PieChartIcon sx={{ fontSize: 16 }} /> Chart
             </InputLabel>
-            <Select value={chartType} label="Chart" onChange={(e) => setChartType(e.target.value)}>
+            <Select value={chartType} label="Chart" onChange={(e) => setChartType(e.target.value)} MenuProps={selectMenuProps}>
               <MenuItem value="pie">Pie</MenuItem>
               <MenuItem value="line">Line</MenuItem>
               <MenuItem value="bar">Bar</MenuItem>
@@ -883,11 +892,11 @@ const TrafficSourceChart = () => {
           </FormControl>
 
           {chartType !== "pie" && (
-            <FormControl size="small" sx={{ minWidth: 140 }}>
+            <FormControl size="small" sx={{ ...filterControlSx, minWidth: 140 }}>
               <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                 <TimelineIcon sx={{ fontSize: 16 }} /> Interval
               </InputLabel>
-              <Select value={interval} label="Interval" onChange={(e) => setInterval(e.target.value)}>
+              <Select value={interval} label="Interval" onChange={(e) => setInterval(e.target.value)} MenuProps={selectMenuProps}>
                 <MenuItem value="daily">Daily</MenuItem>
                 <MenuItem value="weekly">Weekly</MenuItem>
                 <MenuItem value="monthly">Monthly</MenuItem>
@@ -896,28 +905,28 @@ const TrafficSourceChart = () => {
           )}
 
 
-          <FormControl size="small" sx={{ minWidth: 180 }}>
+          <FormControl size="small" sx={{ ...filterControlSx, minWidth: 180 }}>
             <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
               <BarChartIcon sx={{ fontSize: 16 }} /> Metric
             </InputLabel>
-            <Select value={metric} label="Metric" onChange={(e) => setMetric(e.target.value)}>
+            <Select value={metric} label="Metric" onChange={(e) => setMetric(e.target.value)} MenuProps={selectMenuProps}>
               {METRIC_OPTIONS.map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
             </Select>
           </FormControl>
 
-          <FormControl size="small" sx={{ minWidth: 160 }}>
+          <FormControl size="small" sx={{ ...filterControlSx, minWidth: 160 }}>
             <InputLabel sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
               <CalendarMonthIcon sx={{ fontSize: 16 }} /> Period
             </InputLabel>
-            <Select value={period} label="Period" onChange={(e) => setPeriod(e.target.value)}>
+            <Select value={period} label="Period" onChange={(e) => setPeriod(e.target.value)} MenuProps={selectMenuProps}>
               {TRAFFIC_SOURCE_PERIOD_OPTIONS.map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
             </Select>
           </FormControl>
 
           {period === "custom" && (
             <LocalizationProvider dateAdapter={AdapterDayjs}>
-              <DatePicker label="Start" value={startDate ? dayjs(startDate) : null} onChange={v => setStartDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={{ textField: { size: "small" } }} />
-              <DatePicker label="End" value={endDate ? dayjs(endDate) : null} onChange={v => setEndDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={{ textField: { size: "small" } }} />
+              <DatePicker label="Start" value={startDate ? dayjs(startDate) : null} onChange={v => setStartDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={datePickerSlotProps} />
+              <DatePicker label="End" value={endDate ? dayjs(endDate) : null} onChange={v => setEndDate(v ? v.format("YYYY-MM-DD") : "")} slotProps={datePickerSlotProps} />
             </LocalizationProvider>
           )}
         </Stack>
