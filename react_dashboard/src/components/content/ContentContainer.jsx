@@ -1896,7 +1896,7 @@ const ContentAnalytics = ({
               textTransform: "none",
               color:
                 theme.palette.mode === "dark"
-                  ? "rgba(226,232,240,0.72)"
+                  ? theme.palette.info.light
                   : "rgba(51,65,85,0.76)",
               transition: "background-color 0.2s ease, color 0.2s ease",
             },
@@ -1906,7 +1906,7 @@ const ContentAnalytics = ({
                   ? "rgba(59,130,246,0.10)"
                   : "rgba(37,99,235,0.06)",
             },
-            "& .Mui-selected": {
+            "& .MuiTab-root.Mui-selected": {
               color:
                 theme.palette.mode === "dark"
                   ? theme.palette.info.light
