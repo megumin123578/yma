@@ -29,6 +29,7 @@ import {
   TableRow,
   TableSortLabel,
   Tabs,
+  useMediaQuery,
 } from "@mui/material";
 
 
@@ -426,6 +427,8 @@ const ContentAnalytics = ({
   const hasForcedChannelId = !!normalizedForcedChannelId;
 
   const theme = useTheme();
+  const isMobileTable = useMediaQuery(theme.breakpoints.down("md"));
+  const showPublishedColumn = !isMobileTable;
   const storedFilters = useMemo(() => loadStoredContentFilters(), []);
   const initialContentType = normalizeContentType(storedFilters?.contentType);
   const initialSelectedTableMetrics = normalizeSelectedTableMetrics(
@@ -1638,6 +1641,20 @@ const ContentAnalytics = ({
           : "0 14px 26px rgba(148,163,184,0.25)",
 
       overflow: "hidden",
+      width: "100%",
+      "& .MuiTableContainer-root": {
+        width: "100%",
+      },
+      "&::-webkit-scrollbar": {
+        height: 10,
+      },
+      "&::-webkit-scrollbar-thumb": {
+        backgroundColor:
+          theme.palette.mode === "dark"
+            ? "rgba(148,163,184,0.36)"
+            : "rgba(148,163,184,0.64)",
+        borderRadius: 999,
+      },
 
     }),
 
@@ -1683,6 +1700,49 @@ const ContentAnalytics = ({
 
     [theme.palette.mode]
 
+  );
+
+  const tableMinWidth = useMemo(() => {
+    const baseWidth = showAllMode ? 340 : 300;
+    const metricWidth = isMobileTable ? 108 : 132;
+    const metricCount = selectedTableMetrics.length;
+    const videosWidth = showAllMode ? 88 : 0;
+    const revenueWidth = showAllMode ? 120 : 0;
+    const dateWidth = showPublishedColumn ? (isMobileTable ? 112 : 132) : 0;
+    return baseWidth + videosWidth + dateWidth + revenueWidth + metricCount * metricWidth;
+  }, [isMobileTable, selectedTableMetrics.length, showAllMode, showPublishedColumn]);
+
+  const expandedRowColSpan = useMemo(() => {
+    const baseColumns = 1 + (showAllMode ? 1 : 0) + (showPublishedColumn ? 1 : 0);
+    const trailingColumns = selectedTableMetrics.length + (showAllMode ? 1 : 0);
+    return baseColumns + trailingColumns;
+  }, [selectedTableMetrics.length, showAllMode, showPublishedColumn]);
+
+  const sharedTableCellSx = useMemo(
+    () => ({
+      px: isMobileTable ? 1.25 : 1.75,
+      py: isMobileTable ? 1.1 : 1.35,
+      whiteSpace: "nowrap",
+      fontSize: isMobileTable ? "0.78rem" : "0.84rem",
+    }),
+    [isMobileTable]
+  );
+
+  const stickyFirstColumnSx = useMemo(
+    () => ({
+      position: "sticky",
+      left: 0,
+      zIndex: 3,
+      backgroundColor:
+        theme.palette.mode === "dark"
+          ? "rgba(10,15,24,0.96)"
+          : "rgba(255,255,255,0.98)",
+      boxShadow:
+        theme.palette.mode === "dark"
+          ? "8px 0 16px rgba(2,6,23,0.18)"
+          : "8px 0 16px rgba(148,163,184,0.12)",
+    }),
+    [theme.palette.mode]
   );
 
 
@@ -2608,15 +2668,33 @@ const ContentAnalytics = ({
 
       {/* TABLE */}
 
-      <TableContainer component={Paper} elevation={0} sx={tablePaperSx}>
+      <TableContainer
+        component={Paper}
+        elevation={0}
+        sx={{
+          ...tablePaperSx,
+          overflowX: "auto",
+          overflowY: "hidden",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
 
-        <Table size="small">
+        <Table
+          size="small"
+          sx={{
+            minWidth: tableMinWidth,
+            tableLayout: "auto",
+            "& .MuiTableCell-root": sharedTableCellSx,
+          }}
+        >
 
           <TableHead sx={tableHeadSx}>
 
             <TableRow>
 
-              <TableCell>{showAllMode ? "Channel" : "Video"}</TableCell>
+              <TableCell sx={{ ...stickyFirstColumnSx, minWidth: isMobileTable ? 220 : 320 }}>
+                {showAllMode ? "Channel" : "Video"}
+              </TableCell>
 
               {showAllMode ? (
                 <TableCell sortDirection={sortKey === "videoCount" ? sortDirection : false}>
@@ -2630,15 +2708,20 @@ const ContentAnalytics = ({
                 </TableCell>
               ) : null}
 
-              <TableCell sortDirection={sortKey === "published" ? sortDirection : false}>
-                <TableSortLabel
-                  active={sortKey === "published"}
-                  direction={sortKey === "published" ? sortDirection : "desc"}
-                  onClick={() => handleSort("published")}
+              {showPublishedColumn ? (
+                <TableCell
+                  sortDirection={sortKey === "published" ? sortDirection : false}
+                  sx={{ minWidth: isMobileTable ? 110 : 124 }}
                 >
-                  Publish Date
-                </TableSortLabel>
-              </TableCell>
+                  <TableSortLabel
+                    active={sortKey === "published"}
+                    direction={sortKey === "published" ? sortDirection : "desc"}
+                    onClick={() => handleSort("published")}
+                  >
+                    Publish Date
+                  </TableSortLabel>
+                </TableCell>
+              ) : null}
 
               {selectedTableMetrics.map((metricKey) => {
 
@@ -2652,6 +2735,7 @@ const ContentAnalytics = ({
                     key={metricKey}
                     align="right"
                     sortDirection={sortKey === metricKey ? sortDirection : false}
+                    sx={{ minWidth: isMobileTable ? 108 : 132 }}
                   >
 
                     <TableSortLabel
@@ -2669,7 +2753,11 @@ const ContentAnalytics = ({
               })}
 
               {showAllMode ? (
-                <TableCell sortDirection={sortKey === "revenue" ? sortDirection : false} align="right">
+                <TableCell
+                  sortDirection={sortKey === "revenue" ? sortDirection : false}
+                  align="right"
+                  sx={{ minWidth: isMobileTable ? 110 : 132 }}
+                >
                   <TableSortLabel
                     active={sortKey === "revenue"}
                     direction={sortKey === "revenue" ? sortDirection : "desc"}
@@ -2690,7 +2778,7 @@ const ContentAnalytics = ({
 
             {/* TOTAL row at top */}
             <TableRow>
-              <TableCell sx={{ fontWeight: 700 }}>TOTAL</TableCell>
+              <TableCell sx={{ ...stickyFirstColumnSx, fontWeight: 700 }}>TOTAL</TableCell>
               {showAllMode ? (
                 <TableCell align="right" sx={{ fontWeight: 700 }}>
                   {formatNumber(
@@ -2698,7 +2786,7 @@ const ContentAnalytics = ({
                   )}
                 </TableCell>
               ) : null}
-              <TableCell />
+              {showPublishedColumn ? <TableCell /> : null}
               {selectedTableMetrics.map((metricKey) => (
                 <TableCell key={metricKey} align="right">
                   {totals[metricKey] == null
@@ -2771,11 +2859,13 @@ const ContentAnalytics = ({
                   >
 
                     <TableCell
-
-                      sx={{
-
-                        borderLeft: seriesColors[r.id]
-
+	
+	                      sx={{
+                        ...stickyFirstColumnSx,
+                        minWidth: isMobileTable ? 220 : 320,
+	
+	                        borderLeft: seriesColors[r.id]
+	
                           ? `4px solid ${seriesColors[r.id]}`
 
                           : "4px solid transparent",
@@ -2786,8 +2876,8 @@ const ContentAnalytics = ({
 
                     >
 
-                      {showAllMode ? (
-                        <Stack direction="row" spacing={1} alignItems="center">
+	                      {showAllMode ? (
+	                        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
                           <Box
                             sx={{
                               width: 18,
@@ -2812,20 +2902,37 @@ const ContentAnalytics = ({
                           >
                             {String(r.displayTitle || r.title || r.channelTitle || "?").trim().charAt(0).toUpperCase()}
                           </Avatar>
-                          <Box sx={{ minWidth: 0 }}>
+	                          <Box sx={{ minWidth: 0, overflow: "hidden" }}>
                             <Typography
                               sx={{
                                 display: "block",
                                 fontWeight: 700,
                                 color: "text.primary",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
                               }}
                             >
                               {r.displayTitle || r.title || r.channelTitle}
                             </Typography>
+                            {!showPublishedColumn && (r.published || r.latestPublishedAt) ? (
+                              <Typography
+                                sx={{
+                                  mt: 0.3,
+                                  fontSize: "0.72rem",
+                                  color: "text.secondary",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {dayjs(r.published || r.latestPublishedAt).format("DD-MM-YYYY")}
+                              </Typography>
+                            ) : null}
                           </Box>
                         </Stack>
                       ) : (
-                        <Stack direction="row" spacing={1} alignItems="center">
+	                        <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
 
                           <a
 
@@ -2855,17 +2962,36 @@ const ContentAnalytics = ({
 
                           >
 
-                            <Box sx={{ minWidth: 0 }}>
+	                            <Box sx={{ minWidth: 0, overflow: "hidden" }}>
                               <Typography
                                 component="span"
                                 sx={{
                                   display: "block",
                                   fontWeight: 600,
                                   color: "inherit",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
                                 }}
                               >
                                 {r.title}
                               </Typography>
+                              {!showPublishedColumn && (r.published || r.latestPublishedAt) ? (
+                                <Typography
+                                  component="span"
+                                  sx={{
+                                    display: "block",
+                                    mt: 0.3,
+                                    fontSize: "0.72rem",
+                                    color: "text.secondary",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  {dayjs(r.published || r.latestPublishedAt).format("DD-MM-YYYY")}
+                                </Typography>
+                              ) : null}
                             </Box>
 
                           </a>
@@ -2880,13 +3006,13 @@ const ContentAnalytics = ({
                     ) : null}
 
 
-                    <TableCell>
-
-                      {(r.published || r.latestPublishedAt)
-                        ? dayjs(r.published || r.latestPublishedAt).format("DD-MM-YYYY")
-                        : ""}
-
-                    </TableCell>
+                    {showPublishedColumn ? (
+                      <TableCell>
+                        {(r.published || r.latestPublishedAt)
+                          ? dayjs(r.published || r.latestPublishedAt).format("DD-MM-YYYY")
+                          : ""}
+                      </TableCell>
+                    ) : null}
 
                     {selectedTableMetrics.map((metricKey) => (
 
@@ -2906,7 +3032,7 @@ const ContentAnalytics = ({
 
                   {showAllMode && isExpanded && expandedVideosLoading && (
                     <TableRow>
-                      <TableCell colSpan={4 + selectedTableMetrics.length} sx={{ py: 1, pl: 7, color: "text.secondary", fontSize: "0.8rem" }}>
+                      <TableCell colSpan={expandedRowColSpan} sx={{ py: 1, pl: 7, color: "text.secondary", fontSize: "0.8rem" }}>
                         Loading...
                       </TableCell>
                     </TableRow>
@@ -2928,8 +3054,8 @@ const ContentAnalytics = ({
                             },
                           }}
                         >
-                          <TableCell sx={{ pl: 5.5 }}>
-                            <Stack direction="row" spacing={1} alignItems="center">
+                          <TableCell sx={{ ...stickyFirstColumnSx, pl: 5.5, minWidth: isMobileTable ? 220 : 320 }}>
+                            <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
                               <a
                                 href={getYouTubeVideoHref(videoRow)}
                                 target="_blank"
@@ -2948,29 +3074,50 @@ const ContentAnalytics = ({
                                 rel="noreferrer"
                                 style={{ color: "inherit", textDecoration: "none", minWidth: 0 }}
                               >
-                                <Box sx={{ minWidth: 0 }}>
+                                <Box sx={{ minWidth: 0, overflow: "hidden" }}>
                                   <Typography
                                     component="span"
                                     sx={{
                                       display: "block",
                                       fontWeight: 600,
                                       color: "inherit",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
                                     }}
                                   >
                                     {videoRow.title}
                                   </Typography>
+                                  {!showPublishedColumn && (videoRow.published || videoRow.publishedAt) ? (
+                                    <Typography
+                                      component="span"
+                                      sx={{
+                                        display: "block",
+                                        mt: 0.3,
+                                        fontSize: "0.72rem",
+                                        color: "text.secondary",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {dayjs(videoRow.published || videoRow.publishedAt).format("DD-MM-YYYY")}
+                                    </Typography>
+                                  ) : null}
                                 </Box>
                               </a>
                             </Stack>
                           </TableCell>
 
-                          <TableCell align="right" />
+                          {showAllMode ? <TableCell align="right" /> : null}
 
-                          <TableCell>
-                            {(videoRow.published || videoRow.publishedAt)
-                              ? dayjs(videoRow.published || videoRow.publishedAt).format("DD-MM-YYYY")
-                              : ""}
-                          </TableCell>
+                          {showPublishedColumn ? (
+                            <TableCell>
+                              {(videoRow.published || videoRow.publishedAt)
+                                ? dayjs(videoRow.published || videoRow.publishedAt).format("DD-MM-YYYY")
+                                : ""}
+                            </TableCell>
+                          ) : null}
 
                           {selectedTableMetrics.map((metricKey) => (
                             <TableCell key={`${videoRow.id}:${metricKey}`} align="right">
@@ -2984,7 +3131,7 @@ const ContentAnalytics = ({
                     : null}
                   {showAllMode && isExpanded && !expandedVideosLoading && expandedVideos.length === 0 && cachedEntry && (
                     <TableRow>
-                      <TableCell colSpan={4 + selectedTableMetrics.length} sx={{ py: 1, pl: 7, color: "text.secondary", fontSize: "0.8rem" }}>
+                      <TableCell colSpan={expandedRowColSpan} sx={{ py: 1, pl: 7, color: "text.secondary", fontSize: "0.8rem" }}>
                         No videos found for this period.
                       </TableCell>
                     </TableRow>
@@ -3020,6 +3167,30 @@ const ContentAnalytics = ({
           }}
 
           rowsPerPageOptions={CONTENT_ROWS_PER_PAGE_OPTIONS}
+          sx={{
+            borderTop: "1px solid",
+            borderColor:
+              theme.palette.mode === "dark"
+                ? "rgba(148,163,184,0.18)"
+                : "rgba(15,23,42,0.08)",
+            "& .MuiTablePagination-toolbar": {
+              px: isMobileTable ? 1 : 2,
+              py: isMobileTable ? 1 : 0.5,
+              gap: isMobileTable ? 0.75 : 1.25,
+              flexWrap: "wrap",
+              justifyContent: isMobileTable ? "center" : "flex-end",
+            },
+            "& .MuiTablePagination-spacer": {
+              display: isMobileTable ? "none" : "block",
+            },
+            "& .MuiTablePagination-selectLabel, & .MuiTablePagination-displayedRows": {
+              m: 0,
+              fontSize: isMobileTable ? "0.78rem" : "0.84rem",
+            },
+            "& .MuiTablePagination-actions": {
+              ml: isMobileTable ? 0 : 1,
+            },
+          }}
 
         />
 
