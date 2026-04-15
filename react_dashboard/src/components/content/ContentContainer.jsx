@@ -275,6 +275,44 @@ const buildChannelRevenueAmountMap = (items = []) => {
   return map;
 };
 
+const normalizeContentVideoRow = (item, { includeChannelTitle = false } = {}) => {
+  const videoId = String(item?.videoId ?? item?.id ?? "").trim();
+  const channelTitle = item?.channelTitle || "";
+  const title = item?.title || "";
+  const watchTimeHours = n(item?.watchTimeHours ?? item?.watchHours);
+
+  return {
+    id: videoId,
+    videoId,
+    title,
+    displayTitle:
+      includeChannelTitle && channelTitle
+        ? `${title} (${channelTitle})`
+        : item?.displayTitle || title,
+    channelId: item?.channelId || "",
+    channelTitle,
+    channelAvatar: item?.channelAvatar || "",
+    thumbnail: item?.thumbnail || "",
+    published: item?.publishedAt ?? item?.published ?? "",
+    publishedAt: item?.publishedAt ?? item?.published ?? "",
+    duration: item?.duration,
+    views: n(item?.views),
+    watchHours: watchTimeHours,
+    watchTimeHours,
+    averageViewDuration: toNullableNumber(item?.averageViewDuration ?? item?.average_view_duration),
+    averagePercentageViewed: toNullableNumber(item?.averagePercentageViewed ?? item?.average_view_percentage),
+    engagedViews: toNullableNumber(item?.engagedViews ?? item?.engaged_views),
+    subscribers: toNullableNumber(item?.subscribers),
+    impressions: toNullableNumber(item?.impressions),
+    impressionsClickThroughRate: toNullableNumber(
+      item?.impressionsClickThroughRate ?? item?.impressions_click_through_rate
+    ),
+    likes: n(item?.likes),
+    cardImpressions: n(item?.cardImpressions),
+    adImpressions: n(item?.adImpressions),
+  };
+};
+
 const formatCurrencyValue = (value) => {
   if (value === null || value === undefined) return "-";
   const safe = Number(value);
@@ -800,39 +838,7 @@ const ContentAnalytics = ({
 
       videos
 
-        .map((v) => ({
-
-          id: v.videoId,
-
-          title: v.title,
-          displayTitle:
-            showAllMode && v.channelTitle
-              ? `${v.title} (${v.channelTitle})`
-              : v.title,
-          channelId: v.channelId || "",
-          channelTitle: v.channelTitle || "",
-          channelAvatar: v.channelAvatar || "",
-
-          thumbnail: v.thumbnail,
-
-          published: v.publishedAt,
-
-          duration: v.duration,
-
-          views: n(v.views),
-          watchHours: n(v.watchTimeHours),
-          watchTimeHours: n(v.watchTimeHours),
-          averageViewDuration: toNullableNumber(v.averageViewDuration ?? v.average_view_duration),
-          averagePercentageViewed: toNullableNumber(v.averagePercentageViewed ?? v.average_view_percentage),
-          engagedViews: toNullableNumber(v.engagedViews ?? v.engaged_views),
-          subscribers: toNullableNumber(v.subscribers),
-          impressions: toNullableNumber(v.impressions),
-          impressionsClickThroughRate: toNullableNumber(v.impressionsClickThroughRate ?? v.impressions_click_through_rate),
-          likes: n(v.likes),
-
-          cardImpressions: n(v.cardImpressions),
-          adImpressions: n(v.adImpressions),
-        })),
+        .map((v) => normalizeContentVideoRow(v, { includeChannelTitle: showAllMode })),
 
     [showAllMode, videos]
 
@@ -1028,11 +1034,14 @@ const ContentAnalytics = ({
         api.post("/api/content/list", { start, end, channelId: channelIdValue }, { params: { skip_enrich: true } }),
         api.post("/api/content/timeseries", { start, end, channelId: channelIdValue }),
       ]);
+      const normalizedVideos = (videosResp.data?.items ?? []).map((item) =>
+        normalizeContentVideoRow(item)
+      );
       setChannelVideoCache((prev) => ({
         ...prev,
         [channelIdValue]: {
           loading: false,
-          videos: videosResp.data?.items ?? [],
+          videos: normalizedVideos,
           timeseries: tsResp.data?.items ?? [],
         },
       }));
