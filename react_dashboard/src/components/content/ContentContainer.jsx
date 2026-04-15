@@ -1728,25 +1728,6 @@ const ContentAnalytics = ({
     [isMobileTable]
   );
 
-  const stickyFirstColumnSx = useMemo(
-    () => ({
-      position: "sticky",
-      left: 0,
-      zIndex: 3,
-      backgroundColor:
-        theme.palette.mode === "dark"
-          ? "rgba(10,15,24,0.96)"
-          : "rgba(255,255,255,0.98)",
-      boxShadow:
-        theme.palette.mode === "dark"
-          ? "8px 0 16px rgba(2,6,23,0.18)"
-          : "8px 0 16px rgba(148,163,184,0.12)",
-    }),
-    [theme.palette.mode]
-  );
-
-
-
   const handleSliceMove = useCallback((datum) => {
 
     if (!datum || !Array.isArray(datum.points)) return;
@@ -2692,7 +2673,7 @@ const ContentAnalytics = ({
 
             <TableRow>
 
-              <TableCell sx={{ ...stickyFirstColumnSx, minWidth: isMobileTable ? 220 : 320 }}>
+              <TableCell sx={{ minWidth: isMobileTable ? 220 : 320 }}>
                 {showAllMode ? "Channel" : "Video"}
               </TableCell>
 
@@ -2778,7 +2759,7 @@ const ContentAnalytics = ({
 
             {/* TOTAL row at top */}
             <TableRow>
-              <TableCell sx={{ ...stickyFirstColumnSx, fontWeight: 700 }}>TOTAL</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>TOTAL</TableCell>
               {showAllMode ? (
                 <TableCell align="right" sx={{ fontWeight: 700 }}>
                   {formatNumber(
@@ -2860,8 +2841,7 @@ const ContentAnalytics = ({
 
                     <TableCell
 	
-	                      sx={{
-                        ...stickyFirstColumnSx,
+                      sx={{
                         minWidth: isMobileTable ? 220 : 320,
 	
 	                        borderLeft: seriesColors[r.id]
@@ -3054,7 +3034,7 @@ const ContentAnalytics = ({
                             },
                           }}
                         >
-                          <TableCell sx={{ ...stickyFirstColumnSx, pl: 5.5, minWidth: isMobileTable ? 220 : 320 }}>
+                          <TableCell sx={{ pl: 5.5, minWidth: isMobileTable ? 220 : 320 }}>
                             <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
                               <a
                                 href={getYouTubeVideoHref(videoRow)}
