@@ -53,8 +53,6 @@ const AudienceAnalytics = () => {
   const [channelRevenueMap, setChannelRevenueMap] = useState({});
   const [demoRows, setDemoRows] = useState([]);
   const [demoRange, setDemoRange] = useState({ start: "", end: "" });
-  const [deviceRows, setDeviceRows] = useState([]);
-  const [deviceRange, setDeviceRange] = useState({ start: "", end: "" });
   const [viewerTypeRows, setViewerTypeRows] = useState([]);
   const [viewerTypeRange, setViewerTypeRange] = useState({ start: "", end: "" });
   const [retentionRows, setRetentionRows] = useState([]);
@@ -151,27 +149,6 @@ const AudienceAnalytics = () => {
       }
     };
     loadDemographics();
-  }, [accountTag]);
-
-  useEffect(() => {
-    if (!accountTag) return;
-    const loadDevices = async () => {
-      setLoading(true);
-      try {
-        const resp = await api.get(
-          `/api/audience/devices?accountTag=${encodeURIComponent(accountTag)}`
-        );
-        const data = resp.data;
-        setDeviceRows(data?.rows || []);
-        setDeviceRange({ start: data?.start_date || "", end: data?.end_date || "" });
-      } catch (err) {
-        setDeviceRows([]);
-        setDeviceRange({ start: "", end: "" });
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadDevices();
   }, [accountTag]);
 
   useEffect(() => {
@@ -276,22 +253,12 @@ const AudienceAnalytics = () => {
     return value || "";
   };
 
-  const deviceList = useMemo(() => {
-    return [...deviceRows].sort(
-      (a, b) => (b.viewer_percentage || 0) - (a.viewer_percentage || 0)
-    );
-  }, [deviceRows]);
-
   const viewerTypeList = useMemo(() => {
     return [...viewerTypeRows].sort(
       (a, b) => (b.viewer_percentage || 0) - (a.viewer_percentage || 0)
     );
   }, [viewerTypeRows]);
 
-  const deviceMax = useMemo(
-    () => Math.max(1, ...deviceList.map((row) => Number(row.viewer_percentage || 0))),
-    [deviceList]
-  );
   const viewerTypeMax = useMemo(
     () => Math.max(1, ...viewerTypeList.map((row) => Number(row.viewer_percentage || 0))),
     [viewerTypeList]
@@ -340,7 +307,6 @@ const AudienceAnalytics = () => {
   }, [retentionSeries]);
 
   const showDemoSkeleton = loading && demoRows.length === 0;
-  const showDeviceSkeleton = loading && deviceRows.length === 0;
   const showViewerSkeleton = loading && viewerTypeRows.length === 0;
   const showRetentionSkeleton =
     loading && retentionSeries[0].data.length === 0;
@@ -466,9 +432,6 @@ const AudienceAnalytics = () => {
                 : `Viewer distribution at ${formatRangeLabel(demoRange)}`}
             </Typography>
           </Box>
-          <Typography variant="caption" color="text.secondary">
-            % of total viewers
-          </Typography>
         </Stack>
 
         {showDemoSkeleton ? (
@@ -584,99 +547,9 @@ const AudienceAnalytics = () => {
 
       <Box
         display="grid"
-        gridTemplateColumns={{ xs: "1fr", md: "repeat(2, minmax(0, 1fr))" }}
+        gridTemplateColumns={{ xs: "1fr", md: "repeat(1, minmax(0, 1fr))" }}
         gap={2}
       >
-        <Box
-          sx={{
-            p: 2,
-            borderRadius: 3,
-            border: `1px solid ${isDark ? "rgba(148,163,184,0.2)" : "rgba(15,23,42,0.12)"}`,
-            background: isDark
-              ? "rgba(15,23,42,0.85)"
-              : "rgba(248,250,252,0.95)",
-            boxShadow: isDark
-              ? "0 14px 26px rgba(15,23,42,0.35)"
-              : "0 12px 22px rgba(148,163,184,0.25)",
-          }}
-        >
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            justifyContent="space-between"
-            alignItems={{ xs: "flex-start", sm: "baseline" }}
-            spacing={{ xs: 0.75, sm: 2 }}
-          >
-            <Box>
-              <Typography variant="subtitle1" fontWeight={600}>
-                Devices
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {formatRangeLabel(deviceRange)}
-              </Typography>
-            </Box>
-            <Typography variant="caption" color="text.secondary">
-              % viewers
-            </Typography>
-          </Stack>
-          {showDeviceSkeleton ? (
-            <Stack spacing={1.2} mt={2}>
-              {Array.from({ length: 5 }).map((_, idx) => (
-                <Box key={`device-skel-${idx}`}>
-                  <Box display="flex" justifyContent="space-between" mb={0.6}>
-                    <Skeleton width={120} height={18} />
-                    <Skeleton width={48} height={18} />
-                  </Box>
-                  <Skeleton height={10} sx={{ borderRadius: 999 }} />
-                </Box>
-              ))}
-            </Stack>
-          ) : deviceList.length === 0 ? (
-            <Typography variant="body2" color="text.secondary" mt={2}>
-              No device data available.
-            </Typography>
-          ) : (
-            <Stack spacing={1} mt={2}>
-              {deviceList.slice(0, 5).map((row) => {
-                const pct = Math.max(
-                  6,
-                  Math.round((row.viewer_percentage / deviceMax) * 100)
-                );
-                return (
-                  <Box key={row.device_type}>
-                    <Box display="flex" justifyContent="space-between" mb={0.5}>
-                      <Typography variant="body2">{row.device_type}</Typography>
-                      <Typography variant="body2" fontWeight={600}>
-                        {(row.viewer_percentage || 0).toFixed(2)}%
-                      </Typography>
-                    </Box>
-                    <Box
-                      sx={{
-                        height: 8,
-                        borderRadius: 999,
-                        bgcolor: isDark
-                          ? "rgba(148,163,184,0.2)"
-                          : "rgba(15,23,42,0.12)",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          width: `${pct}%`,
-                          height: "100%",
-                          borderRadius: 999,
-                          background: isDark
-                            ? "linear-gradient(90deg, #38bdf8, #22d3ee)"
-                            : "linear-gradient(90deg, #0ea5e9, #22d3ee)",
-                        }}
-                      />
-                    </Box>
-                  </Box>
-                );
-              })}
-            </Stack>
-          )}
-        </Box>
-
         <Box
           sx={{
             p: 2,
@@ -704,9 +577,6 @@ const AudienceAnalytics = () => {
                 {formatRangeLabel(viewerTypeRange)}
               </Typography>
             </Box>
-            <Typography variant="caption" color="text.secondary">
-              % viewers
-            </Typography>
           </Stack>
           {showViewerSkeleton ? (
             <Stack spacing={1.2} mt={2}>
@@ -808,9 +678,6 @@ const AudienceAnalytics = () => {
             <Typography variant="h6">Retention Curve</Typography>
 
           </Box>
-          <Typography variant="caption" color="text.secondary">
-            Higher is better
-          </Typography>
         </Stack>
         {legendItems.length > 0 && (
           <Stack direction="row" spacing={2} mt={1} flexWrap="wrap">
@@ -937,6 +804,15 @@ const AudienceAnalytics = () => {
                         alignItems="center"
                         justifyContent="space-between"
                         gap={1}
+                        sx={{
+                          mt: 0.75,
+                          px: 0.9,
+                          py: 0.6,
+                          borderRadius: 1,
+                          bgcolor: isDark
+                            ? "rgba(255,255,255,0.04)"
+                            : "rgba(15,23,42,0.04)",
+                        }}
                       >
                         <Box display="flex" alignItems="center" gap={1}>
                           <Box
@@ -944,14 +820,24 @@ const AudienceAnalytics = () => {
                               width: 8,
                               height: 8,
                               borderRadius: "50%",
-                              bgcolor: point.serieId === "Relative Retention" ? "#f97316" : "#22d3ee",
+                              bgcolor: point.serieColor,
+                              boxShadow: `0 0 0 2px ${isDark ? "rgba(15,23,42,0.95)" : "rgba(255,255,255,0.98)"}`,
                             }}
                           />
-                          <Typography variant="body2" sx={{ fontSize: "0.80rem" }}>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontSize: "0.80rem",
+                              color: isDark ? "rgba(229,231,235,0.88)" : "rgba(17,24,39,0.84)",
+                            }}
+                          >
                             {point.serieId}
                           </Typography>
                         </Box>
-                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{ fontWeight: 700, color: point.serieColor }}
+                        >
                           {`${(point.data.y * 100).toFixed(1)}%`}
                         </Typography>
                       </Box>

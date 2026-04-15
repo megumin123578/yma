@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import {
   Box,
   CircularProgress,
+  Skeleton,
   Stack,
   Table,
   TableBody,
@@ -29,6 +30,7 @@ import {
   resolvePreferredSharedChannelId,
   setStoredSharedChannelId,
 } from "../utils/sharedChannel";
+import { UserContext } from "../context/UserContext";
 
 const formatPct = (value) => {
   if (value === null || value === undefined) return "-";
@@ -41,6 +43,7 @@ const ReachAnalytics = () => {
   const theme = useTheme();
   const filterControlSx = getSharedFilterControlSx(theme);
   const isDark = theme.palette.mode === "dark";
+  const { user, loading: authLoading } = useContext(UserContext);
 
   // === Styles ===
   const glassSx = useMemo(() => ({
@@ -66,11 +69,6 @@ const ReachAnalytics = () => {
     },
   };
 
-  const authHeaders = useMemo(() => {
-    const token = localStorage.getItem("access_token");
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, []);
-
   // === State ===
   const [accounts, setAccounts] = useState([]);
   const [channelAvatarMap, setChannelAvatarMap] = useState({});
@@ -84,6 +82,8 @@ const ReachAnalytics = () => {
   });
   const [rows, setRows] = useState([]);
   const [range, setRange] = useState({ start: "", end: "" });
+  const [deviceRows, setDeviceRows] = useState([]);
+  const [deviceRange, setDeviceRange] = useState({ start: "", end: "" });
   const [breakdown, setBreakdown] = useState({
     range: { start: "", end: "" },
     external: [],
@@ -92,13 +92,18 @@ const ReachAnalytics = () => {
     browse: 0,
   });
   const [loading, setLoading] = useState(false);
+  const [deviceLoading, setDeviceLoading] = useState(false);
+  const resolvedAccountTag = useMemo(
+    () => resolvePreferredSharedChannelId(accountTag, accounts, (item) => item.value),
+    [accountTag, accounts]
+  );
   // === Data Fetching ===
   useEffect(() => {
+    if (authLoading || !user) return;
     let active = true;
     const loadChannels = async () => {
       try {
         const resp = await api.get("/api/reach/channels", {
-          headers: authHeaders,
         });
         const data = resp.data;
         const items = (Array.isArray(data?.items) ? data.items : [])
@@ -140,7 +145,7 @@ const ReachAnalytics = () => {
     return () => {
       active = false;
     };
-  }, [authHeaders]);
+  }, [authLoading, user]);
 
   useEffect(() => {
     let active = true;
@@ -167,6 +172,13 @@ const ReachAnalytics = () => {
   }, [accountTag]);
 
   useEffect(() => {
+    if (!accounts.length) return;
+    if (resolvedAccountTag && resolvedAccountTag !== accountTag) {
+      setAccountTag(resolvedAccountTag);
+    }
+  }, [accountTag, accounts.length, resolvedAccountTag]);
+
+  useEffect(() => {
     return listenSharedChannelId((nextChannelId) => {
       setAccountTag((current) => {
         if (!nextChannelId || nextChannelId === current) return current;
@@ -176,13 +188,12 @@ const ReachAnalytics = () => {
   }, []);
 
   useEffect(() => {
-    if (!accountTag) return;
+    if (authLoading || !user || !resolvedAccountTag) return;
     const loadReach = async () => {
       setLoading(true);
       try {
         const resp = await api.get(
-          `/api/reach?accountTag=${encodeURIComponent(accountTag)}`,
-          { headers: authHeaders }
+          `/api/reach?accountTag=${encodeURIComponent(resolvedAccountTag)}`
         );
         const data = resp.data;
         setRows(Array.isArray(data?.rows) ? data.rows : []);
@@ -195,17 +206,16 @@ const ReachAnalytics = () => {
       }
     };
     loadReach();
-  }, [accountTag, authHeaders]);
+  }, [authLoading, resolvedAccountTag, user]);
 
   useEffect(() => {
-    if (!accountTag) return;
+    if (authLoading || !user || !resolvedAccountTag) return;
     const loadBreakdown = async () => {
       try {
         const resp = await api.get(
           `/api/reach/traffic_breakdown?accountTag=${encodeURIComponent(
-            accountTag
-          )}`,
-          { headers: authHeaders }
+            resolvedAccountTag
+          )}`
         );
         const data = resp.data;
         setBreakdown({
@@ -226,7 +236,43 @@ const ReachAnalytics = () => {
       }
     };
     loadBreakdown();
-  }, [accountTag, authHeaders]);
+  }, [authLoading, resolvedAccountTag, user]);
+
+  useEffect(() => {
+    if (authLoading || !user || !resolvedAccountTag) return;
+    const loadDevices = async () => {
+      setDeviceLoading(true);
+      try {
+        const resp = await api.get(
+          `/api/audience/devices?accountTag=${encodeURIComponent(resolvedAccountTag)}`
+        );
+        const data = resp.data;
+        setDeviceRows(Array.isArray(data?.rows) ? data.rows : []);
+        setDeviceRange({ start: data?.start_date || "", end: data?.end_date || "" });
+      } catch (err) {
+        setDeviceRows([]);
+        setDeviceRange({ start: "", end: "" });
+      } finally {
+        setDeviceLoading(false);
+      }
+    };
+    loadDevices();
+  }, [authLoading, resolvedAccountTag, user]);
+
+  useEffect(() => {
+    if (authLoading || !user || accounts.length || accountTag) return;
+    setRows([]);
+    setRange({ start: "", end: "" });
+    setDeviceRows([]);
+    setDeviceRange({ start: "", end: "" });
+    setBreakdown({
+      range: { start: "", end: "" },
+      external: [],
+      playlist: 0,
+      suggested: 0,
+      browse: 0,
+    });
+  }, [accountTag, accounts.length, authLoading, user]);
 
   const safeRows = useMemo(
     () =>
@@ -251,6 +297,18 @@ const ReachAnalytics = () => {
     () => Math.max(1, Number(breakdown.suggested || 0), Number(breakdown.browse || 0)),
     [breakdown.suggested, breakdown.browse]
   );
+  const deviceList = useMemo(
+    () =>
+      [...(Array.isArray(deviceRows) ? deviceRows : [])].sort(
+        (a, b) => Number(b?.viewer_percentage || 0) - Number(a?.viewer_percentage || 0)
+      ),
+    [deviceRows]
+  );
+  const deviceMax = useMemo(
+    () => Math.max(1, ...deviceList.map((row) => Number(row?.viewer_percentage || 0))),
+    [deviceList]
+  );
+  const showDeviceSkeleton = deviceLoading && deviceRows.length === 0;
 
   return (
       <Stack spacing={3}>
@@ -263,7 +321,7 @@ const ReachAnalytics = () => {
         >
           <ChannelSwitcher
             options={accounts}
-            value={accountTag}
+            value={resolvedAccountTag}
             onChange={(option) => setAccountTag(option?.value || "")}
             sx={CHANNEL_SWITCHER_SX}
             getOptionAvatar={(option) => channelAvatarMap[option?.value] || ""}
@@ -491,6 +549,90 @@ const ReachAnalytics = () => {
               })}
             </Stack>
           </Box>
+        </Box>
+
+        <Box sx={{ ...glassSx, p: 3, display: "flex", flexDirection: "column" }}>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            justifyContent="space-between"
+            alignItems={{ xs: "flex-start", sm: "baseline" }}
+            spacing={{ xs: 0.75, sm: 2 }}
+          >
+            <Box>
+              <Typography variant="subtitle1" fontWeight={700}>
+                Viewing Devices
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {deviceRange.start && deviceRange.end
+                  ? `${deviceRange.start} ~ ${deviceRange.end}`
+                  : "No Date Range"}
+              </Typography>
+            </Box>
+          </Stack>
+
+          {showDeviceSkeleton ? (
+            <Stack spacing={1.2} mt={2}>
+              {Array.from({ length: 5 }).map((_, idx) => (
+                <Box key={`reach-device-skel-${idx}`}>
+                  <Box display="flex" justifyContent="space-between" mb={0.6}>
+                    <Skeleton width={120} height={18} />
+                    <Skeleton width={48} height={18} />
+                  </Box>
+                  <Skeleton height={10} sx={{ borderRadius: 999 }} />
+                </Box>
+              ))}
+            </Stack>
+          ) : deviceList.length === 0 ? (
+            <Box flex={1} display="flex" alignItems="center" justifyContent="center" mt={2}>
+              <Typography variant="body2" color="text.secondary">
+                No device data available.
+              </Typography>
+            </Box>
+          ) : (
+            <Stack spacing={1.2} mt={2}>
+              {deviceList.slice(0, 5).map((row) => {
+                const pct = Math.max(
+                  6,
+                  Math.round((Number(row?.viewer_percentage || 0) / deviceMax) * 100)
+                );
+                return (
+                  <Box key={row?.device_type || "unknown-device"}>
+                    <Box display="flex" justifyContent="space-between" mb={0.5}>
+                      <Typography variant="body2" fontWeight={600}>
+                        {row?.device_type || "Unknown"}
+                      </Typography>
+                      <Typography variant="body2" fontWeight={700}>
+                        {Number(row?.viewer_percentage || 0).toFixed(2)}%
+                      </Typography>
+                    </Box>
+                    <Box
+                      sx={{
+                        height: 8,
+                        borderRadius: 999,
+                        bgcolor: isDark
+                          ? "rgba(148,163,184,0.15)"
+                          : "rgba(15,23,42,0.06)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${pct}%` }}
+                        transition={{ duration: 0.8, ease: "easeOut" }}
+                        style={{
+                          height: "100%",
+                          borderRadius: 999,
+                          background: isDark
+                            ? "linear-gradient(90deg, #38bdf8, #22d3ee)"
+                            : "linear-gradient(90deg, #0ea5e9, #22d3ee)",
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Stack>
+          )}
         </Box>
 
         {/* Detailed Table */}

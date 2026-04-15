@@ -189,6 +189,11 @@ const Sidebar = ({
       }),
     }),
     label: ({ level, active }) => ({
+      ...(level === 0 && isDesktopCompact
+        ? {
+            display: "none",
+          }
+        : {}),
       fontSize: level === 0 ? "0.88rem" : "0.84rem",
       fontWeight: active ? 700 : level === 0 ? 600 : 500,
     }),
@@ -230,6 +235,11 @@ const Sidebar = ({
           }),
     }),
     SubMenuExpandIcon: ({ open }) => ({
+      ...(isDesktopCompact
+        ? {
+            display: "none",
+          }
+        : {}),
       color: open ? accentColor : mutedColor,
       marginRight: isDesktopCompact ? 0 : 4,
     }),
@@ -441,7 +451,7 @@ const Sidebar = ({
                   isCompact={isDesktopCompact}
                 />
                 <Item
-                  title="Audience Analytics"
+                  title="Audience"
                   to="/audience_analytics"
                   icon={<GroupsOutlinedIcon />}
                   isActive={isActivePath("/audience_analytics")}
