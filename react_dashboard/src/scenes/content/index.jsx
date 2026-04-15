@@ -1,6 +1,6 @@
 import { Box } from "@mui/material"
 import Header from "../../components/Header";
-import ContentAnalytics from "../../components/Content";
+import ContentAnalytics from "../../components/content/ContentContainer";
 
 const Dashboard = () => {
     return (

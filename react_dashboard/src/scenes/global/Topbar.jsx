@@ -112,8 +112,14 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
     theme.palette.mode === "dark" ? colorTokens.greenAccent[700] : theme.palette.primary.main;
   const addButtonHoverBg =
     theme.palette.mode === "dark" ? colorTokens.greenAccent[600] : theme.palette.primary.dark;
+  const addButtonActiveBg =
+    theme.palette.mode === "dark"
+      ? alpha(colorTokens.greenAccent[500], 0.28)
+      : addButtonHoverBg;
   const addButtonShadowColor =
     theme.palette.mode === "dark" ? colorTokens.greenAccent[500] : theme.palette.primary.main;
+  const addButtonActiveText =
+    theme.palette.mode === "dark" ? colorTokens.greenAccent[100] : theme.palette.common.white;
   const menuPaperBorder = alpha(theme.palette.divider, theme.palette.mode === "dark" ? 0.3 : 0.7);
   const menuPaperBg = alpha(
     theme.palette.background.paper,
@@ -457,14 +463,28 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
                 py: 0.45,
                 lineHeight: 1.2,
                 minHeight: 30,
-                bgcolor: addButtonBg,
-                color: theme.palette.common.white,
-                boxShadow: `0 10px 22px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.28 : 0.22)}`,
+                bgcolor: addMenuOpen ? addButtonActiveBg : addButtonBg,
+                color: addMenuOpen ? addButtonActiveText : theme.palette.common.white,
+                border: "1px solid",
+                borderColor: addMenuOpen
+                  ? alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.4 : 0.22)
+                  : "transparent",
+                boxShadow: addMenuOpen
+                  ? `inset 0 0 0 1px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.2 : 0.1)}, 0 8px 18px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.22 : 0.2)}`
+                  : `0 10px 22px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.28 : 0.22)}`,
                 transition: "all 180ms ease",
                 "&:hover": {
-                  bgcolor: addButtonHoverBg,
-                  transform: "translateY(-1px)",
-                  boxShadow: `0 14px 26px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.34 : 0.28)}`,
+                  bgcolor: addMenuOpen ? addButtonActiveBg : addButtonHoverBg,
+                  transform: addMenuOpen ? "none" : "translateY(-1px)",
+                  boxShadow: addMenuOpen
+                    ? `inset 0 0 0 1px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.24 : 0.12)}, 0 10px 20px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.24 : 0.22)}`
+                    : `0 14px 26px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.34 : 0.28)}`,
+                },
+                "&:active": {
+                  bgcolor: addButtonActiveBg,
+                  color: addButtonActiveText,
+                  transform: "none",
+                  boxShadow: `inset 0 0 0 1px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.24 : 0.14)}, 0 8px 18px ${alpha(addButtonShadowColor, theme.palette.mode === "dark" ? 0.22 : 0.22)}`,
                 },
               }}
             >

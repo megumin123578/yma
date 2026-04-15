@@ -27,7 +27,7 @@ from python_backend.module_trafficsource import sanitize_filename  # dùng lại
 router = APIRouter(prefix="/api/content", tags=["content"])
 
 ALL_CHANNELS_VALUE = "__all__"
-CONTENT_CACHE_VERSION = 5
+CONTENT_CACHE_VERSION = 6
 _VIDEO_DAILY_STATS_COLUMNS_CACHE = None
 _CONTENT_CACHE_COMPRESS_MIN_BYTES = 2 * 1024 * 1024
 _CONTENT_CACHE_MAX_JSONB_BYTES = 240 * 1024 * 1024
@@ -271,8 +271,10 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
     """
     Fetch per-video aggregated metrics (no day dimension).
     Returns tuple: ({video_id: {views, watch_time_hours, average_view_duration,
-    average_view_percentage, engaged_views, subscribers, impressions,
-    impressions_click_through_rate}}, thumbnail_supported)
+    average_view_percentage, engaged_views, subscribers}}, thumbnail_supported)
+
+    Thumbnail impressions / CTR are sourced only from the reporting bulk tables
+    in DB, so this helper must not query them directly from Analytics API.
     """
     if not video_ids:
         return {}, False
@@ -347,62 +349,6 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
             pass
 
     thumbnail_supported = False
-    for chunk in _chunked(video_ids, 50):
-        chunk_filter = f"video=={','.join(chunk)}"
-        try:
-            resp = yta.reports().query(
-                ids=ids,
-                startDate=start_date,
-                endDate=end_date,
-                dimensions="video",
-                filters=chunk_filter,
-                metrics="videoThumbnailImpressions,videoThumbnailImpressionsClickRate"
-            ).execute() or {}
-        except HttpError as e:
-            if e.resp.status == 400:
-                print(f"[content.video-metrics] Thumbnail metrics unsupported: {e}")
-                thumbnail_supported = False
-                break
-            if e.resp.status != 403:
-                print(f"[content.video-metrics] Thumbnail metrics failed for chunk: {e}")
-            continue
-        except Exception:
-            continue
-
-        headers = resp.get("columnHeaders", []) or []
-        if not headers:
-            thumbnail_supported = True
-            continue
-
-        thumbnail_supported = True
-        rows = resp.get("rows") or []
-        idx = {h["name"]: i for i, h in enumerate(headers)}
-        i_video = idx.get("video")
-        if i_video is None:
-            continue
-        for row in rows:
-            vid = row[i_video]
-            if vid not in out:
-                out[vid] = {}
-            try:
-                out[vid]["impressions"] = int(row[idx["videoThumbnailImpressions"]] or 0)
-            except Exception:
-                out[vid]["impressions"] = 0
-            try:
-                out[vid]["impressions_click_through_rate"] = (
-                    float(row[idx["videoThumbnailImpressionsClickRate"]] or 0.0) * 100.0
-                )
-            except Exception:
-                out[vid]["impressions_click_through_rate"] = None
-
-    if thumbnail_supported:
-        for vid in video_ids:
-            if vid not in out:
-                out[vid] = {}
-            if "impressions" not in out[vid]:
-                out[vid]["impressions"] = 0
-            if "impressions_click_through_rate" not in out[vid]:
-                out[vid]["impressions_click_through_rate"] = None
 
     # Ensure all requested IDs are in out with defaults if missing
     for vid in video_ids:

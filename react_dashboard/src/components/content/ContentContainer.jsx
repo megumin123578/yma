@@ -1709,6 +1709,7 @@ const ContentAnalytics = ({
               seriesColors={seriesColors}
               onSliceMove={handleSliceMove}
               onSliceLeave={handleSliceLeave}
+              formatMetricValue={formatMetricValue}
             />
           </Box>
 

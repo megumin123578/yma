@@ -1,5 +1,5 @@
 import { Box } from "@mui/material"
-import VideoList from "../../components/Dashboard";
+import VideoList from "../../components/dashboard/DashboardContainer";
 
 const Dashboard = () => {
   return (
