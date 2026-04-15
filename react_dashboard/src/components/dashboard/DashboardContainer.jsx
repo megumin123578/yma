@@ -28,6 +28,7 @@ import {
     OVERVIEW_LIMIT_STEP,
     OVERVIEW_RANGES,
     formatCurrency,
+    getOverviewRangeDates,
     formatNumber,
 } from "./dashboardUtils";
 
@@ -158,6 +159,10 @@ const DashboardContainer = () => {
                 comments,
                 shares,
                 engaged_views: Math.max(0, toNumberOrNull(video?.engaged_views) ?? 0),
+                thumbnail_impressions: Math.max(
+                    0,
+                    toNumberOrNull(video?.thumbnail_impressions) ?? 0
+                ),
                 subscribers_gained: Math.max(
                     0,
                     toNumberOrNull(video?.subscribers_gained) ?? 0
@@ -458,12 +463,36 @@ const DashboardContainer = () => {
             try {
                 setLoadingVideos(true);
                 setError("");
-                const res = await api.get(
-                    `/api/video_overview/videos?accountTag=${encodeURIComponent(
-                        selectedChannel
-                    )}`
+                const { start, end } = getOverviewRangeDates(overviewRange);
+                const res = await api.post("/api/content/list", {
+                    start,
+                    end,
+                    channelId: selectedChannel,
+                    contentType: "all",
+                });
+                const items = Array.isArray(res.data?.items) ? res.data.items : [];
+                setVideos(
+                    items.map((item) => ({
+                        account_tag: item?.channelId || selectedChannel,
+                        video_id: item?.videoId || "",
+                        title: item?.title || "",
+                        thumbnail: item?.thumbnail || "",
+                        publish_date: item?.publishedAt || item?.published || "",
+                        views: item?.views,
+                        likes: item?.likes,
+                        comments: item?.comments,
+                        engaged_views: item?.engagedViews ?? item?.engaged_views,
+                        thumbnail_impressions: item?.impressions,
+                        thumbnail_ctr:
+                            item?.impressionsClickThroughRate ??
+                            item?.impressions_click_through_rate,
+                        average_view_duration_seconds:
+                            item?.averageViewDuration ?? item?.average_view_duration,
+                        shares: item?.shares,
+                        subscribers_gained: item?.subscribers,
+                        subscribers_lost: item?.subscribers_lost,
+                    }))
                 );
-                setVideos(res.data || []);
             } catch (err) {
                 console.error(err);
                 setError("Khong load duoc danh sach video.");
@@ -473,7 +502,7 @@ const DashboardContainer = () => {
         };
 
         fetchVideos();
-    }, [selectedChannel]);
+    }, [selectedChannel, overviewRange]);
 
     useEffect(() => {
         if (!selectedChannel) return;

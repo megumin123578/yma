@@ -1,17 +1,7 @@
-import { memo, useState, useContext, useEffect } from "react";
+import { memo, useState, useContext, useEffect, lazy, Suspense } from "react";
 import { Routes, Route, useLocation, Navigate } from "react-router-dom";
 import Topbar from "./scenes/global/Topbar";
 import Sidebar from "./scenes/global/Sidebar";
-import Dashboard from "./scenes/dashboard";
-import Daily from "./scenes/content";
-import AllChannelsScene from "./scenes/all_channels";
-import TrafficSource from "./scenes/traffic_source";
-import LoginPage from "./scenes/login";
-import RegisterPage from "./scenes/register";
-import SmmstoreScene from "./scenes/smmstore";
-import ChannelCompareScene from "./scenes/channel_compare";
-import RivalsData from "./scenes/rivals";
-
 import {
   Box,
   Button,
@@ -25,24 +15,34 @@ import {
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import { ColorModeContext, tokens } from "./theme";
-import GeographyScene from "./scenes/geography";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import SmartDisplayRoundedIcon from "@mui/icons-material/SmartDisplayRounded";
 import AlternateEmailRoundedIcon from "@mui/icons-material/AlternateEmailRounded";
 import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
 import { UserContext } from "./context/UserContext";
-import SmmstoreAnalyticsScene from "./scenes/smmstore_analytics";
-import AudienceAnalyticsScene from "./scenes/audience_analytics";
-import ReachAnalyticsScene from "./scenes/reach_analytics";
-import RevenueAnalyticsScene from "./scenes/revenue";
-import MailMonitorScene from "./scenes/mail_monitor";
-import ConfigPage from "./scenes/config";
-import PrivacyPage from "./scenes/privacy";
-import TermsPage from "./scenes/terms";
-import LandingPage from "./scenes/landing";
 import { AnimatePresence, motion } from "framer-motion";
 import { startMailOAuth, uploadCredentials } from "./services/userService";
+
+const Dashboard = lazy(() => import("./scenes/dashboard"));
+const Daily = lazy(() => import("./scenes/content"));
+const AllChannelsScene = lazy(() => import("./scenes/all_channels"));
+const TrafficSource = lazy(() => import("./scenes/traffic_source"));
+const LoginPage = lazy(() => import("./scenes/login"));
+const RegisterPage = lazy(() => import("./scenes/register"));
+const SmmstoreScene = lazy(() => import("./scenes/smmstore"));
+const ChannelCompareScene = lazy(() => import("./scenes/channel_compare"));
+const RivalsData = lazy(() => import("./scenes/rivals"));
+const GeographyScene = lazy(() => import("./scenes/geography"));
+const SmmstoreAnalyticsScene = lazy(() => import("./scenes/smmstore_analytics"));
+const AudienceAnalyticsScene = lazy(() => import("./scenes/audience_analytics"));
+const ReachAnalyticsScene = lazy(() => import("./scenes/reach_analytics"));
+const RevenueAnalyticsScene = lazy(() => import("./scenes/revenue"));
+const MailMonitorScene = lazy(() => import("./scenes/mail_monitor"));
+const ConfigPage = lazy(() => import("./scenes/config"));
+const PrivacyPage = lazy(() => import("./scenes/privacy"));
+const TermsPage = lazy(() => import("./scenes/terms"));
+const LandingPage = lazy(() => import("./scenes/landing"));
 
 const DESKTOP_SIDEBAR_EXPANDED = "expanded";
 const DESKTOP_SIDEBAR_COMPACT = "compact";
@@ -440,9 +440,11 @@ function App() {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
-            style={{ minHeight: 0 }}
+            style={{ minHeight: 0, height: "100%" }}
           >
-            <AppRoutes user={user} loading={loading} />
+            <Suspense fallback={null}>
+              <AppRoutes user={user} loading={loading} />
+            </Suspense>
           </motion.div>
         </AnimatePresence>
       </main>

@@ -18,6 +18,9 @@ import {
     getSharedSelectMenuProps,
 } from "../filterStyles";
 
+const hasLocalizationProvider = typeof LocalizationProvider === "function";
+const hasDatePicker = typeof DatePicker === "function" || (typeof DatePicker === "object" && DatePicker !== null);
+
 const ContentFilters = ({
     hideChannelSwitcher,
     channelList,
@@ -160,7 +163,7 @@ const ContentFilters = ({
                 </Select>
             </FormControl>
 
-            {period === "custom" && (
+            {period === "custom" && hasLocalizationProvider && hasDatePicker && (
                 <LocalizationProvider dateAdapter={AdapterDayjs}>
                     <Stack
                         direction={{ xs: "column", sm: "row" }}

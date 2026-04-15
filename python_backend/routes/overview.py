@@ -169,6 +169,7 @@ def list_channels(
 @router.get("/videos")
 def list_videos(
     accountTag: str,
+    range: str = Query("28d"),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
@@ -178,6 +179,10 @@ def list_videos(
     if _allowed_or_hidden_blocked(current_user, db, accountTag):
         return []
     has_videos_table = bool(scalar("SELECT to_regclass('public.videos') IS NOT NULL"))
+    has_thumbnail_daily_table = bool(
+        scalar("SELECT to_regclass('public.video_thumbnail_daily') IS NOT NULL")
+    )
+    start_date, end_date = _range_to_dates(range)
     sql = """
         SELECT
             vo.account_tag,
@@ -202,7 +207,59 @@ def list_videos(
         WHERE vo.account_tag = :tag
         ORDER BY vo.publish_date DESC;
     """
-    if has_videos_table:
+    params = {"tag": accountTag}
+    if has_videos_table and has_thumbnail_daily_table:
+        sql = """
+            SELECT
+                vo.account_tag,
+                vo.video_id,
+                vo.title,
+                vo.thumbnail,
+                COALESCE(vo.publish_date, v.published_at::text) AS publish_date,
+                GREATEST(COALESCE(vo.views, 0), COALESCE(v.views, 0)) AS views,
+                GREATEST(COALESCE(vo.likes, 0), COALESCE(v.likes, 0)) AS likes,
+                GREATEST(COALESCE(vo.comments, 0), COALESCE(v.comments, 0)) AS comments,
+                vo.dislikes,
+                vo.engaged_views,
+                CASE
+                    WHEN tr.thumbnail_impressions IS NOT NULL
+                        THEN tr.thumbnail_ctr * 100.0
+                    ELSE v.ctr
+                END AS thumbnail_ctr,
+                vo.annotation_click_through_rate,
+                vo.annotation_close_rate,
+                vo.average_view_duration_seconds,
+                vo.shares,
+                vo.subscribers_gained,
+                vo.subscribers_lost,
+                vo.updated_at
+            FROM video_overview vo
+            LEFT JOIN videos v
+                ON v.account_tag = vo.account_tag
+               AND v.video_id = vo.video_id
+            LEFT JOIN (
+                SELECT
+                    account_tag,
+                    video_id,
+                    SUM(thumbnail_impressions) AS thumbnail_impressions,
+                    CASE
+                        WHEN SUM(thumbnail_impressions) > 0
+                            THEN SUM(COALESCE(thumbnail_ctr, 0) * thumbnail_impressions)
+                                 / SUM(thumbnail_impressions)
+                        ELSE NULL
+                    END AS thumbnail_ctr
+                FROM video_thumbnail_daily
+                WHERE (:start_date IS NULL OR day >= :start_date)
+                  AND (:end_date IS NULL OR day <= :end_date)
+                GROUP BY account_tag, video_id
+            ) tr
+                ON tr.account_tag = vo.account_tag
+               AND tr.video_id = vo.video_id
+            WHERE vo.account_tag = :tag
+            ORDER BY publish_date DESC;
+        """
+        params.update({"start_date": start_date, "end_date": end_date})
+    elif has_videos_table:
         sql = """
             SELECT
                 vo.account_tag,
@@ -230,7 +287,7 @@ def list_videos(
             WHERE vo.account_tag = :tag
             ORDER BY publish_date DESC;
         """
-    rows = query(sql, {"tag": accountTag})
+    rows = query(sql, params)
 
     return rows
 

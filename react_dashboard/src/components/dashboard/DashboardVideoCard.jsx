@@ -9,6 +9,7 @@ import {
     Stack,
     Typography,
 } from "@mui/material";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import TrendingUpIcon from "@mui/icons-material/TrendingUp";
@@ -41,6 +42,36 @@ const overlayVariants = {
 };
 
 export const DashboardVideoCard = ({ video, index, isDark, dashboardPalette }) => {
+    const initialThumbnail =
+        video.thumbnail || (video.video_id ? `https://i.ytimg.com/vi/${video.video_id}/hqdefault.jpg` : "");
+    const [currentThumbnail, setCurrentThumbnail] = useState(initialThumbnail);
+    const [hasThumbnailError, setHasThumbnailError] = useState(false);
+
+    useEffect(() => {
+        setCurrentThumbnail(
+            video.thumbnail ||
+                (video.video_id ? `https://i.ytimg.com/vi/${video.video_id}/hqdefault.jpg` : "")
+        );
+        setHasThumbnailError(false);
+    }, [video.thumbnail, video.video_id]);
+
+    const handleThumbnailError = () => {
+        const videoId = String(video.video_id || "").trim();
+        if (videoId && currentThumbnail.includes("mqdefault")) {
+            setCurrentThumbnail(`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`);
+            return;
+        }
+        if (videoId && currentThumbnail.includes("hqdefault")) {
+            setCurrentThumbnail(`https://i.ytimg.com/vi/${videoId}/default.jpg`);
+            return;
+        }
+        if (videoId && !currentThumbnail) {
+            setCurrentThumbnail(`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`);
+            return;
+        }
+        setHasThumbnailError(true);
+    };
+
     return (
         <Box sx={{ width: "100%" }}>
             <MotionCard
@@ -68,11 +99,12 @@ export const DashboardVideoCard = ({ video, index, isDark, dashboardPalette }) =
                 }}
             >
                 <Box sx={{ position: "relative", overflow: "hidden" }}>
-                    {video.thumbnail && (
+                    {!hasThumbnailError && currentThumbnail ? (
                         <CardMedia
                             component="img"
-                            image={video.thumbnail}
+                            image={currentThumbnail}
                             alt={video.title}
+                            onError={handleThumbnailError}
                             sx={{
                                 width: "100%",
                                 aspectRatio: "16/9",
@@ -81,6 +113,25 @@ export const DashboardVideoCard = ({ video, index, isDark, dashboardPalette }) =
                                 ".MuiCard-root:hover &": { transform: "scale(1.08)" },
                             }}
                         />
+                    ) : (
+                        <Box
+                            sx={{
+                                width: "100%",
+                                aspectRatio: "16/9",
+                                background: isDark
+                                    ? "linear-gradient(135deg, rgba(30,41,59,0.95), rgba(15,23,42,0.85))"
+                                    : "linear-gradient(135deg, rgba(226,232,240,0.95), rgba(241,245,249,0.95))",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "text.secondary",
+                                fontSize: "0.8rem",
+                                fontWeight: 700,
+                                letterSpacing: "0.04em",
+                            }}
+                        >
+                            No Thumbnail
+                        </Box>
                     )}
                     <Box
                         sx={{
@@ -263,6 +314,10 @@ export const DashboardVideoCard = ({ video, index, isDark, dashboardPalette }) =
                             {
                                 label: "Engaged views",
                                 val: formatNumber(video.engaged_views),
+                            },
+                            {
+                                label: "Thumbnail Impr.",
+                                val: formatNumber(video.thumbnail_impressions),
                             },
                             { label: "Shares", val: formatNumber(video.shares) },
                             {

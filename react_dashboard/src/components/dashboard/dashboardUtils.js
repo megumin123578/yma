@@ -77,3 +77,23 @@ export const formatDateMonth = (iso) => {
 
     return `${day}/${month}`;
 };
+
+export const getOverviewRangeDates = (rangeValue) => {
+    const range = OVERVIEW_RANGES.find((item) => item.value === rangeValue);
+    const days = range?.days ?? 28;
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(end.getDate() - (days - 1));
+
+    const formatYmd = (value) => {
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, "0");
+        const day = String(value.getDate()).padStart(2, "0");
+        return `${year}-${month}-${day}`;
+    };
+
+    return {
+        start: formatYmd(start),
+        end: formatYmd(end),
+    };
+};

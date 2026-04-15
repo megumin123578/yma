@@ -29,6 +29,7 @@ import {
   TableRow,
   TableSortLabel,
   Tabs,
+  Tooltip,
   useMediaQuery,
 } from "@mui/material";
 
@@ -70,6 +71,15 @@ import ContentFilters from "./ContentFilters";
 import LineChart from "./ContentLineChart";
 import ContentSummaryCards from "./ContentSummaryCards";
 import VideoThumbnail from "./ContentVideoThumbnail";
+
+const isRenderableComponent = (component) =>
+  typeof component === "function" || (typeof component === "object" && component !== null);
+
+const hasContentFiltersComponent = isRenderableComponent(ContentFilters);
+const hasContentSummaryCardsComponent = isRenderableComponent(ContentSummaryCards);
+const hasLineChartComponent = isRenderableComponent(LineChart);
+const hasVideoThumbnailComponent = isRenderableComponent(VideoThumbnail);
+const hasResponsiveBarComponent = isRenderableComponent(ResponsiveBar);
 
 
 /* Extra periods – chỉ khai báo value + label (không chứa ngày) */
@@ -1727,6 +1737,7 @@ const ContentAnalytics = ({
     }),
     [isMobileTable]
   );
+  const videoTitleCellWidth = isMobileTable ? 320 : 520;
 
   const handleSliceMove = useCallback((datum) => {
 
@@ -1984,29 +1995,31 @@ const ContentAnalytics = ({
 
       {/* FILTERS */}
 
-      <ContentFilters
-        hideChannelSwitcher={hideChannelSwitcher}
-        channelList={channelList}
-        channelId={channelId}
-        setChannelId={setChannelId}
-        channelRevenueMap={channelRevenueMap}
-        showAllMode={showAllMode}
-        setShowAllChannel={() => setChannelId(CONTENT_ALL_CHANNELS_VALUE)}
-        chartType={chartType}
-        setChartType={setChartType}
-        period={period}
-        setPeriod={setPeriod}
-        contentPeriodOptions={CONTENT_PERIOD_OPTIONS}
-        selectedTableMetrics={selectedTableMetrics}
-        setSelectedTableMetrics={setSelectedTableMetrics}
-        tableMetricOptions={tableMetricOptions}
-        startDate={startDate}
-        setStartDate={setStartDate}
-        endDate={endDate}
-        setEndDate={setEndDate}
-      />
+      {hasContentFiltersComponent ? (
+        <ContentFilters
+          hideChannelSwitcher={hideChannelSwitcher}
+          channelList={channelList}
+          channelId={channelId}
+          setChannelId={setChannelId}
+          channelRevenueMap={channelRevenueMap}
+          showAllMode={showAllMode}
+          setShowAllChannel={() => setChannelId(CONTENT_ALL_CHANNELS_VALUE)}
+          chartType={chartType}
+          setChartType={setChartType}
+          period={period}
+          setPeriod={setPeriod}
+          contentPeriodOptions={CONTENT_PERIOD_OPTIONS}
+          selectedTableMetrics={selectedTableMetrics}
+          setSelectedTableMetrics={setSelectedTableMetrics}
+          tableMetricOptions={tableMetricOptions}
+          startDate={startDate}
+          setStartDate={setStartDate}
+          endDate={endDate}
+          setEndDate={setEndDate}
+        />
+      ) : null}
 
-      <ContentSummaryCards items={summaryCards} />
+      {hasContentSummaryCardsComponent ? <ContentSummaryCards items={summaryCards} /> : null}
 
 
 
@@ -2039,7 +2052,7 @@ const ContentAnalytics = ({
         }}
 
       >
-        {chartType === "line" && lineData.length > 0 && (
+        {chartType === "line" && hasLineChartComponent && lineData.length > 0 && (
           <Box
             component={motion.div}
             key={`${channelId}-${period}-${metric}-${lineData.length}`}
@@ -2292,7 +2305,7 @@ const ContentAnalytics = ({
 
 
 
-        {chartType === "bar" && hasBarData && (
+        {chartType === "bar" && hasResponsiveBarComponent && hasBarData && (
           <Box
             component={motion.div}
             key={`${channelId}-${period}-${metric}-${barPrep.keys.join("|")}`}
@@ -2673,7 +2686,7 @@ const ContentAnalytics = ({
 
             <TableRow>
 
-              <TableCell sx={{ minWidth: isMobileTable ? 220 : 320 }}>
+              <TableCell sx={{ width: videoTitleCellWidth, minWidth: videoTitleCellWidth, maxWidth: videoTitleCellWidth }}>
                 {showAllMode ? "Channel" : "Video"}
               </TableCell>
 
@@ -2840,20 +2853,15 @@ const ContentAnalytics = ({
                   >
 
                     <TableCell
-	
                       sx={{
-                        minWidth: isMobileTable ? 220 : 320,
-	
-	                        borderLeft: seriesColors[r.id]
-	
+                        width: videoTitleCellWidth,
+                        minWidth: videoTitleCellWidth,
+                        maxWidth: videoTitleCellWidth,
+                        borderLeft: seriesColors[r.id]
                           ? `4px solid ${seriesColors[r.id]}`
-
                           : "4px solid transparent",
-
                         pl: 1.5,
-
                       }}
-
                     >
 
 	                      {showAllMode ? (
@@ -2882,19 +2890,21 @@ const ContentAnalytics = ({
                           >
                             {String(r.displayTitle || r.title || r.channelTitle || "?").trim().charAt(0).toUpperCase()}
                           </Avatar>
-	                          <Box sx={{ minWidth: 0, overflow: "hidden" }}>
-                            <Typography
-                              sx={{
-                                display: "block",
-                                fontWeight: 700,
-                                color: "text.primary",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {r.displayTitle || r.title || r.channelTitle}
-                            </Typography>
+	                          <Box sx={{ minWidth: 0, maxWidth: videoTitleCellWidth - 56, overflow: "hidden" }}>
+                            <Tooltip title={r.displayTitle || r.title || r.channelTitle || ""} placement="top" arrow>
+                              <Typography
+                                sx={{
+                                  display: "block",
+                                  fontWeight: 700,
+                                  color: "text.primary",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {r.displayTitle || r.title || r.channelTitle}
+                              </Typography>
+                            </Tooltip>
                             {!showPublishedColumn && (r.published || r.latestPublishedAt) ? (
                               <Typography
                                 sx={{
@@ -2926,7 +2936,9 @@ const ContentAnalytics = ({
 
                           >
 
-                            <VideoThumbnail src={r.thumbnail} duration={r.duration} videoId={r.id} />
+                            {hasVideoThumbnailComponent ? (
+                              <VideoThumbnail src={r.thumbnail} duration={r.duration} videoId={r.id} />
+                            ) : null}
 
                           </a>
 
@@ -2942,20 +2954,22 @@ const ContentAnalytics = ({
 
                           >
 
-	                            <Box sx={{ minWidth: 0, overflow: "hidden" }}>
-                              <Typography
-                                component="span"
-                                sx={{
-                                  display: "block",
-                                  fontWeight: 600,
-                                  color: "inherit",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap",
-                                }}
-                              >
-                                {r.title}
-                              </Typography>
+	                            <Box sx={{ minWidth: 0, maxWidth: videoTitleCellWidth - 96, overflow: "hidden" }}>
+                                <Tooltip title={r.title || ""} placement="top" arrow>
+                                  <Typography
+                                    component="span"
+                                    sx={{
+                                      display: "block",
+                                      fontWeight: 600,
+                                      color: "inherit",
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {r.title}
+                                  </Typography>
+                                </Tooltip>
                               {!showPublishedColumn && (r.published || r.latestPublishedAt) ? (
                                 <Typography
                                   component="span"
@@ -3034,7 +3048,7 @@ const ContentAnalytics = ({
                             },
                           }}
                         >
-                          <TableCell sx={{ pl: 5.5, minWidth: isMobileTable ? 220 : 320 }}>
+                          <TableCell sx={{ pl: 5.5, width: videoTitleCellWidth, minWidth: videoTitleCellWidth, maxWidth: videoTitleCellWidth }}>
                             <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
                               <a
                                 href={getYouTubeVideoHref(videoRow)}
@@ -3042,11 +3056,13 @@ const ContentAnalytics = ({
                                 rel="noreferrer"
                                 style={{ display: "inline-flex" }}
                               >
-                                <VideoThumbnail
-                                  src={videoRow.thumbnail}
-                                  duration={videoRow.duration}
-                                  videoId={videoRow.id}
-                                />
+                                {hasVideoThumbnailComponent ? (
+                                  <VideoThumbnail
+                                    src={videoRow.thumbnail}
+                                    duration={videoRow.duration}
+                                    videoId={videoRow.id}
+                                  />
+                                ) : null}
                               </a>
                               <a
                                 href={getYouTubeVideoHref(videoRow)}
@@ -3054,20 +3070,22 @@ const ContentAnalytics = ({
                                 rel="noreferrer"
                                 style={{ color: "inherit", textDecoration: "none", minWidth: 0 }}
                               >
-                                <Box sx={{ minWidth: 0, overflow: "hidden" }}>
-                                  <Typography
-                                    component="span"
-                                    sx={{
-                                      display: "block",
-                                      fontWeight: 600,
-                                      color: "inherit",
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                      whiteSpace: "nowrap",
-                                    }}
-                                  >
-                                    {videoRow.title}
-                                  </Typography>
+                                <Box sx={{ minWidth: 0, maxWidth: videoTitleCellWidth - 96, overflow: "hidden" }}>
+                                  <Tooltip title={videoRow.title || ""} placement="top" arrow>
+                                    <Typography
+                                      component="span"
+                                      sx={{
+                                        display: "block",
+                                        fontWeight: 600,
+                                        color: "inherit",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      {videoRow.title}
+                                    </Typography>
+                                  </Tooltip>
                                   {!showPublishedColumn && (videoRow.published || videoRow.publishedAt) ? (
                                     <Typography
                                       component="span"
