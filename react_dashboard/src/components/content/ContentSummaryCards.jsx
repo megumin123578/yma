@@ -11,9 +11,9 @@ const ContentSummaryCards = ({ items }) => {
                 display: "grid",
                 gridTemplateColumns: {
                     xs: "repeat(2, minmax(0, 1fr))",
-                    md: "repeat(3, minmax(0, 1fr))",
-                    xl: "repeat(6, minmax(0, 1fr))",
+                    sm: "repeat(auto-fit, minmax(150px, 190px))",
                 },
+                justifyContent: "flex-start",
                 gap: 1.5,
             }}
         >
@@ -22,7 +22,8 @@ const ContentSummaryCards = ({ items }) => {
                     key={item.label}
                     elevation={0}
                     sx={{
-                        p: 1.75,
+                        p: 1.5,
+                        minWidth: 0,
                         borderRadius: 2.5,
                         border: "1px solid",
                         borderColor:

@@ -240,7 +240,10 @@ const normalizeSelectedTableMetrics = (value, contentType = CONTENT_TYPE_ALL) =>
   const defaultMetrics = DEFAULT_TABLE_METRICS_BY_TYPE[contentType] || DEFAULT_TABLE_METRICS_BY_TYPE[CONTENT_TYPE_ALL];
   if (!Array.isArray(value)) return defaultMetrics;
   const allowed = new Set(options.map((item) => item.value));
-  const filtered = value.filter((metricKey) => allowed.has(metricKey));
+  const selected = new Set(value.filter((metricKey) => allowed.has(metricKey)));
+  const filtered = options
+    .map((item) => item.value)
+    .filter((metricKey) => selected.has(metricKey));
   return filtered.length ? Array.from(new Set(filtered)) : defaultMetrics;
 };
 

@@ -87,13 +87,17 @@ const ContentFilters = ({
                     multiple
                     value={selectedTableMetrics}
                     label="Table Metrics"
-                    onChange={(e) =>
-                        setSelectedTableMetrics(
+                    onChange={(e) => {
+                        const rawValue =
                             typeof e.target.value === "string"
                                 ? e.target.value.split(",")
-                                : e.target.value
-                        )
-                    }
+                                : e.target.value;
+                        const selected = new Set(rawValue);
+                        const ordered = tableMetricOptions
+                            .map((metric) => metric.value)
+                            .filter((metricValue) => selected.has(metricValue));
+                        setSelectedTableMetrics(ordered);
+                    }}
                     renderValue={(selected) => `Metrics (${selected.length})`}
                 >
                     {tableMetricOptions.map((metric) => (
