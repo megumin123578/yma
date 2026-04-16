@@ -568,6 +568,11 @@ def save_metadata(videos, account_tag: str, pg_url: str):
                  :card, :ad, :privacy_status, :tags, :ctr)
             ON CONFLICT(video_id)
             DO UPDATE SET
+                account_tag = EXCLUDED.account_tag,
+                title = EXCLUDED.title,
+                thumbnail = EXCLUDED.thumbnail,
+                published_at = EXCLUDED.published_at,
+                duration = EXCLUDED.duration,
                 views = EXCLUDED.views,
                 likes = EXCLUDED.likes,
                 comments = EXCLUDED.comments,

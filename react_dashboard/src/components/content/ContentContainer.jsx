@@ -1339,7 +1339,6 @@ const ContentAnalytics = ({
     for (let i = 0; i < deferredTimeseries.length; i++) {
       allDatesSet.add(bucketTsMap.get(deferredTimeseries[i].bucket));
     }
-    const allDatesSorted = Array.from(allDatesSet).sort((a, b) => a - b).map(t => new Date(t));
 
     if (showAllMode) {
       // Khi có channel đang expand — hiển thị top 5 videos của channel đó
@@ -1399,19 +1398,31 @@ const ContentAnalytics = ({
 
     // 🔴 1. Get Top 5 IDs based on the current metric to avoid rendering 100s of lines
 
-    const timeseriesVideoIds = new Set(
-      deferredTimeseries
-        .map((t) => String(t.videoId || "").trim())
-        .filter(Boolean)
-    );
+    const topRows = [];
+    const seenTopIds = new Set();
+    for (const row of deferredSortedRows) {
+      const id = String(row.id || "").trim();
+      if (!id || seenTopIds.has(id)) continue;
+      seenTopIds.add(id);
+      topRows.push(row);
+      if (topRows.length >= 5) break;
+    }
 
-    const topIds = deferredSortedRows
+    topRows.forEach((row) => {
+      const publishedValue = row.published || row.publishedAt;
+      if (!publishedValue) return;
+      const ts = dayjs(publishedValue).startOf("day").valueOf();
+      if (Number.isFinite(ts)) allDatesSet.add(ts);
+    });
 
-      .map((r) => String(r.id || "").trim())
+    const allDatesSorted = Array.from(allDatesSet)
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b)
+      .map((t) => new Date(t));
 
-      .filter((id, index, source) => source.indexOf(id) === index && timeseriesVideoIds.has(id))
-
-      .slice(0, 5);
+    const topIds = topRows
+      .map((row) => String(row.id || "").trim())
+      .filter(Boolean);
 
 
 
@@ -1421,7 +1432,7 @@ const ContentAnalytics = ({
 
     deferredTimeseries.forEach((t) => {
 
-      const id = t.videoId;
+      const id = String(t.videoId || "").trim();
 
       if (!id || !topIdsSet.has(id)) return; // 🔴 Only process top videos
 
@@ -1443,9 +1454,31 @@ const ContentAnalytics = ({
 
     const titleMap = new Map(deferredRows.map(r => [r.id, r.displayTitle || r.title]));
 
+    topRows.forEach((row) => {
+      const id = String(row.id || "").trim();
+      if (!id || map.has(id)) return;
+      const publishedValue = row.published || row.publishedAt;
+      if (!publishedValue) return;
+      const publishedTs = dayjs(publishedValue).startOf("day").valueOf();
+      if (!Number.isFinite(publishedTs)) return;
+      map.set(
+        id,
+        new Map([
+          [
+            publishedTs,
+            {
+              y: n(row[lineRowMetricKey]),
+              title: row.displayTitle || row.title || id,
+            },
+          ],
+        ])
+      );
+    });
 
 
-    return Array.from(map.entries()).map(([id, dataMap]) => {
+
+    return topIds.filter((id) => map.has(id)).map((id) => {
+      const dataMap = map.get(id);
 
       const videoTitle = titleMap.get(id) || id;
 

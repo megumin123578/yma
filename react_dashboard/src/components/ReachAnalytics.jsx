@@ -467,9 +467,6 @@ const ReachAnalytics = () => {
               <Typography variant="h3" fontWeight={800} sx={{ letterSpacing: "-0.02em" }}>
                 {formatNumber(breakdown.playlist)}
               </Typography>
-              <Typography variant="body2" color="text.secondary" mt={0.5}>
-                Total views from playlist sources within the selected range.
-              </Typography>
             </Box>
 
             <Box sx={{

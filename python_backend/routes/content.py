@@ -27,7 +27,7 @@ from python_backend.module_trafficsource import sanitize_filename  # dùng lại
 router = APIRouter(prefix="/api/content", tags=["content"])
 
 ALL_CHANNELS_VALUE = "__all__"
-CONTENT_CACHE_VERSION = 6
+CONTENT_CACHE_VERSION = 7
 _VIDEO_DAILY_STATS_COLUMNS_CACHE = None
 _CONTENT_CACHE_COMPRESS_MIN_BYTES = 2 * 1024 * 1024
 _CONTENT_CACHE_MAX_JSONB_BYTES = 240 * 1024 * 1024
