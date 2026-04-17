@@ -27,7 +27,7 @@ from python_backend.module_trafficsource import sanitize_filename  # dùng lại
 router = APIRouter(prefix="/api/content", tags=["content"])
 
 ALL_CHANNELS_VALUE = "__all__"
-CONTENT_CACHE_VERSION = 7
+CONTENT_CACHE_VERSION = 10
 _VIDEO_DAILY_STATS_COLUMNS_CACHE = None
 _CONTENT_CACHE_COMPRESS_MIN_BYTES = 2 * 1024 * 1024
 _CONTENT_CACHE_MAX_JSONB_BYTES = 240 * 1024 * 1024
@@ -576,6 +576,9 @@ def _aggregate_supported_video_metrics(video_metrics: dict):
 
 
 def _should_hide_private_content_row(row: dict) -> bool:
+    privacy_status = str(row.get("privacy_status") or row.get("privacyStatus") or "").strip().lower()
+    if privacy_status and privacy_status != "private":
+        return False
     try:
         watch_time_hours = float(
             row.get("watchTimeHours")
@@ -584,7 +587,7 @@ def _should_hide_private_content_row(row: dict) -> bool:
         )
     except Exception:
         watch_time_hours = 0.0
-    return watch_time_hours <= 0
+    return privacy_status == "private" and watch_time_hours <= 0
 
 
 def _filter_private_timeseries_rows(
@@ -945,6 +948,7 @@ def content_list(
         v.thumbnail,
         v.published_at  AS "publishedAt",
         v.duration,
+        v.privacy_status AS "privacyStatus",
 
         COALESCE(MAX(v.views), 0) AS views,
         COALESCE(SUM(s.estimated_minutes) / 60.0, 0) AS "watchTimeHours",
@@ -999,10 +1003,16 @@ def content_list(
         v.thumbnail,
         v.published_at,
         v.duration,
+        v.privacy_status,
         v.ctr,
         v.card_impressions,
         v.ad_impressions
-    HAVING SUM(s.views) > 0 OR MAX(v.views) > 0
+    HAVING SUM(s.views) > 0
+        OR MAX(v.views) > 0
+        OR (
+            v.published_at IS NOT NULL
+            AND v.published_at BETWEEN :start AND :end
+        )
     ORDER BY v.published_at DESC;
 """ 
 
@@ -1512,6 +1522,7 @@ def _prewarm_worker() -> None:
                         v.thumbnail,
                         v.published_at  AS "publishedAt",
                         v.duration,
+                        v.privacy_status AS "privacyStatus",
                         COALESCE(MAX(v.views), 0) AS views,
                         COALESCE(SUM(s.estimated_minutes) / 60.0, 0) AS "watchTimeHours",
                         CASE WHEN COALESCE(SUM(s.views), 0) > 0
@@ -1551,8 +1562,13 @@ def _prewarm_worker() -> None:
                      AND tr.account_tag = v.account_tag
                     WHERE {account_filter_sql}
                     GROUP BY v.video_id, v.account_tag, v.title, v.thumbnail,
-                             v.published_at, v.duration, v.ctr, v.card_impressions, v.ad_impressions
-                    HAVING SUM(s.views) > 0 OR MAX(v.views) > 0
+                             v.published_at, v.duration, v.privacy_status, v.ctr, v.card_impressions, v.ad_impressions
+                    HAVING SUM(s.views) > 0
+                        OR MAX(v.views) > 0
+                        OR (
+                            v.published_at IS NOT NULL
+                            AND v.published_at BETWEEN :start AND :end
+                        )
                     ORDER BY v.published_at DESC;
                 """
                 params = {"start": start, "end": end, **account_filter_params}

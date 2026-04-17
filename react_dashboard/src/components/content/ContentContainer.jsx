@@ -426,7 +426,134 @@ const formatTableMetricValue = (metricKey, value) => {
 
 };
 
+const getContentRowComparableValue = (row, key) => {
+  if (key === "title") return String(row?.displayTitle || row?.title || "").toLowerCase();
+  if (key === "published") {
+    return row?.published ? new Date(row.published).getTime() : Number.NEGATIVE_INFINITY;
+  }
+  if (key === "videoCount") {
+    return Number(row?.videoCount || 0);
+  }
+  const value = row?.[key];
+  if (value === null || value === undefined || value === "") {
+    return Number.NEGATIVE_INFINITY;
+  }
+  if (typeof value === "number") return value;
+  return String(value).toLowerCase();
+};
 
+const sortContentRows = (rows, sortKey, sortDirection) => {
+  const directionFactor = sortDirection === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const aValue = getContentRowComparableValue(a, sortKey);
+    const bValue = getContentRowComparableValue(b, sortKey);
+
+    if (typeof aValue === "string" || typeof bValue === "string") {
+      return String(aValue).localeCompare(String(bValue)) * directionFactor;
+    }
+
+    if (aValue === bValue) return 0;
+    return (aValue - bValue) * directionFactor;
+  });
+};
+
+const buildTopVideoLineData = ({
+  rankedRows = [],
+  titleRows = [],
+  timeseries = [],
+  lineMetricKey,
+  lineRowMetricKey,
+  bucketTsMap,
+  limit = 5,
+}) => {
+  const allDatesSet = new Set();
+  for (let i = 0; i < timeseries.length; i++) {
+    const ts = bucketTsMap.get(timeseries[i].bucket);
+    if (Number.isFinite(ts)) allDatesSet.add(ts);
+  }
+
+  const topRows = [];
+  const seenTopIds = new Set();
+  for (const row of rankedRows) {
+    const id = String(row?.id || row?.videoId || "").trim();
+    if (!id || seenTopIds.has(id)) continue;
+    seenTopIds.add(id);
+    topRows.push(row);
+    if (topRows.length >= limit) break;
+  }
+
+  const topIds = topRows
+    .map((row) => String(row?.id || row?.videoId || "").trim())
+    .filter(Boolean);
+
+  const topIdsSet = new Set(topIds);
+  const map = new Map();
+
+  timeseries.forEach((item) => {
+    const id = String(item?.videoId || item?.id || "").trim();
+    if (!id || !topIdsSet.has(id)) return;
+
+    const title = item?.displayTitle || item?.title || id;
+
+    if (!map.has(id)) {
+      map.set(id, new Map());
+    }
+    const d = bucketTsMap.get(item?.bucket);
+    if (!Number.isFinite(d)) return;
+    map.get(id).set(d, { y: n(item?.[lineMetricKey]), title });
+  });
+
+  const titleMap = new Map(
+    titleRows.map((row) => [
+      String(row?.id || row?.videoId || "").trim(),
+      row?.displayTitle || row?.title,
+    ])
+  );
+
+  topRows.forEach((row) => {
+    const id = String(row?.id || row?.videoId || "").trim();
+    if (!id || map.has(id)) return;
+    const publishedValue = row?.published || row?.publishedAt;
+    if (!publishedValue) return;
+    const publishedTs = dayjs(publishedValue).startOf("day").valueOf();
+    if (!Number.isFinite(publishedTs)) return;
+    allDatesSet.add(publishedTs);
+    map.set(
+      id,
+      new Map([
+        [
+          publishedTs,
+          {
+            y: n(row?.[lineRowMetricKey]),
+            title: row?.displayTitle || row?.title || id,
+          },
+        ],
+      ])
+    );
+  });
+
+  const allDatesSorted = Array.from(allDatesSet)
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => a - b)
+    .map((t) => new Date(t));
+
+  return topIds.filter((id) => map.has(id)).map((id) => {
+    const dataMap = map.get(id);
+    const videoTitle = titleMap.get(id) || id;
+
+    const data = allDatesSorted.map((d) => {
+      const entry = dataMap.get(d.getTime());
+      return {
+        x: d,
+        y: entry ? entry.y : 0,
+        videoId: id,
+        title: videoTitle,
+      };
+    });
+
+    return { id, data };
+  });
+};
 
 const ContentAnalytics = ({
   hideChannelSwitcher = false,
@@ -993,34 +1120,7 @@ const ContentAnalytics = ({
   const tableRows = showAllMode ? allChannelTableRows : deferredRows;
 
   const sortedRows = useMemo(() => {
-    const getComparableValue = (row, key) => {
-      if (key === "title") return String(row.displayTitle || row.title || "").toLowerCase();
-      if (key === "published") {
-        return row.published ? new Date(row.published).getTime() : Number.NEGATIVE_INFINITY;
-      }
-      if (key === "videoCount") {
-        return Number(row.videoCount || 0);
-      }
-      const value = row[key];
-      if (value === null || value === undefined || value === "") {
-        return Number.NEGATIVE_INFINITY;
-      }
-      if (typeof value === "number") return value;
-      return String(value).toLowerCase();
-    };
-
-    const directionFactor = sortDirection === "asc" ? 1 : -1;
-    return [...tableRows].sort((a, b) => {
-      const aValue = getComparableValue(a, sortKey);
-      const bValue = getComparableValue(b, sortKey);
-
-      if (typeof aValue === "string" || typeof bValue === "string") {
-        return String(aValue).localeCompare(String(bValue)) * directionFactor;
-      }
-
-      if (aValue === bValue) return 0;
-      return (aValue - bValue) * directionFactor;
-    });
+    return sortContentRows(tableRows, sortKey, sortDirection);
   }, [sortDirection, sortKey, tableRows]);
   const deferredSortedRows = useDeferredValue(sortedRows);
 
@@ -1270,8 +1370,7 @@ const ContentAnalytics = ({
       const [videosResp, tsResp] = await Promise.all([
         api.post(
           "/api/content/list",
-          { start, end, channelId: channelIdValue, contentType },
-          { params: { skip_enrich: true } }
+          { start, end, channelId: channelIdValue, contentType }
         ),
         api.post("/api/content/timeseries", { start, end, channelId: channelIdValue, contentType }),
       ]);
@@ -1335,49 +1434,20 @@ const ContentAnalytics = ({
     const lineRowMetricKey =
       metric === "estimatedMinutesWatched" ? "watchTimeHours" : getChartMetricRowKey(metric);
 
-    const allDatesSet = new Set();
-    for (let i = 0; i < deferredTimeseries.length; i++) {
-      allDatesSet.add(bucketTsMap.get(deferredTimeseries[i].bucket));
-    }
-
     if (showAllMode) {
       // Khi có channel đang expand — hiển thị top 5 videos của channel đó
       if (expandedChannelId) {
-        const expTs = expandedChannelTimeseries;
         const expVideos = channelVideoCache[expandedChannelId]?.videos ?? [];
-        if (!expTs.length) return [];
-
-        const allExpDatesSet = new Set();
-        for (let i = 0; i < expTs.length; i++) allExpDatesSet.add(bucketTsMap.get(expTs[i].bucket));
-        const allExpDatesSorted = Array.from(allExpDatesSet).sort((a, b) => a - b).map(t => new Date(t));
-
-        const topExpIds = expVideos
-          .slice()
-          .sort((a, b) => (b[lineRowMetricKey] ?? 0) - (a[lineRowMetricKey] ?? 0))
-          .slice(0, 5)
-          .map(v => String(v.id || v.videoId || "").trim())
-          .filter(Boolean);
-        const topExpSet = new Set(topExpIds);
-
-        const expMap = new Map();
-        for (const t of expTs) {
-          const id = String(t.videoId || "").trim();
-          if (!id || !topExpSet.has(id)) continue;
-          if (!expMap.has(id)) expMap.set(id, new Map());
-          const d = bucketTsMap.get(t.bucket);
-          expMap.get(id).set(d, n(t[lineMetricKey]));
-        }
-        const titleMap = new Map(expVideos.map(v => [String(v.id || v.videoId || "").trim(), v.displayTitle || v.title || ""]));
-        return topExpIds
-          .filter(id => expMap.has(id))
-          .map(id => ({
-            id,
-            data: allExpDatesSorted.map(d => ({
-              x: d,
-              y: expMap.get(id).get(d.getTime()) ?? 0,
-              title: titleMap.get(id) || id,
-            })),
-          }));
+        const childSortKey =
+          sortKey === "videoCount" || sortKey === "revenue" ? "views" : sortKey;
+        return buildTopVideoLineData({
+          rankedRows: sortContentRows(expVideos, childSortKey, sortDirection),
+          titleRows: expVideos,
+          timeseries: expandedChannelTimeseries,
+          lineMetricKey,
+          lineRowMetricKey,
+          bucketTsMap,
+        });
       }
 
       // Không có channel expand — hiển thị chart tổng
@@ -1393,6 +1463,16 @@ const ContentAnalytics = ({
         },
       ];
     }
+
+    return buildTopVideoLineData({
+      rankedRows: deferredSortedRows,
+      titleRows: deferredRows,
+      timeseries: deferredTimeseries,
+      lineMetricKey,
+      lineRowMetricKey,
+      bucketTsMap,
+    });
+    /*
 
 
 
@@ -1503,20 +1583,31 @@ const ContentAnalytics = ({
       return { id, data };
 
     });
+    */
 
-  }, [chartType, metric, deferredRows, showAllMode, expandedChannelId, expandedChannelTimeseries, channelVideoCache, deferredSortedRows, deferredTimeseries, allChannelTimeseries, bucketTsMap]);
+  }, [chartType, metric, deferredRows, showAllMode, expandedChannelId, expandedChannelTimeseries, channelVideoCache, deferredSortedRows, deferredTimeseries, allChannelTimeseries, bucketTsMap, sortDirection, sortKey]);
 
 
 
   const lineDateExtent = useMemo(() => {
 
-    if (!lineData.length || !lineData[0].data.length) return { min: "auto", max: "auto" };
+    if (!lineData.length) return { min: "auto", max: "auto" };
 
-    const first = lineData[0].data[0].x;
+    let minTs = null;
+    let maxTs = null;
 
-    const last = lineData[0].data[lineData[0].data.length - 1].x;
+    for (const serie of lineData) {
+      for (const point of serie.data || []) {
+        const value = point?.x instanceof Date ? point.x.getTime() : new Date(point?.x).getTime();
+        if (!Number.isFinite(value)) continue;
+        if (minTs === null || value < minTs) minTs = value;
+        if (maxTs === null || value > maxTs) maxTs = value;
+      }
+    }
 
-    return { min: first, max: last };
+    if (minTs === null || maxTs === null) return { min: "auto", max: "auto" };
+
+    return { min: new Date(minTs), max: new Date(maxTs) };
 
   }, [lineData]);
 
@@ -1526,22 +1617,31 @@ const ContentAnalytics = ({
 
   const xTickValues = useMemo(() => {
 
-    const source = showAllMode ? allChannelTimeseries : deferredTimeseries;
-    if (!source.length) return [];
+    const minTs =
+      lineDateExtent.min instanceof Date ? lineDateExtent.min.getTime() : new Date(lineDateExtent.min).getTime();
+    const maxTs =
+      lineDateExtent.max instanceof Date ? lineDateExtent.max.getTime() : new Date(lineDateExtent.max).getTime();
 
-    const seen = new Set();
-    const allDates = [];
-    for (let i = 0; i < source.length; i++) {
-      const ts = bucketTsMap.get(source[i].bucket);
-      if (ts !== undefined && !seen.has(ts)) {
-        seen.add(ts);
-        allDates.push(new Date(ts));
-      }
+    if (!Number.isFinite(minTs) || !Number.isFinite(maxTs)) return [];
+    if (minTs === maxTs) return [new Date(minTs)];
+
+    const tickCount = 7;
+    const step = (maxTs - minTs) / (tickCount - 1);
+    const ticks = [];
+
+    for (let i = 0; i < tickCount; i++) {
+      const rawTs = i === tickCount - 1 ? maxTs : minTs + step * i;
+      const normalizedTs = dayjs(rawTs).startOf("day").valueOf();
+      if (Number.isFinite(normalizedTs)) ticks.push(new Date(normalizedTs));
     }
-    allDates.sort((a, b) => a - b);
-    return pickTicks(allDates, 7);
 
-  }, [showAllMode, allChannelTimeseries, deferredTimeseries, bucketTsMap]);
+    const uniqueTicks = Array.from(
+      new Map(ticks.map((dateValue) => [dateValue.getTime(), dateValue])).values()
+    ).sort((a, b) => a - b);
+
+    return pickTicks(uniqueTicks, tickCount);
+
+  }, [lineDateExtent]);
 
 
 
@@ -2088,7 +2188,7 @@ const ContentAnalytics = ({
         {chartType === "line" && hasLineChartComponent && lineData.length > 0 && (
           <Box
             component={motion.div}
-            key={`${channelId}-${period}-${metric}-${lineData.length}`}
+            key={`${channelId}-${expandedChannelId || "all"}-${period}-${metric}-${lineData.map((serie) => serie.id).join("|")}`}
             initial={{ opacity: 0, y: 16, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.35, ease: "easeOut" }}
@@ -2838,20 +2938,7 @@ const ContentAnalytics = ({
                     if (!raw.length) return [];
                     const childSortKey =
                       sortKey === "videoCount" || sortKey === "revenue" ? "views" : sortKey;
-                    const dirFactor = sortDirection === "asc" ? 1 : -1;
-                    return [...raw]
-                      .sort((a, b) => {
-                        const av = childSortKey === "title"
-                          ? String(a.displayTitle || a.title || "").toLowerCase()
-                          : (a[childSortKey] ?? Number.NEGATIVE_INFINITY);
-                        const bv = childSortKey === "title"
-                          ? String(b.displayTitle || b.title || "").toLowerCase()
-                          : (b[childSortKey] ?? Number.NEGATIVE_INFINITY);
-                        if (typeof av === "string" || typeof bv === "string")
-                          return String(av).localeCompare(String(bv)) * dirFactor;
-                        return (av - bv) * dirFactor;
-                      })
-                      .slice(0, 5);
+                    return sortContentRows(raw, childSortKey, sortDirection).slice(0, 5);
                   })()
                 : [];
 

@@ -16,6 +16,11 @@ const ContentLineChart = memo(function ContentLineChart({
 }) {
     const isDark = themeMode === "dark";
     const axisTextColor = isDark ? "#e5e7eb" : "#374151";
+    const spansMultipleYears = useMemo(() => {
+        const minYear = dayjs(lineDateExtent?.min).year();
+        const maxYear = dayjs(lineDateExtent?.max).year();
+        return Number.isFinite(minYear) && Number.isFinite(maxYear) && minYear !== maxYear;
+    }, [lineDateExtent]);
 
     const colorFn = useCallback(
         (serie) => seriesColors[serie.id] || "#60a5fa",
@@ -25,7 +30,7 @@ const ContentLineChart = memo(function ContentLineChart({
     const renderBottomTick = useCallback(
         (tick) => {
             const date = tick.value instanceof Date ? tick.value : new Date(tick.value);
-            const label = dayjs(date).format("DD/MM");
+            const label = dayjs(date).format(spansMultipleYears ? "DD/MM/YY" : "DD/MM");
 
             return (
                 <g
@@ -47,7 +52,7 @@ const ContentLineChart = memo(function ContentLineChart({
                 </g>
             );
         },
-        [axisTextColor]
+        [axisTextColor, spansMultipleYears]
     );
 
     const axisBottom = useMemo(
