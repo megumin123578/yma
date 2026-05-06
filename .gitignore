@@ -45,6 +45,7 @@ dist/
 # ---- Project-specific ----
 python_backend/progress/
 python_backend/quota_state.db
+/helper
 
 # ---- Logs ----
 *.log
