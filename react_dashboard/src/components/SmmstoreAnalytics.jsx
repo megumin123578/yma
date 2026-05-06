@@ -216,7 +216,7 @@ const SmmstoreAnalytics = ({ viewMode = "orders", onDataChange }) => {
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
-    if (!token) return;
+    if (!token || !selectedMonth) return;
 
     const fetchCached = async () => {
       setError("");

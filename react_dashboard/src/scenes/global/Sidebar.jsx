@@ -24,6 +24,7 @@ import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import WebhookIcon from "@mui/icons-material/Webhook";
 import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import AutoModeIcon from "@mui/icons-material/AutoMode";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 
 import { UserContext } from "../../context/UserContext";
 import { tokens } from "../../theme";
@@ -533,6 +534,15 @@ const Sidebar = ({
                   isCompact={isDesktopCompact}
                 />
               </SubMenu>
+
+              <Item
+                title="Setting"
+                to="/config"
+                icon={<SettingsOutlinedIcon />}
+                isActive={isActivePath("/config")}
+                onClick={closeOnMobile}
+                isCompact={isDesktopCompact}
+              />
             </Menu>
           </Box>
         </ProSidebar>

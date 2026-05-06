@@ -81,6 +81,11 @@ def _build_telegram_match_alert_lines(
         sender = item.get("from_name") or item.get("from_email") or "-"
         subject = item.get("subject") or "(no subject)"
         lines.append(f"{index}. {escape(str(sender))} | {escape(str(subject))}")
+        snippet = str(item.get("snippet") or "").strip()
+        if snippet:
+            if len(snippet) > 500:
+                snippet = snippet[:500].rstrip() + "..."
+            lines.append(f"<blockquote>{escape(snippet)}</blockquote>")
 
     if len(matched_messages) > 5:
         lines.append(f"... and {len(matched_messages) - 5} more")
