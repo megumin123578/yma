@@ -1,8 +1,64 @@
-python_backend/progress/     
+# ---- Secrets & env ----
 .env
 .env.*
 !.env.example
-/auth.db
-/python_backend/quota_state.db
-.venv/                                                                                                                 
-node_modules/        
+credentials/*.json
+client_secret*.json
+token/
+*.pem
+*.key
+*.crt
+*.p12
+
+# ---- Databases (SQLite + sidecar files) ----
+auth.db
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Virtualenv ----
+.venv/
+venv/
+env/
+
+# ---- Node / Frontend ----
+node_modules/
+build/
+dist/
+.vite/
+.eslintcache
+*.tsbuildinfo
+
+# ---- Project-specific ----
+python_backend/progress/
+python_backend/quota_state.db
+
+# ---- Logs ----
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ---- IDE / Editor ----
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+desktop.ini

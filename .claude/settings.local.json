@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(wc -l \"D:/dev/yt_manage_app/react_dashboard/src/components\"/*)",
-      "Bash(xargs wc:*)"
+      "Bash(xargs wc:*)",
+      "Bash(tasklist)",
+      "Bash(findstr /I \"node code git\")",
+      "Bash(tasklist /FI \"IMAGENAME eq node.exe\")",
+      "Bash(tasklist /FI \"IMAGENAME eq Code.exe\")",
+      "PowerShell(Get-Process *)",
+      "Bash(git *)",
+      "Bash(grep -iE \"\\\\.\\(pyc|log|csv|db|env|key|pem|crt|sqlite\\)$|__pycache__|node_modules|\\\\.DS_Store\")",
+      "Bash(grep -iE \"criptsactivate|debug\\\\.cpython|auth\\\\.db$|reach_like\")",
+      "Bash(grep -i \"\\\\.csv$\")"
     ]
   }
 }
