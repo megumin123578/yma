@@ -8,7 +8,13 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const runtimeBase = getApiBase();
   config.baseURL = runtimeBase;
-  if (typeof config.url === "string" && config.url.startsWith("http://")) {
+  const pageIsHttps =
+    typeof window !== "undefined" && window.location?.protocol === "https:";
+  if (
+    pageIsHttps &&
+    typeof config.url === "string" &&
+    config.url.startsWith("http://")
+  ) {
     config.url = config.url.replace(/^http:\/\//, "https://");
   }
   const token = localStorage.getItem("access_token");

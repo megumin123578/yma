@@ -83,7 +83,7 @@ const RUN_STAGE_LABELS = {
   traffic_source: "Traffic Source",
   geography: "Geography",
   content: "Content",
-  content_full: "Content Full Backfill",
+  full_backfill: "Full Backfill",
   overview: "Overview",
   audience: "Audience",
   reach: "Reach",
@@ -104,7 +104,7 @@ const RUN_MENU_OPTIONS = [
   { value: "revenue", label: "Run revenue", type: "stage" },
   { value: "subscribers", label: "Run subscribers", type: "stage" },
   { value: "incremental", label: "Run incremental", type: "incremental" },
-  { value: "content_full", label: "Run full backfill", type: "stage" },
+  { value: "full_backfill", label: "Run full backfill", type: "stage" },
 ];
 const CREDENTIALS_ACTIVE_TAB_KEY = "credentials.activeTab";
 const channelOptionUncheckedIcon = <CheckBoxOutlineBlankIcon fontSize="small" />;
@@ -1077,7 +1077,7 @@ const CredentialsDialog = ({
       }
       const modeLabel = !normalizedStage
         ? "incremental"
-        : normalizedStage === "content_full"
+        : normalizedStage === "full_backfill"
           ? "full backfill"
           : getStageLabel(normalizedStage).toLowerCase();
       setStatus({
@@ -1130,7 +1130,7 @@ const CredentialsDialog = ({
         },
       }));
       const modeLabel =
-        stage === "content_full"
+        stage === "full_backfill"
           ? "full backfill"
           : getStageLabel(stage).toLowerCase();
       setStatus({ type: "success", message: `Refresh queued (${modeLabel}).` });

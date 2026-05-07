@@ -39,10 +39,14 @@
     "yup": "^1.7.0"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "start": "npm --prefix react_dashboard run dev",
+    "dev": "npm --prefix react_dashboard run dev",
+    "build": "npm --prefix react_dashboard run build",
+    "preview": "npm --prefix react_dashboard run preview",
+    "start:cra": "react-scripts start",
+    "build:cra": "react-scripts build",
+    "test:cra": "react-scripts test",
+    "eject:cra": "react-scripts eject"
   },
   "proxy": "http://127.0.0.1:8000",
   "eslintConfig": {

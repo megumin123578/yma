@@ -31,6 +31,7 @@ import MailMessageDialog from "../../components/MailMessageDialog";
 import { startMailOAuth, uploadCredentials } from "../../services/userService";
 import api from "../../services/api";
 import { formatShortDateTimeInSaigon } from "../../utils/dateTime";
+import { resolveApiAssetUrl } from "../../config";
 
 const MAIL_NOTIFICATION_STORAGE_KEY = "mailMonitor.matchedSeenIds";
 const MAIL_NOTIFICATION_POLL_MS = 30000;
@@ -94,7 +95,7 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
 
   const avatarSrc =
     user?.avatar && !user.avatar.startsWith("blob:")
-      ? `${process.env.REACT_APP_API_URL || ""}${user.avatar}`
+      ? resolveApiAssetUrl(user.avatar)
       : null;
   const seenNotificationIds = new Set(loadStoredIds(notificationStorageKey));
   const unreadCount = notificationItems.filter(

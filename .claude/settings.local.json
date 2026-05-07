@@ -11,7 +11,11 @@
       "Bash(git *)",
       "Bash(grep -iE \"\\\\.\\(pyc|log|csv|db|env|key|pem|crt|sqlite\\)$|__pycache__|node_modules|\\\\.DS_Store\")",
       "Bash(grep -iE \"criptsactivate|debug\\\\.cpython|auth\\\\.db$|reach_like\")",
-      "Bash(grep -i \"\\\\.csv$\")"
+      "Bash(grep -i \"\\\\.csv$\")",
+      "Read(//c/Program Files/PostgreSQL/**)",
+      "Read(//c/Program Files \\(x86\\)/**)",
+      "Bash(netstat -ano)",
+      "Bash(curl -v -m 5 \"http://127.0.0.1:8000/api/revenue?accountTag=test&range=7d\")"
     ]
   }
 }

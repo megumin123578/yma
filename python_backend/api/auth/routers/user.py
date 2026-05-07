@@ -68,7 +68,7 @@ _TOKEN_GROUP_COLORS = [
 _UNASSIGNED_PROJECT_GROUP = "__ungrouped__"
 _ALLOWED_RUN_STAGES = {
     "content",
-    "content_full",
+    "full_backfill",
     "overview",
     "audience",
     "reach",

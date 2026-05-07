@@ -27,6 +27,30 @@ from python_backend.routes.traffic_timeseries import router as ts_router
 from python_backend.routes.youtube import router as youtube_router
 
 
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
+    "http://localhost:3004",
+    "http://localhost:3005",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:3002",
+    "http://127.0.0.1:3003",
+    "http://127.0.0.1:3004",
+    "http://127.0.0.1:3005",
+]
+
+
+def _split_env_list(value: str) -> list[str]:
+    return [item.strip().rstrip("/") for item in str(value or "").split(",") if item.strip()]
+
+
+def _cors_origins() -> list[str]:
+    return _split_env_list(os.getenv("CORS_ORIGINS", "")) or DEFAULT_CORS_ORIGINS
+
+
 def _scheduler_enabled() -> bool:
     value = os.getenv("ENABLE_BACKGROUND_SCHEDULER", "1").strip().lower()
     return value not in {"0", "false", "no", "off"}
@@ -46,22 +70,11 @@ async def lifespan(_: FastAPI):
             stop_scheduler()
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, redirect_slashes=False)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://192.168.1.162:3000",
-        "http://192.168.1.162:3001",
-        "http://192.168.1.162:3002",
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:3002",
-        "https://tuanfmcaa.site",
-        "https://app.tuanfmcaa.site",
-        "http://tuanfmcaa.site",
-        "http://app.tuanfmcaa.site",
-    ],
+    allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

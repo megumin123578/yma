@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 from datetime import datetime
+from typing import Optional
 
 try:
     from python_backend.config import load_env
@@ -408,6 +409,11 @@ def _run_for_credential(cred_file: str) -> None:
         return
 
     stage = (os.getenv("RUN_STAGE") or "").strip().lower()
+    if stage == "full_backfill":
+        _run_full_pipeline(
+            cred_file, account_tag, channel_id, aggregate_run, full_backfill=True
+        )
+        return
     if stage:
         _raise_if_stop_requested(account_tag, "stopped")
         _update_schedule_run(
@@ -420,8 +426,6 @@ def _run_for_credential(cred_file: str) -> None:
 
         if stage == "content":
             process_content(cred_file, channel_id=channel_id)
-        elif stage == "content_full":
-            process_content(cred_file, channel_id=channel_id, force_full_backfill=True)
         elif stage == "overview":
             process_overall(cred_file, channel_id=channel_id)
         elif stage == "audience":
@@ -455,6 +459,19 @@ def _run_for_credential(cred_file: str) -> None:
         write_progress(account_tag, "done", 100, "done", f"Completed {stage}")
         return
 
+    _run_full_pipeline(
+        cred_file, account_tag, channel_id, aggregate_run, full_backfill=False
+    )
+
+
+def _run_full_pipeline(
+    cred_file: str,
+    account_tag: str,
+    channel_id: Optional[str],
+    aggregate_run: bool,
+    *,
+    full_backfill: bool,
+) -> None:
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "traffic_source", 5, "running", "Starting traffic source")
     _update_schedule_run(
@@ -480,7 +497,7 @@ def _run_for_credential(cred_file: str) -> None:
         None if aggregate_run else 8,
         f"Content{f' ({account_tag})' if aggregate_run else ''}",
     )
-    process_content(cred_file, channel_id=channel_id)
+    process_content(cred_file, channel_id=channel_id, force_full_backfill=full_backfill)
 
     _update_schedule_run(
         "running",

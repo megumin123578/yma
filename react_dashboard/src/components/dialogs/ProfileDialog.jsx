@@ -23,6 +23,7 @@ import ChangePasswordDialog from "./ChangePasswordDialog";
 import { logout } from "../../services/authService";
 import { uploadAvatar, updateProfile } from "../../services/userService";
 import { useNavigate } from "react-router-dom";
+import { resolveApiAssetUrl } from "../../config";
 
 const Transition = forwardRef(function Transition(props, ref) {
   return <Slide direction="up" ref={ref} {...props} />;
@@ -175,7 +176,7 @@ const ProfileDialog = ({ open, onClose }) => {
               <Avatar
                 src={
                   previewAvatar
-                    ? `${process.env.REACT_APP_API_URL || ""}${previewAvatar}`
+                    ? resolveApiAssetUrl(previewAvatar)
                     : undefined
                 }
                 sx={{

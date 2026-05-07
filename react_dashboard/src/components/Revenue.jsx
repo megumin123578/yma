@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Stack,
@@ -14,7 +14,6 @@ import {
 } from "@mui/material";
 import { alpha, useTheme } from "@mui/material/styles";
 import {
-  ResponsiveContainer,
   LineChart,
   Line,
   XAxis,
@@ -203,6 +202,22 @@ const RevenueAnalytics = () => {
   const [range, setRange] = useState("28d");
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
+  const chartWrapRef = useRef(null);
+  const [chartWidth, setChartWidth] = useState(0);
+  const CHART_HEIGHT = 340;
+
+  useEffect(() => {
+    const node = chartWrapRef.current;
+    if (!node) return undefined;
+    const update = () => {
+      const w = Math.floor(node.getBoundingClientRect().width);
+      if (w > 0) setChartWidth(w);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     let stop = false;
@@ -587,7 +602,10 @@ const RevenueAnalytics = () => {
         <Typography variant="subtitle1" fontWeight={700} mb={2}>
           Revenue over time
         </Typography>
-        <Box sx={{ height: 340, minHeight: 240 }}>
+        <Box
+          ref={chartWrapRef}
+          sx={{ width: "100%", height: CHART_HEIGHT, minHeight: 240, minWidth: 0 }}
+        >
           {chartData.length === 0 ? (
             <Box
               sx={{
@@ -600,52 +618,55 @@ const RevenueAnalytics = () => {
             >
               No data
             </Box>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-                <CartesianGrid stroke="rgba(148,163,184,0.2)" strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="day"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(value) => dayjs(value).format("DD-MM")}
-                />
-                <YAxis tickFormatter={formatCurrency} />
-                <Tooltip {...chartTooltip} />
-                <Line
-                  type="monotone"
-                  dataKey="estimated"
-                  name="Estimated Revenue"
-                  stroke="#22c55e"
-                  strokeWidth={2}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="ad"
-                  name="Estimated Ad Revenue"
-                  stroke="#38bdf8"
-                  strokeWidth={2}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="gross"
-                  name="Gross Revenue"
-                  stroke="#a855f7"
-                  strokeWidth={2}
-                  dot={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="premium"
-                  name="Premium Revenue"
-                  stroke="#f59e0b"
-                  strokeWidth={2}
-                  dot={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
+          ) : chartWidth > 0 ? (
+            <LineChart
+              width={chartWidth}
+              height={CHART_HEIGHT}
+              data={chartData}
+              margin={{ top: 10, right: 20, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid stroke="rgba(148,163,184,0.2)" strokeDasharray="3 3" />
+              <XAxis
+                dataKey="day"
+                tick={{ fontSize: 11 }}
+                tickFormatter={(value) => dayjs(value).format("DD-MM")}
+              />
+              <YAxis tickFormatter={formatCurrency} />
+              <Tooltip {...chartTooltip} />
+              <Line
+                type="monotone"
+                dataKey="estimated"
+                name="Estimated Revenue"
+                stroke="#22c55e"
+                strokeWidth={2}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="ad"
+                name="Estimated Ad Revenue"
+                stroke="#38bdf8"
+                strokeWidth={2}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="gross"
+                name="Gross Revenue"
+                stroke="#a855f7"
+                strokeWidth={2}
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="premium"
+                name="Premium Revenue"
+                stroke="#f59e0b"
+                strokeWidth={2}
+                dot={false}
+              />
+            </LineChart>
+          ) : null}
         </Box>
       </Paper>
     </Stack>

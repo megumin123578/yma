@@ -129,7 +129,7 @@ def list_channels(
     return {"items": labeled}
 
 
-@router.get("/")
+@router.get("")
 def get_revenue(
     accountTag: str = Query(None),
     range: str = Query("28d"),

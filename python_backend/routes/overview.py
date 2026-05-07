@@ -17,6 +17,7 @@ from python_backend.api.auth.models import LiveCounterSnapshot, SAIGON_TZ, UserC
 from python_backend.module_trafficsource import sanitize_filename
 from python_backend.module_trafficsource import create_token_from_credentials
 from python_backend.module_geography import fetch_geography, load_geography_from_postgres, save_geography_to_postgres
+from python_backend.module_channel_daily import _ensure_channel_daily_table
 from python_backend.token_store import token_exists
 
 router = APIRouter(prefix="/api/video_overview", tags=["video_overview"])
@@ -563,6 +564,12 @@ def subscribers_timeseries(
         return []
     from datetime import date, timedelta
     start_date = date.today() - timedelta(days=days - 1)
+    try:
+        with engine.begin() as conn:
+            _ensure_channel_daily_table(conn)
+    except Exception as e:
+        print("[DB ERROR]", e)
+        return []
     rows = query(
         """
         SELECT day, subscribers_gained, subscribers_lost, views

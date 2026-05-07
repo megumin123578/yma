@@ -118,7 +118,7 @@ export const runTokenStage = async (tokenName, stage) => {
 export const runTokenFullBackfill = async (tokenName) => {
   const res = await api.post(
     `/api/users/tokens/${encodeURIComponent(tokenName)}/run-stage`,
-    { stage: "content_full" }
+    { stage: "full_backfill" }
   );
   return res.data;
 };

@@ -28,6 +28,7 @@ import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 
 import { UserContext } from "../../context/UserContext";
 import { tokens } from "../../theme";
+import { resolveApiAssetUrl } from "../../config";
 
 const Item = ({ title, to, icon, isActive, onClick, isCompact = false }) => (
   <MenuItem
@@ -118,8 +119,8 @@ const Sidebar = ({
 
   const sidebarAvatarSrc =
     user?.avatar && !user.avatar.startsWith("blob:")
-      ? `${process.env.REACT_APP_API_URL || ""}${user.avatar}`
-      : "../../assets/user.jpg";
+      ? resolveApiAssetUrl(user.avatar)
+      : "/assets/user.jpg";
 
   const subMenuTitleSx = {
     fontSize: "0.82rem",

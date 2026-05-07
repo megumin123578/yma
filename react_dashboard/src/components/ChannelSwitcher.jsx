@@ -1038,10 +1038,12 @@ const ChannelSwitcher = ({
         )}
         renderOption={(props, option) => {
           const optionIsHidden = isOptionHidden(option);
+          const { key, ...optionProps } = props;
           return (
             <Box
               component="li"
-              {...props}
+              key={key}
+              {...optionProps}
               sx={{
                 display: "flex",
                 alignItems: "center",

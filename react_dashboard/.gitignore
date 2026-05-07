@@ -10,6 +10,7 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
@@ -28,6 +29,7 @@ src/api/sheet.json
 credentials/
 .env
 .env.*
+!.env.example
 
 # python cache
 __pycache__/
