@@ -16,7 +16,9 @@
       "Read(//c/Program Files \\(x86\\)/**)",
       "Bash(netstat -ano)",
       "Bash(curl -v -m 5 \"http://127.0.0.1:8000/api/revenue?accountTag=test&range=7d\")",
-      "Bash(xargs grep -l \"schedule.*run\\\\|ScheduleRun\\\\|listScheduleRuns\")"
+      "Bash(xargs grep -l \"schedule.*run\\\\|ScheduleRun\\\\|listScheduleRuns\")",
+      "Bash(npm install *)",
+      "Bash(npm run *)"
     ]
   }
 }

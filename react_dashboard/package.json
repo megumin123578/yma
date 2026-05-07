@@ -41,6 +41,7 @@
     "start": "vite",
     "dev": "vite",
     "build": "vite build",
+    "analyze": "vite build --mode analyze",
     "preview": "vite preview"
   },
   "browserslist": {
@@ -58,6 +59,7 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^6.0.1",
     "local-ssl-proxy": "^2.0.5",
+    "rollup-plugin-visualizer": "^7.0.1",
     "vite": "^8.0.10",
     "vite-plugin-mkcert": "^1.17.8"
   }

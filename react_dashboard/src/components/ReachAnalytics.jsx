@@ -445,8 +445,8 @@ const ReachAnalytics = () => {
           </Box>
 
           {/* Playlist Traffic Card */}
-          <Box sx={{ ...glassSx, p: 3, display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-            <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+          <Box sx={{ ...glassSx, p: 3, display: "flex", flexDirection: "column" }}>
+            <Stack direction="row" spacing={1} alignItems="center" mb={2}>
               <Box
                 sx={{
                   p: 0.8,
@@ -463,25 +463,12 @@ const ReachAnalytics = () => {
               </Typography>
             </Stack>
 
-            <Box mt={2} mb={1}>
+            <Box mt={1} mb={1}>
               <Typography variant="h3" fontWeight={800} sx={{ letterSpacing: "-0.02em" }}>
                 {formatNumber(breakdown.playlist)}
               </Typography>
             </Box>
 
-            <Box sx={{
-              mt: "auto",
-              pt: 2,
-              borderTop: "1px dashed",
-              borderColor: theme.palette.divider
-            }}>
-              <Box display="flex" alignItems="center" gap={1}>
-                <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: isDark ? "#f472b6" : "#ec4899" }} />
-                <Typography variant="caption" fontWeight={600} color="text.secondary">
-                  PLAYLIST TRAFFIC SOURCE
-                </Typography>
-              </Box>
-            </Box>
           </Box>
 
           {/* Suggested vs Browse Card */}
