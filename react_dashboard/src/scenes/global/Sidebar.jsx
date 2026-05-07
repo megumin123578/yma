@@ -25,6 +25,11 @@ import WebhookIcon from "@mui/icons-material/Webhook";
 import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import AutoModeIcon from "@mui/icons-material/AutoMode";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
+import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
+import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
+import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
+import SmartDisplayOutlinedIcon from "@mui/icons-material/SmartDisplayOutlined";
 
 import { UserContext } from "../../context/UserContext";
 import { tokens } from "../../theme";
@@ -112,6 +117,15 @@ const Sidebar = ({
     "/smmstore_analytics",
     "/mail_monitor",
   ]);
+  const defaultOpenSettings = inGroup([
+    "/config",
+    "/config/channels",
+    "/config/structure",
+    "/config/schedule",
+    "/config/logs",
+    "/config/users",
+  ]);
+  const isAdmin = !!user?.is_admin;
 
   const closeOnMobile = () => {
     if (isMobile) setIsMobileSidebarOpen?.(false);
@@ -536,14 +550,62 @@ const Sidebar = ({
                 />
               </SubMenu>
 
-              <Item
-                title="Setting"
-                to="/config"
+              <SubMenu
+                label={<Typography sx={subMenuTitleSx}>Setting</Typography>}
                 icon={<SettingsOutlinedIcon />}
-                isActive={isActivePath("/config")}
-                onClick={closeOnMobile}
-                isCompact={isDesktopCompact}
-              />
+                active={defaultOpenSettings}
+                defaultOpen={defaultOpenSettings}
+                title={isDesktopCompact ? "Setting" : undefined}
+              >
+                <Item
+                  title="Manage Channel"
+                  to="/config/channels"
+                  icon={<SmartDisplayOutlinedIcon />}
+                  isActive={isActivePath("/config/channels")}
+                  onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
+                />
+                {isAdmin && (
+                  <Item
+                    title="Structure"
+                    to="/config/structure"
+                    icon={<AccountTreeOutlinedIcon />}
+                    isActive={isActivePath("/config/structure")}
+                    onClick={closeOnMobile}
+                    isCompact={isDesktopCompact}
+                  />
+                )}
+                {isAdmin && (
+                  <Item
+                    title="Schedule"
+                    to="/config/schedule"
+                    icon={<ScheduleOutlinedIcon />}
+                    isActive={isActivePath("/config/schedule")}
+                    onClick={closeOnMobile}
+                    isCompact={isDesktopCompact}
+                  />
+                )}
+                {isAdmin && (
+                  <Item
+                    title="Run logs"
+                    to="/config/logs"
+                    icon={<HistoryOutlinedIcon />}
+                    isActive={isActivePath("/config/logs")}
+                    onClick={closeOnMobile}
+                    isCompact={isDesktopCompact}
+                  />
+                )}
+                {isAdmin && (
+                  <Item
+                    title="Manage User"
+                    to="/config/users"
+                    icon={<PeopleAltOutlinedIcon />}
+                    isActive={isActivePath("/config/users")}
+                    onClick={closeOnMobile}
+                    isCompact={isDesktopCompact}
+                  />
+                )}
+              </SubMenu>
             </Menu>
           </Box>
         </ProSidebar>

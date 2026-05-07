@@ -177,6 +177,10 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
       />
       <Route
         path="/config"
+        element={<Navigate to="/config/channels" replace />}
+      />
+      <Route
+        path="/config/:section"
         element={
           <ProtectedRoute user={user} loading={loading}>
             <ConfigPage />

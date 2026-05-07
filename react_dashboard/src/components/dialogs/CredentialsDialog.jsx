@@ -133,6 +133,7 @@ const CredentialsDialog = ({
   inline = false,
   defaultTokenView = "list",
   onDataChanged,
+  forceTab = "",
 }) => {
   const theme = useTheme();
   const { user } = useContext(UserContext);
@@ -156,6 +157,7 @@ const CredentialsDialog = ({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState("");
   const [activeTab, setActiveTab] = useState(() => {
+    if (forceTab) return forceTab;
     try {
       return localStorage.getItem(CREDENTIALS_ACTIVE_TAB_KEY) || "add";
     } catch {
@@ -545,6 +547,7 @@ const CredentialsDialog = ({
       setAuthUrl("");
       setOauthState("");
       setActiveTab(() => {
+        if (forceTab) return forceTab;
         try {
           return localStorage.getItem(CREDENTIALS_ACTIVE_TAB_KEY) || "add";
         } catch {
@@ -568,7 +571,12 @@ const CredentialsDialog = ({
         setRunsError("");
       }
     }
-  }, [open, loadSchedules, loadTokenGroups, loadTokenProjects, loadTokens, defaultTokenView, isAdmin]);
+  }, [open, loadSchedules, loadTokenGroups, loadTokenProjects, loadTokens, defaultTokenView, isAdmin, forceTab]);
+
+  useEffect(() => {
+    if (!forceTab) return;
+    setActiveTab(forceTab);
+  }, [forceTab]);
 
   useEffect(() => {
     if (
@@ -581,12 +589,13 @@ const CredentialsDialog = ({
   }, [activeTab, isAdmin]);
 
   useEffect(() => {
+    if (forceTab) return;
     try {
       localStorage.setItem(CREDENTIALS_ACTIVE_TAB_KEY, activeTab);
     } catch {
       // ignore storage errors
     }
-  }, [activeTab]);
+  }, [activeTab, forceTab]);
 
   useEffect(() => {
     if (isAdmin && activeTab === "schedule") {
@@ -1419,26 +1428,28 @@ const CredentialsDialog = ({
       </Button>
       {layout === "card" ? (
         <Tooltip title="Delete this token">
-          <IconButton
-            size="small"
-            onClick={(event) => {
-              event.stopPropagation();
-              requestDeleteToken(tokenName);
-            }}
-            disabled={!isOwned}
-            sx={{
-              p: 0.35,
-              borderRadius: 999,
-              color: "#ef4444",
-              bgcolor: "rgba(239,68,68,0.12)",
-              "&:hover": {
-                bgcolor: "rgba(239,68,68,0.18)",
-              },
-            }}
-            aria-label={`Delete ${displayName}`}
-          >
-            <DeleteOutlineIcon fontSize="small" />
-          </IconButton>
+          <span style={{ display: "inline-flex" }}>
+            <IconButton
+              size="small"
+              onClick={(event) => {
+                event.stopPropagation();
+                requestDeleteToken(tokenName);
+              }}
+              disabled={!isOwned}
+              sx={{
+                p: 0.35,
+                borderRadius: 999,
+                color: "#ef4444",
+                bgcolor: "rgba(239,68,68,0.12)",
+                "&:hover": {
+                  bgcolor: "rgba(239,68,68,0.18)",
+                },
+              }}
+              aria-label={`Delete ${displayName}`}
+            >
+              <DeleteOutlineIcon fontSize="small" />
+            </IconButton>
+          </span>
         </Tooltip>
       ) : (
         <Button
@@ -1678,45 +1689,49 @@ const CredentialsDialog = ({
               
               <Box display="flex" alignItems="center" gap={0.5}>
                 <Tooltip title={isHidden ? "Hidden. Click to show." : "Visible. Click to hide."}>
-                  <IconButton
-                    size="small"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleToggleToken(tokenName, isHidden);
-                    }}
-                    disabled={!isOwned}
-                    sx={{
-                      p: 0.5,
-                      bgcolor: isHidden ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
-                      color: isHidden ? "#ef4444" : "#22c55e",
-                      "&:hover": {
-                        bgcolor: isHidden ? "rgba(239,68,68,0.18)" : "rgba(34,197,94,0.18)",
-                      },
-                    }}
-                    aria-label={isHidden ? "Show token" : "Hide token"}
-                  >
-                    {isHidden ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
-                  </IconButton>
+                  <span style={{ display: "inline-flex" }}>
+                    <IconButton
+                      size="small"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleToggleToken(tokenName, isHidden);
+                      }}
+                      disabled={!isOwned}
+                      sx={{
+                        p: 0.5,
+                        bgcolor: isHidden ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.1)",
+                        color: isHidden ? "#ef4444" : "#22c55e",
+                        "&:hover": {
+                          bgcolor: isHidden ? "rgba(239,68,68,0.18)" : "rgba(34,197,94,0.18)",
+                        },
+                      }}
+                      aria-label={isHidden ? "Show token" : "Hide token"}
+                    >
+                      {isHidden ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+                    </IconButton>
+                  </span>
                 </Tooltip>
                 <Tooltip title="Delete this token">
-                  <IconButton
-                    size="small"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      requestDeleteToken(tokenName);
-                    }}
-                    disabled={!isOwned}
-                    sx={{
-                      p: 0.5,
-                      color: "#ef4444",
-                      "&:hover": {
-                        bgcolor: "rgba(239,68,68,0.12)",
-                      },
-                    }}
-                    aria-label={`Delete ${displayName}`}
-                  >
-                    <DeleteOutlineIcon fontSize="small" />
-                  </IconButton>
+                  <span style={{ display: "inline-flex" }}>
+                    <IconButton
+                      size="small"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        requestDeleteToken(tokenName);
+                      }}
+                      disabled={!isOwned}
+                      sx={{
+                        p: 0.5,
+                        color: "#ef4444",
+                        "&:hover": {
+                          bgcolor: "rgba(239,68,68,0.12)",
+                        },
+                      }}
+                      aria-label={`Delete ${displayName}`}
+                    >
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </span>
                 </Tooltip>
               </Box>
             </Box>
@@ -1970,6 +1985,7 @@ const CredentialsDialog = ({
     <Shell {...shellProps}>
       {!inline && <DialogTitle sx={{ pb: 0.5, position: "relative", zIndex: 1 }} />}
       <DialogContent sx={{ position: "relative", zIndex: 1, minHeight: { xs: "calc(100vh - 140px)", sm: 520 }, display: "flex", flexDirection: "column", overflow: "hidden", px: { xs: 1.5, sm: 3 } }}>
+          {!forceTab && (
           <Tabs
             value={activeTab}
             onChange={(_, next) => setActiveTab(next)}
@@ -2026,6 +2042,7 @@ const CredentialsDialog = ({
             {isAdmin && <Tab value="logs" label="Run logs" />}
             {isAdmin && <Tab value="manage-user" label="Manage User" />}
           </Tabs>
+          )}
 
         <Box display="flex" flexDirection="column" gap={2} flex={1} sx={{ overflowY: "auto", pr: 1.5, py: 0.5 }}>
             {activeTab === "add" ? (
@@ -2053,25 +2070,27 @@ const CredentialsDialog = ({
                   </Typography>
 
                   <Tooltip title="Start Google sign-in. The app will auto-select the connected channel and begin syncing.">
-                    <Button
-                      variant="contained"
-                      color="success"
-                      startIcon={<AddIcon />}
-                      onClick={handleStartOAuth}
-                      disabled={uploading}
-                      sx={{
-                        ...shimmerSx,
-                        bgcolor: isDark ? "#2b8a7b" : undefined,
-                        color: isDark ? "#e9edf2" : undefined,
-                        transition: "all 180ms ease",
-                        "&:hover": {
-                          bgcolor: isDark ? "#247468" : undefined,
-                          transform: "translateY(-1px)",
-                        },
-                      }}
-                    >
-                      Add Channel
-                    </Button>
+                    <span style={{ display: "inline-flex" }}>
+                      <Button
+                        variant="contained"
+                        color="success"
+                        startIcon={<AddIcon />}
+                        onClick={handleStartOAuth}
+                        disabled={uploading}
+                        sx={{
+                          ...shimmerSx,
+                          bgcolor: isDark ? "#2b8a7b" : undefined,
+                          color: isDark ? "#e9edf2" : undefined,
+                          transition: "all 180ms ease",
+                          "&:hover": {
+                            bgcolor: isDark ? "#247468" : undefined,
+                            transform: "translateY(-1px)",
+                          },
+                        }}
+                      >
+                        Add Channel
+                      </Button>
+                    </span>
                   </Tooltip>
                 </Box>
 
@@ -2184,58 +2203,64 @@ const CredentialsDialog = ({
                     </Tooltip>
                     <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
                       <Tooltip title={runSelectedMode ? "Exit selected-run mode." : "Choose specific visible channels to run."}>
-                        <Button
-                          size="small"
-                          variant={runSelectedMode ? "contained" : "outlined"}
-                          startIcon={<CheckIcon fontSize="small" />}
-                          onClick={handleToggleRunSelectedMode}
-                          disabled={loadingTokens || runningSelected || visibleOwnedTokenNames.length === 0}
-                          sx={{
-                            ...shimmerSx,
-                            borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
-                            color: runSelectedMode ? "#fff" : isDark ? "#e9edf2" : undefined,
-                            bgcolor: runSelectedMode ? accent : undefined,
-                            "&:hover": runSelectedMode
-                              ? {
-                                  bgcolor: accent,
-                                  opacity: 0.92,
-                                }
-                              : undefined,
-                          }}
-                        >
-                          Run selected
-                        </Button>
+                        <span style={{ display: "inline-flex" }}>
+                          <Button
+                            size="small"
+                            variant={runSelectedMode ? "contained" : "outlined"}
+                            startIcon={<CheckIcon fontSize="small" />}
+                            onClick={handleToggleRunSelectedMode}
+                            disabled={loadingTokens || runningSelected || visibleOwnedTokenNames.length === 0}
+                            sx={{
+                              ...shimmerSx,
+                              borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
+                              color: runSelectedMode ? "#fff" : isDark ? "#e9edf2" : undefined,
+                              bgcolor: runSelectedMode ? accent : undefined,
+                              "&:hover": runSelectedMode
+                                ? {
+                                    bgcolor: accent,
+                                    opacity: 0.92,
+                                  }
+                                : undefined,
+                            }}
+                          >
+                            Run selected
+                          </Button>
+                        </span>
                       </Tooltip>
                       <Tooltip title="Choose how to run all visible channels.">
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          startIcon={<PlayArrowIcon fontSize="small" />}
-                          endIcon={<ExpandMoreIcon fontSize="small" />}
-                          onClick={openRunAllMenu}
-                          disabled={loadingTokens || runningAll || visibleTokenCount === 0}
-                          sx={{
-                            ...shimmerSx,
-                            borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
-                            color: isDark ? "#e9edf2" : undefined,
-                          }}
-                        >
-                          Run all
-                        </Button>
+                        <span style={{ display: "inline-flex" }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<PlayArrowIcon fontSize="small" />}
+                            endIcon={<ExpandMoreIcon fontSize="small" />}
+                            onClick={openRunAllMenu}
+                            disabled={loadingTokens || runningAll || visibleTokenCount === 0}
+                            sx={{
+                              ...shimmerSx,
+                              borderColor: isDark ? "rgba(255,255,255,0.2)" : undefined,
+                              color: isDark ? "#e9edf2" : undefined,
+                            }}
+                          >
+                            Run all
+                          </Button>
+                        </span>
                       </Tooltip>
                       <Tooltip title="Reload the token list from the server.">
-                        <Button
-                          size="small"
-                          onClick={loadTokens}
-                          disabled={loadingTokens}
-                          sx={{
-                            ...shimmerSx,
-                            minWidth: 0,
-                            color: isDark ? "#9fe3d6" : undefined,
-                          }}
-                        >
-                          <RefreshIcon fontSize="small" />
-                        </Button>
+                        <span style={{ display: "inline-flex" }}>
+                          <Button
+                            size="small"
+                            onClick={loadTokens}
+                            disabled={loadingTokens}
+                            sx={{
+                              ...shimmerSx,
+                              minWidth: 0,
+                              color: isDark ? "#9fe3d6" : undefined,
+                            }}
+                          >
+                            <RefreshIcon fontSize="small" />
+                          </Button>
+                        </span>
                       </Tooltip>
                     </Box>
                   </Box>
