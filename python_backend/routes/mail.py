@@ -10,8 +10,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional
-from python_backend.api.auth.database import get_db
+from python_backend.api.auth.database import get_db, SessionLocal
 from python_backend.api.auth.models import MailAccount, MailOAuthState, User
+from python_backend.sse_utils import poll_stream, sse_response
 from python_backend.mail_gmail_api import (
     MAIL_OAUTH_TTL_MINUTES,
     build_mail_oauth_flow,
@@ -283,6 +284,48 @@ def get_mail_oauth_state(
     return _mail_oauth_state_response(row)
 
 
+def _fetch_mail_oauth_state_snapshot(state: str, user_id: int, is_admin: bool) -> dict:
+    db = SessionLocal()
+    try:
+        row = db.query(MailOAuthState).filter(MailOAuthState.state == state).first()
+        if not row:
+            return {"ready": False, "status": "missing"}
+        if row.user_id != user_id and not is_admin:
+            return {"ready": False, "status": "missing"}
+        if row.expires_at and row.expires_at < datetime.utcnow() and row.status == "pending":
+            row.status = "expired"
+            row.completed_at = datetime.utcnow()
+            db.add(row)
+            db.commit()
+            return {"ready": False, "status": "expired"}
+        return _mail_oauth_state_response(row)
+    finally:
+        db.close()
+
+
+@router.get("/accounts/oauth/state/{state}/stream")
+async def stream_mail_oauth_state(
+    state: str,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    user_id = getattr(current_user, "id", None)
+    is_admin = _is_admin_user(current_user)
+
+    def is_terminal(snap: dict) -> bool:
+        return snap.get("status") in ("completed", "expired", "failed", "missing")
+
+    return sse_response(
+        poll_stream(
+            request,
+            lambda: _fetch_mail_oauth_state_snapshot(state, user_id, is_admin),
+            interval_seconds=2.0,
+            heartbeat_seconds=20.0,
+            is_terminal=is_terminal,
+        )
+    )
+
+
 @router.patch("/accounts/{account_id}")
 def update_mail_account(
     account_id: int,
@@ -371,6 +414,66 @@ def mail_messages(
         limit=limit,
         offset=offset,
         per_account_limit=per_account_limit,
+    )
+
+
+def _fetch_mail_messages_snapshot(
+    user_id: int,
+    account_email: Optional[str],
+    mailbox: Optional[str],
+    status_value: Optional[str],
+    search: Optional[str],
+    limit: int,
+    offset: int,
+    per_account_limit: Optional[int],
+) -> dict:
+    db = SessionLocal()
+    try:
+        account_emails = _list_mail_account_emails_for_user(db, user_id)
+        return list_mail_messages(
+            account_email=account_email,
+            account_emails=account_emails,
+            mailbox=mailbox,
+            status=status_value,
+            search=search,
+            limit=limit,
+            offset=offset,
+            per_account_limit=per_account_limit,
+        )
+    finally:
+        db.close()
+
+
+@router.get("/messages/stream")
+async def stream_mail_messages(
+    request: Request,
+    account_email: Optional[str] = Query(default=None),
+    mailbox: Optional[str] = Query(default=None),
+    status_value: Optional[str] = Query(default=None, alias="status"),
+    search: Optional[str] = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    per_account_limit: Optional[int] = Query(default=None, ge=1, le=500),
+    current_user: User = Depends(get_current_user),
+):
+    user_id = getattr(current_user, "id", None)
+
+    return sse_response(
+        poll_stream(
+            request,
+            lambda: _fetch_mail_messages_snapshot(
+                user_id,
+                account_email,
+                mailbox,
+                status_value,
+                search,
+                limit,
+                offset,
+                per_account_limit,
+            ),
+            interval_seconds=30.0,
+            heartbeat_seconds=25.0,
+        )
     )
 
 

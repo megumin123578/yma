@@ -11,15 +11,13 @@ import {
   Paper,
 } from "@mui/material";
 import { motion, useScroll, useSpring } from "framer-motion";
-import {
-  TrendingUp,
-  BarChart,
-  People,
-  MonetizationOn,
-  Security,
-  Speed,
-  ArrowForward,
-} from "@mui/icons-material";
+import TrendingUp from "@mui/icons-material/TrendingUp";
+import BarChart from "@mui/icons-material/BarChart";
+import People from "@mui/icons-material/People";
+import MonetizationOn from "@mui/icons-material/MonetizationOn";
+import Security from "@mui/icons-material/Security";
+import Speed from "@mui/icons-material/Speed";
+import ArrowForward from "@mui/icons-material/ArrowForward";
 
 const FeatureCard = ({ icon: Icon, title, description, delay }) => {
   const theme = useTheme();

@@ -33,12 +33,12 @@ import EastRoundedIcon from "@mui/icons-material/EastRounded";
 import { useSearchParams } from "react-router-dom";
 
 import api from "../services/api";
+import { subscribeSSE } from "../services/sse";
 import { startMailOAuth } from "../services/userService";
 import { UserContext } from "../context/UserContext";
 import { formatDateTimeInSaigon, formatTimeInSaigon } from "../utils/dateTime";
 
 const MAILS_PER_PAGE = 50;
-const MAIL_OAUTH_POLL_MS = 2000;
 const MAIL_MONITOR_STORAGE_KEY = "mailMonitor.uiState";
 const DEFAULT_MAIL_FILTERS = {
   accountEmail: "",
@@ -568,62 +568,91 @@ const MailMonitor = () => {
 
   useEffect(() => {
     if (loading) return undefined;
-    const timer = setInterval(() => loadData(), 45000);
-    return () => clearInterval(timer);
-  }, [loadData, loading]);
+
+    const params = new URLSearchParams();
+    if (filters.accountEmail) params.set("account_email", filters.accountEmail);
+    if (filters.mailbox) params.set("mailbox", filters.mailbox);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.search) params.set("search", filters.search);
+    params.set("limit", String(MAILS_PER_PAGE));
+    params.set("offset", String(mailPage * MAILS_PER_PAGE));
+
+    const unsubscribe = subscribeSSE(`/api/mail/messages/stream?${params.toString()}`, {
+      onMessage: ({ event, data }) => {
+        if (event === "error" || !data) return;
+        setMessages(data);
+      },
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [
+    loading,
+    filters.accountEmail,
+    filters.mailbox,
+    filters.status,
+    filters.search,
+    mailPage,
+  ]);
 
   useEffect(() => {
     if (!mailOAuthState || loading) return undefined;
 
-    let stopped = false;
+    let resolved = false;
 
-    const poll = async () => {
-      try {
-        const response = await api.get(`/api/mail/accounts/oauth/state/${encodeURIComponent(mailOAuthState)}`);
-        const data = response.data || {};
-        if (data.ready || data.status === "completed") {
-          setMailOAuthState("");
-          setMailOAuthStatus({
-            type: "success",
-            message: data.account_email ? `Gmail connected: ${data.account_email}` : "Gmail connected.",
-          });
-          await loadData();
-          return true;
-        }
-        if (data.status === "failed" || data.status === "expired") {
+    const unsubscribe = subscribeSSE(
+      `/api/mail/accounts/oauth/state/${encodeURIComponent(mailOAuthState)}/stream`,
+      {
+        onMessage: async ({ event, data }) => {
+          if (resolved || !data) return;
+          if (event === "error") {
+            resolved = true;
+            setMailOAuthState("");
+            setMailOAuthStatus({
+              type: "error",
+              message: data?.error || "Failed to check Gmail authorization.",
+            });
+            unsubscribe();
+            return;
+          }
+          if (data.ready || data.status === "completed") {
+            resolved = true;
+            setMailOAuthState("");
+            setMailOAuthStatus({
+              type: "success",
+              message: data.account_email
+                ? `Gmail connected: ${data.account_email}`
+                : "Gmail connected.",
+            });
+            await loadData();
+            unsubscribe();
+            return;
+          }
+          if (data.status === "failed" || data.status === "expired") {
+            resolved = true;
+            setMailOAuthState("");
+            setMailOAuthStatus({
+              type: "error",
+              message: data.error_message || "Gmail authorization did not complete.",
+            });
+            unsubscribe();
+          }
+        },
+        onError: () => {
+          if (resolved) return;
+          resolved = true;
           setMailOAuthState("");
           setMailOAuthStatus({
             type: "error",
-            message: data.error_message || "Gmail authorization did not complete.",
+            message: "Failed to check Gmail authorization.",
           });
-          return true;
-        }
-      } catch (err) {
-        setMailOAuthState("");
-        setMailOAuthStatus({
-          type: "error",
-          message: err?.response?.data?.detail || err?.message || "Failed to check Gmail authorization.",
-        });
-        return true;
+        },
       }
-      return false;
-    };
-
-    const intervalId = setInterval(async () => {
-      if (!stopped) {
-        const done = await poll();
-        if (done) {
-          stopped = true;
-          clearInterval(intervalId);
-        }
-      }
-    }, MAIL_OAUTH_POLL_MS);
-
-    poll();
+    );
 
     return () => {
-      stopped = true;
-      clearInterval(intervalId);
+      unsubscribe();
     };
   }, [loadData, loading, mailOAuthState]);
 

@@ -8,7 +8,6 @@ import {
 import { useCallback, useMemo, useState } from "react";
 import Header from "../../components/Header";
 import SmmstoreAnalytics from "../../components/SmmstoreAnalytics";
-import * as XLSX from "xlsx";
 
 const SmmstoreAnalyticsScene = () => {
   const [viewMode, setViewMode] = useState("orders");
@@ -83,8 +82,9 @@ const SmmstoreAnalyticsScene = () => {
     );
   }, [analyticsData?.month, currentColumns, currentRows, downloadFile, formatMonthLabel, viewMode]);
 
-  const toExcel = useCallback(() => {
+  const toExcel = useCallback(async () => {
     if (!currentRows.length) return;
+    const XLSX = await import("xlsx");
     const aoa = [
       currentColumns,
       ...currentRows.map((row) =>

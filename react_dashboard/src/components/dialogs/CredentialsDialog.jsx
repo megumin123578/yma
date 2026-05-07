@@ -72,6 +72,7 @@ import {
   stopScheduleRun,
   resumeScheduleRun,
 } from "../../services/userService";
+import { subscribeSSE } from "../../services/sse";
 import { UserContext } from "../../context/UserContext";
 import ManageUserRequests from "../ManageUserRequests";
 
@@ -604,41 +605,32 @@ const CredentialsDialog = ({
   }, [activeTab, isAdmin, loadSchedules]);
 
   useEffect(() => {
-    if (!open || !isAdmin || activeTab !== "logs") return;
-    let canceled = false;
+    if (!open || !isAdmin || activeTab !== "logs") return undefined;
 
-    const loadRuns = async () => {
-      setLoadingRuns(true);
-      setRunsError("");
-      try {
-        const data = await listScheduleRuns(10);
-        if (!canceled) {
-          setScheduleRuns(
-            (data?.items || []).map((run) => ({
-              ...run,
-              status: normalizeRunStatus(run.status),
-            }))
-          );
-        }
-      } catch (err) {
-        if (!canceled) {
+    setLoadingRuns(true);
+    setRunsError("");
+
+    const unsubscribe = subscribeSSE("/api/users/schedules/runs/stream?limit=10", {
+      onMessage: ({ event, data }) => {
+        if (event === "error") {
           setScheduleRuns([]);
-          const msg = err?.response?.data?.detail || "Permission Denied";
-          setRunsError(msg);
-        }
-      } finally {
-        if (!canceled) {
+          setRunsError(data?.error || "Permission Denied");
           setLoadingRuns(false);
+          return;
         }
-      }
-    };
-
-    loadRuns();
-    const intervalId = setInterval(loadRuns, 5000);
+        const items = Array.isArray(data?.items) ? data.items : [];
+        setScheduleRuns(
+          items.map((run) => ({ ...run, status: normalizeRunStatus(run.status) }))
+        );
+        setLoadingRuns(false);
+      },
+      onError: () => {
+        setLoadingRuns(false);
+      },
+    });
 
     return () => {
-      canceled = true;
-      clearInterval(intervalId);
+      unsubscribe();
     };
   }, [open, activeTab, isAdmin]);
 
@@ -682,40 +674,32 @@ const CredentialsDialog = ({
   }, [open, tokens, loadTokens]);
 
   useEffect(() => {
-    if (!authUrl || !oauthState) return;
-    let stopped = false;
+    if (!authUrl || !oauthState) return undefined;
     setTokenSyncing(true);
 
-    const poll = async () => {
-      try {
-        const data = await getOAuthState(oauthState);
-        if (data?.ready && data?.token_name) {
-          setOauthState("");
-          setTokenSyncing(false);
-          await loadTokens();
-          notifyDataChanged();
-          setStatus({ type: "success", message: "Channel synced." });
-          return true;
-        }
-      } catch {
-        // ignore
+    let resolved = false;
+
+    const unsubscribe = subscribeSSE(
+      `/api/users/credentials/state/${encodeURIComponent(oauthState)}/stream`,
+      {
+        onMessage: async ({ data }) => {
+          if (resolved || !data) return;
+          if (data.ready && data.token_name) {
+            resolved = true;
+            setOauthState("");
+            setTokenSyncing(false);
+            await loadTokens();
+            notifyDataChanged();
+            setStatus({ type: "success", message: "Channel synced." });
+            unsubscribe();
+          }
+        },
       }
-      return false;
+    );
+
+    return () => {
+      unsubscribe();
     };
-
-    const intervalId = setInterval(async () => {
-      if (!stopped) {
-        const done = await poll();
-        if (done) {
-          stopped = true;
-          clearInterval(intervalId);
-        }
-      }
-    }, 2000);
-
-    poll();
-
-    return () => clearInterval(intervalId);
   }, [authUrl, oauthState, loadTokens, notifyDataChanged, setTokenSyncing]);
 
   const handleStartOAuth = async () => {

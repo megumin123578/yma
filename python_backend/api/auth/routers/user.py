@@ -5,14 +5,16 @@ import subprocess
 import sys
 import time
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import HTMLResponse
+
+from python_backend.sse_utils import poll_stream, sse_response
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine, text
 from sqlalchemy import or_
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
-from python_backend.api.auth.database import get_db
+from python_backend.api.auth.database import get_db, SessionLocal
 from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup, RivalGroup, UserCredential, UserCredentialGroup, UserCredentialProject
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional, hash_password
 from python_backend.api.auth import schemas
@@ -869,6 +871,43 @@ def oauth_state(state: str, db: Session = Depends(get_db)):
     if row.status == "completed":
         return _oauth_state_response(row)
     return {"ready": False}
+
+
+def _fetch_oauth_state_snapshot(state: str) -> dict:
+    db = SessionLocal()
+    try:
+        row = db.query(OAuthState).filter(OAuthState.state == state).first()
+        if not row:
+            return {"ready": False, "status": "missing"}
+        if row.expires_at and row.expires_at < datetime.utcnow() and row.status == "pending":
+            row.status = "expired"
+            row.completed_at = datetime.utcnow()
+            db.add(row)
+            db.commit()
+            return {"ready": False, "status": "expired"}
+        if row.status == "completed":
+            data = _oauth_state_response(row)
+            data["status"] = "completed"
+            return data
+        return {"ready": False, "status": row.status or "pending"}
+    finally:
+        db.close()
+
+
+@router.get("/credentials/state/{state}/stream")
+async def stream_oauth_state(state: str, request: Request):
+    def is_terminal(snap: dict) -> bool:
+        return snap.get("status") in ("completed", "expired", "failed", "missing")
+
+    return sse_response(
+        poll_stream(
+            request,
+            lambda: _fetch_oauth_state_snapshot(state),
+            interval_seconds=2.0,
+            heartbeat_seconds=20.0,
+            is_terminal=is_terminal,
+        )
+    )
 
 
 @router.get("/tokens")
@@ -1957,6 +1996,86 @@ def list_schedule_runs(
             for r in rows
         ]
     }
+
+
+def _serialize_schedule_runs(limit: int) -> dict:
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(UserScheduleRun)
+            .order_by(UserScheduleRun.id.desc())
+            .limit(limit)
+            .all()
+        )
+        return {
+            "items": [
+                {
+                    "id": r.id,
+                    "schedule_id": r.schedule_id,
+                    "token_name": r.token_name,
+                    "token_names": r.token_names,
+                    "run_type": r.run_type,
+                    "channel_titles": _run_channel_titles(db, r.user_id, _run_token_names_from_row(r)),
+                    "status": r.status,
+                    "processed": r.processed,
+                    "total": r.total,
+                    "message": r.message,
+                    "started_at": r.started_at.isoformat() if r.started_at else None,
+                    "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                }
+                for r in rows
+            ]
+        }
+    finally:
+        db.close()
+
+
+@router.get("/schedules/runs/stream")
+async def stream_schedule_runs(
+    request: Request,
+    limit: int = Query(10, ge=1, le=100),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
+    import asyncio
+    import json
+    from fastapi.concurrency import run_in_threadpool
+
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Permission Denied")
+
+    async def gen():
+        last_payload: Optional[str] = None
+        elapsed_since_emit = 0.0
+        first = True
+        while True:
+            if await request.is_disconnected():
+                return
+            try:
+                snapshot = await run_in_threadpool(_serialize_schedule_runs, limit)
+            except Exception as exc:  # noqa: BLE001
+                yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
+                return
+
+            payload = json.dumps(snapshot, default=str)
+            if first or payload != last_payload:
+                last_payload = payload
+                elapsed_since_emit = 0.0
+                yield f"data: {payload}\n\n"
+                first = False
+
+            active = any(
+                (item.get("status") or "").lower()
+                in ("running", "pending", "queued", "in_progress")
+                for item in snapshot.get("items", [])
+            )
+            interval = 5.0 if active else 30.0
+            await asyncio.sleep(interval)
+            elapsed_since_emit += interval
+            if elapsed_since_emit >= 25.0:
+                elapsed_since_emit = 0.0
+                yield ": ping\n\n"
+
+    return sse_response(gen())
 
 
 @router.post("/schedules/runs/{run_id}/stop")
