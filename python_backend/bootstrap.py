@@ -466,6 +466,12 @@ def ensure_video_overview_table_pg(db_engine: Engine) -> None:
             );
             """
         )
+        conn.exec_driver_sql(
+            """
+            CREATE INDEX IF NOT EXISTS idx_video_overview_account_publish
+            ON video_overview (account_tag, publish_date DESC);
+            """
+        )
 
 
 def initialize_app_state() -> None:
