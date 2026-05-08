@@ -265,9 +265,7 @@ const ChannelCompare = () => {
       borderColor: isDark
         ? "rgba(148,163,184,0.2)"
         : "rgba(15,23,42,0.12)",
-      background: isDark
-        ? "linear-gradient(140deg, rgba(15,23,42,0.92) 0%, rgba(30,41,59,0.88) 60%, rgba(14,165,233,0.16) 100%)"
-        : "linear-gradient(140deg, rgba(248,250,252,0.96) 0%, rgba(226,232,240,0.92) 55%, rgba(191,219,254,0.6) 100%)",
+      background: isDark ? "rgba(15,23,42,0.88)" : "rgba(248,250,252,0.96)",
       boxShadow: isDark
         ? "0 18px 36px rgba(15,23,42,0.45)"
         : "0 18px 30px rgba(148,163,184,0.25)",
@@ -528,20 +526,6 @@ const ChannelCompare = () => {
           ...panelSx,
           position: "relative",
           overflow: "hidden",
-          "&::after": {
-            content: '""',
-            position: "absolute",
-            inset: 0,
-            background: isDark
-              ? "radial-gradient(circle at 15% 0%, rgba(56,189,248,0.12), transparent 45%)"
-              : "radial-gradient(circle at 15% 0%, rgba(56,189,248,0.12), transparent 50%)",
-            opacity: 0,
-            transition: "opacity 260ms ease",
-            pointerEvents: "none",
-          },
-          "&:hover": {
-            "&::after": { opacity: 1 },
-          },
         }}
       >
         <Stack spacing={1.5}>
