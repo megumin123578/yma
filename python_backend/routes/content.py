@@ -65,8 +65,30 @@ CONTENT_TYPE_ALL = "all"
 CONTENT_TYPE_LONG = "long"
 CONTENT_TYPE_SHORTS = "shorts"
 
+_CHANNELS_CACHE_TTL_SEC = 30.0
+_channels_cache_lock = threading.Lock()
+_channels_cache: dict[int, tuple[float, tuple[list, list]]] = {}
+
+_ensure_lock = threading.Lock()
+_ensured_tables: set[str] = set()
+
+
+def _mark_ensured(name: str) -> bool:
+    with _ensure_lock:
+        if name in _ensured_tables:
+            return False
+        _ensured_tables.add(name)
+        return True
+
+
+def _unmark_ensured(name: str) -> None:
+    with _ensure_lock:
+        _ensured_tables.discard(name)
+
 
 def _ensure_thumbnail_daily_table() -> None:
+    if not _mark_ensured("thumbnail_daily"):
+        return
     try:
         with engine.begin() as conn:
             conn.execute(text("""
@@ -91,10 +113,13 @@ def _ensure_thumbnail_daily_table() -> None:
                 ON video_thumbnail_daily (video_id, day);
             """))
     except Exception as e:
+        _unmark_ensured("thumbnail_daily")
         print("[content.thumbnail_daily] create table failed:", e)
 
 
 def _ensure_video_daily_stats_metrics_columns() -> None:
+    if not _mark_ensured("video_daily_stats_columns"):
+        return
     try:
         with engine.begin() as conn:
             conn.execute(text("""
@@ -119,6 +144,7 @@ def _ensure_video_daily_stats_metrics_columns() -> None:
             conn.execute(text("ALTER TABLE video_daily_stats ADD COLUMN IF NOT EXISTS subscribers_gained INTEGER DEFAULT 0;"))
         return
     except Exception as e:
+        _unmark_ensured("video_daily_stats_columns")
         print("[content.video_daily_stats] ensure columns failed:", e)
 
 
@@ -231,6 +257,8 @@ def _compose_content_cache_key(base_key: str, content_type: Optional[str]) -> st
 
 # cache table for per-video analytics (not daily)
 def _ensure_video_metrics_cache_table() -> None:
+    if not _mark_ensured("video_metrics_cache"):
+        return
     try:
         with engine.begin() as conn:
             conn.execute(text("""
@@ -244,6 +272,7 @@ def _ensure_video_metrics_cache_table() -> None:
                 );
             """))
     except Exception as e:
+        _unmark_ensured("video_metrics_cache")
         print("[content.metrics_cache] create table failed:", e)
 
 
@@ -704,6 +733,8 @@ def _encode_content_cache_payload(payload: dict, cache_label: str) -> str:
 
 
 def _ensure_timeseries_cache_table() -> None:
+    if not _mark_ensured("timeseries_cache"):
+        return
     try:
         with engine.begin() as conn:
             conn.execute(text("""
@@ -717,6 +748,7 @@ def _ensure_timeseries_cache_table() -> None:
                 );
             """))
     except Exception as e:
+        _unmark_ensured("timeseries_cache")
         print("[content.cache] create table failed:", e)
 
 
@@ -873,8 +905,17 @@ def _list_content_channels(
 
 
 def _list_content_channels_both(db: Session, current_user):
+    user_key = getattr(current_user, "id", 0) or 0
+    now = time.monotonic()
+
+    with _channels_cache_lock:
+        cached = _channels_cache.get(user_key)
+        if cached and (now - cached[0]) < _CHANNELS_CACHE_TTL_SEC:
+            return cached[1]
+
     visible_items = []
     all_items = []
+    success = False
     try:
         hidden_all = set()
         allowed = get_allowed_account_tags(db, current_user)
@@ -909,8 +950,13 @@ def _list_content_channels_both(db: Session, current_user):
             all_items.append(item)
             if not (hidden_all and value in hidden_all):
                 visible_items.append(item)
+        success = True
     except Exception as e:
         print("[content.channels] ERROR:", e)
+
+    if success:
+        with _channels_cache_lock:
+            _channels_cache[user_key] = (now, (visible_items, all_items))
 
     return visible_items, all_items
 
@@ -1152,13 +1198,15 @@ class ChannelMetricsRequest(BaseModel):
 
 
 @router.post("/timeseries")
+@_log_handler("content/timeseries")
 def content_timeseries(
     req: TimeSeriesRequest,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
 ):
     content_type = _normalize_content_type(req.contentType)
-    channel_items, all_channel_items = _list_content_channels_both(db, current_user)
+    with _time_block("content/timeseries_channels (combined)"):
+        channel_items, all_channel_items = _list_content_channels_both(db, current_user)
     requested_tags = _resolve_content_account_tags(req.channelId, channel_items, all_channel_items)
     if not requested_tags:
         return {"items": []}
@@ -1174,8 +1222,10 @@ def content_timeseries(
         else _make_multi_tag_cache_key(requested_tags)
     )
     ts_cache_key = _compose_content_cache_key(ts_cache_key, content_type)
-    cached = _load_timeseries_cache(ts_cache_key, req.start, req.end)
+    with _time_block("content/load_timeseries_cache"):
+        cached = _load_timeseries_cache(ts_cache_key, req.start, req.end)
     if cached is not None:
+            add_log("[T] content/timeseries: served from cache")
             cached_rows = [dict(row) for row in cached]
             for row in cached_rows:
                 channel_id = str(row.get("channelId") or ts_cache_key).strip()
@@ -1189,8 +1239,9 @@ def content_timeseries(
         requested_tags,
     )
     content_type_filter_sql, _ = _build_content_type_filter_sql(content_type, "v")
-    _ensure_thumbnail_daily_table()
-    _ensure_video_daily_stats_metrics_columns()
+    with _time_block("content/timeseries_ensure_tables (DDL)"):
+        _ensure_thumbnail_daily_table()
+        _ensure_video_daily_stats_metrics_columns()
     timeseries_average_view_percentage_expr = _sql_timeseries_average_view_percentage_expr()
     timeseries_engaged_views_expr = _sql_timeseries_engaged_views_expr()
     sql = f"""
@@ -1231,13 +1282,15 @@ def content_timeseries(
         **account_filter_params,
     }
 
-    rows = [dict(row) for row in query_all_safe(sql, params)]
+    with _time_block("content/timeseries_query"):
+        rows = [dict(row) for row in query_all_safe(sql, params)]
     for row in rows:
         channel_id = str(row.get("channelId") or "").strip()
         row["channelTitle"] = label_map.get(channel_id) or channel_id
     rows = _filter_private_timeseries_rows(db, requested_tags, rows)
 
-    _save_timeseries_cache(ts_cache_key, req.start, req.end, rows)
+    with _time_block("content/save_timeseries_cache"):
+        _save_timeseries_cache(ts_cache_key, req.start, req.end, rows)
     return {"items": rows}
 
 
