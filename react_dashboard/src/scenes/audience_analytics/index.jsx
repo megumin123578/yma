@@ -5,7 +5,7 @@ import AudienceAnalytics from "../../components/AudienceAnalytics";
 const AudienceAnalyticsScene = () => {
   return (
     <Box m="20px">
-      <Header title="Audience Analytics" subtitle="Demographics and retention insights" />
+      <Header title="Audience" subtitle="Demographics and retention insights" />
       <AudienceAnalytics />
     </Box>
   );

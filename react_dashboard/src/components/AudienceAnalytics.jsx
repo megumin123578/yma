@@ -306,6 +306,15 @@ const AudienceAnalytics = () => {
     return items.filter((item) => seriesIds.has(item.id));
   }, [retentionSeries]);
 
+  const retentionColorById = useMemo(
+    () =>
+      legendItems.reduce((map, item) => {
+        map[item.id] = item.color;
+        return map;
+      }, {}),
+    [legendItems]
+  );
+
   const showDemoSkeleton = loading && demoRows.length === 0;
   const showViewerSkeleton = loading && viewerTypeRows.length === 0;
   const showRetentionSkeleton =
@@ -391,33 +400,27 @@ const AudienceAnalytics = () => {
       )}
 
       <Box
-        sx={{
-          p: 2,
-          borderRadius: 3,
-          border: `1px solid ${isDark ? "rgba(148,163,184,0.2)" : "rgba(15,23,42,0.12)"}`,
-          background: isDark
-            ? "linear-gradient(140deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 55%, rgba(13,148,136,0.45) 100%)"
-            : "linear-gradient(140deg, rgba(248,250,252,0.95) 0%, rgba(226,232,240,0.92) 55%, rgba(186,230,253,0.75) 100%)",
-          transition: "transform 180ms ease, box-shadow 180ms ease",
-          boxShadow: isDark ? "0 18px 35px rgba(15,23,42,0.4)" : "0 18px 30px rgba(148,163,184,0.35)",
-          position: "relative",
-          overflow: "hidden",
-          "&:hover": {
-            transform: "translateY(-2px)",
-            boxShadow: isDark ? "0 20px 40px rgba(15,23,42,0.5)" : "0 20px 34px rgba(148,163,184,0.45)",
-          },
-          "&:before": {
-            content: '""',
-            position: "absolute",
-            inset: 0,
-            background: isDark
-              ? "radial-gradient(600px 200px at 10% 0%, rgba(56,189,248,0.2), transparent 60%), radial-gradient(400px 200px at 80% 0%, rgba(16,185,129,0.18), transparent 60%)"
-              : "radial-gradient(600px 200px at 10% 0%, rgba(14,165,233,0.2), transparent 60%), radial-gradient(400px 200px at 80% 0%, rgba(251,191,36,0.22), transparent 60%)",
-            opacity: 0.75,
-            pointerEvents: "none",
-          },
-        }}
+        display="grid"
+        gridTemplateColumns={{ xs: "1fr", md: "minmax(0, 1.35fr) minmax(320px, 0.65fr)" }}
+        gap={2}
+        alignItems="stretch"
       >
+        <Box
+          sx={{
+            p: 2,
+            borderRadius: 3,
+            border: `1px solid ${isDark ? "rgba(148,163,184,0.2)" : "rgba(15,23,42,0.12)"}`,
+            background: isDark ? "rgba(15,23,42,0.85)" : "rgba(248,250,252,0.95)",
+            transition: "transform 180ms ease, box-shadow 180ms ease",
+            boxShadow: isDark ? "0 18px 35px rgba(15,23,42,0.4)" : "0 18px 30px rgba(148,163,184,0.35)",
+            position: "relative",
+            overflow: "hidden",
+            "&:hover": {
+              transform: "translateY(-2px)",
+              boxShadow: isDark ? "0 20px 40px rgba(15,23,42,0.5)" : "0 20px 34px rgba(148,163,184,0.45)",
+            },
+          }}
+        >
         <Stack
           direction={{ xs: "column", sm: "row" }}
           justifyContent="space-between"
@@ -426,11 +429,6 @@ const AudienceAnalytics = () => {
         >
           <Box>
             <Typography variant="h6">Demographics</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {formatRangeLabel(demoRange) === "No data"
-                ? "No data"
-                : `Viewer distribution at ${formatRangeLabel(demoRange)}`}
-            </Typography>
           </Box>
         </Stack>
 
@@ -545,11 +543,6 @@ const AudienceAnalytics = () => {
         )}
       </Box>
 
-      <Box
-        display="grid"
-        gridTemplateColumns={{ xs: "1fr", md: "repeat(1, minmax(0, 1fr))" }}
-        gap={2}
-      >
         <Box
           sx={{
             p: 2,
@@ -572,9 +565,6 @@ const AudienceAnalytics = () => {
             <Box>
               <Typography variant="subtitle1" fontWeight={600}>
                 Subscribed vs Not subscribed
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {formatRangeLabel(viewerTypeRange)}
               </Typography>
             </Box>
           </Stack>
@@ -639,14 +629,13 @@ const AudienceAnalytics = () => {
           )}
         </Box>
       </Box>
+
       <Box
         sx={{
           p: 2,
           borderRadius: 3,
           border: `1px solid ${isDark ? "rgba(148,163,184,0.2)" : "rgba(15,23,42,0.12)"}`,
-          background: isDark
-            ? "linear-gradient(140deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 55%, rgba(13,148,136,0.45) 100%)"
-            : "linear-gradient(140deg, rgba(248,250,252,0.95) 0%, rgba(226,232,240,0.92) 55%, rgba(186,230,253,0.75) 100%)",
+          background: isDark ? "rgba(15,23,42,0.85)" : "rgba(248,250,252,0.95)",
           height: { xs: 440, sm: 520 },
           transition: "transform 180ms ease, box-shadow 180ms ease",
           boxShadow: isDark ? "0 18px 35px rgba(15,23,42,0.4)" : "0 18px 30px rgba(148,163,184,0.35)",
@@ -655,16 +644,6 @@ const AudienceAnalytics = () => {
           "&:hover": {
             transform: "translateY(-2px)",
             boxShadow: isDark ? "0 20px 40px rgba(15,23,42,0.5)" : "0 20px 34px rgba(148,163,184,0.45)",
-          },
-          "&:before": {
-            content: '""',
-            position: "absolute",
-            inset: 0,
-            background: isDark
-              ? "radial-gradient(600px 200px at 10% 0%, rgba(56,189,248,0.2), transparent 60%), radial-gradient(400px 200px at 80% 0%, rgba(16,185,129,0.18), transparent 60%)"
-              : "radial-gradient(600px 200px at 10% 0%, rgba(14,165,233,0.2), transparent 60%), radial-gradient(400px 200px at 80% 0%, rgba(251,191,36,0.22), transparent 60%)",
-            opacity: 0.75,
-            pointerEvents: "none",
           },
         }}
       >
@@ -725,9 +704,6 @@ const AudienceAnalytics = () => {
               yScale={{ type: "linear", min: 0, max: "auto" }}
               curve="monotoneX"
               axisBottom={{
-                legend: "Video progress (0% → 100%)",
-                legendOffset: isMobile ? 0 : 44,
-                legendPosition: "middle",
                 format: (value) => `${Math.round(value * 100)}%`,
                 tickValues: [0, 0.25, 0.5, 0.75, 1],
                 tickSize: isMobile ? 6 : 10,
@@ -773,8 +749,6 @@ const AudienceAnalytics = () => {
                 { match: { id: "Relative Retention" }, id: "relativeGradient" },
               ]}
               sliceTooltip={({ slice }) => {
-                const isRightSide =
-                  chartRef.current && slice.x > chartRef.current.offsetWidth / 2;
                 return (
                   <Box
                     sx={{
@@ -790,58 +764,74 @@ const AudienceAnalytics = () => {
                         ? "0 12px 26px rgba(0,0,0,0.45)"
                         : "0 12px 26px rgba(15,23,42,0.18)",
                       backdropFilter: "blur(6px)",
-                      transform: isRightSide ? "translateX(-110%)" : "translateX(10%)",
-                      transition: "transform 0.15s ease-out",
+                      pointerEvents: "none",
                     }}
                   >
-                    <Typography variant="caption" sx={{ fontWeight: 600, letterSpacing: 0.3 }}>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        display: "block",
+                        fontWeight: 700,
+                        letterSpacing: 0.3,
+                        color: isDark ? "#f8fafc" : "#0f172a",
+                      }}
+                    >
                       {`${Math.round(slice.points[0].data.x * 100)}% video`}
                     </Typography>
-                    {slice.points.map((point) => (
-                      <Box
-                        key={point.id}
-                        display="flex"
-                        alignItems="center"
-                        justifyContent="space-between"
-                        gap={1}
-                        sx={{
-                          mt: 0.75,
-                          px: 0.9,
-                          py: 0.6,
-                          borderRadius: 1,
-                          bgcolor: isDark
-                            ? "rgba(255,255,255,0.04)"
-                            : "rgba(15,23,42,0.04)",
-                        }}
-                      >
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <Box
-                            sx={{
-                              width: 8,
-                              height: 8,
-                              borderRadius: "50%",
-                              bgcolor: point.serieColor,
-                              boxShadow: `0 0 0 2px ${isDark ? "rgba(15,23,42,0.95)" : "rgba(255,255,255,0.98)"}`,
-                            }}
-                          />
+                    {slice.points.map((point) => {
+                      const pointColor =
+                        point.color ||
+                        point.serieColor ||
+                        retentionColorById[point.serieId] ||
+                        "#22d3ee";
+                      return (
+                        <Box
+                          key={point.id}
+                          display="flex"
+                          alignItems="center"
+                          justifyContent="space-between"
+                          gap={1.5}
+                          sx={{
+                            mt: 0.75,
+                            px: 0.9,
+                            py: 0.6,
+                            borderRadius: 1,
+                            bgcolor: isDark
+                              ? "rgba(255,255,255,0.06)"
+                              : "rgba(15,23,42,0.05)",
+                          }}
+                        >
+                          <Box display="flex" alignItems="center" gap={1} sx={{ minWidth: 0 }}>
+                            <Box
+                              sx={{
+                                width: 9,
+                                height: 9,
+                                borderRadius: "50%",
+                                bgcolor: pointColor,
+                                flexShrink: 0,
+                                boxShadow: `0 0 0 2px ${isDark ? "rgba(15,23,42,0.95)" : "rgba(255,255,255,0.98)"}`,
+                              }}
+                            />
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                fontSize: "0.80rem",
+                                color: isDark ? "#e5e7eb" : "#111827",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {point.serieId}
+                            </Typography>
+                          </Box>
                           <Typography
                             variant="body2"
-                            sx={{
-                              fontSize: "0.80rem",
-                              color: isDark ? "rgba(229,231,235,0.88)" : "rgba(17,24,39,0.84)",
-                            }}
+                            sx={{ fontWeight: 800, color: pointColor, whiteSpace: "nowrap" }}
                           >
-                            {point.serieId}
+                            {`${(Number(point.data.y) * 100).toFixed(1)}%`}
                           </Typography>
                         </Box>
-                        <Typography
-                          variant="body2"
-                          sx={{ fontWeight: 700, color: point.serieColor }}
-                        >
-                          {`${(point.data.y * 100).toFixed(1)}%`}
-                        </Typography>
-                      </Box>
-                    ))}
+                      );
+                    })}
                   </Box>
                 )
               }}
