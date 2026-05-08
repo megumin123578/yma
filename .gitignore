@@ -46,6 +46,7 @@ dist/
 python_backend/progress/
 python_backend/quota_state.db
 /helper
+.claude/worktrees/
 
 # ---- Logs ----
 *.log
