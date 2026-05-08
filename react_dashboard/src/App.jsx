@@ -21,7 +21,7 @@ import SmartDisplayRoundedIcon from "@mui/icons-material/SmartDisplayRounded";
 import AlternateEmailRoundedIcon from "@mui/icons-material/AlternateEmailRounded";
 import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
 import { UserContext } from "./context/UserContext";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { startMailOAuth, uploadCredentials } from "./services/userService";
 import ChunkErrorBoundary from "./components/ChunkErrorBoundary";
 
@@ -438,22 +438,19 @@ function App() {
           </Box>
         )}
 
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={location.pathname}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.22, ease: "easeOut" }}
-            style={{ minHeight: 0, height: "100%" }}
-          >
-            <ChunkErrorBoundary>
-              <Suspense fallback={null}>
-                <AppRoutes user={user} loading={loading} />
-              </Suspense>
-            </ChunkErrorBoundary>
-          </motion.div>
-        </AnimatePresence>
+        <ChunkErrorBoundary>
+          <Suspense fallback={null}>
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}
+              style={{ minHeight: 0, height: "100%" }}
+            >
+              <AppRoutes user={user} loading={loading} />
+            </motion.div>
+          </Suspense>
+        </ChunkErrorBoundary>
       </main>
     </div>
   );
