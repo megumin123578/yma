@@ -67,6 +67,7 @@ import { getChannelRevenueMap } from "../Module";
 
 import { ResponsiveBar } from "@nivo/bar";
 import api from "../../services/api";
+import { readSwrCache, writeSwrCache } from "../../utils/swrCache";
 import ContentFilters from "./ContentFilters";
 import LineChart from "./ContentLineChart";
 import ContentSummaryCards from "./ContentSummaryCards";
@@ -819,41 +820,46 @@ const ContentAnalytics = ({
 
     async (start, end, requestSeq) => {
 
-      if (!channelId) return;
+      if (!channelId) return [];
+
+      const payload = { start, end, channelId, contentType };
+
+      // SWR: render cached data immediately while we revalidate in background.
+      const cached = readSwrCache("/api/content/list", payload);
+      if (cached?.items && requestSeq === contentRequestSeqRef.current) {
+        startTransition(() => {
+          setVideos(cached.items);
+          setChannelMetrics(cached.channelMetrics ?? null);
+        });
+      }
 
       try {
 
-        const resp = await api.post("/api/content/list", {
-
-          start,
-
-          end,
-
-          channelId,
-
-          contentType,
-
-        });
-
-
+        const resp = await api.post("/api/content/list", payload);
 
         const raw = resp.data;
+        const items = raw.items ?? [];
+        writeSwrCache("/api/content/list", payload, raw);
 
-        if (requestSeq !== contentRequestSeqRef.current) return;
+        if (requestSeq !== contentRequestSeqRef.current) return items;
         startTransition(() => {
-          setVideos(raw.items ?? []);
+          setVideos(items);
           setChannelMetrics(raw.channelMetrics ?? null);
         });
+        return items;
 
       } catch (err) {
 
         console.error("Fetch videos failed:", err);
 
-        if (requestSeq !== contentRequestSeqRef.current) return;
-        startTransition(() => {
-          setVideos([]);
-          setChannelMetrics(null);
-        });
+        if (requestSeq !== contentRequestSeqRef.current) return cached?.items || [];
+        if (!cached?.items) {
+          startTransition(() => {
+            setVideos([]);
+            setChannelMetrics(null);
+          });
+        }
+        return cached?.items || [];
 
       }
 
@@ -867,37 +873,67 @@ const ContentAnalytics = ({
 
   const fetchTimeseries = useCallback(
 
-    async (start, end, requestSeq) => {
+    async (start, end, requestSeq, topVideoIds) => {
 
       if (!channelId) return;
 
+      const sortedIds = (topVideoIds && topVideoIds.length)
+        ? [...topVideoIds].sort()
+        : undefined;
+
+      const payload = {
+        start,
+        end,
+        channelId,
+        contentType,
+        topVideoIds: sortedIds,
+      };
+
+      // SWR: render cached timeseries immediately while we revalidate.
+      const cached = readSwrCache("/api/content/timeseries", payload);
+      if (cached?.items && requestSeq === contentRequestSeqRef.current) {
+        const cachedVideosMeta = cached.videos || {};
+        const cachedItems = cached.items.map((row) => {
+          const meta = cachedVideosMeta[row?.videoId];
+          return meta ? { ...row, ...meta } : row;
+        });
+        startTransition(() => {
+          setTimeseries(cachedItems);
+        });
+      }
+
       try {
 
-        const resp = await api.post("/api/content/timeseries", {
-
-          start,
-
-          end,
-
-          channelId,
-
-          contentType,
-
-        });
+        const resp = await api.post("/api/content/timeseries", payload);
 
 
 
         const raw = resp.data;
+        const compactItems = raw.items ?? [];
+        const videosMeta = raw.videos || {};
+        // Rehydrate per-row metadata from the lookup map so downstream code
+        // (buildTopVideoLineData, etc.) keeps working unchanged.
+        const items = compactItems.map((row) => {
+          const meta = videosMeta[row?.videoId];
+          return meta ? { ...row, ...meta } : row;
+        });
+        writeSwrCache("/api/content/timeseries", payload, raw);
 
         if (requestSeq !== contentRequestSeqRef.current) return;
-        setTimeseries(raw.items ?? []);
+        startTransition(() => {
+          setTimeseries(items);
+        });
 
       } catch (err) {
 
         console.error("Fetch timeseries failed:", err);
 
         if (requestSeq !== contentRequestSeqRef.current) return;
-        setTimeseries([]);
+        if (!cached?.items) {
+          startTransition(() => {
+            setTimeseries([]);
+          });
+        }
 
       }
 
@@ -1013,6 +1049,29 @@ const ContentAnalytics = ({
 
 
 
+  // Refs to read latest sort state without re-creating effects
+  const sortStateRef = useRef({ sortKey, sortDirection });
+  useEffect(() => {
+    sortStateRef.current = { sortKey, sortDirection };
+  }, [sortKey, sortDirection]);
+
+  const computeTopVideoIds = useCallback((items, limit = 5) => {
+    if (!Array.isArray(items) || items.length === 0) return [];
+    const normalized = items.map((v) => normalizeContentVideoRow(v));
+    const { sortKey: sk, sortDirection: sd } = sortStateRef.current;
+    const sorted = sortContentRows(normalized, sk, sd);
+    const ids = [];
+    const seen = new Set();
+    for (const row of sorted) {
+      const id = String(row?.id || row?.videoId || "").trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
+      if (ids.length >= limit) break;
+    }
+    return ids;
+  }, []);
+
   // Fetch khi period / channel thay đổi
 
   useEffect(() => {
@@ -1037,13 +1096,34 @@ const ContentAnalytics = ({
     if (channelId === CONTENT_ALL_CHANNELS_VALUE) {
       fetchAllChannels(start, end, requestSeq);
     } else {
-      fetchVideos(start, end, requestSeq);
-      fetchTimeseries(start, end, requestSeq);
+      // Sequential: /list first (fast), derive top-5, then /timeseries with filter.
+      // This shrinks the timeseries payload by ~95% (server filters by video_id).
+      (async () => {
+        const items = await fetchVideos(start, end, requestSeq);
+        if (requestSeq !== contentRequestSeqRef.current) return;
+        const topIds = computeTopVideoIds(items);
+        fetchTimeseries(start, end, requestSeq, topIds);
+      })();
     }
 
     return undefined;
 
-  }, [resolvePeriod, fetchVideos, fetchTimeseries, fetchAllChannels, channelId]);
+  }, [resolvePeriod, fetchVideos, fetchTimeseries, fetchAllChannels, channelId, computeTopVideoIds]);
+
+  // Re-fetch /timeseries when table sort changes (top-5 may differ)
+  useEffect(() => {
+    if (!channelId || channelId === CONTENT_ALL_CHANNELS_VALUE) return;
+    if (!videos || videos.length === 0) return;
+    const { start, end } = resolvePeriod();
+    if (!start || !end) return;
+    const requestSeq = contentRequestSeqRef.current + 1;
+    contentRequestSeqRef.current = requestSeq;
+    const topIds = computeTopVideoIds(videos);
+    fetchTimeseries(start, end, requestSeq, topIds);
+    // Intentionally exclude `videos` from deps: we only want to refire on sort change,
+    // not when /list response repopulates videos (that path already triggers ts fetch).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortKey, sortDirection]);
 
   useEffect(() => {
     let active = true;
@@ -1328,7 +1408,7 @@ const ContentAnalytics = ({
 
   }, [deferredSortedRows, page, rowsPerPage]);
 
-  const deferredTimeseries = timeseries;
+  const deferredTimeseries = useDeferredValue(timeseries);
 
   // Pre-compute bucket → timestamp map một lần, dùng lại ở tất cả useMemo bên dưới
   // Thay dayjs() (rất chậm) bằng native Date parsing (~10x nhanh hơn)
@@ -2187,11 +2267,6 @@ const ContentAnalytics = ({
       >
         {chartType === "line" && hasLineChartComponent && lineData.length > 0 && (
           <Box
-            component={motion.div}
-            key={`${channelId}-${expandedChannelId || "all"}-${period}-${metric}-${lineData.map((serie) => serie.id).join("|")}`}
-            initial={{ opacity: 0, y: 16, scale: 0.985 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.35, ease: "easeOut" }}
             sx={{ width: "100%", height: "100%" }}
           >
             <LineChart
@@ -2423,10 +2498,6 @@ const ContentAnalytics = ({
         {chartType === "line" && lineData.length === 0 && (
 
           <Box
-            component={motion.div}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.28, ease: "easeOut" }}
             sx={{
               height: 1,
               minHeight: 120,
@@ -2440,11 +2511,6 @@ const ContentAnalytics = ({
 
         {chartType === "bar" && hasResponsiveBarComponent && hasBarData && (
           <Box
-            component={motion.div}
-            key={`${channelId}-${period}-${metric}-${barPrep.keys.join("|")}`}
-            initial={{ opacity: 0, y: 16, scale: 0.985 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.35, ease: "easeOut" }}
             sx={{ width: "100%", height: "100%" }}
           >
           <ResponsiveBar
@@ -2455,9 +2521,7 @@ const ContentAnalytics = ({
 
             keys={barPrep.keys}
 
-            animate={true}
-
-            motionConfig="gentle"
+            animate={false}
 
             indexBy="label"
 
@@ -2772,10 +2836,6 @@ const ContentAnalytics = ({
         {chartType === "bar" && !hasBarData && (
 
           <Box
-            component={motion.div}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.28, ease: "easeOut" }}
             sx={{
               height: 1,
               minHeight: 120,

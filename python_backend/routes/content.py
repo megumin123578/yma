@@ -26,6 +26,30 @@ def _orjson_default(obj):
     raise TypeError
 
 
+def _compact_timeseries_payload(rows):
+    """Move per-video metadata into a videos lookup map.
+
+    Why: SQL returns one row per (video, day) with title/channelId/channelTitle
+    repeated on every row. Moving the metadata to a map keyed by videoId cuts
+    payload size 30-50% (and JSON parse time on the client). Frontend rehydrates
+    rows with metadata after parsing.
+    """
+    videos: dict = {}
+    items: list = []
+    META_KEYS = ("title", "channelId", "channelTitle")
+    for row in rows:
+        vid = row.get("videoId")
+        if vid:
+            existing = videos.get(vid)
+            if existing is None:
+                meta = {k: row[k] for k in META_KEYS if row.get(k) is not None}
+                if meta:
+                    videos[vid] = meta
+        slim = {k: v for k, v in row.items() if k not in META_KEYS}
+        items.append(slim)
+    return {"videos": videos, "items": items}
+
+
 def _fast_response(content) -> Response:
     """Bypass FastAPI's jsonable_encoder; let orjson serialize directly.
 
@@ -1258,6 +1282,7 @@ class TimeSeriesRequest(BaseModel):
     end: date
     channelId: str  # = account_tag
     contentType: str = CONTENT_TYPE_ALL
+    topVideoIds: Optional[list[str]] = None
 
 
 class ChannelMetricsRequest(BaseModel):
@@ -1292,6 +1317,13 @@ def content_timeseries(
         else _make_multi_tag_cache_key(requested_tags)
     )
     ts_cache_key = _compose_content_cache_key(ts_cache_key, content_type)
+
+    top_video_ids = [str(v).strip() for v in (req.topVideoIds or []) if str(v).strip()]
+    if top_video_ids:
+        sorted_ids = sorted(set(top_video_ids))
+        digest = hashlib.sha1("|".join(sorted_ids).encode("utf-8")).hexdigest()[:12]
+        ts_cache_key = f"{ts_cache_key}:top={len(sorted_ids)}:{digest}"
+
     with _time_block("content/load_timeseries_cache"):
         cached = _load_timeseries_cache(ts_cache_key, req.start, req.end)
     if cached is not None:
@@ -1302,7 +1334,7 @@ def content_timeseries(
                 row["channelId"] = channel_id
                 row["channelTitle"] = label_map.get(channel_id) or channel_id
             cached_rows = _filter_private_timeseries_rows(db, requested_tags, cached_rows)
-            return _fast_response({"items": cached_rows})
+            return _fast_response(_compact_timeseries_payload(cached_rows))
 
     account_filter_sql, account_filter_params = _build_account_tag_filter(
         "v.account_tag",
@@ -1314,6 +1346,17 @@ def content_timeseries(
         _ensure_video_daily_stats_metrics_columns()
     timeseries_average_view_percentage_expr = _sql_timeseries_average_view_percentage_expr()
     timeseries_engaged_views_expr = _sql_timeseries_engaged_views_expr()
+
+    top_filter_sql = ""
+    top_filter_params: dict = {}
+    if top_video_ids:
+        placeholders = []
+        for idx, vid in enumerate(top_video_ids):
+            key = f"top_vid_{idx}"
+            placeholders.append(f":{key}")
+            top_filter_params[key] = vid
+        top_filter_sql = f" AND v.video_id IN ({', '.join(placeholders)})"
+
     sql = f"""
         SELECT
             s.day                  AS bucket,
@@ -1340,6 +1383,7 @@ def content_timeseries(
         WHERE {account_filter_sql}
           AND {content_type_filter_sql}
           AND s.day BETWEEN :start AND :end
+          {top_filter_sql}
         ORDER BY
             bucket ASC,
             "channelId" ASC,
@@ -1350,6 +1394,7 @@ def content_timeseries(
         "start": req.start,
         "end": req.end,
         **account_filter_params,
+        **top_filter_params,
     }
 
     with _time_block("content/timeseries_query"):
@@ -1361,7 +1406,7 @@ def content_timeseries(
 
     with _time_block("content/save_timeseries_cache"):
         _save_timeseries_cache(ts_cache_key, req.start, req.end, rows)
-    return _fast_response({"items": rows})
+    return _fast_response(_compact_timeseries_payload(rows))
 
 
 def _load_token_credentials(token_name: str):

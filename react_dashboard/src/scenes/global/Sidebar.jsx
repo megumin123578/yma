@@ -34,13 +34,15 @@ import SmartDisplayOutlinedIcon from "@mui/icons-material/SmartDisplayOutlined";
 import { UserContext } from "../../context/UserContext";
 import { tokens } from "../../theme";
 import { resolveApiAssetUrl } from "../../config";
+import { prefetchContentPage } from "../../utils/contentPrefetch";
 
-const Item = ({ title, to, icon, isActive, onClick, isCompact = false }) => (
+const Item = ({ title, to, icon, isActive, onClick, onMouseEnter, isCompact = false }) => (
   <MenuItem
     active={isActive}
     icon={icon}
     component={<Link to={to} />}
     onClick={onClick}
+    onMouseEnter={onMouseEnter}
     title={isCompact ? title : undefined}
     aria-label={title}
   >
@@ -440,6 +442,7 @@ const Sidebar = ({
                   icon={<ViewModuleOutlinedIcon />}
                   isActive={isActivePath("/all_channels")}
                   onClick={closeOnMobile}
+                  onMouseEnter={() => prefetchContentPage({ forceAllChannels: true })}
                   isCompact={isDesktopCompact}
                 />
                 <Item
@@ -448,6 +451,7 @@ const Sidebar = ({
                   icon={<DatasetIcon />}
                   isActive={isActivePath("/content")}
                   onClick={closeOnMobile}
+                  onMouseEnter={() => prefetchContentPage()}
                   isCompact={isDesktopCompact}
                 />
                 <Item

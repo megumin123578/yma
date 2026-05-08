@@ -129,8 +129,7 @@ const ContentLineChart = memo(function ContentLineChart({
             debounceResize={150}
             data={data}
             margin={margin}
-            animate={true}
-            motionConfig="gentle"
+            animate={false}
             xScale={{
                 type: "time",
                 format: "native",
