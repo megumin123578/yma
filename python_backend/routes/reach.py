@@ -100,6 +100,7 @@ def list_channels(
 
 
 @router.get("")
+@router.get("/")
 def get_reach(
     accountTag: str = Query(None),
     db: Session = Depends(get_db),

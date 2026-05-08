@@ -29,7 +29,8 @@
       "Bash(node -e \"['src/utils/contentPrefetch.js','src/scenes/global/Sidebar.jsx'].forEach\\(f => require\\('@babel/parser'\\).parse\\(require\\('fs'\\).readFileSync\\(f,'utf8'\\), {sourceType:'module', plugins:['jsx']}\\)\\); console.log\\('OK'\\)\")",
       "Bash(node -e \"['src/components/content/ContentContainer.jsx','src/utils/swrCache.js'].forEach\\(f => require\\('@babel/parser'\\).parse\\(require\\('fs'\\).readFileSync\\(f,'utf8'\\), {sourceType:'module', plugins:['jsx']}\\)\\); console.log\\('OK'\\)\")",
       "Bash(\"D:\\\\dev\\\\yt_manage_app\\\\.venv\\\\Scripts\\\\python.exe\" -c \"from python_backend import main; print\\('BE OK'\\)\")",
-      "Bash(node -e \"require\\('@babel/parser'\\).parse\\(require\\('fs'\\).readFileSync\\('src/components/content/ContentContainer.jsx','utf8'\\), {sourceType:'module', plugins:['jsx']}\\); console.log\\('FE OK'\\)\")"
+      "Bash(node -e \"require\\('@babel/parser'\\).parse\\(require\\('fs'\\).readFileSync\\('src/components/content/ContentContainer.jsx','utf8'\\), {sourceType:'module', plugins:['jsx']}\\); console.log\\('FE OK'\\)\")",
+      "Bash(node -e \"['src/App.jsx','src/components/ChunkErrorBoundary.jsx'].forEach\\(f => require\\('@babel/parser'\\).parse\\(require\\('fs'\\).readFileSync\\(f,'utf8'\\), {sourceType:'module', plugins:['jsx']}\\)\\); console.log\\('OK'\\)\")"
     ]
   }
 }

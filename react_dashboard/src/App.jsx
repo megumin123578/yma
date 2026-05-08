@@ -23,6 +23,7 @@ import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownR
 import { UserContext } from "./context/UserContext";
 import { AnimatePresence, motion } from "framer-motion";
 import { startMailOAuth, uploadCredentials } from "./services/userService";
+import ChunkErrorBoundary from "./components/ChunkErrorBoundary";
 
 const Dashboard = lazy(() => import("./scenes/dashboard"));
 const Daily = lazy(() => import("./scenes/content"));
@@ -446,9 +447,11 @@ function App() {
             transition={{ duration: 0.22, ease: "easeOut" }}
             style={{ minHeight: 0, height: "100%" }}
           >
-            <Suspense fallback={null}>
-              <AppRoutes user={user} loading={loading} />
-            </Suspense>
+            <ChunkErrorBoundary>
+              <Suspense fallback={null}>
+                <AppRoutes user={user} loading={loading} />
+              </Suspense>
+            </ChunkErrorBoundary>
           </motion.div>
         </AnimatePresence>
       </main>

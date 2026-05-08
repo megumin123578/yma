@@ -153,8 +153,7 @@ const GeographyChart = ({ isDashboard = false }) => {
 
   // ===== Fetch data =====
   useEffect(() => {
-    // Backend route is mounted at `/api/geography/` (trailing slash). Using it avoids 307 redirects.
-    const url = `/api/geography/?range=${range}${channel ? `&channel=${channel}` : ""}`;
+    const url = `/api/geography?range=${range}${channel ? `&channel=${channel}` : ""}`;
     api.get(url)
       .then((r) => r.data)
       .then((json) => {
