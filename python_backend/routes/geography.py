@@ -79,7 +79,7 @@ def get_range_dates(range_key: str):
     return None
 
 
-@router.get("/")
+@router.get("")
 def api_geography(
     range: str = None,
     month: str = None,
