@@ -5,6 +5,38 @@ const api = axios.create({
   baseURL: API_BASE,
 });
 
+const perfCallCounts = new Map();
+const perfLastCallAt = new Map();
+const PERF_REPEAT_WINDOW_MS = 3000;
+
+const buildPerfKey = (response, detail) => {
+  const method = String(
+    detail?.method || response?.config?.method || "GET"
+  ).toUpperCase();
+  const url = String(response?.config?.url || detail?.path || "");
+  const params = response?.config?.params;
+  const query =
+    params && typeof URLSearchParams !== "undefined"
+      ? new URLSearchParams(params).toString()
+      : "";
+  return query ? `${method} ${url}?${query}` : `${method} ${url}`;
+};
+
+const nextPerfCallInfo = (key) => {
+  const now =
+    typeof performance !== "undefined" && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now();
+  const count = (perfCallCounts.get(key) || 0) + 1;
+  const previousAt = perfLastCallAt.get(key) || 0;
+  perfCallCounts.set(key, count);
+  perfLastCallAt.set(key, now);
+  return {
+    count,
+    isFastRepeat: count > 1 && now - previousAt <= PERF_REPEAT_WINDOW_MS,
+  };
+};
+
 api.interceptors.request.use((config) => {
   const runtimeBase = getApiBase();
   config.baseURL = runtimeBase;
@@ -30,10 +62,13 @@ const logPerfHeader = (response) => {
     if (!encoded) return;
     const detail = JSON.parse(atob(encoded));
     const total = detail.total_ms ?? 0;
+    const perfKey = buildPerfKey(response, detail);
+    const { count, isFastRepeat } = nextPerfCallInfo(perfKey);
+    const repeatLabel = isFastRepeat ? " repeat" : "";
     const color =
       total > 500 ? "color:#ef4444" : total > 200 ? "color:#f59e0b" : "color:#22c55e";
     console.groupCollapsed(
-      `%c[perf] ${detail.method} ${detail.path} %c${total.toFixed(1)}ms`,
+      `%c[perf #${count}${repeatLabel}] ${detail.method} ${detail.path} %c${total.toFixed(1)}ms`,
       "color:#94a3b8",
       `${color};font-weight:bold`
     );

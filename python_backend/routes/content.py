@@ -5,20 +5,50 @@ import hashlib
 import json
 import os
 import threading
+import time
+from contextlib import contextmanager
+from functools import wraps
 from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy import text, inspect
 from python_backend.db import engine
+from python_backend.perf_log import add_log
 from sqlalchemy.orm import Session
+
+
+@contextmanager
+def _time_block(label: str):
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        add_log(f"[T] {label}: {(time.perf_counter() - t0) * 1000:.1f}ms")
+
+
+def _log_handler(name: str):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            t0 = time.perf_counter()
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                add_log(f"[H] {name}: {(time.perf_counter() - t0) * 1000:.1f}ms")
+
+        return wrapper
+
+    return decorator
 
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.api.auth.models import UserCredential
 from python_backend.token_store import (
+    list_token_names,
     load_token_credentials as load_stored_token_credentials,
+    normalize_token_name,
     token_exists,
 )
 from googleapiclient.discovery import build
@@ -422,10 +452,17 @@ def _fetch_video_metrics_bulk(creds, channel_id: Optional[str], video_ids, start
 # Helper query
 # ==============================
 def query_all_safe(sql: str, params=None):
+    t0 = time.perf_counter()
     try:
         with engine.begin() as conn:
             rs = conn.execute(text(sql), params or {})
-            return rs.mappings().all()
+            rows = rs.mappings().all()
+            line = " ".join(sql.split())
+            add_log(
+                f"[DB] {(time.perf_counter() - t0) * 1000:.1f}ms"
+                f" rows={len(rows)} sql={line[:80]}{'...' if len(line) > 80 else ''}"
+            )
+            return rows
     except Exception as e:
         print("[content.query_all_safe] failed:", e)
         return []
@@ -831,7 +868,13 @@ def _list_content_channels(
     current_user=Depends(get_current_user_optional),
     include_hidden: bool = False,
 ):
-    items = []
+    visible, all_items = _list_content_channels_both(db, current_user)
+    return all_items if include_hidden else visible
+
+
+def _list_content_channels_both(db: Session, current_user):
+    visible_items = []
+    all_items = []
     try:
         hidden_all = set()
         allowed = get_allowed_account_tags(db, current_user)
@@ -845,6 +888,8 @@ def _list_content_channels(
             .order_by(UserCredential.updated_at.desc())
             .all()
         )
+        existing_tokens = {normalize_token_name(name) for name in list_token_names()}
+
         seen = set()
         for row in rows:
             value = sanitize_filename(row.account_tag or "")
@@ -852,21 +897,22 @@ def _list_content_channels(
                 continue
             if allowed is not None and value not in allowed:
                 continue
-            if not include_hidden and hidden_all and value in hidden_all:
-                continue
             token_name = (row.token_name or "").strip()
             if not token_name:
                 continue
-            if not token_exists(token_name):
+            if normalize_token_name(token_name) not in existing_tokens:
                 continue
             seen.add(value)
             label = row.selected_channel_title or row.account_tag or value
             avatar = row.selected_channel_avatar or None
-            items.append({"value": value, "label": label, "avatar": avatar})
+            item = {"value": value, "label": label, "avatar": avatar}
+            all_items.append(item)
+            if not (hidden_all and value in hidden_all):
+                visible_items.append(item)
     except Exception as e:
         print("[content.channels] ERROR:", e)
 
-    return items
+    return visible_items, all_items
 
 
 def _resolve_content_account_tags(channel_id: str, channel_items, all_channel_items=None) -> list[str]:
@@ -905,6 +951,7 @@ class ContentListRequest(BaseModel):
 
 
 @router.post("/list")
+@_log_handler("content/list")
 def content_list(
     req: ContentListRequest,
     skip_enrich: bool = False,
@@ -912,8 +959,8 @@ def content_list(
     current_user=Depends(get_current_user_optional),
 ):
     content_type = _normalize_content_type(req.contentType)
-    channel_items = _list_content_channels(db, current_user)
-    all_channel_items = _list_content_channels(db, current_user, include_hidden=True)
+    with _time_block("content/list_channels (combined)"):
+        channel_items, all_channel_items = _list_content_channels_both(db, current_user)
     requested_tags = _resolve_content_account_tags(req.channelId, channel_items, all_channel_items)
     if not requested_tags:
         return {
@@ -927,8 +974,10 @@ def content_list(
     )
     list_cache_key = _compose_content_cache_key(list_cache_key, content_type)
     if not skip_enrich:
-        cached_list = _load_list_cache(list_cache_key, req.start, req.end)
+        with _time_block("content/load_list_cache"):
+            cached_list = _load_list_cache(list_cache_key, req.start, req.end)
         if cached_list is not None:
+            add_log("[T] content/list: served from cache")
             return cached_list
 
     account_filter_sql, account_filter_params = _build_account_tag_filter(
@@ -936,8 +985,9 @@ def content_list(
         requested_tags,
     )
     content_type_filter_sql, _ = _build_content_type_filter_sql(content_type, "v")
-    _ensure_thumbnail_daily_table()
-    _ensure_video_daily_stats_metrics_columns()
+    with _time_block("content/ensure_tables (DDL)"):
+        _ensure_thumbnail_daily_table()
+        _ensure_video_daily_stats_metrics_columns()
     average_view_percentage_expr = _sql_average_view_percentage_expr()
     engaged_views_expr = _sql_engaged_views_expr()
     sql = f"""
@@ -1050,27 +1100,31 @@ def content_list(
         rows_by_channel.setdefault(channel_id, []).append(row)
 
     if not skip_enrich:
-        for channel_id, channel_rows in rows_by_channel.items():
-            video_ids = [str(row.get("videoId")) for row in channel_rows if row.get("videoId")]
-            if not video_ids:
-                continue
-            video_metrics, thumbnail_supported = _load_or_fetch_video_metrics(
-                db,
-                channel_id,
-                req.start,
-                req.end,
-                video_ids,
-            )
-            metrics_by_channel[channel_id] = video_metrics
-            thumbnail_supported_by_channel[channel_id] = thumbnail_supported
-            _apply_video_metrics_to_content_rows(channel_rows, video_metrics, thumbnail_supported)
+        with _time_block(
+            f"content/enrich_video_metrics (channels={len(rows_by_channel)})"
+        ):
+            for channel_id, channel_rows in rows_by_channel.items():
+                video_ids = [str(row.get("videoId")) for row in channel_rows if row.get("videoId")]
+                if not video_ids:
+                    continue
+                video_metrics, thumbnail_supported = _load_or_fetch_video_metrics(
+                    db,
+                    channel_id,
+                    req.start,
+                    req.end,
+                    video_ids,
+                )
+                metrics_by_channel[channel_id] = video_metrics
+                thumbnail_supported_by_channel[channel_id] = thumbnail_supported
+                _apply_video_metrics_to_content_rows(channel_rows, video_metrics, thumbnail_supported)
 
-    channel_metrics_payload = _compute_channel_metrics_from_db_for_accounts(
-        requested_tags,
-        req.start,
-        req.end,
-        content_type=content_type,
-    )
+    with _time_block("content/compute_channel_metrics"):
+        channel_metrics_payload = _compute_channel_metrics_from_db_for_accounts(
+            requested_tags,
+            req.start,
+            req.end,
+            content_type=content_type,
+        )
 
     rows_mutable = [row for row in rows_mutable if not _should_hide_private_content_row(row)]
 
@@ -1079,7 +1133,8 @@ def content_list(
         "channelMetrics": channel_metrics_payload,
     }
     if not skip_enrich:
-        _save_list_cache(list_cache_key, req.start, req.end, result)
+        with _time_block("content/save_list_cache"):
+            _save_list_cache(list_cache_key, req.start, req.end, result)
     return result
 
 class TimeSeriesRequest(BaseModel):
@@ -1103,8 +1158,7 @@ def content_timeseries(
     current_user=Depends(get_current_user_optional),
 ):
     content_type = _normalize_content_type(req.contentType)
-    channel_items = _list_content_channels(db, current_user)
-    all_channel_items = _list_content_channels(db, current_user, include_hidden=True)
+    channel_items, all_channel_items = _list_content_channels_both(db, current_user)
     requested_tags = _resolve_content_account_tags(req.channelId, channel_items, all_channel_items)
     if not requested_tags:
         return {"items": []}
@@ -1322,8 +1376,7 @@ def channel_metrics(
     current_user=Depends(get_current_user_optional),
 ):
     content_type = _normalize_content_type(req.contentType)
-    channel_items = _list_content_channels(db, current_user)
-    all_channel_items = _list_content_channels(db, current_user, include_hidden=True)
+    channel_items, all_channel_items = _list_content_channels_both(db, current_user)
     requested_tags = _resolve_content_account_tags(req.channelId, channel_items, all_channel_items)
     if not requested_tags:
         return {"impressions": 0, "ctr": None, "supported": False}
@@ -1352,8 +1405,7 @@ def content_all_channels(
     current_user=Depends(get_current_user_optional),
 ):
     content_type = _normalize_content_type(req.contentType)
-    channel_items = _list_content_channels(db, current_user)
-    all_channel_items = _list_content_channels(db, current_user, include_hidden=True)
+    channel_items, all_channel_items = _list_content_channels_both(db, current_user)
     requested_tags = _resolve_content_account_tags(ALL_CHANNELS_VALUE, channel_items, all_channel_items)
 
     if not requested_tags:

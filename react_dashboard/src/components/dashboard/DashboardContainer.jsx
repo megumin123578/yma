@@ -6,7 +6,7 @@ import Header from "../Header";
 import api from "../../services/api";
 import { COUNTRY_FALLBACK } from "../../data/countryMapping";
 import { geoFeatures } from "../../data/mockGeoFeatures";
-import { getChannelAvatarMap, getChannelRevenueMap } from "../Module";
+import { getChannelRevenueMap } from "../Module";
 import {
     getStoredSharedChannelId,
     listenSharedChannelId,
@@ -391,6 +391,13 @@ const DashboardContainer = () => {
                 const finalChannels = sortByStoredTokenOrder(items, (item) => item.value);
                 if (!active) return;
                 setChannels(finalChannels);
+                setChannelAvatarMap(
+                    finalChannels.reduce((map, item) => {
+                        const value = item?.value || "";
+                        if (value) map[value] = item?.avatar || "";
+                        return map;
+                    }, {})
+                );
                 setSelectedChannel((current) =>
                     resolvePreferredSharedChannelId(
                         getStoredSharedChannelId("overview.selectedChannelId") || current,
@@ -427,16 +434,6 @@ const DashboardContainer = () => {
                 return nextChannelId;
             });
         });
-    }, []);
-
-    useEffect(() => {
-        let active = true;
-        getChannelAvatarMap().then((map) => {
-            if (active) setChannelAvatarMap(map || {});
-        });
-        return () => {
-            active = false;
-        };
     }, []);
 
     useEffect(() => {
