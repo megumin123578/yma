@@ -1,9 +1,50 @@
+import base64
+import json
 import os
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+from python_backend.perf_log import drain_request_log, init_request_log
+
+
+class PerfLogMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "")
+        path = scope.get("path", "")
+        init_request_log()
+        t0 = time.perf_counter()
+
+        async def send_with_perf_header(message):
+            if message["type"] == "http.response.start":
+                total_ms = (time.perf_counter() - t0) * 1000
+                lines = drain_request_log()
+                if lines:
+                    payload = {
+                        "method": method,
+                        "path": path,
+                        "total_ms": round(total_ms, 1),
+                        "lines": lines,
+                    }
+                    encoded = base64.b64encode(
+                        json.dumps(payload).encode("utf-8")
+                    ).decode("ascii")
+                    headers = list(message.get("headers", []))
+                    headers.append((b"x-perf-log", encoded.encode("ascii")))
+                    message["headers"] = headers
+            await send(message)
+
+        await self.app(scope, receive, send_with_perf_header)
 
 from python_backend.config import load_env
 from python_backend.google_api_quota import enable_google_api_quota_guard
@@ -72,12 +113,14 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(lifespan=lifespan, redirect_slashes=False)
 
+app.add_middleware(PerfLogMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Perf-Log"],
 )
 
 app.include_router(ts_router)

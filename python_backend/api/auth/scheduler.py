@@ -76,6 +76,14 @@ def _now_saigon_naive() -> datetime:
     return datetime.now(SAIGON_TZ).replace(tzinfo=None)
 
 
+def _utc_naive_to_saigon_naive(value: Optional[datetime]) -> Optional[datetime]:
+    if value is None:
+        return None
+    return (
+        value.replace(tzinfo=timezone.utc).astimezone(SAIGON_TZ).replace(tzinfo=None)
+    )
+
+
 def _kickoff_get_data(account_tag: Optional[str], env_extra: Optional[dict] = None) -> None:
     script_path = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "get_data.py")
@@ -133,23 +141,23 @@ def _parse_time_of_day(value: str):
         return None
 
 
-def _should_run(schedule: UserSchedule, now: datetime) -> bool:
+def _should_run(schedule: UserSchedule, now_saigon: datetime) -> bool:
     if schedule.enabled != 1:
         return False
 
-    last = schedule.last_run_at
+    last = _utc_naive_to_saigon_naive(schedule.last_run_at)
     tod = _parse_time_of_day(schedule.time_of_day or "")
     if tod is None:
         return False
-    today_at = datetime.combine(now.date(), tod)
-    if now < today_at:
+    today_at = datetime.combine(now_saigon.date(), tod)
+    if now_saigon < today_at:
         return False
     if last is None:
-        created_at = schedule.created_at or now
-        if created_at.date() == now.date() and now >= today_at:
+        created_at = _utc_naive_to_saigon_naive(schedule.created_at) or now_saigon
+        if created_at.date() == now_saigon.date() and now_saigon >= today_at:
             return False
         return True
-    return last.date() < now.date()
+    return last.date() < now_saigon.date()
 
 
 def _should_capture_live_counters(now: datetime) -> bool:
@@ -498,20 +506,20 @@ def _run_loop():
     from python_backend.routes.smmstore import process_due_smmstore_orders
 
     while not _STOP_EVENT.is_set():
-        now = datetime.now()
         now_utc = datetime.utcnow()
+        now_saigon = _now_saigon_naive()
         db = SessionLocal()
         try:
             _sync_due_mail_accounts(db, now_utc)
             rows = db.query(UserSchedule).all()
             for row in rows:
-                if not _should_run(row, now):
+                if not _should_run(row, now_saigon):
                     continue
                 token_names = _resolve_schedule_token_names(row)
                 if not token_names:
                     continue
-                row.last_run_at = now
-                row.updated_at = now
+                row.last_run_at = now_utc
+                row.updated_at = now_utc
                 db.add(row)
                 db.commit()
 
@@ -522,7 +530,7 @@ def _run_loop():
                     token_names=json.dumps(token_names),
                     run_type="scheduled",
                     status="queued",
-                    started_at=now,
+                    started_at=now_utc,
                     processed=0,
                     total=len(token_names),
                     message="Queued by scheduler",
@@ -556,11 +564,10 @@ def _run_loop():
                         "RUN_TOKEN_NAMES": json.dumps(token_names),
                     },
                 )
-            snapshot_now = _now_saigon_naive()
-            if _should_capture_live_counters(snapshot_now):
-                _capture_live_counter_snapshots(db, snapshot_now)
-            if _should_cleanup_token_progress(snapshot_now):
-                _cleanup_token_progress(db, snapshot_now)
+            if _should_capture_live_counters(now_saigon):
+                _capture_live_counter_snapshots(db, now_saigon)
+            if _should_cleanup_token_progress(now_saigon):
+                _cleanup_token_progress(db, now_saigon)
         except Exception as e:
             print(f"[WARN] scheduler loop failed: {e}")
         finally:

@@ -1,6 +1,9 @@
 # routes/overview.py
 import json
 import os
+import time
+from contextlib import contextmanager
+from functools import wraps
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
@@ -12,23 +15,60 @@ from googleapiclient.discovery import build
 
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
+from python_backend.perf_log import add_log
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.api.auth.models import LiveCounterSnapshot, SAIGON_TZ, UserCredential
 from python_backend.module_trafficsource import sanitize_filename
 from python_backend.module_trafficsource import create_token_from_credentials
 from python_backend.module_geography import fetch_geography, load_geography_from_postgres, save_geography_to_postgres
-from python_backend.module_channel_daily import _ensure_channel_daily_table
 from python_backend.token_store import token_exists
 
 router = APIRouter(prefix="/api/video_overview", tags=["video_overview"])
 
 
 
+def _sql_label(sql: str) -> str:
+    line = " ".join(sql.split())
+    return line[:80] + ("..." if len(line) > 80 else "")
+
+
+@contextmanager
+def _time_block(label: str):
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        add_log(f"[T] {label}: {(time.perf_counter() - t0) * 1000:.1f}ms")
+
+
+def _log_handler(name: str):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            t0 = time.perf_counter()
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                add_log(
+                    f"[H] {name}: {(time.perf_counter() - t0) * 1000:.1f}ms"
+                )
+
+        return wrapper
+
+    return decorator
+
+
 def query(sql: str, params=None):
+    t0 = time.perf_counter()
     try:
         with engine.begin() as conn:
             rs = conn.execute(text(sql), params or {})
-            return rs.mappings().all()
+            rows = rs.mappings().all()
+            add_log(
+                f"[DB] {(time.perf_counter() - t0) * 1000:.1f}ms"
+                f" rows={len(rows)} sql={_sql_label(sql)}"
+            )
+            return rows
     except Exception as e:
         print("[DB ERROR]", e)
         return []
@@ -126,6 +166,7 @@ class VideoFilter(BaseModel):
 
 
 @router.get("/channels")
+@_log_handler("video_overview/channels")
 def list_channels(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user_optional),
@@ -413,6 +454,7 @@ def top_videos(
 
 
 @router.get("/top_keywords")
+@_log_handler("top_keywords")
 def top_keywords(
     accountTag: str,
     range: str = Query("28d"),
@@ -454,6 +496,7 @@ def top_keywords(
 
 
 @router.get("/top_sources")
+@_log_handler("top_sources")
 def top_sources(
     accountTag: str,
     range: str = Query("28d"),
@@ -504,6 +547,7 @@ def top_external_sources(
 
 
 @router.get("/views_by_country")
+@_log_handler("views_by_country")
 def views_by_country(
     accountTag: str,
     range: str = Query("28d"),
@@ -540,20 +584,24 @@ def views_by_country(
         s = start_date
         e = end_date
     try:
-        rows = load_geography_from_postgres(accountTag, s.isoformat(), e.isoformat())
+        with _time_block("views_by_country/load_from_pg"):
+            rows = load_geography_from_postgres(accountTag, s.isoformat(), e.isoformat())
     except Exception as e:
         print(f"[WARN] Geography DB load failed: {e}")
         rows = []
     if not rows:
-        rows = fetch_geography(creds, s.isoformat(), e.isoformat())
+        with _time_block("views_by_country/fetch_youtube"):
+            rows = fetch_geography(creds, s.isoformat(), e.isoformat())
         try:
-            save_geography_to_postgres(rows, accountTag, s.isoformat(), e.isoformat())
+            with _time_block("views_by_country/save_to_pg"):
+                save_geography_to_postgres(rows, accountTag, s.isoformat(), e.isoformat())
         except Exception as e:
             print(f"[WARN] Geography DB save failed: {e}")
     return {"rows": rows}
 
 
 @router.get("/subscribers_timeseries")
+@_log_handler("subscribers_timeseries")
 def subscribers_timeseries(
     accountTag: str,
     days: int = Query(90, ge=7, le=365),
@@ -564,12 +612,6 @@ def subscribers_timeseries(
         return []
     from datetime import date, timedelta
     start_date = date.today() - timedelta(days=days - 1)
-    try:
-        with engine.begin() as conn:
-            _ensure_channel_daily_table(conn)
-    except Exception as e:
-        print("[DB ERROR]", e)
-        return []
     rows = query(
         """
         SELECT day, subscribers_gained, subscribers_lost, views

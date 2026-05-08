@@ -1,9 +1,12 @@
 from datetime import datetime, timedelta
 import os
+import time
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from passlib.context import CryptContext
+
+from python_backend.perf_log import add_log
 
 from python_backend.config import load_env
 from python_backend.api.auth.models import User  
@@ -89,14 +92,17 @@ def get_current_user_optional(
     request: Request,
     db: Session = Depends(get_db),
 ) -> Optional[User]:
+    t_total = time.perf_counter()
     auth = request.headers.get("Authorization") or ""
     if not auth.startswith("Bearer "):
+        add_log("[AUTH] no token (anonymous)")
         return None
 
     token = auth.split(" ", 1)[1].strip()
     if not token:
         return None
 
+    t_jwt = time.perf_counter()
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str | None = payload.get("sub")
@@ -104,6 +110,15 @@ def get_current_user_optional(
             return None
     except JWTError:
         return None
+    jwt_ms = (time.perf_counter() - t_jwt) * 1000
 
+    t_query = time.perf_counter()
     user = db.query(User).filter(User.username == username).first()
+    query_ms = (time.perf_counter() - t_query) * 1000
+
+    total_ms = (time.perf_counter() - t_total) * 1000
+    add_log(
+        f"[AUTH] total={total_ms:.1f}ms "
+        f"jwt={jwt_ms:.1f}ms user_query={query_ms:.1f}ms"
+    )
     return user

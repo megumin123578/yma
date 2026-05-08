@@ -426,6 +426,20 @@ def ensure_oauth_tokens_table(db_engine: Engine) -> None:
         )
 
 
+def ensure_revenue_table_pg(db_engine: Engine) -> None:
+    from python_backend.module_revenue import _ensure_revenue_table
+
+    with db_engine.begin() as conn:
+        _ensure_revenue_table(conn)
+
+
+def ensure_channel_daily_table_pg(db_engine: Engine) -> None:
+    from python_backend.module_channel_daily import _ensure_channel_daily_table
+
+    with db_engine.begin() as conn:
+        _ensure_channel_daily_table(conn)
+
+
 def ensure_video_overview_table_pg(db_engine: Engine) -> None:
     with db_engine.begin() as conn:
         conn.exec_driver_sql(
@@ -457,6 +471,8 @@ def ensure_video_overview_table_pg(db_engine: Engine) -> None:
 def initialize_app_state() -> None:
     Base.metadata.create_all(bind=engine)
     ensure_video_overview_table_pg(pg_engine)
+    ensure_revenue_table_pg(pg_engine)
+    ensure_channel_daily_table_pg(pg_engine)
     ensure_token_progress_table(engine)
     ensure_users_is_admin_column(engine)
     ensure_video_live_counter_snapshots_channel_name(engine)

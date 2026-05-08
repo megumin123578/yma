@@ -380,13 +380,16 @@ const DashboardContainer = () => {
     );
 
     useEffect(() => {
+        let active = true;
+
         const fetchChannels = async () => {
             try {
                 setLoadingChannels(true);
-                const res = await api.get("/api/video_overview/channels");
+                const res = await api.get("/api/content/channels");
                 const data = res.data;
                 const items = data.items || [];
                 const finalChannels = sortByStoredTokenOrder(items, (item) => item.value);
+                if (!active) return;
                 setChannels(finalChannels);
                 setSelectedChannel((current) =>
                     resolvePreferredSharedChannelId(
@@ -396,19 +399,24 @@ const DashboardContainer = () => {
                     )
                 );
             } catch (err) {
+                if (!active) return;
                 console.error(err);
                 setError(
                     "Khong load duoc danh sach kenh. Hay chay backend: uvicorn python_backend.main:app --host 0.0.0.0 --port 8000 --reload"
                 );
             } finally {
-                setLoadingChannels(false);
+                if (active) setLoadingChannels(false);
             }
         };
 
         fetchChannels();
-    }, [selectedChannel]);
+        return () => {
+            active = false;
+        };
+    }, []);
 
     useEffect(() => {
+        if (!selectedChannel) return;
         setStoredSharedChannelId(selectedChannel, "overview.selectedChannelId");
     }, [selectedChannel]);
 
@@ -688,7 +696,7 @@ const DashboardContainer = () => {
 
     return (
         <Box mx="20px" mt="0" mb="20px">
-            <Header title="Overview" subtitle="Overview Channel Statistic" />
+            <Header title="Dashboard" subtitle="Overview Channel Statistic" />
 
             <DashboardFilters
                 channels={channels}

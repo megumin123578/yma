@@ -1,15 +1,34 @@
 import os
+import time
+from functools import wraps
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+from python_backend.db import engine as shared_pg_engine
+from python_backend.perf_log import add_log
+
+
+def _log_handler(name: str):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            t0 = time.perf_counter()
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                add_log(f"[H] {name}: {(time.perf_counter() - t0) * 1000:.1f}ms")
+
+        return wrapper
+
+    return decorator
 
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.api.auth.models import UserCredential
 from python_backend.module_trafficsource import sanitize_filename
-from python_backend.module_revenue import _ensure_revenue_table
 from python_backend.token_store import token_exists
 
 
@@ -75,9 +94,7 @@ def list_channels(
     start_date, end_date = (startDate, endDate)
     if start_date is None and end_date is None:
         start_date, end_date = _range_to_dates(range)
-    engine = create_engine(pg_url, future=True)
-    with engine.begin() as conn:
-        _ensure_revenue_table(conn)
+    with shared_pg_engine.begin() as conn:
         rows = conn.execute(
             text(
                 """
@@ -130,6 +147,7 @@ def list_channels(
 
 
 @router.get("")
+@_log_handler("revenue")
 def get_revenue(
     accountTag: str = Query(None),
     range: str = Query("28d"),
@@ -147,9 +165,13 @@ def get_revenue(
         return {"rows": [], "start_date": None, "end_date": None}
 
     start_date, end_date = _range_to_dates(range)
-    engine = create_engine(pg_url, future=True)
-    with engine.begin() as conn:
-        _ensure_revenue_table(conn)
+
+    t_begin = time.perf_counter()
+    with shared_pg_engine.begin() as conn:
+        add_log(
+            f"[T] revenue/engine.begin: {(time.perf_counter() - t_begin) * 1000:.1f}ms"
+        )
+        t_query = time.perf_counter()
         rows = conn.execute(
             text(
                 """
@@ -174,6 +196,10 @@ def get_revenue(
             ),
             {"acct": safe_tag, "start_date": start_date, "end_date": end_date},
         ).mappings().all()
+        add_log(
+            f"[DB] revenue/select: "
+            f"{(time.perf_counter() - t_query) * 1000:.1f}ms rows={len(rows)}"
+        )
     return {
         "rows": rows,
         "start_date": str(start_date) if start_date else None,
