@@ -14,8 +14,10 @@ if not PG_URL:
 # Engine
 engine = create_engine(
     PG_URL,
-    pool_pre_ping=True,
-    future=True
+    pool_size=10,
+    max_overflow=20,
+    pool_recycle=1800,
+    future=True,
 )
 
 # Session Factory

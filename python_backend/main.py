@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import ORJSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from python_backend.perf_log import drain_request_log, init_request_log
@@ -111,9 +113,14 @@ async def lifespan(_: FastAPI):
             stop_scheduler()
 
 
-app = FastAPI(lifespan=lifespan, redirect_slashes=False)
+app = FastAPI(
+    lifespan=lifespan,
+    redirect_slashes=False,
+    default_response_class=ORJSONResponse,
+)
 
 app.add_middleware(PerfLogMiddleware)
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),

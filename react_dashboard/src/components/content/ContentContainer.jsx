@@ -1049,7 +1049,7 @@ const ContentAnalytics = ({
     let active = true;
     const { start, end } = resolvePeriod();
     const revenueRequest =
-      start && end
+      showAllMode && start && end
         ? api
             .get("/api/revenue/channels", {
               params: {
@@ -1075,7 +1075,7 @@ const ContentAnalytics = ({
     return () => {
       active = false;
     };
-  }, [resolvePeriod]);
+  }, [resolvePeriod, showAllMode]);
 
 
 

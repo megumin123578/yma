@@ -7,15 +7,39 @@ import os
 import threading
 import time
 from contextlib import contextmanager
+from decimal import Decimal
 from functools import wraps
 from datetime import datetime, timedelta, date
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 from typing import Optional
+import orjson
 from sqlalchemy import text, inspect
 from python_backend.db import engine
 from python_backend.perf_log import add_log
 from sqlalchemy.orm import Session
+
+
+def _orjson_default(obj):
+    if isinstance(obj, Decimal):
+        return float(obj)
+    raise TypeError
+
+
+def _fast_response(content) -> Response:
+    """Bypass FastAPI's jsonable_encoder; let orjson serialize directly.
+
+    Why: jsonable_encoder is recursive Python and dominates response time for
+    payloads with thousands of rows even when the handler is otherwise instant
+    (e.g. cache hit). Returning a Response instance makes FastAPI skip
+    serialize_response() entirely.
+    """
+    body = orjson.dumps(
+        content,
+        option=orjson.OPT_NON_STR_KEYS,
+        default=_orjson_default,
+    )
+    return Response(content=body, media_type="application/json")
 
 
 @contextmanager
@@ -68,6 +92,37 @@ CONTENT_TYPE_SHORTS = "shorts"
 _CHANNELS_CACHE_TTL_SEC = 30.0
 _channels_cache_lock = threading.Lock()
 _channels_cache: dict[int, tuple[float, tuple[list, list]]] = {}
+
+# In-process layer above the Postgres-backed JSONB cache. Avoids a DB roundtrip
+# + JSON/gzip decode on every cache hit for /list and /timeseries.
+_PAYLOAD_CACHE_TTL_SEC = 60.0
+_payload_cache_lock = threading.Lock()
+_payload_cache: dict[tuple, tuple[float, object]] = {}
+
+
+def _payload_cache_get(key: tuple):
+    now = time.monotonic()
+    with _payload_cache_lock:
+        entry = _payload_cache.get(key)
+        if not entry:
+            return None
+        ts, value = entry
+        if (now - ts) >= _PAYLOAD_CACHE_TTL_SEC:
+            _payload_cache.pop(key, None)
+            return None
+        return value
+
+
+def _payload_cache_set(key: tuple, value) -> None:
+    if value is None:
+        return
+    with _payload_cache_lock:
+        _payload_cache[key] = (time.monotonic(), value)
+
+
+def _payload_cache_invalidate(key: tuple) -> None:
+    with _payload_cache_lock:
+        _payload_cache.pop(key, None)
 
 _ensure_lock = threading.Lock()
 _ensured_tables: set[str] = set()
@@ -753,9 +808,13 @@ def _ensure_timeseries_cache_table() -> None:
 
 
 def _load_timeseries_cache(account_tag: str, start_date, end_date):
+    mem_key = ("ts", account_tag, start_date, end_date)
+    cached = _payload_cache_get(mem_key)
+    if cached is not None:
+        return cached
     _ensure_timeseries_cache_table()
     try:
-        with engine.begin() as conn:
+        with engine.connect() as conn:
             row = conn.execute(
                 text("""
                     SELECT payload
@@ -773,7 +832,9 @@ def _load_timeseries_cache(account_tag: str, start_date, end_date):
         if not isinstance(payload, dict) or payload.get("version") != CONTENT_CACHE_VERSION:
             return None
         rows = payload.get("rows")
-        return rows if isinstance(rows, list) else []
+        result = rows if isinstance(rows, list) else []
+        _payload_cache_set(mem_key, result)
+        return result
     except Exception as e:
         print("[content.cache] load failed:", e)
         return None
@@ -783,6 +844,7 @@ def _save_timeseries_cache(account_tag: str, start_date, end_date, rows):
     _ensure_timeseries_cache_table()
     try:
         payload_rows = [dict(r) for r in rows]
+        _payload_cache_set(("ts", account_tag, start_date, end_date), payload_rows)
         payload = _encode_content_cache_payload(
             {
                 "version": CONTENT_CACHE_VERSION,
@@ -836,9 +898,13 @@ def _make_multi_tag_cache_key(tags: list[str]) -> str:
 
 def _load_list_cache(cache_key: str, start_date, end_date):
     """Load cache cho /list endpoint (cả single lẫn multi-channel)."""
+    mem_key = ("list", cache_key, start_date, end_date)
+    cached = _payload_cache_get(mem_key)
+    if cached is not None:
+        return cached
     _ensure_timeseries_cache_table()
     try:
-        with engine.begin() as conn:
+        with engine.connect() as conn:
             row = conn.execute(
                 text("""
                     SELECT payload
@@ -856,7 +922,10 @@ def _load_list_cache(cache_key: str, start_date, end_date):
         if not isinstance(payload, dict) or payload.get("version") != CONTENT_CACHE_VERSION:
             return None
         data = payload.get("data")
-        return data if isinstance(data, dict) else None
+        if not isinstance(data, dict):
+            return None
+        _payload_cache_set(mem_key, data)
+        return data
     except Exception as e:
         print("[content.list_cache] load failed:", e)
         return None
@@ -866,6 +935,7 @@ def _save_list_cache(cache_key: str, start_date, end_date, payload: dict):
     """Save cache cho /list endpoint."""
     _ensure_timeseries_cache_table()
     try:
+        _payload_cache_set(("list", cache_key, start_date, end_date), payload)
         payload_json = _encode_content_cache_payload(
             {
                 "version": CONTENT_CACHE_VERSION,
@@ -1009,10 +1079,10 @@ def content_list(
         channel_items, all_channel_items = _list_content_channels_both(db, current_user)
     requested_tags = _resolve_content_account_tags(req.channelId, channel_items, all_channel_items)
     if not requested_tags:
-        return {
+        return _fast_response({
             "items": [],
             "channelMetrics": {"impressions": 0, "ctr": None, "supported": False},
-        }
+        })
 
     list_cache_key = (
         requested_tags[0] if len(requested_tags) == 1
@@ -1024,7 +1094,7 @@ def content_list(
             cached_list = _load_list_cache(list_cache_key, req.start, req.end)
         if cached_list is not None:
             add_log("[T] content/list: served from cache")
-            return cached_list
+            return _fast_response(cached_list)
 
     account_filter_sql, account_filter_params = _build_account_tag_filter(
         "v.account_tag",
@@ -1181,7 +1251,7 @@ def content_list(
     if not skip_enrich:
         with _time_block("content/save_list_cache"):
             _save_list_cache(list_cache_key, req.start, req.end, result)
-    return result
+    return _fast_response(result)
 
 class TimeSeriesRequest(BaseModel):
     start: date
@@ -1209,7 +1279,7 @@ def content_timeseries(
         channel_items, all_channel_items = _list_content_channels_both(db, current_user)
     requested_tags = _resolve_content_account_tags(req.channelId, channel_items, all_channel_items)
     if not requested_tags:
-        return {"items": []}
+        return _fast_response({"items": []})
 
     label_map = {
         str(item.get("value") or ""): str(item.get("label") or item.get("value") or "")
@@ -1232,7 +1302,7 @@ def content_timeseries(
                 row["channelId"] = channel_id
                 row["channelTitle"] = label_map.get(channel_id) or channel_id
             cached_rows = _filter_private_timeseries_rows(db, requested_tags, cached_rows)
-            return {"items": cached_rows}
+            return _fast_response({"items": cached_rows})
 
     account_filter_sql, account_filter_params = _build_account_tag_filter(
         "v.account_tag",
@@ -1291,7 +1361,7 @@ def content_timeseries(
 
     with _time_block("content/save_timeseries_cache"):
         _save_timeseries_cache(ts_cache_key, req.start, req.end, rows)
-    return {"items": rows}
+    return _fast_response({"items": rows})
 
 
 def _load_token_credentials(token_name: str):
@@ -1462,7 +1532,7 @@ def content_all_channels(
     requested_tags = _resolve_content_account_tags(ALL_CHANNELS_VALUE, channel_items, all_channel_items)
 
     if not requested_tags:
-        return {"channels": [], "timeseries": [], "channelMetrics": {"impressions": 0, "ctr": None, "supported": False}}
+        return _fast_response({"channels": [], "timeseries": [], "channelMetrics": {"impressions": 0, "ctr": None, "supported": False}})
 
     label_map = {str(item.get("value") or ""): str(item.get("label") or item.get("value") or "") for item in all_channel_items if item.get("value")}
     avatar_map = {str(item.get("value") or ""): item.get("avatar") or None for item in all_channel_items if item.get("value")}
@@ -1471,7 +1541,7 @@ def content_all_channels(
     cache_key = _compose_content_cache_key(cache_key, content_type)
     cached = _load_list_cache(cache_key, req.start, req.end)
     if cached is not None:
-        return cached
+        return _fast_response(cached)
 
     account_filter_sql, account_filter_params = _build_account_tag_filter("v.account_tag", requested_tags)
     content_type_filter_sql, _ = _build_content_type_filter_sql(content_type, "v")
@@ -1570,7 +1640,7 @@ def content_all_channels(
 
     result = {"channels": channels, "timeseries": timeseries, "channelMetrics": channel_metrics}
     _save_list_cache(cache_key, req.start, req.end, result)
-    return result
+    return _fast_response(result)
 
 
 # ---------------------------------------------------------------------------

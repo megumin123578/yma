@@ -18,7 +18,12 @@
       "Bash(curl -v -m 5 \"http://127.0.0.1:8000/api/revenue?accountTag=test&range=7d\")",
       "Bash(xargs grep -l \"schedule.*run\\\\|ScheduleRun\\\\|listScheduleRuns\")",
       "Bash(npm install *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(\"D:\\\\dev\\\\yt_manage_app\\\\.venv\\\\Scripts\\\\python.exe\" -c \"import orjson; print\\(orjson.__version__\\)\")",
+      "Bash(\"D:\\\\dev\\\\yt_manage_app\\\\.venv\\\\Scripts\\\\python.exe\" -c \"import fastapi; print\\(fastapi.__version__\\)\")",
+      "Bash(D:\\\\dev\\\\yt_manage_app\\\\.venv\\\\Scripts\\\\python.exe *)",
+      "Bash(\"D:\\\\dev\\\\yt_manage_app\\\\.venv\\\\Scripts\\\\python.exe\" -c \"from python_backend import main; print\\('main import OK'\\)\")",
+      "Bash(\"D:\\\\dev\\\\yt_manage_app\\\\.venv\\\\Scripts\\\\python.exe\" -c \"from python_backend import main; print\\('OK'\\)\")"
     ]
   }
 }

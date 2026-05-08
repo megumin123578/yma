@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 from functools import wraps
 from datetime import date, timedelta
@@ -33,6 +34,10 @@ from python_backend.token_store import token_exists
 
 
 router = APIRouter(prefix="/api/revenue", tags=["revenue"])
+
+_CHANNELS_CACHE_TTL_SEC = 30.0
+_channels_cache_lock = threading.Lock()
+_channels_cache: dict[tuple, tuple[float, dict]] = {}
 
 
 def _load_credential_path(account_tag: str):
@@ -89,12 +94,21 @@ def list_channels(
     pg_url = os.getenv("PG_URL")
     if not pg_url:
         return {"items": []}
+
+    user_key = getattr(current_user, "id", 0) or 0
+    cache_key = (user_key, range, startDate, endDate, include_hidden)
+    now = time.monotonic()
+    with _channels_cache_lock:
+        entry = _channels_cache.get(cache_key)
+        if entry and (now - entry[0]) < _CHANNELS_CACHE_TTL_SEC:
+            return entry[1]
+
     allowed = get_allowed_account_tags(db, current_user)
     hidden = get_hidden_account_tags(db, current_user.id) if current_user else set()
     start_date, end_date = (startDate, endDate)
     if start_date is None and end_date is None:
         start_date, end_date = _range_to_dates(range)
-    with shared_pg_engine.begin() as conn:
+    with shared_pg_engine.connect() as conn:
         rows = conn.execute(
             text(
                 """
@@ -143,7 +157,10 @@ def list_channels(
         }
         for item in items
     ]
-    return {"items": labeled}
+    result = {"items": labeled}
+    with _channels_cache_lock:
+        _channels_cache[cache_key] = (time.monotonic(), result)
+    return result
 
 
 @router.get("")
