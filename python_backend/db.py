@@ -14,9 +14,10 @@ if not PG_URL:
 # Engine
 engine = create_engine(
     PG_URL,
-    pool_size=10,
-    max_overflow=20,
-    pool_recycle=1800,
+    pool_size=int(os.getenv("PG_POOL_SIZE", "10")),
+    max_overflow=int(os.getenv("PG_MAX_OVERFLOW", "20")),
+    pool_recycle=int(os.getenv("PG_POOL_RECYCLE", "1800")),
+    pool_pre_ping=True,
     future=True,
 )
 
