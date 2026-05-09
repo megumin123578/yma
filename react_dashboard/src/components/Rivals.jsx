@@ -811,7 +811,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                       }}
                     >
                       <MenuItem value="">
-                        <em>Select a channel…</em>
+                        <em>Select a channel...</em>
                       </MenuItem>
                       {missingSelected && (
                         <MenuItem value={selectedSavedId}>
