@@ -512,7 +512,7 @@ const Sidebar = ({
                   isCompact={isDesktopCompact}
                 />
                 <Item
-                  title="Rivals Channel"
+                  title="Rivals"
                   to="/rivals"
                   icon={<WebhookIcon />}
                   isActive={isActivePath("/rivals")}

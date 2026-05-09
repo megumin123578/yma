@@ -205,6 +205,114 @@ def _is_quota_exceeded(err: HttpError) -> bool:
     return "quotaExceeded" in str(err)
 
 
+_search_cache: dict[str, dict] = {}
+
+
+def _prune_search_cache(day_key: str) -> None:
+    stale = [k for k in _search_cache.keys() if not k.startswith(f"{day_key}:")]
+    for key in stale:
+        _search_cache.pop(key, None)
+
+
+@router.get("/search")
+def channel_search(
+    q: str = Query(..., min_length=1, max_length=120),
+    limit: int = Query(8, ge=1, le=15),
+):
+    """Search YouTube for channels by free text. Returns up to N matches.
+
+    Why: replaces 'paste a URL/ID' UX with a real search bar. Each call costs
+    100 quota units (search.list) + 1 (channels.list); cached per-day per-query.
+    """
+    api_keys = [
+        os.getenv("YOUTUBE_API_KEY1", "").strip(),
+        os.getenv("YOUTUBE_API_KEY2", "").strip(),
+    ]
+    api_keys = [k for k in api_keys if k]
+    if not api_keys:
+        raise HTTPException(500, "Missing YOUTUBE_API_KEY1 or YOUTUBE_API_KEY2")
+
+    query = q.strip()
+    if not query:
+        return {"items": []}
+
+    day_key = datetime.utcnow().strftime("%Y-%m-%d")
+    _prune_search_cache(day_key)
+    cache_key = f"{day_key}:{limit}:{query.lower()}"
+    cached = _search_cache.get(cache_key)
+    if cached:
+        return cached["data"]
+
+    last_error = None
+    for api_key in api_keys:
+        youtube = build("youtube", "v3", developerKey=api_key)
+        try:
+            search_resp = youtube.search().list(
+                part="snippet",
+                q=query,
+                type="channel",
+                maxResults=limit,
+            ).execute() or {}
+
+            channel_ids = []
+            preview_by_id = {}
+            for item in search_resp.get("items", []):
+                cid = item.get("id", {}).get("channelId")
+                if not cid or cid in preview_by_id:
+                    continue
+                snippet = item.get("snippet", {})
+                preview_by_id[cid] = {
+                    "id": cid,
+                    "title": snippet.get("title", "") or snippet.get("channelTitle", ""),
+                    "description": snippet.get("description", ""),
+                    "thumbnail": (
+                        snippet.get("thumbnails", {}).get("medium", {}).get("url")
+                        or snippet.get("thumbnails", {}).get("default", {}).get("url")
+                        or ""
+                    ),
+                }
+                channel_ids.append(cid)
+
+            if not channel_ids:
+                payload = {"items": []}
+                _search_cache[cache_key] = {"data": payload}
+                return payload
+
+            stats_resp = youtube.channels().list(
+                part="snippet,statistics",
+                id=",".join(channel_ids),
+            ).execute() or {}
+
+            for item in stats_resp.get("items", []):
+                cid = item.get("id")
+                if not cid or cid not in preview_by_id:
+                    continue
+                snippet = item.get("snippet", {})
+                stats = item.get("statistics", {})
+                preview_by_id[cid].update({
+                    "title": snippet.get("title") or preview_by_id[cid]["title"],
+                    "customUrl": snippet.get("customUrl", ""),
+                    "country": snippet.get("country", ""),
+                    "subscriberCount": stats.get("subscriberCount"),
+                    "videoCount": stats.get("videoCount"),
+                    "hiddenSubscriberCount": bool(stats.get("hiddenSubscriberCount")),
+                })
+
+            items = [preview_by_id[cid] for cid in channel_ids if cid in preview_by_id]
+            payload = {"items": items}
+            _search_cache[cache_key] = {"data": payload}
+            return payload
+        except HttpError as e:
+            last_error = e
+            if _is_quota_exceeded(e):
+                continue
+            raise HTTPException(502, f"YouTube API error: {e}")
+
+    if last_error:
+        raise HTTPException(502, f"YouTube API error: {last_error}")
+    raise HTTPException(502, "YouTube API error")
+
+
 @router.get("/channel")
 def channel_detail(
     query: str = Query(..., min_length=1),

@@ -32,7 +32,7 @@ const RivalsData = () => {
                 flexWrap="wrap"
                 gap={2}
             >
-                <Header title="Rivals channels" subtitle="Rivals data"/>
+                <Header title="Rivals" subtitle="Rivals data"/>
                 <FormControlLabel
                     control={
                         <Switch

@@ -1,13 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Autocomplete,
   Avatar,
   Box,
   Button,
   Checkbox,
+  Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
   FormControl,
   Grid,
   IconButton,
+  InputAdornment,
   InputLabel,
   ListItemText,
   Menu,
@@ -27,8 +35,10 @@ import {
 } from "@mui/material";
 import { API_BASE } from "../config";
 import { formatNumber } from "./Module";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import GroupWorkOutlinedIcon from "@mui/icons-material/GroupWorkOutlined";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
 import {
   CartesianGrid,
   Legend,
@@ -78,7 +88,7 @@ const loadUiState = () => {
 const RivalsChannel = ({ viewMode = "list" }) => {
   const theme = useTheme();
   const initialState = loadUiState();
-  const [query, setQuery] = useState(initialState.query || "");
+  const [query, setQuery] = useState("");
   const [channel, setChannel] = useState(null);
   const [videos, setVideos] = useState([]);
   const [shorts, setShorts] = useState([]);
@@ -102,6 +112,59 @@ const RivalsChannel = ({ viewMode = "list" }) => {
   );
   const [groupMenuAnchor, setGroupMenuAnchor] = useState(null);
   const [groupMenuChannelId, setGroupMenuChannelId] = useState(null);
+
+  // YouTube search-as-you-type state
+  const [searchOptions, setSearchOptions] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchTimerRef = useRef(null);
+  const searchSeqRef = useRef(0);
+
+  const isLikelyUrlOrId = (text) => {
+    const s = (text || "").trim();
+    if (!s) return false;
+    if (s.startsWith("http") || s.includes("youtube.com") || s.includes("youtu.be")) return true;
+    if (/^UC[a-zA-Z0-9_-]{22}$/.test(s)) return true;
+    if (s.startsWith("@")) return true;
+    return false;
+  };
+
+  const triggerSearch = useCallback((text) => {
+    if (searchTimerRef.current) {
+      clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = null;
+    }
+    const trimmed = (text || "").trim();
+    if (trimmed.length < 2 || isLikelyUrlOrId(trimmed)) {
+      setSearchOptions([]);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    searchTimerRef.current = setTimeout(async () => {
+      const seq = ++searchSeqRef.current;
+      try {
+        const resp = await fetch(
+          `${API_BASE}/api/youtube/search?q=${encodeURIComponent(trimmed)}&limit=8`
+        );
+        if (!resp.ok) throw new Error();
+        const data = await resp.json();
+        if (seq !== searchSeqRef.current) return;
+        setSearchOptions(Array.isArray(data?.items) ? data.items : []);
+      } catch {
+        if (seq !== searchSeqRef.current) return;
+        setSearchOptions([]);
+      } finally {
+        if (seq === searchSeqRef.current) setSearchLoading(false);
+      }
+    }, 500);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, []);
 
   const fetchChannel = useCallback(async (q) => {
     try {
@@ -130,9 +193,12 @@ const RivalsChannel = ({ viewMode = "list" }) => {
     event.preventDefault();
     const q = query.trim();
     if (!q) {
-      setError("Please enter a channel ID or URL");
+      setError("Please enter a channel name, URL, or ID");
       return;
     }
+    setQuery("");
+    setSearchOptions([]);
+    setSearchOpen(false);
     fetchChannel(q);
   };
 
@@ -175,38 +241,58 @@ const RivalsChannel = ({ viewMode = "list" }) => {
     }
   };
 
-  const handleSave = async () => {
+  const handleFollowToggle = async () => {
     if (!channel?.id) return;
     const token = localStorage.getItem("access_token");
     if (!token) {
-      setSaveError("Please login to save channels.");
+      setSaveError("Please login to follow channels.");
       return;
     }
 
-    const channelUrl = channel.customUrl
-      ? `https://www.youtube.com/${channel.customUrl}`
-      : `https://www.youtube.com/channel/${channel.id}`;
+    const alreadyFollowed = savedChannels.some(
+      (row) => row.channel_id === channel.id
+    );
+
     try {
       setSaving(true);
       setSaveError("");
-      const resp = await fetch(`${API_BASE}/api/users/rivals`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          channel_id: channel.id,
-          channel_name: channel.title,
-          channel_url: channelUrl,
-          channel_avatar_url: pickThumb(channel.thumbnails),
-        }),
-      });
-      if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
+      if (alreadyFollowed) {
+        const resp = await fetch(
+          `${API_BASE}/api/users/rivals/${encodeURIComponent(channel.id)}`,
+          {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        if (!resp.ok)
+          throw new Error((await resp.text()) || `HTTP ${resp.status}`);
+      } else {
+        const channelUrl = channel.customUrl
+          ? `https://www.youtube.com/${channel.customUrl}`
+          : `https://www.youtube.com/channel/${channel.id}`;
+        const resp = await fetch(`${API_BASE}/api/users/rivals`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            channel_id: channel.id,
+            channel_name: channel.title,
+            channel_url: channelUrl,
+            channel_avatar_url: pickThumb(channel.thumbnails),
+          }),
+        });
+        if (!resp.ok)
+          throw new Error((await resp.text()) || `HTTP ${resp.status}`);
+      }
       await loadSavedChannels();
       await loadSavedGroups();
     } catch (e) {
-      setSaveError(e?.message || "Failed to save channel");
+      setSaveError(
+        e?.message ||
+          (alreadyFollowed ? "Failed to unfollow channel" : "Failed to follow channel")
+      );
     } finally {
       setSaving(false);
     }
@@ -271,7 +357,6 @@ const RivalsChannel = ({ viewMode = "list" }) => {
     setSelectedSavedId(value);
     if (!value) return;
     setNewGroupName("");
-    setQuery(value);
     fetchChannel(value);
   }, [fetchChannel]);
 
@@ -285,7 +370,6 @@ const RivalsChannel = ({ viewMode = "list" }) => {
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify({
-          query,
           selectedSavedId,
           createGroupOpen,
           newGroupName,
@@ -295,7 +379,7 @@ const RivalsChannel = ({ viewMode = "list" }) => {
     } catch {
       // ignore storage errors
     }
-  }, [query, selectedSavedId, createGroupOpen, newGroupName, filterGroup]);
+  }, [selectedSavedId, createGroupOpen, newGroupName, filterGroup]);
 
   const missingSelected =
     !!selectedSavedId &&
@@ -305,7 +389,6 @@ const RivalsChannel = ({ viewMode = "list" }) => {
 
   useEffect(() => {
     if (savedLoaded && selectedSavedId && !channel) {
-      setQuery(selectedSavedId);
       setNewGroupName("");
       fetchChannel(selectedSavedId);
     }
@@ -546,485 +629,408 @@ const RivalsChannel = ({ viewMode = "list" }) => {
 
   return (
     <Stack spacing={2}>
-      <Paper
-        elevation={0}
-        sx={(theme) => ({
-          p: 2.5,
-          borderRadius: 3,
-          border: "1px solid",
-          borderColor:
-            theme.palette.mode === "dark"
-              ? "rgba(148,163,184,0.2)"
-              : "rgba(15,23,42,0.12)",
-          background:
-            theme.palette.mode === "dark"
-              ? "rgba(15,23,42,0.85)"
-              : "rgba(255,255,255,0.96)",
-          boxShadow:
-            theme.palette.mode === "dark"
-              ? "0 18px 35px rgba(15,23,42,0.4)"
-              : "0 18px 30px rgba(148,163,184,0.35)",
-          position: "relative",
-          overflow: "hidden",
-          transition: "transform 0.2s ease, box-shadow 0.2s ease",
-          ...fadeUpSx,
-          "&:hover": {
-            transform: "translateY(-3px)",
-            boxShadow:
-              theme.palette.mode === "dark"
-                ? "0 22px 38px rgba(15,23,42,0.5)"
-                : "0 22px 34px rgba(148,163,184,0.45)",
-          },
-        })}
-      >
-        <Stack spacing={1.5} component="form" onSubmit={handleSubmit}>
-          <Stack
-            direction="row"
-            spacing={1.5}
-            alignItems="center"
-            flexWrap="wrap"
-            justifyContent="space-between"
-          >
-            <Typography variant="h6" fontWeight={700}>
-              Channel lookup
-            </Typography>
-            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-              <Button
-                type="button"
-                variant="outlined"
-                size="small"
-                onClick={() => {
-                  setCreateGroupOpen(true);
-                  setNewGroupName("");
-                }}
-                sx={(theme) => ({
-                  textTransform: "none",
-                  borderRadius: 2,
-                  transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                  borderColor:
-                    theme.palette.mode === "dark"
-                      ? "rgba(125,211,252,0.55)"
-                      : "rgba(2,132,199,0.5)",
-                  color:
-                    theme.palette.mode === "dark"
-                      ? "rgba(224,242,254,0.95)"
-                      : "rgba(2,132,199,0.9)",
-                  backgroundColor:
-                    theme.palette.mode === "dark"
-                      ? "rgba(2,132,199,0.22)"
-                      : "rgba(224,242,254,0.8)",
-                  ...shimmerHoverSx(theme),
-                  "&:hover": {
-                    transform: "translateY(-1px)",
-                    boxShadow:
-                      theme.palette.mode === "dark"
-                        ? "0 12px 20px rgba(15,23,42,0.35)"
-                        : "0 12px 20px rgba(15,23,42,0.18)",
-                    borderColor:
-                      theme.palette.mode === "dark"
-                        ? "rgba(56,189,248,0.85)"
-                        : "rgba(2,132,199,0.8)",
-                    backgroundColor:
-                      theme.palette.mode === "dark"
-                        ? "rgba(2,132,199,0.35)"
-                        : "rgba(186,230,253,0.9)",
-                  },
-                })}
-              >
-                Create group
-              </Button>
-              {createGroupOpen && (
+      <Stack spacing={2.25} component="form" onSubmit={handleSubmit}>
+          <Box>
+            <Autocomplete
+              freeSolo
+              fullWidth
+              sx={{ flexGrow: 1 }}
+              options={searchOptions}
+              loading={searchLoading}
+              open={searchOpen && (searchOptions.length > 0 || searchLoading)}
+              onOpen={() => setSearchOpen(true)}
+              onClose={() => setSearchOpen(false)}
+              filterOptions={(x) => x}
+              inputValue={query}
+              onInputChange={(_, newValue, reason) => {
+                setQuery(newValue);
+                if (reason === "input") triggerSearch(newValue);
+              }}
+              onChange={(_, value) => {
+                if (!value || typeof value === "string") return;
+                setQuery("");
+                setSearchOptions([]);
+                setSearchOpen(false);
+                fetchChannel(value.id);
+              }}
+              getOptionLabel={(option) =>
+                typeof option === "string"
+                  ? option
+                  : option?.title || option?.id || ""
+              }
+              isOptionEqualToValue={(opt, val) =>
+                (opt?.id || "") === (val?.id || "")
+              }
+              noOptionsText={
+                query.trim().length < 2
+                  ? "Type at least 2 characters"
+                  : isLikelyUrlOrId(query)
+                    ? "Press Enter to load by URL/ID"
+                    : "No channels found"
+              }
+              renderOption={(props, option) => {
+                const { key, ...rest } = props;
+                const subs = option.subscriberCount
+                  ? formatNumber(Number(option.subscriberCount))
+                  : null;
+                const handle = option.customUrl
+                  ? option.customUrl.startsWith("@")
+                    ? option.customUrl
+                    : `@${option.customUrl}`
+                  : null;
+                return (
+                  <li key={option.id} {...rest}>
+                    <Avatar
+                      src={option.thumbnail || ""}
+                      alt={option.title}
+                      sx={{ width: 36, height: 36, mr: 1.5 }}
+                    >
+                      {(option.title || option.id || "?").charAt(0).toUpperCase()}
+                    </Avatar>
+                    <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                      <Typography variant="body2" fontWeight={600} noWrap>
+                        {option.title || option.id}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        noWrap
+                        component="div"
+                      >
+                        {[handle, subs && `${subs} subs`]
+                          .filter(Boolean)
+                          .join(" · ") || option.id}
+                      </Typography>
+                    </Box>
+                  </li>
+                );
+              }}
+              renderInput={(params) => (
                 <TextField
+                  {...params}
                   size="small"
-                  label="New group"
-                  placeholder="Group name"
-                  value={newGroupName}
-                  onChange={(e) => setNewGroupName(e.target.value)}
-                  onBlur={handleCreateGroup}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && newGroupName.trim()) {
-                      e.preventDefault();
-                      handleCreateGroup();
-                    }
+                  placeholder="Search a channel name, paste URL, or @handle"
+                  InputProps={{
+                    ...params.InputProps,
+                    startAdornment: (
+                      <>
+                        <InputAdornment position="start" sx={{ ml: 0.5 }}>
+                          <SearchRoundedIcon fontSize="small" />
+                        </InputAdornment>
+                        {params.InputProps.startAdornment}
+                      </>
+                    ),
+                    endAdornment: (
+                      <>
+                        {searchLoading ? (
+                          <CircularProgress size={16} sx={{ mr: 1 }} />
+                        ) : null}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
                   }}
-                  sx={(theme) => ({
-                    minWidth: 180,
-                    "& .MuiOutlinedInput-root": {
-                      backgroundColor:
-                        theme.palette.mode === "dark"
-                          ? "rgba(15,23,42,0.45)"
-                          : "rgba(255,255,255,0.9)",
-                      borderRadius: 2,
-                    },
-                  })}
                 />
               )}
-            </Stack>
-          </Stack>
-          <Typography variant="body2" color="text.secondary">
-            Enter a YouTube channel ID or URL.
-          </Typography>
-
-          <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
-            <TextField
-              size="small"
-              label="Channel ID / URL"
-              placeholder="https://www.youtube.com/channel/UC..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              sx={(theme) => ({
-                minWidth: 260,
-                flexGrow: 1,
-                "& .MuiOutlinedInput-root": {
-                  backgroundColor:
-                    theme.palette.mode === "dark"
-                      ? "rgba(15,23,42,0.45)"
-                      : "rgba(255,255,255,0.9)",
-                  borderRadius: 2,
-                  transition: "box-shadow 0.2s ease, transform 0.2s ease",
-                  "&:hover": {
-                    boxShadow:
-                      theme.palette.mode === "dark"
-                        ? "0 0 0 1px rgba(56,189,248,0.35)"
-                        : "0 0 0 1px rgba(14,165,233,0.3)",
-                  },
-                  "&.Mui-focused": {
-                    boxShadow:
-                      theme.palette.mode === "dark"
-                        ? "0 0 0 2px rgba(56,189,248,0.45)"
-                        : "0 0 0 2px rgba(14,165,233,0.45)",
-                  },
-                },
-              })}
             />
-            <Button
-              type="submit"
-              variant="contained"
-              color="warning"
-              disabled={loading}
-              sx={(theme) => ({
-                textTransform: "none",
-                fontWeight: 700,
-                borderRadius: 2,
-                px: 2.4,
-                position: "relative",
-                overflow: "hidden",
-                color: theme.palette.mode === "dark" ? "#1f2937" : "#1f2937",
-                backgroundColor:
-                  theme.palette.mode === "dark" ? "#facc15" : "#fbbf24",
-                boxShadow:
-                  theme.palette.mode === "dark"
-                    ? "0 12px 20px rgba(15,23,42,0.35)"
-                    : "0 12px 20px rgba(15,23,42,0.22)",
-                transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                "&:before": {
-                  content: '""',
-                  position: "absolute",
-                  top: "-50%",
-                  left: "-20%",
-                  width: "140%",
-                  height: "200%",
-                  background:
-                    "linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.45) 45%, transparent 90%)",
-                  transform: "translateX(-120%)",
-                  transition: "transform 0.6s ease",
-                  opacity: 0.8,
-                },
-                "&:hover": {
-                  transform: "translateY(-1px)",
-                  boxShadow:
-                    theme.palette.mode === "dark"
-                      ? "0 16px 26px rgba(15,23,42,0.45)"
-                      : "0 16px 26px rgba(15,23,42,0.28)",
-                  backgroundColor:
-                    theme.palette.mode === "dark" ? "#fde047" : "#f59e0b",
-                },
-                "&:hover:before": {
-                  transform: "translateX(0%)",
-                },
-              })}
-            >
-              {loading ? "Loading..." : "Load"}
-            </Button>
-            <Button
-              type="button"
-              variant="contained"
-              color="success"
-              disabled={!channel || saving}
-              onClick={handleSave}
-              sx={(theme) => ({
-                textTransform: "none",
-                fontWeight: 700,
-                borderRadius: 2,
-                px: 2.2,
-                color: theme.palette.mode === "dark" ? "#052e16" : "#052e16",
-                backgroundColor:
-                  theme.palette.mode === "dark" ? "#22c55e" : "#16a34a",
-                transition: "transform 0.2s ease, box-shadow 0.2s ease",
-                ...shimmerHoverSx(theme),
-                "&:after": {
-                  content: '""',
-                  position: "absolute",
-                  inset: 0,
-                  background:
-                    theme.palette.mode === "dark"
-                      ? "linear-gradient(120deg, rgba(34,197,94,0.18), rgba(56,189,248,0.12))"
-                      : "linear-gradient(120deg, rgba(34,197,94,0.14), rgba(59,130,246,0.12))",
-                  opacity: 0,
-                  transition: "opacity 0.3s ease",
-                },
-                "&:hover": {
-                  transform: "translateY(-1px)",
-                  boxShadow:
-                    theme.palette.mode === "dark"
-                      ? "0 14px 22px rgba(15,23,42,0.35)"
-                      : "0 14px 22px rgba(15,23,42,0.2)",
-                  backgroundColor:
-                    theme.palette.mode === "dark" ? "#4ade80" : "#15803d",
-                },
-                "&:hover:after": {
-                  opacity: 1,
-                },
-              })}
-            >
-              {saving ? "Saving..." : "Save"}
-            </Button>
-          </Stack>
+          </Box>
 
           {showSavedSelectors && (
-            <Stack spacing={1} sx={{ pt: 0.5 }}>
-              <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
-                <FormControl
-                  size="small"
-                  sx={(theme) => ({
-                    minWidth: 180,
-                    "& .MuiOutlinedInput-root": {
-                      backgroundColor:
-                        theme.palette.mode === "dark"
-                          ? "rgba(15,23,42,0.45)"
-                          : "rgba(255,255,255,0.9)",
-                      borderRadius: 2,
-                    },
-                  })}
+            <>
+              <Divider sx={{ opacity: 0.6 }} />
+              <Stack spacing={1.25}>
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  justifyContent="space-between"
+                  spacing={1}
                 >
-                  <InputLabel id="filter-group-label">Group</InputLabel>
-                  <Select
-                    labelId="filter-group-label"
-                    value={filterGroup}
-                    label="Group"
-                    onChange={(e) => setFilterGroup(e.target.value)}
-                    renderValue={(value) => value || "All groups"}
-                  >
-                    <MenuItem value="">
-                      <em>All groups</em>
-                    </MenuItem>
-                  {groupOptions.map((group) => (
-                    <MenuItem key={group} value={group}>
-                      <ListItemText primary={group} />
-                      <IconButton
-                        size="small"
-                        edge="end"
-                        color="error"
-                        aria-label={`Delete group ${group}`}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteGroup(group);
-                        }}
-                      >
-                        <CloseRoundedIcon fontSize="small" />
-                      </IconButton>
-                    </MenuItem>
-                  ))}
-                  </Select>
-                </FormControl>
-                <FormControl
-                  size="small"
-                  sx={(theme) => ({
-                    minWidth: 240,
-                    flexGrow: 1,
-                    "& .MuiOutlinedInput-root": {
-                      backgroundColor:
-                        theme.palette.mode === "dark"
-                          ? "rgba(15,23,42,0.45)"
-                          : "rgba(255,255,255,0.9)",
-                      borderRadius: 2,
-                      transition: "box-shadow 0.2s ease, transform 0.2s ease",
-                      "&:hover": {
-                        boxShadow:
-                          theme.palette.mode === "dark"
-                            ? "0 0 0 1px rgba(56,189,248,0.35)"
-                            : "0 0 0 1px rgba(14,165,233,0.3)",
-                      },
-                      "&.Mui-focused": {
-                        boxShadow:
-                          theme.palette.mode === "dark"
-                            ? "0 0 0 2px rgba(56,189,248,0.45)"
-                            : "0 0 0 2px rgba(14,165,233,0.45)",
-                      },
-                    },
-                  })}
-                >
-                  <InputLabel id="saved-channels-label">Saved channels</InputLabel>
-                  <Select
-                    labelId="saved-channels-label"
-                    value={selectedSavedId}
-                    label="Saved channels"
-                    onChange={(e) => handleSavedSelect(e.target.value)}
-                    renderValue={(value) => {
-                      const row = savedChannels.find((item) => item.channel_id === value);
-                      if (row) return row.channel_name || row.channel_id;
-                      if (missingSelected) return `Missing: ${value}`;
-                      return value || "";
+                  <Button
+                    type="button"
+                    size="small"
+                    startIcon={<AddRoundedIcon />}
+                    onClick={() => {
+                      setNewGroupName("");
+                      setCreateGroupOpen(true);
                     }}
+                    sx={{ textTransform: "none" }}
                   >
-                    <MenuItem value="">
-                      <em>Select saved channel</em>
-                    </MenuItem>
-                    {missingSelected && (
-                      <MenuItem value={selectedSavedId}>
-                        <ListItemText
-                          primary={`Missing: ${selectedSavedId}`}
-                          secondary="Channel not in saved list"
-                        />
-                      </MenuItem>
-                    )}
-                    {filteredSavedChannels.map((row) => (
-                      <MenuItem
-                        key={row.id}
-                        value={row.channel_id}
-                        sx={{ pr: 1 }}
-                      >
-                        <Avatar
-                          src={row.channel_avatar_url || ""}
-                          alt={row.channel_name || row.channel_id}
-                          sx={{
-                            width: 28,
-                            height: 28,
-                            mr: 1,
-                            bgcolor: "rgba(148,163,184,0.4)",
-                            fontSize: "0.75rem",
-                            fontWeight: 700,
-                          }}
-                        >
-                          {(row.channel_name || row.channel_id || "?")
-                            .trim()
-                            .charAt(0)
-                            .toUpperCase()}
-                        </Avatar>
-                        <ListItemText
-                          primary={row.channel_name || row.channel_id}
-                          secondary={
-                            (() => {
-                              const names = Array.isArray(row.group_names)
-                                ? row.group_names
-                                : row.group_name
-                                  ? [row.group_name]
-                                  : [];
-                              if (names.length) {
-                                const label = names.join(", ");
-                                return `${label}${row.channel_name ? " - " : ""}${row.channel_name ? row.channel_id : ""}`;
-                              }
-                              return row.channel_name ? row.channel_id : undefined;
-                            })()
-                          }
-                        />
-                        <IconButton
-                          size="small"
-                          edge="end"
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openGroupMenu(e, row);
-                          }}
-                          aria-label={`Add ${row.channel_name || row.channel_id} to group`}
-                          sx={{ mr: 0.5 }}
-                        >
-                          <GroupWorkOutlinedIcon fontSize="small" />
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          edge="end"
-                          color="error"
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemoveSaved(row);
-                          }}
-                          aria-label={`Remove ${row.channel_name || row.channel_id}`}
-                        >
-                          <CloseRoundedIcon fontSize="small" />
-                        </IconButton>
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                <Menu
-                  anchorEl={groupMenuAnchor}
-                  open={Boolean(groupMenuAnchor)}
-                  onClose={closeGroupMenu}
-                  anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-                  transformOrigin={{ vertical: "top", horizontal: "left" }}
-                  MenuListProps={{ dense: true }}
+                    New group
+                  </Button>
+                </Stack>
+
+                <Stack
+                  direction={{ xs: "column", sm: "row" }}
+                  spacing={1.25}
+                  alignItems={{ xs: "stretch", sm: "center" }}
                 >
-                  {(() => {
-                    const menuChannel = savedChannels.find(
-                      (item) => item.channel_id === groupMenuChannelId
-                    );
-                    return [
-                      <MenuItem key="groups-title" disabled>
-                        Add to groups
-                      </MenuItem>,
-                      <MenuItem
-                        key="groups-clear"
-                        onClick={() => {
-                          updateChannelGroups(groupMenuChannelId, []);
-                          closeGroupMenu();
-                        }}
-                      >
-                        <ListItemText primary="Clear groups" />
-                      </MenuItem>,
-                      ...groupOptions.map((group) => {
-                        const current = getChannelGroups(menuChannel);
-                        const checked = current.includes(group);
-                        const next = checked
-                          ? current.filter((name) => name !== group)
-                          : [...current, group];
-                        return (
-                          <MenuItem
-                            key={group}
-                            onClick={() => {
-                              updateChannelGroups(groupMenuChannelId, next);
+                  <FormControl size="small" sx={{ minWidth: 180 }}>
+                    <InputLabel id="filter-group-label">Group</InputLabel>
+                    <Select
+                      labelId="filter-group-label"
+                      value={filterGroup}
+                      label="Group"
+                      onChange={(e) => setFilterGroup(e.target.value)}
+                      renderValue={(value) => value || "All groups"}
+                    >
+                      <MenuItem value="">
+                        <em>All groups</em>
+                      </MenuItem>
+                      {groupOptions.map((group) => (
+                        <MenuItem key={group} value={group}>
+                          <ListItemText primary={group} />
+                          <IconButton
+                            size="small"
+                            edge="end"
+                            color="error"
+                            aria-label={`Delete group ${group}`}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteGroup(group);
                             }}
                           >
-                            <Checkbox size="small" checked={checked} />
-                            <ListItemText primary={group} />
+                            <CloseRoundedIcon fontSize="small" />
+                          </IconButton>
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+
+                  <FormControl size="small" sx={{ flexGrow: 1, minWidth: 240 }}>
+                    <InputLabel id="saved-channels-label">Channel</InputLabel>
+                    <Select
+                      labelId="saved-channels-label"
+                      value={selectedSavedId}
+                      label="Channel"
+                      onChange={(e) => handleSavedSelect(e.target.value)}
+                      renderValue={(value) => {
+                        const row = savedChannels.find((item) => item.channel_id === value);
+                        if (row) return row.channel_name || row.channel_id;
+                        if (missingSelected) return `Missing: ${value}`;
+                        return value || "";
+                      }}
+                    >
+                      <MenuItem value="">
+                        <em>Select a channel…</em>
+                      </MenuItem>
+                      {missingSelected && (
+                        <MenuItem value={selectedSavedId}>
+                          <ListItemText
+                            primary={`Missing: ${selectedSavedId}`}
+                            secondary="Channel not in saved list"
+                          />
+                        </MenuItem>
+                      )}
+                      {filteredSavedChannels.map((row) => {
+                        const groups = Array.isArray(row.group_names)
+                          ? row.group_names
+                          : row.group_name
+                            ? [row.group_name]
+                            : [];
+                        return (
+                          <MenuItem
+                            key={row.id}
+                            value={row.channel_id}
+                            sx={{
+                              pr: 1,
+                              "&:hover .saved-row-actions": { opacity: 1 },
+                            }}
+                          >
+                            <Avatar
+                              src={row.channel_avatar_url || ""}
+                              alt={row.channel_name || row.channel_id}
+                              sx={{
+                                width: 28,
+                                height: 28,
+                                mr: 1.25,
+                                bgcolor: "rgba(148,163,184,0.4)",
+                                fontSize: "0.75rem",
+                                fontWeight: 700,
+                              }}
+                            >
+                              {(row.channel_name || row.channel_id || "?")
+                                .trim()
+                                .charAt(0)
+                                .toUpperCase()}
+                            </Avatar>
+                            <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                              <Typography variant="body2" fontWeight={600} noWrap>
+                                {row.channel_name || row.channel_id}
+                              </Typography>
+                              {(row.channel_name || groups.length > 0) && (
+                                <Stack
+                                  direction="row"
+                                  spacing={0.5}
+                                  alignItems="center"
+                                  sx={{ mt: 0.25, flexWrap: "wrap", rowGap: 0.5 }}
+                                >
+                                  {groups.map((g) => (
+                                    <Chip
+                                      key={g}
+                                      label={g}
+                                      size="small"
+                                      sx={{
+                                        height: 18,
+                                        fontSize: "0.65rem",
+                                        "& .MuiChip-label": { px: 0.75 },
+                                      }}
+                                    />
+                                  ))}
+                                  {row.channel_name && (
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                      noWrap
+                                    >
+                                      {row.channel_id}
+                                    </Typography>
+                                  )}
+                                </Stack>
+                              )}
+                            </Box>
+                            <Stack
+                              direction="row"
+                              className="saved-row-actions"
+                              sx={{
+                                opacity: { xs: 1, md: 0 },
+                                transition: "opacity 0.15s ease",
+                              }}
+                            >
+                              <IconButton
+                                size="small"
+                                edge="end"
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openGroupMenu(e, row);
+                                }}
+                                aria-label={`Edit groups for ${row.channel_name || row.channel_id}`}
+                              >
+                                <GroupWorkOutlinedIcon fontSize="small" />
+                              </IconButton>
+                              <IconButton
+                                size="small"
+                                edge="end"
+                                color="error"
+                                onMouseDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveSaved(row);
+                                }}
+                                aria-label={`Remove ${row.channel_name || row.channel_id}`}
+                              >
+                                <CloseRoundedIcon fontSize="small" />
+                              </IconButton>
+                            </Stack>
                           </MenuItem>
                         );
-                      }),
-                    ];
-                  })()}
-                </Menu>
+                      })}
+                    </Select>
+                  </FormControl>
+                </Stack>
+
+                {assignError && (
+                  <Typography color="error" variant="body2">
+                    {assignError}
+                  </Typography>
+                )}
               </Stack>
-              {assignError && (
-                <Typography color="error" variant="body2">
-                  {assignError}
-                </Typography>
-              )}
-            </Stack>
+
+              <Menu
+                anchorEl={groupMenuAnchor}
+                open={Boolean(groupMenuAnchor)}
+                onClose={closeGroupMenu}
+                anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                transformOrigin={{ vertical: "top", horizontal: "left" }}
+                MenuListProps={{ dense: true }}
+              >
+                {(() => {
+                  const menuChannel = savedChannels.find(
+                    (item) => item.channel_id === groupMenuChannelId
+                  );
+                  return [
+                    <MenuItem key="groups-title" disabled>
+                      Add to groups
+                    </MenuItem>,
+                    <MenuItem
+                      key="groups-clear"
+                      onClick={() => {
+                        updateChannelGroups(groupMenuChannelId, []);
+                        closeGroupMenu();
+                      }}
+                    >
+                      <ListItemText primary="Clear groups" />
+                    </MenuItem>,
+                    ...groupOptions.map((group) => {
+                      const current = getChannelGroups(menuChannel);
+                      const checked = current.includes(group);
+                      const next = checked
+                        ? current.filter((name) => name !== group)
+                        : [...current, group];
+                      return (
+                        <MenuItem
+                          key={group}
+                          onClick={() => {
+                            updateChannelGroups(groupMenuChannelId, next);
+                          }}
+                        >
+                          <Checkbox size="small" checked={checked} />
+                          <ListItemText primary={group} />
+                        </MenuItem>
+                      );
+                    }),
+                  ];
+                })()}
+              </Menu>
+            </>
           )}
-        </Stack>
-      </Paper>
+      </Stack>
+
+      <Dialog
+        open={createGroupOpen}
+        onClose={() => setCreateGroupOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 1 }}>New group</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="Group name"
+            value={newGroupName}
+            onChange={(e) => setNewGroupName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && newGroupName.trim()) {
+                e.preventDefault();
+                handleCreateGroup();
+              }
+            }}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setCreateGroupOpen(false)}
+            sx={{ textTransform: "none" }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleCreateGroup}
+            disabled={!newGroupName.trim()}
+            sx={{ textTransform: "none" }}
+          >
+            Create
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {error && (
         <Typography color="error" variant="body2">
           {error}
-        </Typography>
-      )}
-
-      {saveError && (
-        <Typography color="error" variant="body2">
-          {saveError}
         </Typography>
       )}
 
@@ -1068,32 +1074,74 @@ const RivalsChannel = ({ viewMode = "list" }) => {
             })}
           >
             <Stack spacing={2}>
-              <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
-                <Avatar
-                  src={pickThumb(channel.thumbnails)}
-                  alt={channel.title}
-                  sx={{
-                    width: 72,
-                    height: 72,
-                    border: "2px solid rgba(255,255,255,0.4)",
-                    boxShadow: "0 14px 26px rgba(15,23,42,0.45)",
-                    animation: "rivalsFloat 4.5s ease-in-out infinite",
-                    "@keyframes rivalsFloat": {
-                      "0%": { transform: "translateY(0)" },
-                      "50%": { transform: "translateY(-6px)" },
-                      "100%": { transform: "translateY(0)" },
-                    },
-                  }}
-                />
-                <Box>
-                  <Typography variant="h6" fontWeight={700}>
-                    {channel.title}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {channel.customUrl || channel.id}
-                  </Typography>
-                </Box>
+              <Stack direction="row" spacing={2} alignItems="flex-start" flexWrap="wrap">
+                <Stack alignItems="flex-start" spacing={1} sx={{ minWidth: 0, flexGrow: 1 }}>
+                  <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap">
+                    <Avatar
+                      src={pickThumb(channel.thumbnails)}
+                      alt={channel.title}
+                      sx={{
+                        width: 72,
+                        height: 72,
+                        border: "2px solid rgba(255,255,255,0.4)",
+                        boxShadow: "0 14px 26px rgba(15,23,42,0.45)",
+                        animation: "rivalsFloat 4.5s ease-in-out infinite",
+                        "@keyframes rivalsFloat": {
+                          "0%": { transform: "translateY(0)" },
+                          "50%": { transform: "translateY(-6px)" },
+                          "100%": { transform: "translateY(0)" },
+                        },
+                      }}
+                    />
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="h6" fontWeight={700}>
+                        {channel.title}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {channel.customUrl || channel.id}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                  {channel.description && (
+                    <Typography variant="body2" color="text.secondary">
+                      {channel.description}
+                    </Typography>
+                  )}
+                </Stack>
+                {(() => {
+                  const isFollowed =
+                    !!channel?.id &&
+                    savedChannels.some((row) => row.channel_id === channel.id);
+                  let label;
+                  if (saving) {
+                    label = isFollowed ? "Unfollowing…" : "Following…";
+                  } else {
+                    label = isFollowed ? "Unfollow" : "Follow";
+                  }
+                  return (
+                    <Button
+                      type="button"
+                      variant={isFollowed ? "outlined" : "contained"}
+                      color={isFollowed ? "inherit" : "success"}
+                      onClick={handleFollowToggle}
+                      disabled={saving}
+                      sx={{
+                        textTransform: "none",
+                        minWidth: 120,
+                        fontWeight: 600,
+                        alignSelf: "center",
+                      }}
+                    >
+                      {label}
+                    </Button>
+                  );
+                })()}
               </Stack>
+              {saveError && (
+                <Typography color="error" variant="body2">
+                  {saveError}
+                </Typography>
+              )}
 
               <Grid container spacing={2}>
                 <Grid size={{ xs: 12, sm: 6, md: 3 }}>
@@ -1107,13 +1155,6 @@ const RivalsChannel = ({ viewMode = "list" }) => {
                 </Grid>
               </Grid>
 
-              <Typography variant="body2" color="text.secondary">
-                Published: {toDate(channel.publishedAt)}
-              </Typography>
-
-              {channel.description && (
-                <Typography variant="body2">{channel.description}</Typography>
-              )}
             </Stack>
           </Paper>
 
