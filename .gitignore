@@ -12,6 +12,7 @@ token/
 
 # ---- Databases (SQLite + sidecar files) ----
 auth.db
+quota_state.db
 *.db
 *.db-journal
 *.db-wal

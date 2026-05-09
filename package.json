@@ -2,73 +2,11 @@
   "name": "react-dashboard",
   "version": "0.1.0",
   "private": true,
-  "dependencies": {
-    "@emotion/react": "^11.14.0",
-    "@emotion/styled": "^11.14.1",
-    "@fullcalendar/core": "^6.1.19",
-    "@fullcalendar/daygrid": "^6.1.19",
-    "@fullcalendar/list": "^6.1.19",
-    "@fullcalendar/react": "^6.1.19",
-    "@fullcalendar/timegrid": "^6.1.19",
-    "@mui/icons-material": "^7.3.1",
-    "@mui/material": "^7.3.1",
-    "@mui/x-data-grid": "^8.10.0",
-    "@mui/x-date-pickers": "^8.11.0",
-    "@nivo/bar": "^0.99.0",
-    "@nivo/core": "^0.99.0",
-    "@nivo/geo": "^0.99.0",
-    "@nivo/line": "^0.99.0",
-    "@nivo/pie": "^0.99.0",
-    "@testing-library/dom": "^10.4.1",
-    "@testing-library/jest-dom": "^6.7.0",
-    "@testing-library/react": "^16.3.0",
-    "@testing-library/user-event": "^13.5.0",
-    "dayjs": "^1.11.18",
-    "formik": "^2.4.6",
-    "framer-motion": "^12.23.25",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "react-pro-sidebar": "^0.7.1",
-    "react-router-dom": "^6.30.1",
-    "react-scripts": "^5.0.1",
-    "react-virtualized-auto-sizer": "^1.0.26",
-    "react-window": "^2.1.0",
-    "recharts": "^3.5.1",
-    "web-vitals": "^2.1.4",
-    "xlsx": "^0.18.5",
-    "yup": "^1.7.0"
-  },
   "scripts": {
     "start": "npm --prefix react_dashboard run dev",
     "dev": "npm --prefix react_dashboard run dev",
     "build": "npm --prefix react_dashboard run build",
-    "preview": "npm --prefix react_dashboard run preview",
-    "start:cra": "react-scripts start",
-    "build:cra": "react-scripts build",
-    "test:cra": "react-scripts test",
-    "eject:cra": "react-scripts eject"
-  },
-  "proxy": "http://127.0.0.1:8000",
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
-  },
-  "devDependencies": {
-    "local-ssl-proxy": "^2.0.5",
-    "vite-plugin-mkcert": "^1.17.8"
+    "analyze": "npm --prefix react_dashboard run analyze",
+    "preview": "npm --prefix react_dashboard run preview"
   }
 }

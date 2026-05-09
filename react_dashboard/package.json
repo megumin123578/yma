@@ -19,10 +19,6 @@
     "@nivo/geo": "^0.99.0",
     "@nivo/line": "^0.99.0",
     "@nivo/pie": "^0.99.0",
-    "@testing-library/dom": "^10.4.1",
-    "@testing-library/jest-dom": "^6.7.0",
-    "@testing-library/react": "^16.3.0",
-    "@testing-library/user-event": "^13.5.0",
     "dayjs": "^1.11.18",
     "formik": "^2.4.6",
     "framer-motion": "^12.23.25",
@@ -33,7 +29,6 @@
     "react-virtualized-auto-sizer": "^1.0.26",
     "react-window": "^2.1.0",
     "recharts": "^3.5.1",
-    "web-vitals": "^2.1.4",
     "xlsx": "^0.18.5",
     "yup": "^1.7.0"
   },
