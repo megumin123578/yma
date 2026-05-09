@@ -70,20 +70,7 @@ from python_backend.routes.traffic_timeseries import router as ts_router
 from python_backend.routes.youtube import router as youtube_router
 
 
-DEFAULT_CORS_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:3001",
-    "http://localhost:3002",
-    "http://localhost:3003",
-    "http://localhost:3004",
-    "http://localhost:3005",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:3001",
-    "http://127.0.0.1:3002",
-    "http://127.0.0.1:3003",
-    "http://127.0.0.1:3004",
-    "http://127.0.0.1:3005",
-]
+DEFAULT_CORS_ORIGIN_REGEX = r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
 
 
 def _split_env_list(value: str) -> list[str]:
@@ -91,12 +78,20 @@ def _split_env_list(value: str) -> list[str]:
 
 
 def _cors_origins() -> list[str]:
-    return _split_env_list(os.getenv("CORS_ORIGINS", "")) or DEFAULT_CORS_ORIGINS
+    return _split_env_list(os.getenv("CORS_ORIGINS", ""))
 
 
 def _scheduler_enabled() -> bool:
     value = os.getenv("ENABLE_BACKGROUND_SCHEDULER", "1").strip().lower()
     return value not in {"0", "false", "no", "off"}
+
+
+def _perf_log_enabled() -> bool:
+    value = os.getenv("PERF_LOG_ENABLED", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
+PERF_LOG_ENABLED = _perf_log_enabled()
 
 
 @asynccontextmanager
@@ -119,15 +114,18 @@ app = FastAPI(
     default_response_class=ORJSONResponse,
 )
 
-app.add_middleware(PerfLogMiddleware)
+if PERF_LOG_ENABLED:
+    app.add_middleware(PerfLogMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
+_cors_origins_list = _cors_origins()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins(),
+    allow_origins=_cors_origins_list,
+    allow_origin_regex=None if _cors_origins_list else DEFAULT_CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Perf-Log"],
+    expose_headers=["X-Perf-Log"] if PERF_LOG_ENABLED else [],
 )
 
 app.include_router(ts_router)
