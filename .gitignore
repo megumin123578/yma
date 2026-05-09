@@ -51,6 +51,7 @@ python_backend/quota_state.db
 
 # ---- Logs ----
 *.log
+react_dashboard/vite-dev-*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
