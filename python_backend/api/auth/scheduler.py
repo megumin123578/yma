@@ -154,7 +154,7 @@ def _should_run(schedule: UserSchedule, now_saigon: datetime) -> bool:
         return False
     if last is None:
         created_at = _utc_naive_to_saigon_naive(schedule.created_at) or now_saigon
-        if created_at.date() == now_saigon.date() and now_saigon >= today_at:
+        if created_at >= today_at:
             return False
         return True
     return last.date() < now_saigon.date()

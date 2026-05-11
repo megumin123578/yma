@@ -24,6 +24,7 @@ from .common import (
     _fast_response,
     _list_content_channels_both,
     _load_list_cache,
+    _load_timeseries_cache,
     _load_video_metrics_cache,
     _make_multi_tag_cache_key,
     _normalize_content_type,
