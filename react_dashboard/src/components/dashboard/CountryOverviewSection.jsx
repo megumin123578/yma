@@ -1,7 +1,6 @@
 import { alpha } from "@mui/material/styles";
 import { Box, Stack, Typography, useTheme } from "@mui/material";
 import { ResponsiveChoropleth } from "@nivo/geo";
-import { geoFeatures } from "../../data/mockGeoFeatures";
 import { formatNumber } from "./dashboardUtils";
 
 const CountryOverviewSection = ({
@@ -13,6 +12,7 @@ const CountryOverviewSection = ({
     countryResolvers,
     topCountries,
     dashboardPalette,
+    geoFeatures,
 }) => {
     const theme = useTheme();
 
@@ -31,7 +31,7 @@ const CountryOverviewSection = ({
                         <ResponsiveChoropleth
                             debounceResize={150}
                             data={countryMapData}
-                            features={geoFeatures.features}
+                            features={geoFeatures?.features || []}
                             valueFormat={formatNumber}
                             domain={[0, countryDomainMax]}
                             tooltip={({ feature }) => {

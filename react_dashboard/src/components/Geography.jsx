@@ -25,7 +25,7 @@ import BarChartIcon from "@mui/icons-material/BarChart";
 
 import { COUNTRY_FALLBACK } from "../data/countryMapping";
 import { ResponsiveChoropleth } from "@nivo/geo";
-import { geoFeatures } from "../data/mockGeoFeatures";
+import { useGeoFeatures } from "../utils/useGeoFeatures";
 import api from "../services/api";
 import { getChannelAvatarMap, getChannelRevenueMap } from "./Module";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "./ChannelSwitcher";
@@ -127,6 +127,8 @@ const loadStoredFilters = () => {
 const GeographyChart = ({ isDashboard = false }) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
+
+  const geoFeatures = useGeoFeatures();
 
   // ===== State =====
   const [rawData, setRawData] = useState([]);
@@ -239,7 +241,7 @@ const GeographyChart = ({ isDashboard = false }) => {
   const resolvers = useMemo(() => {
     const iso2To3 = new Map();
     const idToName = new Map();
-    geoFeatures.features.forEach(f => {
+    (geoFeatures?.features || []).forEach(f => {
       const id = String(f.id || f.properties?.iso_a3 || "");
       const iso2 = f.properties?.iso_a2?.toUpperCase() || "";
       if (iso2) iso2To3.set(iso2, id);
@@ -252,7 +254,7 @@ const GeographyChart = ({ isDashboard = false }) => {
       },
       nameOf: (id) => idToName.get(id) || id,
     };
-  }, []);
+  }, [geoFeatures]);
 
   const data = useMemo(() => rawData.map(d => {
     const id = resolvers.resolveId(d.country);
@@ -396,7 +398,7 @@ const GeographyChart = ({ isDashboard = false }) => {
           <ResponsiveChoropleth
             debounceResize={150}
             data={mapData}
-            features={geoFeatures.features}
+            features={geoFeatures?.features || []}
             valueFormat={mconf.fmt}
             domain={[0, domainMax]}
             colors={isDark ? "BuGn" : "blues"}

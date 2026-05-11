@@ -5,7 +5,7 @@ import { tokens } from "../../theme";
 import Header from "../Header";
 import api from "../../services/api";
 import { COUNTRY_FALLBACK } from "../../data/countryMapping";
-import { geoFeatures } from "../../data/mockGeoFeatures";
+import { useGeoFeatures } from "../../utils/useGeoFeatures";
 import { getChannelRevenueMap } from "../Module";
 import {
     getStoredSharedChannelId,
@@ -36,6 +36,7 @@ const DashboardContainer = () => {
     const theme = useTheme();
     const isDark = theme.palette.mode === "dark";
     const colors = tokens(theme.palette.mode);
+    const geoFeatures = useGeoFeatures();
     const dashboardPalette = useMemo(
         () => ({
             surface: alpha(theme.palette.background.paper, isDark ? 0.28 : 0.94),
@@ -226,7 +227,7 @@ const DashboardContainer = () => {
         const iso2ToFeatureId = new Map();
         const idToName = new Map();
 
-        for (const feature of geoFeatures.features) {
+        for (const feature of geoFeatures?.features || []) {
             const id = String(feature.id || feature.properties?.iso_a3 || "");
             const iso2 = feature.properties?.iso_a2?.toUpperCase() || "";
             const name = feature.properties?.name || id;
@@ -246,7 +247,7 @@ const DashboardContainer = () => {
             },
             nameOf: (id) => idToName.get(id) || id,
         };
-    }, []);
+    }, [geoFeatures]);
 
     const countryMapData = useMemo(
         () =>
@@ -822,6 +823,7 @@ const DashboardContainer = () => {
                             countryResolvers={countryResolvers}
                             topCountries={topCountries}
                             dashboardPalette={dashboardPalette}
+                            geoFeatures={geoFeatures}
                         />
                     </Box>
 
