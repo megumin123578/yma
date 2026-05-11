@@ -62,8 +62,8 @@ const Smmstore = () => {
           : "rgba(15,23,42,0.12)",
       background:
         theme.palette.mode === "dark"
-          ? "linear-gradient(140deg, rgba(15,23,42,0.92) 0%, rgba(30,41,59,0.88) 60%, rgba(14,165,233,0.16) 100%)"
-          : "linear-gradient(140deg, rgba(248,250,252,0.96) 0%, rgba(226,232,240,0.92) 55%, rgba(191,219,254,0.6) 100%)",
+          ? "rgba(15,23,42,0.88)"
+          : "rgba(248,250,252,0.96)",
       boxShadow:
         theme.palette.mode === "dark"
           ? "0 18px 36px rgba(15,23,42,0.45)"

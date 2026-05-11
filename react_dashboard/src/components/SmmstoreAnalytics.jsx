@@ -100,25 +100,14 @@ const SmmstoreAnalytics = ({ viewMode = "orders", onDataChange }) => {
           : "rgba(15,23,42,0.12)",
       background:
         theme.palette.mode === "dark"
-          ? "linear-gradient(140deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 50%, rgba(13,148,136,0.5) 100%)"
-          : "linear-gradient(140deg, rgba(248,250,252,0.95) 0%, rgba(226,232,240,0.92) 50%, rgba(186,230,253,0.75) 100%)",
+          ? "rgba(15,23,42,0.85)"
+          : "rgba(255,255,255,0.96)",
       boxShadow:
         theme.palette.mode === "dark"
           ? "0 18px 35px rgba(15,23,42,0.4)"
           : "0 18px 30px rgba(148,163,184,0.35)",
       position: "relative",
       overflow: "hidden",
-      "&:before": {
-        content: '""',
-        position: "absolute",
-        inset: 0,
-        background:
-          theme.palette.mode === "dark"
-            ? "radial-gradient(600px 200px at 10% 0%, rgba(56,189,248,0.2), transparent 60%), radial-gradient(400px 200px at 80% 0%, rgba(16,185,129,0.18), transparent 60%)"
-            : "radial-gradient(600px 200px at 10% 0%, rgba(14,165,233,0.2), transparent 60%), radial-gradient(400px 200px at 80% 0%, rgba(251,191,36,0.22), transparent 60%)",
-        opacity: 0.75,
-        pointerEvents: "none",
-      },
     }),
     [theme.palette.mode]
   );

@@ -31,7 +31,7 @@ const ConfigPage = () => {
 
   return (
     <Box m="20px">
-      <Header title="CONFIG" subtitle={subtitle} />
+      <Header title="SETTING" subtitle={subtitle} />
       <CredentialsDialog
         open
         inline

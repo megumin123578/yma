@@ -2819,11 +2819,7 @@ const CredentialsDialog = ({
 
                           <Divider />
 
-                          {schedules.length === 0 ? (
-                            <Typography variant="body2" color="text.secondary">
-                              No schedules yet.
-                            </Typography>
-                          ) : (
+                          {schedules.length > 0 && (
                             <Box display="flex" flexDirection="column" gap={1}>
                               {schedules.map((s) => (
                                 <Box
