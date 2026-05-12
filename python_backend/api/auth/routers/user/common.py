@@ -15,7 +15,7 @@ from sqlalchemy import or_
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from python_backend.api.auth.database import get_db, SessionLocal
-from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup, RivalGroup, UserCredential, UserCredentialGroup, UserCredentialProject
+from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup, RivalGroup, UserCredential, UserCredentialProject
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional, hash_password
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
@@ -55,18 +55,6 @@ OAUTH_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
 _ADMIN_ENV_KEY = "ADMIN_USERNAME"
 _OAUTH_STATE_TTL_MINUTES = int(os.getenv("OAUTH_STATE_TTL_MINUTES", "15"))
-_TOKEN_GROUP_COLORS = [
-    "#2563eb",
-    "#16a34a",
-    "#dc2626",
-    "#ea580c",
-    "#9333ea",
-    "#0891b2",
-    "#d97706",
-    "#db2777",
-    "#4f46e5",
-    "#0f766e",
-]
 _UNASSIGNED_PROJECT_GROUP = "__ungrouped__"
 _ALLOWED_RUN_STAGES = {
     "content",
@@ -336,98 +324,32 @@ def _resolve_oauth_owner_user(db: Session, current_user: User | None) -> User:
 
     raise HTTPException(status_code=503, detail="No owner user configured for public OAuth")
 
-def _pick_token_group_color(group_name: str, existing_colors: Optional[set[str]] = None) -> str:
-    existing = {
-        (color or "").strip().lower()
-        for color in (existing_colors or set())
-        if (color or "").strip()
-    }
-    for color in _TOKEN_GROUP_COLORS:
-        if color.lower() not in existing:
-            return color
-    seed = sum(ord(ch) for ch in (group_name or "group"))
-    hue = seed % 360
-    return f"hsl({hue}, 70%, 45%)"
-
-
-def _get_global_token_group_color_map(db: Session) -> dict[str, str]:
-    rows = (
-        db.query(UserCredentialGroup.group_name, UserCredentialGroup.color)
-        .order_by(UserCredentialGroup.id.asc())
-        .all()
-    )
-    color_by_group: dict[str, str] = {}
-    used_colors: set[str] = set()
-
-    for row in rows:
-        name = (row.group_name or "").strip()
-        color = (row.color or "").strip()
-        if not name or name in color_by_group:
-            continue
-        if color:
-            color_by_group[name] = color
-            used_colors.add(color.lower())
-
-    assigned_names = {
-        (row[0] or "").strip()
-        for row in db.query(UserCredential.group_name)
-        .filter(UserCredential.group_name.isnot(None))
-        .all()
-        if (row[0] or "").strip()
-    }
-    for name in sorted(assigned_names, key=str.lower):
-        if name in color_by_group:
-            continue
-        color = _pick_token_group_color(name, used_colors)
-        color_by_group[name] = color
-        used_colors.add(color.lower())
-
-    return color_by_group
-
-
-def _normalize_project_group_name(group_name: Optional[str]) -> str:
-    name = (group_name or "").strip()
-    return name if name else _UNASSIGNED_PROJECT_GROUP
-
-
-def _serialize_project_group_name(group_name: Optional[str]) -> Optional[str]:
-    name = (group_name or "").strip()
-    if not name or name == _UNASSIGNED_PROJECT_GROUP:
-        return None
-    return name
-
-
 def _list_token_projects(db: Session) -> list[dict]:
-    project_map: dict[str, str] = {}
+    project_names: set[str] = set()
 
     rows = (
-        db.query(UserCredentialProject.project_name, UserCredentialProject.group_name)
+        db.query(UserCredentialProject.project_name)
         .order_by(UserCredentialProject.project_name.asc())
         .all()
     )
     for row in rows:
         project_name = (row.project_name or "").strip()
-        if not project_name or project_name in project_map:
-            continue
-        project_map[project_name] = _normalize_project_group_name(row.group_name)
+        if project_name:
+            project_names.add(project_name)
 
     assigned_rows = (
-        db.query(UserCredential.project_name, UserCredential.group_name)
+        db.query(UserCredential.project_name)
         .filter(UserCredential.project_name.isnot(None))
         .all()
     )
     for row in assigned_rows:
         project_name = (row.project_name or "").strip()
-        if not project_name or project_name in project_map:
-            continue
-        project_map[project_name] = _normalize_project_group_name(row.group_name)
+        if project_name:
+            project_names.add(project_name)
 
     return [
-        {
-            "project_name": project_name,
-            "group_name": _serialize_project_group_name(group_name),
-        }
-        for project_name, group_name in sorted(project_map.items(), key=lambda item: item[0].lower())
+        {"project_name": project_name}
+        for project_name in sorted(project_names, key=lambda item: item.lower())
     ]
 
 

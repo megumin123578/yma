@@ -13,7 +13,6 @@ from python_backend.api.auth.models import (
     TokenProgress,
     User,
     UserCredential,
-    UserCredentialGroup,
     UserCredentialProject,
     UserHiddenChannel,
     UserScheduleRun,
@@ -33,18 +32,14 @@ from .common import (
     _UNASSIGNED_PROJECT_GROUP,
     _fetch_selected_channel_metadata,
     _find_owned_credential_by_identifier,
-    _get_global_token_group_color_map,
     _is_admin_user,
     _kickoff_get_data,
     _list_token_projects,
     _load_token_credentials,
-    _normalize_project_group_name,
-    _pick_token_group_color,
     _purge_postgres_account,
     _require_admin,
     _require_valid_token_name,
     _safe_token_name,
-    _serialize_project_group_name,
 )
 
 
@@ -56,7 +51,6 @@ def list_tokens(
     is_admin = _is_admin_user(current_user)
     allowed = get_allowed_account_tags(db, current_user)
     hidden = get_hidden_account_tags(db, current_user.id)
-    group_color_map = _get_global_token_group_color_map(db)
     labels = {}
     avatars = {}
     owned_names = set()
@@ -68,7 +62,6 @@ def list_tokens(
             UserCredential.account_tag,
             UserCredential.selected_channel_id,
             UserCredential.selected_channel_avatar,
-            UserCredential.group_name,
             UserCredential.project_name,
         )
         .filter(UserCredential.token_name.isnot(None))
@@ -96,24 +89,14 @@ def list_tokens(
             or avatar_by_channel_id.get(row.selected_channel_id or "", "")
             or avatar_by_token_name.get(row.token_name, "")
         )
-    groups = {}
     projects = {}
     for row in rows:
         if not row.token_name:
             continue
-        next_group = (row.group_name or "").strip()
         next_project = (row.project_name or "").strip()
-        current_group = groups.get(row.token_name, "")
-        if next_group or not current_group:
-            groups[row.token_name] = next_group
         current_project = projects.get(row.token_name, "")
         if next_project or not current_project:
             projects[row.token_name] = next_project
-    group_colors = {
-        token_name: group_color_map.get(group_name, "")
-        for token_name, group_name in groups.items()
-        if group_name
-    }
     if is_admin:
         owned_names = {row.token_name for row in rows if row.token_name}
     else:
@@ -134,9 +117,7 @@ def list_tokens(
                 "hidden": base in hidden,
                 "label": labels.get(name, ""),
                 "avatar": avatars.get(name, ""),
-                "group_name": groups.get(name, ""),
                 "project_name": projects.get(name, ""),
-                "group_color": group_colors.get(name, ""),
                 "owned": name in owned_names,
             }
         )
@@ -178,12 +159,7 @@ class TokenVisibilityUpdate(BaseModel):
     hidden: bool
 
 
-class TokenGroupUpdate(BaseModel):
-    group_name: Optional[str] = None
-
-
 class TokenProjectUpdate(BaseModel):
-    group_name: Optional[str] = None
     project_name: Optional[str] = None
 
 
@@ -221,21 +197,6 @@ def set_token_visibility(
     return {"ok": True, "hidden": payload.hidden}
 
 
-@router.get("/tokens/groups")
-def list_token_groups(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    _require_admin(current_user)
-    color_by_group = _get_global_token_group_color_map(db)
-    return {
-        "groups": [
-            {"group_name": name, "color": color_by_group[name]}
-            for name in sorted(color_by_group.keys(), key=str.lower)
-        ]
-    }
-
-
 @router.get("/tokens/projects")
 def list_token_projects(
     db: Session = Depends(get_db),
@@ -243,25 +204,6 @@ def list_token_projects(
 ):
     _require_admin(current_user)
     return {"projects": _list_token_projects(db)}
-
-
-@router.post("/tokens/groups")
-def create_token_group(
-    payload: dict,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    _require_admin(current_user)
-    name = (payload.get("group_name") or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="group_name is required")
-    color_by_group = _get_global_token_group_color_map(db)
-    if name in color_by_group:
-        return {"ok": True, "group_name": name, "color": color_by_group[name]}
-    color = _pick_token_group_color(name, set(color.lower() for color in color_by_group.values()))
-    db.add(UserCredentialGroup(user_id=current_user.id, group_name=name, color=color))
-    db.commit()
-    return {"ok": True, "group_name": name, "color": color}
 
 
 @router.post("/tokens/projects")
@@ -276,7 +218,7 @@ def create_token_project(
         raise HTTPException(status_code=400, detail="project_name is required")
     existing = {item["project_name"] for item in _list_token_projects(db)}
     if project_name in existing:
-        return {"ok": True, "group_name": None, "project_name": project_name}
+        return {"ok": True, "project_name": project_name}
     db.add(
         UserCredentialProject(
             user_id=current_user.id,
@@ -285,57 +227,7 @@ def create_token_project(
         )
     )
     db.commit()
-    return {"ok": True, "group_name": None, "project_name": project_name}
-
-
-@router.patch("/tokens/groups/{group_name}")
-def rename_token_group(
-    group_name: str,
-    payload: dict,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    _require_admin(current_user)
-    current_name = (group_name or "").strip()
-    next_name = (payload.get("group_name") or "").strip()
-    if not current_name:
-        raise HTTPException(status_code=400, detail="group_name is required")
-    if not next_name:
-        raise HTTPException(status_code=400, detail="New group_name is required")
-    if current_name == next_name:
-        return {"ok": True, "group_name": next_name}
-    color_by_group = _get_global_token_group_color_map(db)
-    if next_name in color_by_group:
-        raise HTTPException(status_code=400, detail="Group name already exists")
-    color = color_by_group.get(current_name, "")
-    if not color:
-        raise HTTPException(status_code=404, detail="Group not found")
-    rows = (
-        db.query(UserCredentialGroup)
-        .filter(UserCredentialGroup.group_name == current_name)
-        .all()
-    )
-    for row in rows:
-        row.group_name = next_name
-        row.color = color
-        db.add(row)
-    if not rows:
-        db.add(UserCredentialGroup(user_id=current_user.id, group_name=next_name, color=color))
-    project_rows = (
-        db.query(UserCredentialProject)
-        .filter(UserCredentialProject.group_name == current_name)
-        .all()
-    )
-    for row in project_rows:
-        row.group_name = next_name
-        db.add(row)
-    (
-        db.query(UserCredential)
-        .filter(UserCredential.group_name == current_name)
-        .update({"group_name": next_name}, synchronize_session=False)
-    )
-    db.commit()
-    return {"ok": True, "group_name": next_name, "color": color}
+    return {"ok": True, "project_name": project_name}
 
 
 @router.patch("/tokens/projects/{project_name}")
@@ -353,77 +245,27 @@ def rename_token_project(
     if not next_name:
         raise HTTPException(status_code=400, detail="New project_name is required")
     if current_name == next_name:
-        row = (
-            db.query(UserCredentialProject)
-            .filter(UserCredentialProject.project_name == current_name)
-            .first()
-        )
-        return {
-            "ok": True,
-            "group_name": _serialize_project_group_name(getattr(row, "group_name", None)),
-            "project_name": next_name,
-        }
+        return {"ok": True, "project_name": next_name}
     existing = {item["project_name"] for item in _list_token_projects(db)}
     if next_name in existing:
         raise HTTPException(status_code=400, detail="Project name already exists")
     rows = (
         db.query(UserCredentialProject)
-        .filter(
-            UserCredentialProject.project_name == current_name,
-        )
+        .filter(UserCredentialProject.project_name == current_name)
         .all()
     )
     if not rows:
         raise HTTPException(status_code=404, detail="Project not found")
-    stored_group_name = _normalize_project_group_name(rows[0].group_name)
     for row in rows:
         row.project_name = next_name
         db.add(row)
     (
         db.query(UserCredential)
-        .filter(
-            UserCredential.project_name == current_name,
-        )
+        .filter(UserCredential.project_name == current_name)
         .update({"project_name": next_name}, synchronize_session=False)
     )
     db.commit()
-    return {
-        "ok": True,
-        "group_name": _serialize_project_group_name(stored_group_name),
-        "project_name": next_name,
-    }
-
-
-@router.delete("/tokens/groups/{group_name}")
-def delete_token_group(
-    group_name: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    _require_admin(current_user)
-    name = (group_name or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="group_name is required")
-    color_by_group = _get_global_token_group_color_map(db)
-    if name not in color_by_group:
-        raise HTTPException(status_code=404, detail="Group not found")
-    (
-        db.query(UserCredential)
-        .filter(UserCredential.group_name == name)
-        .update({"group_name": None, "project_name": None}, synchronize_session=False)
-    )
-    (
-        db.query(UserCredentialProject)
-        .filter(UserCredentialProject.group_name == name)
-        .delete()
-    )
-    deleted = (
-        db.query(UserCredentialGroup)
-        .filter(UserCredentialGroup.group_name == name)
-        .delete()
-    )
-    db.commit()
-    return {"ok": True, "deleted": deleted}
+    return {"ok": True, "project_name": next_name}
 
 
 @router.delete("/tokens/projects/{project_name}")
@@ -438,108 +280,18 @@ def delete_token_project(
         raise HTTPException(status_code=400, detail="project_name is required")
     (
         db.query(UserCredential)
-        .filter(
-            UserCredential.project_name == current_name,
-        )
+        .filter(UserCredential.project_name == current_name)
         .update({"project_name": None}, synchronize_session=False)
     )
     deleted = (
         db.query(UserCredentialProject)
-        .filter(
-            UserCredentialProject.project_name == current_name,
-        )
+        .filter(UserCredentialProject.project_name == current_name)
         .delete()
     )
     if not deleted:
         raise HTTPException(status_code=404, detail="Project not found")
     db.commit()
     return {"ok": True, "deleted": deleted}
-
-
-@router.post("/tokens/projects/{project_name}/group")
-def assign_project_group(
-    project_name: str,
-    payload: dict,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    _require_admin(current_user)
-    current_name = (project_name or "").strip()
-    group_name = (payload.get("group_name") or "").strip()
-    if not current_name:
-        raise HTTPException(status_code=400, detail="project_name is required")
-    if group_name:
-        color_by_group = _get_global_token_group_color_map(db)
-        if group_name not in color_by_group:
-            raise HTTPException(status_code=404, detail="Group not found")
-    row = (
-        db.query(UserCredentialProject)
-        .filter(UserCredentialProject.project_name == current_name)
-        .first()
-    )
-    if not row:
-        raise HTTPException(status_code=404, detail="Project not found")
-    row.group_name = _normalize_project_group_name(group_name)
-    db.add(row)
-    (
-        db.query(UserCredential)
-        .filter(UserCredential.project_name == current_name)
-        .update({"group_name": group_name or None}, synchronize_session=False)
-    )
-    db.commit()
-    return {"ok": True, "project_name": current_name, "group_name": group_name or None}
-
-
-@router.post("/tokens/{token_name}/group")
-def assign_token_group(
-    token_name: str,
-    payload: TokenGroupUpdate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    _require_admin(current_user)
-    safe_name = _require_valid_token_name(token_name)
-    owned = _find_owned_credential_by_identifier(
-        db,
-        current_user.id,
-        safe_name,
-        allow_all_users=_is_admin_user(current_user),
-    )
-    if not owned:
-        raise HTTPException(status_code=404, detail="Token not found")
-    group_name = (payload.group_name or "").strip()
-    color_by_group = _get_global_token_group_color_map(db)
-    group_color = color_by_group.get(group_name, "") if group_name else ""
-    if group_name:
-        if not group_color:
-            group_color = _pick_token_group_color(
-                group_name,
-                set(color.lower() for color in color_by_group.values()),
-            )
-            db.add(UserCredentialGroup(user_id=current_user.id, group_name=group_name, color=group_color))
-    now = datetime.utcnow()
-    current_row = owned
-    current_project_name = (current_row.project_name or "").strip() if current_row else ""
-    next_project_name = current_project_name if current_row and (current_row.group_name or "").strip() == group_name else ""
-    (
-        db.query(UserCredential)
-        .filter(UserCredential.id == owned.id)
-        .update(
-            {
-                "group_name": group_name or None,
-                "project_name": next_project_name or None,
-                "updated_at": now,
-            },
-            synchronize_session=False,
-        )
-    )
-    db.commit()
-    return {
-        "ok": True,
-        "group_name": group_name or None,
-        "project_name": next_project_name or None,
-        "group_color": group_color,
-    }
 
 
 @router.post("/token/{token_name}/project")
@@ -560,21 +312,12 @@ def assign_token_project(
     )
     if not owned:
         raise HTTPException(status_code=404, detail="Token not found")
-    group_name = (payload.group_name or "").strip()
     project_name = (payload.project_name or "").strip()
-    current_group_name = (owned.group_name or "").strip()
     current_project_name = (owned.project_name or "").strip()
-    if group_name:
-        color_by_group = _get_global_token_group_color_map(db)
-        if group_name not in color_by_group:
-            raise HTTPException(status_code=404, detail="Group not found")
     if (
         project_name
         and current_project_name
-        and (
-            current_project_name != project_name
-            or current_group_name != group_name
-        )
+        and current_project_name != project_name
     ):
         raise HTTPException(
             status_code=409,
@@ -586,14 +329,10 @@ def assign_token_project(
             .filter(UserCredentialProject.project_name == project_name)
             .first()
         )
-        if project_row:
-            project_row.group_name = _normalize_project_group_name(group_name)
-            db.add(project_row)
-        else:
+        if not project_row:
             db.add(
                 UserCredentialProject(
                     user_id=current_user.id,
-                    group_name=_normalize_project_group_name(group_name),
                     project_name=project_name,
                 )
             )
@@ -603,7 +342,6 @@ def assign_token_project(
         .filter(UserCredential.id == owned.id)
         .update(
             {
-                "group_name": group_name or None,
                 "project_name": project_name or None,
                 "updated_at": now,
             },
@@ -613,7 +351,6 @@ def assign_token_project(
     db.commit()
     return {
         "ok": True,
-        "group_name": group_name or None,
         "project_name": project_name or None,
     }
 

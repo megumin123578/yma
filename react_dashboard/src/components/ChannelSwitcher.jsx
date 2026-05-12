@@ -97,9 +97,7 @@ const loadTokenInventory = async () => {
             label: String(item?.label || value),
             avatar: item?.avatar || "",
             hidden: !!item?.hidden,
-            group_name: normalizeHierarchyName(item?.group_name),
             project_name: normalizeHierarchyName(item?.project_name),
-            group_color: item?.group_color || "",
             owned: item?.owned !== false,
           };
         })
@@ -148,9 +146,7 @@ const ChannelSwitcher = ({
   const [visibilityReady, setVisibilityReady] = useState(false);
   const [pendingValues, setPendingValues] = useState({});
   const [stickyHiddenValues, setStickyHiddenValues] = useState([]);
-  const [hoveredRootKey, setHoveredRootKey] = useState("");
   const [hoveredProjectKey, setHoveredProjectKey] = useState("");
-  const [hoveredRootRect, setHoveredRootRect] = useState(null);
   const [hoveredProjectRect, setHoveredProjectRect] = useState(null);
   const listboxRef = useRef(null);
   const restoreScrollTopRef = useRef(null);
@@ -165,9 +161,7 @@ const ChannelSwitcher = ({
         label: getOptionLabel(option),
         avatar: getOptionAvatar(option),
         meta: getOptionMeta(option),
-        group_name: normalizeHierarchyName(option?.group_name),
         project_name: normalizeHierarchyName(option?.project_name),
-        group_color: option?.group_color || "",
       })),
     [options, getOptionAvatar, getOptionLabel, getOptionMeta, getOptionValue]
   );
@@ -232,9 +226,7 @@ const ChannelSwitcher = ({
         ...option,
         tokenName: inventory?.tokenName || "",
         hidden,
-        group_name: option.group_name || inventory?.group_name || "",
         project_name: option.project_name || inventory?.project_name || "",
-        group_color: option.group_color || inventory?.group_color || "",
       };
     });
 
@@ -258,9 +250,7 @@ const ChannelSwitcher = ({
         meta: getOptionMeta(rawOption),
         tokenName: item.tokenName,
         hidden,
-        group_name: item.group_name || "",
         project_name: item.project_name || "",
-        group_color: item.group_color || "",
       });
     });
 
@@ -292,101 +282,49 @@ const ChannelSwitcher = ({
   );
 
   const hierarchyMenu = useMemo(() => {
-    const groupsMap = new Map();
+    const projectsMap = new Map();
     const ungroupedChannels = [];
 
     groupedOptions.forEach((option) => {
-      const groupName = normalizeHierarchyName(option.group_name);
       const projectName = normalizeHierarchyName(option.project_name);
-      if (!groupName) {
+      if (!projectName) {
         ungroupedChannels.push(option);
         return;
       }
-
-      let groupEntry = groupsMap.get(groupName);
-      if (!groupEntry) {
-        groupEntry = {
-          key: `group:${groupName}`,
-          type: "group",
-          label: groupName,
-          groupName,
-          projects: new Map(),
-          directChannels: [],
-        };
-        groupsMap.set(groupName, groupEntry);
-      }
-
-      if (!projectName) {
-        groupEntry.directChannels.push(option);
-        return;
-      }
-
-      let projectEntry = groupEntry.projects.get(projectName);
+      let projectEntry = projectsMap.get(projectName);
       if (!projectEntry) {
         projectEntry = {
-          key: `project:${groupName}::${projectName}`,
+          key: `project:${projectName}`,
           type: "project",
           label: projectName,
           projectName,
           items: [],
         };
-        groupEntry.projects.set(projectName, projectEntry);
+        projectsMap.set(projectName, projectEntry);
       }
       projectEntry.items.push(option);
     });
 
-    const groups = Array.from(groupsMap.values())
-      .map((groupEntry) => {
-        const projects = Array.from(groupEntry.projects.values())
-          .map((projectEntry) => ({
-            ...projectEntry,
-            items: sortOptionsByVisibility(projectEntry.items),
-          }))
-          .sort((a, b) => compareMenuLabels(a.label, b.label));
-
-        if (groupEntry.directChannels.length) {
-          projects.unshift({
-            key: `project:${groupEntry.groupName}::__direct__`,
-            type: "project",
-            label: "Channels",
-            projectName: "",
-            items: sortOptionsByVisibility(groupEntry.directChannels),
-            isDirectChannels: true,
-          });
-        }
-
-        return {
-          key: groupEntry.key,
-          type: "group",
-          label: groupEntry.label,
-          groupName: groupEntry.groupName,
-          projects,
-        };
-      })
+    const projects = Array.from(projectsMap.values())
+      .map((entry) => ({
+        ...entry,
+        items: sortOptionsByVisibility(entry.items),
+      }))
       .sort((a, b) => compareMenuLabels(a.label, b.label));
 
     return {
-      groups,
+      projects,
       ungroupedChannels: sortOptionsByVisibility(ungroupedChannels),
-      hasHierarchy: groups.length > 0,
+      hasHierarchy: projects.length > 0,
     };
   }, [groupedOptions]);
 
-  const topLevelHierarchyEntries = useMemo(
-    () =>
-      hierarchyMenu.groups.map((groupEntry) => ({
-        ...groupEntry,
-        projectCount: groupEntry.projects.filter((project) => !project.isDirectChannels).length,
-      })),
-    [hierarchyMenu.groups]
-  );
+  const topLevelHierarchyEntries = hierarchyMenu.projects;
 
   const rootChannelOptions = useMemo(
     () =>
       groupedOptions.filter(
-        (option) =>
-          !normalizeHierarchyName(option.group_name) &&
-          !normalizeHierarchyName(option.project_name)
+        (option) => !normalizeHierarchyName(option.project_name)
       ),
     [groupedOptions]
   );
@@ -422,52 +360,20 @@ const ChannelSwitcher = ({
     hiddenOptions.length > 0 || (showAllVisible && typeof onShowAllClick === "function");
 
   const selectedHierarchyPath = useMemo(() => {
-    for (const rootEntry of topLevelHierarchyEntries) {
-      for (const projectEntry of rootEntry.projects || []) {
-        if ((projectEntry.items || []).some((option) => option.value === selectedValue)) {
-          return {
-            rootKey: rootEntry.key,
-            projectKey: projectEntry.key,
-          };
-        }
+    for (const projectEntry of topLevelHierarchyEntries) {
+      if ((projectEntry.items || []).some((option) => option.value === selectedValue)) {
+        return { projectKey: projectEntry.key };
       }
     }
-    return { rootKey: "", projectKey: "" };
+    return { projectKey: "" };
   }, [selectedValue, topLevelHierarchyEntries]);
 
   useEffect(() => {
     if (!showHierarchyMenu) {
-      setHoveredRootKey("");
       setHoveredProjectKey("");
-      setHoveredRootRect(null);
       setHoveredProjectRect(null);
-      return;
     }
-    if (!hoveredRootKey) return;
-    const hoveredRootEntry = topLevelHierarchyEntries.find((entry) => entry.key === hoveredRootKey);
-    if (!hoveredRootEntry) {
-      setHoveredRootKey("");
-      setHoveredProjectKey("");
-      setHoveredRootRect(null);
-      setHoveredProjectRect(null);
-      return;
-    }
-    const nextProjectKey =
-      hoveredRootEntry.projects?.find((entry) => entry.key === hoveredProjectKey)?.key ||
-      (hoveredRootEntry.key === selectedHierarchyPath.rootKey && selectedHierarchyPath.projectKey) ||
-      hoveredRootEntry.projects?.[0]?.key ||
-      "";
-    if (hoveredProjectKey !== nextProjectKey) {
-      setHoveredProjectKey(nextProjectKey);
-    }
-  }, [
-    hoveredProjectKey,
-    hoveredRootKey,
-    selectedHierarchyPath.projectKey,
-    selectedHierarchyPath.rootKey,
-    showHierarchyMenu,
-    topLevelHierarchyEntries,
-  ]);
+  }, [showHierarchyMenu]);
 
   useEffect(() => {
     if (open) return;
@@ -573,9 +479,7 @@ const ChannelSwitcher = ({
   };
 
   const resetHierarchyHover = () => {
-    setHoveredRootKey("");
     setHoveredProjectKey("");
-    setHoveredRootRect(null);
     setHoveredProjectRect(null);
   };
 
@@ -588,12 +492,9 @@ const ChannelSwitcher = ({
     resetHierarchyHover();
   };
 
-  const activeRootEntry =
-    topLevelHierarchyEntries.find((entry) => entry.key === hoveredRootKey) || null;
   const activeProjectEntry =
-    activeRootEntry?.projects?.find((entry) => entry.key === hoveredProjectKey) ||
+    topLevelHierarchyEntries.find((entry) => entry.key === hoveredProjectKey) ||
     null;
-  const activeRootRect = hoveredRootRect;
   const activeProjectRect = hoveredProjectRect;
 
   const menuRowSx = {
@@ -687,13 +588,13 @@ const ChannelSwitcher = ({
           >
             {option.label}
           </Typography>
-          {showPath && (option.project_name || option.group_name) && (
+          {showPath && option.project_name && (
             <Typography
               variant="caption"
               noWrap
               sx={{ display: "block", color: "text.secondary", mt: 0.15 }}
             >
-              {[option.group_name, option.project_name].filter(Boolean).join(" / ")}
+              {option.project_name}
             </Typography>
           )}
         </Box>
@@ -753,20 +654,15 @@ const ChannelSwitcher = ({
       }}
     >
       {topLevelHierarchyEntries.map((entry) => {
-        const isActive = activeRootEntry?.key === entry.key;
+        const isActive = activeProjectEntry?.key === entry.key;
+        const channelCount = entry.items?.length || 0;
         return (
           <Box
             key={entry.key}
             onMouseDown={(event) => event.preventDefault()}
             onMouseEnter={(event) => {
-              setHoveredRootKey(entry.key);
-              setHoveredRootRect(getAnchorRect(event.currentTarget));
-              setHoveredProjectKey(
-                entry.key === selectedHierarchyPath.rootKey && selectedHierarchyPath.projectKey
-                  ? selectedHierarchyPath.projectKey
-                  : entry.projects?.[0]?.key || ""
-              );
-              setHoveredProjectRect(null);
+              setHoveredProjectKey(entry.key);
+              setHoveredProjectRect(getAnchorRect(event.currentTarget));
             }}
             sx={{
               ...menuRowSx,
@@ -782,7 +678,7 @@ const ChannelSwitcher = ({
                 {entry.label}
               </Typography>
             </Box>
-            {renderCountPill(entry.projectCount || 0)}
+            {renderCountPill(channelCount)}
             <ChevronRightIcon
               fontSize="small"
               sx={{ color: "text.secondary", flexShrink: 0 }}
@@ -979,7 +875,7 @@ const ChannelSwitcher = ({
             return items;
           }
           return items.filter((option) =>
-            [option.label, option.value, option.meta, option.group_name, option.project_name]
+            [option.label, option.value, option.meta, option.project_name]
               .filter(Boolean)
               .join(" ")
               .toLowerCase()
@@ -1136,49 +1032,8 @@ const ChannelSwitcher = ({
           );
         }}
       />
-      {open && showHierarchyMenu && activeRootEntry && activeRootRect ? (
-        <Box sx={getSubmenuLayerSx(activeRootRect, 248, theme.zIndex.modal + 2)}>
-          {renderFlyoutPanel(
-            (activeRootEntry.projects || []).map((entry) => {
-              const isActive = activeProjectEntry?.key === entry.key;
-              const channelCount = entry.items?.length || 0;
-              return (
-                <Box
-                  key={entry.key}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={(event) => {
-                    setHoveredProjectKey(entry.key);
-                    setHoveredProjectRect(getAnchorRect(event.currentTarget));
-                  }}
-                  sx={{
-                    ...menuRowSx,
-                    justifyContent: "space-between",
-                    bgcolor: isActive ? "action.selected" : "transparent",
-                    "&:hover": {
-                      bgcolor: isActive ? "action.selected" : "action.hover",
-                    },
-                  }}
-                >
-                  <Box sx={{ minWidth: 0, flex: 1 }}>
-                    <Typography variant="body2" noWrap sx={{ fontWeight: 800, lineHeight: 1.3 }}>
-                      {entry.label}
-                    </Typography>
-                  </Box>
-                  {renderCountPill(channelCount)}
-                  <ChevronRightIcon
-                    fontSize="small"
-                    sx={{ color: "text.secondary", flexShrink: 0 }}
-                  />
-                </Box>
-              );
-            }),
-            248,
-            { pt: 0.15, pb: 0.75, px: 0.75 }
-          )}
-        </Box>
-      ) : null}
       {open && showHierarchyMenu && activeProjectEntry && activeProjectRect ? (
-        <Box sx={getSubmenuLayerSx(activeProjectRect, 340, theme.zIndex.modal + 3)}>
+        <Box sx={getSubmenuLayerSx(activeProjectRect, 340, theme.zIndex.modal + 2)}>
           {renderFlyoutPanel(
             (activeProjectEntry.items || []).map((option) =>
               renderMenuLeaf(option, { showPath: false })

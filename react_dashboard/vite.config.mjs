@@ -31,6 +31,12 @@ export default defineConfig(({ mode }) => {
           open: true,
         }),
     ].filter(Boolean),
+    resolve: {
+      dedupe: ["@emotion/react", "@emotion/styled", "react", "react-dom"],
+    },
+    optimizeDeps: {
+      include: ["@emotion/react", "@emotion/styled"],
+    },
     build: {
       outDir: "build",
       rollupOptions: {
