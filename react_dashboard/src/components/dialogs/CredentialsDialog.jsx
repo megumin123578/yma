@@ -28,7 +28,6 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "r
 import dayjs from "dayjs";
 import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
-import AddIcon from "@mui/icons-material/Add";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -42,7 +41,6 @@ import CloseIcon from "@mui/icons-material/Close";
 import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
 import {
-  uploadCredentials,
   listTokens,
   deleteToken,
   listTokenProgress,
@@ -701,37 +699,6 @@ const CredentialsDialog = ({
       unsubscribe();
     };
   }, [authUrl, oauthState, loadTokens, notifyDataChanged, setTokenSyncing]);
-
-  const handleStartOAuth = async () => {
-    if (uploading) return;
-
-    setUploading(true);
-    setStatus({ type: "", message: "" });
-
-    try {
-      const data = await uploadCredentials();
-      const nextUrl = data?.auth_url || "";
-      const nextState = data?.state || "";
-      setAuthUrl(nextUrl);
-      setOauthState(nextState);
-      if (!nextUrl) {
-        await loadTokens();
-      }
-      setStatus({
-        type: "success",
-        message: nextUrl ? "Redirecting to Google..." : "Authorization started.",
-      });
-      if (nextUrl) {
-        window.open(nextUrl, "_blank", "noopener");
-      }
-    } catch (err) {
-      const message =
-        err?.response?.data?.detail || "Authorization failed. Please try again.";
-      setStatus({ type: "error", message });
-    } finally {
-      setUploading(false);
-    }
-  };
 
   const handleDeleteToken = async (tokenName) => {
     try {
@@ -2038,53 +2005,6 @@ const CredentialsDialog = ({
         <Box display="flex" flexDirection="column" gap={2} flex={1} sx={{ overflowY: "auto", pr: 1.5, py: 0.5 }}>
             {activeTab === "add" ? (
               <>
-                <Box
-                  sx={{
-                    bgcolor: panel,
-                    border: `1px solid ${border}`,
-                    borderRadius: 2,
-                    p: 2,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 1.5,
-                    transition: "transform 200ms ease, box-shadow 200ms ease",
-                    boxShadow: isDark ? "0 10px 24px rgba(0,0,0,0.35)" : "0 10px 24px rgba(0,0,0,0.08)",
-                    backdropFilter: "blur(12px)",
-                    WebkitBackdropFilter: "blur(12px)",
-                    "&:hover": {
-                      transform: "translateY(-2px)",
-                    },
-                  }}
-                >
-                  <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
-                    Add new channel
-                  </Typography>
-
-                  <Tooltip title="Start Google sign-in. The app will auto-select the connected channel and begin syncing.">
-                    <span style={{ display: "inline-flex" }}>
-                      <Button
-                        variant="contained"
-                        color="success"
-                        startIcon={<AddIcon />}
-                        onClick={handleStartOAuth}
-                        disabled={uploading}
-                        sx={{
-                          ...shimmerSx,
-                          bgcolor: isDark ? "#2b8a7b" : undefined,
-                          color: isDark ? "#e9edf2" : undefined,
-                          transition: "all 180ms ease",
-                          "&:hover": {
-                            bgcolor: isDark ? "#247468" : undefined,
-                            transform: "translateY(-1px)",
-                          },
-                        }}
-                      >
-                        Add Channel
-                      </Button>
-                    </span>
-                  </Tooltip>
-                </Box>
-
                 {status.message && (
                   <Typography
                     variant="body2"
@@ -2132,66 +2052,7 @@ const CredentialsDialog = ({
                   </Box>
                 )}
 
-                <Box
-                  sx={{
-                    bgcolor: panel,
-                    border: `1px solid ${border}`,
-                    borderRadius: 2,
-                    p: 2,
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 1.5,
-                    transition: "transform 200ms ease, box-shadow 200ms ease",
-                    boxShadow: isDark ? "0 10px 24px rgba(0,0,0,0.35)" : "0 10px 24px rgba(0,0,0,0.08)",
-                    backdropFilter: "blur(12px)",
-                    WebkitBackdropFilter: "blur(12px)",
-                    "&:hover": {
-                      transform: "translateY(-2px)",
-                    },
-                  }}
-                >
                   <Box display="flex" alignItems="center" justifyContent="space-between">
-                    <Tooltip
-                      title={
-                        tokenView === "card"
-                          ? "Switch to List view. List view exposes drag handles so you can reorder tokens."
-                          : "Switch to Cards view. Compact cards are better for quick scanning."
-                      }
-                    >
-                      <Box display="flex" alignItems="center" gap={0.75}>
-                        <Typography
-                          variant="caption"
-                          sx={{ color: tokenView === "card" ? accent : "text.secondary", fontWeight: 700 }}
-                        >
-                          Cards
-                        </Typography>
-                        <Switch
-                          checked={tokenView === "list"}
-                          onChange={() => setTokenView((prev) => (prev === "card" ? "list" : "card"))}
-                          size="small"
-                          sx={{
-                            mx: 0.25,
-                            "& .MuiSwitch-switchBase.Mui-checked": {
-                              color: accent,
-                            },
-                            "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": {
-                              bgcolor: accent,
-                              opacity: 1,
-                            },
-                            "& .MuiSwitch-track": {
-                              bgcolor: isDark ? "rgba(255,255,255,0.25)" : "rgba(15,23,42,0.18)",
-                              opacity: 1,
-                            },
-                          }}
-                        />
-                        <Typography
-                          variant="caption"
-                          sx={{ color: tokenView === "list" ? accent : "text.secondary", fontWeight: 700 }}
-                        >
-                          List
-                        </Typography>
-                      </Box>
-                    </Tooltip>
                     <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
                       <Tooltip title={runSelectedMode ? "Exit selected-run mode." : "Choose specific visible channels to run."}>
                         <span style={{ display: "inline-flex" }}>
@@ -2254,6 +2115,47 @@ const CredentialsDialog = ({
                         </span>
                       </Tooltip>
                     </Box>
+                    <Tooltip
+                      title={
+                        tokenView === "card"
+                          ? "Switch to List view. List view exposes drag handles so you can reorder tokens."
+                          : "Switch to Cards view. Compact cards are better for quick scanning."
+                      }
+                    >
+                      <Box display="flex" alignItems="center" gap={0.75}>
+                        <Typography
+                          variant="caption"
+                          sx={{ color: tokenView === "card" ? accent : "text.secondary", fontWeight: 700 }}
+                        >
+                          Cards
+                        </Typography>
+                        <Switch
+                          checked={tokenView === "list"}
+                          onChange={() => setTokenView((prev) => (prev === "card" ? "list" : "card"))}
+                          size="small"
+                          sx={{
+                            mx: 0.25,
+                            "& .MuiSwitch-switchBase.Mui-checked": {
+                              color: accent,
+                            },
+                            "& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track": {
+                              bgcolor: accent,
+                              opacity: 1,
+                            },
+                            "& .MuiSwitch-track": {
+                              bgcolor: isDark ? "rgba(255,255,255,0.25)" : "rgba(15,23,42,0.18)",
+                              opacity: 1,
+                            },
+                          }}
+                        />
+                        <Typography
+                          variant="caption"
+                          sx={{ color: tokenView === "list" ? accent : "text.secondary", fontWeight: 700 }}
+                        >
+                          List
+                        </Typography>
+                      </Box>
+                    </Tooltip>
                   </Box>
 
                   {tokens.length === 0 ? (
@@ -2300,7 +2202,6 @@ const CredentialsDialog = ({
                       ))}
                     </Box>
                   )}
-                </Box>
               </>
             ) : (
               <>
