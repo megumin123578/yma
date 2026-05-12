@@ -96,13 +96,13 @@ def _resolve_mail_owner_user(db: Session, current_user: User | None) -> User:
     raise HTTPException(status_code=503, detail="No admin user configured for public Gmail OAuth.")
 
 
-def _list_mail_account_emails_for_user(db: Session, user_id: int) -> list[str]:
-    rows = (
-        db.query(MailAccount.account_email)
-        .filter(MailAccount.user_id == user_id)
-        .order_by(MailAccount.account_email.asc())
-        .all()
-    )
+def _list_mail_account_emails_for_user(
+    db: Session, user_id: int, *, all_users: bool = False
+) -> list[str]:
+    query = db.query(MailAccount.account_email)
+    if not all_users:
+        query = query.filter(MailAccount.user_id == user_id)
+    rows = query.order_by(MailAccount.account_email.asc()).all()
     return [str(row[0] or "").strip().lower() for row in rows if str(row[0] or "").strip()]
 
 
@@ -157,12 +157,10 @@ def list_mail_accounts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    rows = (
-        db.query(MailAccount)
-        .filter(MailAccount.user_id == current_user.id)
-        .order_by(MailAccount.account_email.asc())
-        .all()
-    )
+    query = db.query(MailAccount)
+    if not _is_admin_user(current_user):
+        query = query.filter(MailAccount.user_id == current_user.id)
+    rows = query.order_by(MailAccount.account_email.asc()).all()
     return {"items": [_serialize_mail_account(row) for row in rows]}
 
 
@@ -333,11 +331,10 @@ def update_mail_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    row = (
-        db.query(MailAccount)
-        .filter(MailAccount.id == account_id, MailAccount.user_id == current_user.id)
-        .first()
-    )
+    query = db.query(MailAccount).filter(MailAccount.id == account_id)
+    if not _is_admin_user(current_user):
+        query = query.filter(MailAccount.user_id == current_user.id)
+    row = query.first()
     if not row:
         raise HTTPException(status_code=404, detail="Mail account not found.")
 
@@ -363,11 +360,10 @@ def sync_one_mail_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    row = (
-        db.query(MailAccount)
-        .filter(MailAccount.id == account_id, MailAccount.user_id == current_user.id)
-        .first()
-    )
+    query = db.query(MailAccount).filter(MailAccount.id == account_id)
+    if not _is_admin_user(current_user):
+        query = query.filter(MailAccount.user_id == current_user.id)
+    row = query.first()
     if not row:
         raise HTTPException(status_code=404, detail="Mail account not found.")
 
@@ -382,7 +378,8 @@ def sync_mail_accounts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return sync_all_mail_accounts(db, user_id=current_user.id)
+    user_id = None if _is_admin_user(current_user) else current_user.id
+    return sync_all_mail_accounts(db, user_id=user_id)
 
 
 @router.get("/overview")
@@ -390,7 +387,11 @@ def mail_overview(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return get_mail_overview(account_emails=_list_mail_account_emails_for_user(db, current_user.id))
+    return get_mail_overview(
+        account_emails=_list_mail_account_emails_for_user(
+            db, current_user.id, all_users=_is_admin_user(current_user)
+        )
+    )
 
 
 @router.get("/messages")
@@ -407,7 +408,9 @@ def mail_messages(
 ):
     return list_mail_messages(
         account_email=account_email,
-        account_emails=_list_mail_account_emails_for_user(db, current_user.id),
+        account_emails=_list_mail_account_emails_for_user(
+            db, current_user.id, all_users=_is_admin_user(current_user)
+        ),
         mailbox=mailbox,
         status=status_value,
         search=search,
@@ -426,10 +429,14 @@ def _fetch_mail_messages_snapshot(
     limit: int,
     offset: int,
     per_account_limit: Optional[int],
+    *,
+    is_admin: bool = False,
 ) -> dict:
     db = SessionLocal()
     try:
-        account_emails = _list_mail_account_emails_for_user(db, user_id)
+        account_emails = _list_mail_account_emails_for_user(
+            db, user_id, all_users=is_admin
+        )
         return list_mail_messages(
             account_email=account_email,
             account_emails=account_emails,
@@ -457,6 +464,7 @@ async def stream_mail_messages(
     current_user: User = Depends(get_current_user),
 ):
     user_id = getattr(current_user, "id", None)
+    is_admin = _is_admin_user(current_user)
 
     return sse_response(
         poll_stream(
@@ -470,6 +478,7 @@ async def stream_mail_messages(
                 limit,
                 offset,
                 per_account_limit,
+                is_admin=is_admin,
             ),
             interval_seconds=30.0,
             heartbeat_seconds=25.0,
@@ -485,7 +494,9 @@ def mail_message_detail(
 ):
     item = get_mail_message_detail(
         message_id,
-        account_emails=_list_mail_account_emails_for_user(db, current_user.id),
+        account_emails=_list_mail_account_emails_for_user(
+            db, current_user.id, all_users=_is_admin_user(current_user)
+        ),
     )
     if not item:
         raise HTTPException(status_code=404, detail="Message not found.")
@@ -502,7 +513,9 @@ def mail_runs(
 ):
     return list_mail_runs(
         account_email=account_email,
-        account_emails=_list_mail_account_emails_for_user(db, current_user.id),
+        account_emails=_list_mail_account_emails_for_user(
+            db, current_user.id, all_users=_is_admin_user(current_user)
+        ),
         mailbox=mailbox,
         limit=limit,
     )
@@ -514,11 +527,10 @@ def remove_mail_account(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    row = (
-        db.query(MailAccount)
-        .filter(MailAccount.id == account_id, MailAccount.user_id == current_user.id)
-        .first()
-    )
+    query = db.query(MailAccount).filter(MailAccount.id == account_id)
+    if not _is_admin_user(current_user):
+        query = query.filter(MailAccount.user_id == current_user.id)
+    row = query.first()
     if not row:
         raise HTTPException(status_code=404, detail="Mail account not found.")
     delete_mail_account_integration(db, row)
@@ -544,11 +556,12 @@ def mail_test_log(
 ):
     mail_accounts = (
         db.query(MailAccount)
-        .filter(MailAccount.user_id == current_user.id)
         .order_by(MailAccount.account_email.asc())
         .all()
     )
-    account_emails = _list_mail_account_emails_for_user(db, current_user.id)
+    account_emails = _list_mail_account_emails_for_user(
+        db, current_user.id, all_users=True
+    )
     latest_result = list_mail_messages(
         account_emails=account_emails,
         status="matched",
