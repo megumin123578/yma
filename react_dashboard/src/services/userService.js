@@ -64,6 +64,16 @@ export const updateAdminUserRole = async (userId, isAdmin) => {
   return res.data;
 };
 
+export const getAdminUserAccess = async (userId) => {
+  const res = await api.get(`/api/users/admin/users/${userId}/access`);
+  return res.data;
+};
+
+export const updateAdminUserAccess = async (userId, payload) => {
+  const res = await api.put(`/api/users/admin/users/${userId}/access`, payload);
+  return res.data;
+};
+
 export const deleteAdminUser = async (userId) => {
   const res = await api.delete(`/api/users/admin/users/${userId}`);
   return res.data;

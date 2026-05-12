@@ -14,6 +14,7 @@ from python_backend.api.auth.models import (
     SmmstoreScheduledOrder,
     TokenProgress,
     User,
+    UserChannelAccess,
     UserCredential,
     UserCredentialGroup,
     UserHiddenChannel,
@@ -100,6 +101,90 @@ def admin_update_user_role(
     }
 
 
+def _clean_access_values(values):
+    seen = set()
+    out = []
+    for value in values or []:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out
+
+
+@router.get("/admin/users/{user_id}/access")
+def admin_get_user_access(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    user_row = db.query(User).filter(User.id == user_id).first()
+    if not user_row:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    rows = (
+        db.query(UserChannelAccess)
+        .filter(UserChannelAccess.user_id == user_id)
+        .order_by(UserChannelAccess.scope_type.asc(), UserChannelAccess.scope_value.asc())
+        .all()
+    )
+    access = {"projects": [], "channels": []}
+    for row in rows:
+        key = f"{row.scope_type}s"
+        if key in access:
+            access[key].append(row.scope_value)
+
+    resolved_rows = (
+        db.query(UserCredential.account_tag)
+        .filter(UserCredential.token_name.isnot(None))
+        .all()
+    )
+    return {
+        "user_id": user_id,
+        "projects": access["projects"],
+        "channels": access["channels"],
+        "all_channels": [row[0] for row in resolved_rows if row[0]],
+    }
+
+
+@router.put("/admin/users/{user_id}/access")
+def admin_update_user_access(
+    user_id: int,
+    payload: schemas.AdminUserAccessUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_admin(current_user)
+    user_row = db.query(User).filter(User.id == user_id).first()
+    if not user_row:
+        raise HTTPException(status_code=404, detail="User not found")
+    if _is_admin_user(user_row):
+        raise HTTPException(status_code=400, detail="Admin users can access every channel")
+
+    db.query(UserChannelAccess).filter(UserChannelAccess.user_id == user_id).delete()
+    for scope_type, values in (
+        ("project", _clean_access_values(payload.projects)),
+        ("channel", _clean_access_values(payload.channels)),
+    ):
+        for value in values:
+            db.add(
+                UserChannelAccess(
+                    user_id=user_id,
+                    scope_type=scope_type,
+                    scope_value=value,
+                )
+            )
+    db.commit()
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "projects": _clean_access_values(payload.projects),
+        "channels": _clean_access_values(payload.channels),
+    }
+
+
 @router.delete("/admin/users/{user_id}")
 def admin_delete_user(
     user_id: int,
@@ -116,6 +201,7 @@ def admin_delete_user(
         raise HTTPException(status_code=400, detail="This environment admin cannot be deleted here")
 
     db.query(PasswordChangeRequest).filter(PasswordChangeRequest.user_id == user_row.id).delete()
+    db.query(UserChannelAccess).filter(UserChannelAccess.user_id == user_row.id).delete()
     db.query(UserHiddenChannel).filter(UserHiddenChannel.user_id == user_row.id).delete()
     db.query(UserScheduleRun).filter(UserScheduleRun.user_id == user_row.id).delete()
     db.query(UserSchedule).filter(UserSchedule.user_id == user_row.id).delete()
@@ -132,5 +218,3 @@ def admin_delete_user(
     db.delete(user_row)
     db.commit()
     return {"ok": True}
-
-

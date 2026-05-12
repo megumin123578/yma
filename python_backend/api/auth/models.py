@@ -123,6 +123,18 @@ class UserHiddenChannel(Base):
     account_tag = Column(String, nullable=False, index=True)
 
 
+class UserChannelAccess(Base):
+    __tablename__ = "user_channel_access"
+    __table_args__ = (
+        UniqueConstraint("user_id", "scope_type", "scope_value", name="uq_user_channel_access_scope"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    scope_type = Column(String, nullable=False, index=True)
+    scope_value = Column(String, nullable=False, index=True)
+
+
 class UserSchedule(Base):
     __tablename__ = "user_schedules"
 

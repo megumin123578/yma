@@ -18,7 +18,7 @@ from python_backend.api.auth.models import (
     UserHiddenChannel,
     UserScheduleRun,
 )
-from python_backend.api.auth.visibility import get_hidden_account_tags
+from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.progress_state import write_progress
 from python_backend.token_store import (
     account_tag_from_token_name,
@@ -54,6 +54,7 @@ def list_tokens(
     current_user: User = Depends(get_current_user),
 ):
     is_admin = _is_admin_user(current_user)
+    allowed = get_allowed_account_tags(db, current_user)
     hidden = get_hidden_account_tags(db, current_user.id)
     group_color_map = _get_global_token_group_color_map(db)
     labels = {}
@@ -125,6 +126,8 @@ def list_tokens(
         if str(name or "").strip().lower().startswith("mail__"):
             continue
         base = account_tag_from_token_name(name)
+        if allowed is not None and base not in allowed:
+            continue
         files.append(
             {
                 "name": name,
@@ -1063,5 +1066,4 @@ def delete_token(
     db.commit()
     _purge_postgres_account(base_name)
     return {"ok": True}
-
 

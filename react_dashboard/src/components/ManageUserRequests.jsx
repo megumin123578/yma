@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Alert,
+  Autocomplete,
   Avatar,
   Box,
   Button,
@@ -21,10 +22,15 @@ import {
 import { alpha } from "@mui/material/styles";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import {
   deleteAdminUser,
+  getAdminUserAccess,
   listAdminUsers,
+  listTokenProjects,
+  listTokens,
   resetAdminUserPassword,
+  updateAdminUserAccess,
   updateAdminUserRole,
 } from "../services/userService";
 import { getApiBase } from "../config";
@@ -46,6 +52,14 @@ const ManageUserRequests = ({ active = false }) => {
   const [menuUser, setMenuUser] = useState(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
+  const [accessDialogUser, setAccessDialogUser] = useState(null);
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [accessSaving, setAccessSaving] = useState(false);
+  const [accessDraft, setAccessDraft] = useState({ projects: [], channels: [] });
+  const [accessOptions, setAccessOptions] = useState({
+    projects: [],
+    channels: [],
+  });
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -120,6 +134,69 @@ const ManageUserRequests = ({ active = false }) => {
   const handleDeleteUser = (item) => {
     setUserToDelete(item);
     setDeleteConfirmOpen(true);
+  };
+
+  const loadAccessOptions = useCallback(async () => {
+    const [projectsData, tokensData] = await Promise.all([
+      listTokenProjects(),
+      listTokens(),
+    ]);
+    setAccessOptions({
+      projects: (projectsData?.projects || [])
+        .map((item) => item.project_name)
+        .filter(Boolean),
+      channels: (tokensData?.tokens || [])
+        .map((item) => ({
+          value: item.name,
+          label: item.label || item.name,
+          group_name: item.group_name || "",
+          project_name: item.project_name || "",
+          avatar: item.avatar || "",
+        }))
+        .filter((item) => item.value),
+    });
+  }, []);
+
+  const openAccessDialog = async (item) => {
+    setAccessDialogUser(item);
+    setAccessLoading(true);
+    setError("");
+    try {
+      const [accessData] = await Promise.all([
+        getAdminUserAccess(item.id),
+        loadAccessOptions(),
+      ]);
+      setAccessDraft({
+        projects: accessData?.projects || [],
+        channels: accessData?.channels || [],
+      });
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Failed to load user access.");
+      setAccessDialogUser(null);
+    } finally {
+      setAccessLoading(false);
+    }
+  };
+
+  const closeAccessDialog = () => {
+    if (accessSaving) return;
+    setAccessDialogUser(null);
+    setAccessDraft({ projects: [], channels: [] });
+  };
+
+  const saveAccessDialog = async () => {
+    if (!accessDialogUser) return;
+    setAccessSaving(true);
+    setError("");
+    try {
+      await updateAdminUserAccess(accessDialogUser.id, accessDraft);
+      setAccessDialogUser(null);
+      setAccessDraft({ projects: [], channels: [] });
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Failed to update user access.");
+    } finally {
+      setAccessSaving(false);
+    }
   };
 
   const confirmDeleteUser = async () => {
@@ -211,23 +288,15 @@ const ManageUserRequests = ({ active = false }) => {
                   flexDirection: "column",
                   alignItems: "center",
                   gap: 2,
-                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                  background: isDark
-                    ? `linear-gradient(135deg, ${alpha(accentColor, 0.12)} 0%, ${alpha(theme.palette.background.paper, 0.4)} 100%)`
-                    : `linear-gradient(135deg, ${alpha(accentColor, 0.08)} 0%, ${alpha(theme.palette.common.white, 0.9)} 100%)`,
+                  transition: "none",
+                  bgcolor: theme.palette.background.paper,
+                  backgroundImage: "none",
                   border: `1px solid ${alpha(accentColor, 0.2)}`,
                   boxShadow: isDark
                     ? `0 10px 30px ${alpha(theme.palette.common.black, 0.3)}`
                     : `0 10px 30px ${alpha(accentColor, 0.1)}`,
                   backdropFilter: "blur(10px)",
                   WebkitBackdropFilter: "blur(10px)",
-                  "&:hover": {
-                    transform: "translateY(-6px)",
-                    boxShadow: isDark
-                      ? `0 20px 40px ${alpha(accentColor, 0.2)}`
-                      : `0 20px 40px ${alpha(accentColor, 0.15)}`,
-                    borderColor: alpha(accentColor, 0.4),
-                  },
                 }}
               >
                 {/* Action Buttons Overlay */}
@@ -259,6 +328,23 @@ const ManageUserRequests = ({ active = false }) => {
                       }}
                     >
                       <EditOutlinedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Channel Access">
+                    <IconButton
+                      size="small"
+                      onClick={() => openAccessDialog(item)}
+                      disabled={isAdmin}
+                      sx={{
+                        color: isDark ? "#94a3b8" : "text.secondary",
+                        bgcolor: alpha(theme.palette.background.default, 0.5),
+                        "&:hover": {
+                          color: userBlue,
+                          bgcolor: alpha(userBlue, 0.1),
+                        },
+                      }}
+                    >
+                      <VpnKeyOutlinedIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
                   <Tooltip title="Delete User">
@@ -543,6 +629,104 @@ const ManageUserRequests = ({ active = false }) => {
             }}
           >
             Delete User
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={!!accessDialogUser}
+        onClose={closeAccessDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            bgcolor: isDark ? "#1e293b" : "#ffffff",
+            backgroundImage: "none",
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, pt: 3 }}>
+          Channel Access
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {accessDialogUser?.name || accessDialogUser?.username}
+          </Typography>
+          {accessLoading ? (
+            <Box display="flex" justifyContent="center" py={5}>
+              <CircularProgress size={32} />
+            </Box>
+          ) : (
+            <Box display="flex" flexDirection="column" gap={2}>
+              <Autocomplete
+                multiple
+                options={accessOptions.projects}
+                value={accessDraft.projects}
+                onChange={(_, value) =>
+                  setAccessDraft((prev) => ({ ...prev, projects: value }))
+                }
+                renderInput={(params) => (
+                  <TextField {...params} size="small" label="Projects" />
+                )}
+              />
+              <Autocomplete
+                multiple
+                options={accessOptions.channels}
+                value={accessOptions.channels.filter((option) =>
+                  accessDraft.channels.includes(option.value)
+                )}
+                getOptionLabel={(option) => option?.label || ""}
+                isOptionEqualToValue={(option, value) => option.value === value.value}
+                onChange={(_, value) =>
+                  setAccessDraft((prev) => ({
+                    ...prev,
+                    channels: (value || []).map((option) => option.value),
+                  }))
+                }
+                renderInput={(params) => (
+                  <TextField {...params} size="small" label="Channels" />
+                )}
+                renderOption={(props, option) => (
+                  <li {...props} key={option.value}>
+                    <Box display="flex" alignItems="center" gap={1} sx={{ minWidth: 0 }}>
+                      <Avatar
+                        src={option.avatar}
+                        alt={option.label}
+                        sx={{ width: 28, height: 28, fontSize: 12 }}
+                      >
+                        {(option.label || "?").slice(0, 1).toUpperCase()}
+                      </Avatar>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography variant="body2" noWrap>
+                          {option.label}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" noWrap>
+                          {[option.group_name, option.project_name].filter(Boolean).join(" / ")}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </li>
+                )}
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 1 }}>
+          <Button
+            onClick={closeAccessDialog}
+            disabled={accessSaving}
+            sx={{ textTransform: "none", fontWeight: 700 }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={saveAccessDialog}
+            disabled={accessLoading || accessSaving}
+            sx={{ borderRadius: 2, textTransform: "none", fontWeight: 700 }}
+          >
+            {accessSaving ? "Saving..." : "Save Access"}
           </Button>
         </DialogActions>
       </Dialog>

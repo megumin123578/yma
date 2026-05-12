@@ -188,6 +188,32 @@ def ensure_user_credential_projects_table(db_engine: Engine) -> None:
         )
 
 
+def ensure_user_channel_access_table(db_engine: Engine) -> None:
+    with db_engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS user_channel_access (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                scope_type VARCHAR NOT NULL,
+                scope_value VARCHAR NOT NULL
+            );
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_user_channel_access_scope
+            ON user_channel_access (user_id, scope_type, scope_value);
+            """
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_user_channel_access_user ON user_channel_access(user_id);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_user_channel_access_scope ON user_channel_access(scope_type, scope_value);"
+        )
+
+
 def ensure_rival_channel_avatar_column(db_engine: Engine) -> None:
     with db_engine.begin() as conn:
         columns = conn.exec_driver_sql("PRAGMA table_info(rival_channels)").fetchall()
@@ -439,6 +465,7 @@ def ensure_sqlite_auth_state(db_engine: Engine) -> None:
     ensure_user_credential_project_column(db_engine)
     ensure_user_credential_groups_table(db_engine)
     ensure_user_credential_projects_table(db_engine)
+    ensure_user_channel_access_table(db_engine)
     ensure_rival_channel_avatar_column(db_engine)
     ensure_rival_channel_group_column(db_engine)
     ensure_rival_channel_groups_table(db_engine)

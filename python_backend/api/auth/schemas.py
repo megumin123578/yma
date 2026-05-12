@@ -80,6 +80,11 @@ class AdminUserRoleUpdate(BaseModel):
     is_admin: bool
 
 
+class AdminUserAccessUpdate(BaseModel):
+    projects: List[str] = []
+    channels: List[str] = []
+
+
 class RivalChannelCreate(BaseModel):
     channel_id: str
     channel_name: Optional[str] = None
