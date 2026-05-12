@@ -35,7 +35,25 @@ export default defineConfig(({ mode }) => {
       dedupe: ["@emotion/react", "@emotion/styled", "react", "react-dom"],
     },
     optimizeDeps: {
-      include: ["@emotion/react", "@emotion/styled"],
+      include: [
+        "@emotion/react",
+        "@emotion/styled",
+        "@mui/material",
+        "@mui/material/styles",
+        "@mui/icons-material",
+        "@mui/system",
+        "@mui/x-data-grid",
+        "@mui/x-date-pickers",
+        "@mui/x-date-pickers/AdapterDayjs",
+        "react",
+        "react-dom",
+        "react-router-dom",
+        "react-pro-sidebar",
+        "dayjs",
+        "formik",
+        "yup",
+        "framer-motion",
+      ],
     },
     build: {
       outDir: "build",
@@ -47,7 +65,6 @@ export default defineConfig(({ mode }) => {
             if (id.includes("/framer-motion/")) return "vendor-framer";
             if (id.includes("/recharts/")) return "vendor-recharts";
             if (id.includes("/@nivo/")) return "vendor-nivo";
-            if (id.includes("/@fullcalendar/")) return "vendor-fullcalendar";
             if (
               id.includes("/@mui/x-data-grid/") ||
               id.includes("/@mui/x-date-pickers/")
