@@ -8,19 +8,21 @@ const SECTION_TO_TAB = {
   structure: "groups",
   schedule: "schedule",
   logs: "logs",
-  users: "manage-user",
 };
 
 const SECTION_TO_SUBTITLE = {
   channels: "Manage YouTube channels and credentials.",
-  structure: "Organize tokens into groups and projects.",
+  structure: "Manage users, projects, channels and access.",
   schedule: "Configure automated sync schedules.",
   logs: "Inspect background run history.",
-  users: "Review and approve user requests.",
 };
 
 const ConfigPage = () => {
   const { section = "channels" } = useParams();
+
+  if (section === "users") {
+    return <Navigate to="/config/structure" replace />;
+  }
 
   if (!Object.prototype.hasOwnProperty.call(SECTION_TO_TAB, section)) {
     return <Navigate to="/config/channels" replace />;

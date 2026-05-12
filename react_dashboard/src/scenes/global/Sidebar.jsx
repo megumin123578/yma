@@ -28,7 +28,6 @@ import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
 import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
-import PeopleAltOutlinedIcon from "@mui/icons-material/PeopleAltOutlined";
 import SmartDisplayOutlinedIcon from "@mui/icons-material/SmartDisplayOutlined";
 
 import { UserContext } from "../../context/UserContext";
@@ -125,7 +124,6 @@ const Sidebar = ({
     "/config/structure",
     "/config/schedule",
     "/config/logs",
-    "/config/users",
   ]);
   const isAdmin = !!user?.is_admin;
 
@@ -595,16 +593,6 @@ const Sidebar = ({
                     to="/config/logs"
                     icon={<HistoryOutlinedIcon />}
                     isActive={isActivePath("/config/logs")}
-                    onClick={closeOnMobile}
-                    isCompact={isDesktopCompact}
-                  />
-                )}
-                {isAdmin && (
-                  <Item
-                    title="Manage User"
-                    to="/config/users"
-                    icon={<PeopleAltOutlinedIcon />}
-                    isActive={isActivePath("/config/users")}
                     onClick={closeOnMobile}
                     isCompact={isDesktopCompact}
                   />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Avatar,
@@ -9,7 +9,6 @@ import {
   IconButton,
   Menu,
   MenuItem,
-  TextField,
   Tooltip,
   Typography,
   useTheme,
@@ -20,28 +19,35 @@ import {
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import {
   deleteAdminUser,
   listAdminUsers,
-  resetAdminUserPassword,
   updateAdminUserRole,
 } from "../services/userService";
 import { getApiBase } from "../config";
 
-const ManageUserRequests = ({ active = false }) => {
+const ManageUserRequests = ({
+  active = false,
+  compact = false,
+  selectedUserId = null,
+  onSelectUser,
+  highlightedUserIds,
+  onUsersChanged,
+}) => {
   const theme = useTheme();
   const isDark = theme.palette.mode === "dark";
   const primary = theme.palette.primary.main;
   const secondary = theme.palette.secondary?.main || theme.palette.primary.main;
   const userBlue = "#3b82f6";
   const errorMain = theme.palette.error.main;
+  const highlightedUserSet = useMemo(
+    () => new Set(highlightedUserIds || []),
+    [highlightedUserIds]
+  );
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [busyKey, setBusyKey] = useState("");
-  const [passwordDrafts, setPasswordDrafts] = useState({});
-  const [editingPasswordUserId, setEditingPasswordUserId] = useState(null);
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
   const [menuUser, setMenuUser] = useState(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -52,17 +58,10 @@ const ManageUserRequests = ({ active = false }) => {
     setError("");
     try {
       const data = await listAdminUsers();
-      const nextItems = Array.isArray(data?.items) ? data.items : [];
+      const nextItems = (Array.isArray(data?.items) ? data.items : [])
+        .slice()
+        .sort((a, b) => (b.is_admin ? 1 : 0) - (a.is_admin ? 1 : 0));
       setItems(nextItems);
-      setPasswordDrafts((prev) => {
-        const next = { ...prev };
-        nextItems.forEach((item) => {
-          if (typeof next[item.id] !== "string") {
-            next[item.id] = "";
-          }
-        });
-        return next;
-      });
     } catch (err) {
       setError(err?.response?.data?.detail || "Failed to load users.");
     } finally {
@@ -85,31 +84,13 @@ const ManageUserRequests = ({ active = false }) => {
     return `${cleanBase}${cleanRaw}`;
   };
 
-  const handleResetPassword = async (item) => {
-    const nextPassword = String(passwordDrafts[item.id] || "").trim();
-    if (!nextPassword) {
-      setError("Enter a new password before resetting.");
-      return;
-    }
-    setBusyKey(`reset:${item.id}`);
-    setError("");
-    try {
-      await resetAdminUserPassword(item.id, nextPassword);
-      setPasswordDrafts((prev) => ({ ...prev, [item.id]: "" }));
-      setEditingPasswordUserId((prev) => (prev === item.id ? null : prev));
-    } catch (err) {
-      setError(err?.response?.data?.detail || "Failed to reset password.");
-    } finally {
-      setBusyKey("");
-    }
-  };
-
   const handleToggleAdmin = async (item) => {
     setBusyKey(`role:${item.id}`);
     setError("");
     try {
       await updateAdminUserRole(item.id, !item.is_admin);
       await loadUsers();
+      onUsersChanged?.();
     } catch (err) {
       setError(err?.response?.data?.detail || "Failed to update admin role.");
     } finally {
@@ -132,6 +113,7 @@ const ManageUserRequests = ({ active = false }) => {
     try {
       await deleteAdminUser(item.id);
       await loadUsers();
+      onUsersChanged?.();
     } catch (err) {
       setError(err?.response?.data?.detail || "Failed to delete user.");
     } finally {
@@ -180,6 +162,142 @@ const ManageUserRequests = ({ active = false }) => {
           />
         </Box>
       ) : items.length ? (
+        compact ? (
+        <Box display="flex" flexDirection="column" gap={1}>
+          {items.map((item) => {
+            const deleteBusy = busyKey === `delete:${item.id}`;
+            const isAdmin = !!item.is_admin;
+            const accentColor = isAdmin ? secondary : userBlue;
+            const isSelected = selectedUserId === item.id;
+            const isHighlighted = highlightedUserSet.has(item.id);
+            const canSelect = !isAdmin && !!onSelectUser;
+            const handleRowClick = () => {
+              if (canSelect) onSelectUser(item);
+            };
+            return (
+              <Box key={item.id}>
+                <Box
+                  onClick={handleRowClick}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1.25,
+                    p: 1,
+                    borderRadius: 2,
+                    cursor: canSelect ? "pointer" : "default",
+                    border: `1px solid ${
+                      isSelected
+                        ? accentColor
+                        : isHighlighted
+                          ? alpha(accentColor, 0.5)
+                          : alpha(isDark ? "#ffffff" : "#000000", 0.08)
+                    }`,
+                    bgcolor: isSelected
+                      ? alpha(accentColor, 0.14)
+                      : isHighlighted
+                        ? alpha(accentColor, 0.06)
+                        : "transparent",
+                    transition: "all 0.15s",
+                    "&:hover": canSelect
+                      ? { bgcolor: alpha(accentColor, 0.09) }
+                      : {},
+                  }}
+                >
+                  <Box sx={{ position: "relative" }}>
+                    <Avatar
+                      src={resolveAvatarSrc(item.avatar_url)}
+                      alt={item.name || item.username}
+                      sx={{
+                        width: 40,
+                        height: 40,
+                        fontSize: 16,
+                        fontWeight: 800,
+                        bgcolor: alpha(accentColor, 0.15),
+                        color: accentColor,
+                        border: `2px solid ${alpha(accentColor, 0.3)}`,
+                      }}
+                    >
+                      {(item.name || item.username || "?")
+                        .slice(0, 1)
+                        .toUpperCase()}
+                    </Avatar>
+                    <Box
+                      sx={{
+                        position: "absolute",
+                        bottom: -2,
+                        right: -2,
+                        width: 12,
+                        height: 12,
+                        borderRadius: "50%",
+                        bgcolor:
+                          item.is_active !== false ? "#10b981" : "#94a3b8",
+                        border: `2px solid ${isDark ? "#1e293b" : "#ffffff"}`,
+                      }}
+                    />
+                  </Box>
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography
+                      variant="body2"
+                      noWrap
+                      sx={{
+                        fontWeight: 700,
+                        color: isDark ? "#f8fafc" : "#1e293b",
+                      }}
+                    >
+                      {item.name || item.username}
+                    </Typography>
+                    <Chip
+                      label={isAdmin ? "Admin" : "User"}
+                      size="small"
+                      clickable
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openActionsMenu(event, item);
+                      }}
+                      sx={{
+                        mt: 0.25,
+                        height: 18,
+                        fontSize: "0.6rem",
+                        fontWeight: 800,
+                        letterSpacing: "0.08em",
+                        bgcolor: alpha(accentColor, 0.12),
+                        color: accentColor,
+                        border: `1px solid ${alpha(accentColor, 0.3)}`,
+                        "& .MuiChip-label": { px: 0.75 },
+                      }}
+                    />
+                  </Box>
+                  <Box
+                    sx={{ display: "flex", gap: 0.5 }}
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <Tooltip title="Delete User">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDeleteUser(item)}
+                        disabled={deleteBusy}
+                        sx={{
+                          color: isDark ? "#94a3b8" : "text.secondary",
+                          "&:hover": {
+                            color: errorMain,
+                            bgcolor: alpha(errorMain, 0.1),
+                          },
+                        }}
+                      >
+                        {deleteBusy ? (
+                          <CircularProgress size={14} color="inherit" />
+                        ) : (
+                          <DeleteOutlineIcon fontSize="small" />
+                        )}
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                </Box>
+              </Box>
+            );
+          })}
+        </Box>
+        ) : (
         <Box
           sx={{
             display: "grid",
@@ -193,9 +311,7 @@ const ManageUserRequests = ({ active = false }) => {
           }}
         >
           {items.map((item) => {
-            const resetBusy = busyKey === `reset:${item.id}`;
             const deleteBusy = busyKey === `delete:${item.id}`;
-            const isEditingPassword = editingPasswordUserId === item.id;
             const isAdmin = !!item.is_admin;
             const accentColor = isAdmin ? secondary : primary;
             const avatarBorderColor = isAdmin ? secondary : userBlue;
@@ -235,24 +351,6 @@ const ManageUserRequests = ({ active = false }) => {
                     "&:hover": { opacity: 1 },
                   }}
                 >
-                  <Tooltip title="Edit Password">
-                    <IconButton
-                      size="small"
-                      onClick={() =>
-                        setEditingPasswordUserId((prev) => (prev === item.id ? null : item.id))
-                      }
-                      sx={{
-                        color: isDark ? "#94a3b8" : "text.secondary",
-                        bgcolor: alpha(theme.palette.background.default, 0.5),
-                        "&:hover": {
-                          color: isAdmin ? secondary : userBlue,
-                          bgcolor: alpha(isAdmin ? secondary : userBlue, 0.1),
-                        },
-                      }}
-                    >
-                      <EditOutlinedIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
                   <Tooltip title="Delete User">
                     <IconButton
                       size="small"
@@ -348,65 +446,11 @@ const ManageUserRequests = ({ active = false }) => {
                   />
                 </Box>
 
-                {/* Password Edit Section */}
-                {isEditingPassword && (
-                  <Box
-                    sx={{
-                      width: "100%",
-                      mt: 1,
-                      pt: 1,
-                      animation: "fadeIn 0.3s ease-out",
-                      "@keyframes fadeIn": {
-                        from: { opacity: 0, transform: "translateY(-10px)" },
-                        to: { opacity: 1, transform: "translateY(0)" },
-                      },
-                    }}
-                  >
-                    <TextField
-                      fullWidth
-                      size="small"
-                      type="password"
-                      placeholder="New password"
-                      value={passwordDrafts[item.id] || ""}
-                      onChange={(event) =>
-                        setPasswordDrafts((prev) => ({
-                          ...prev,
-                          [item.id]: event.target.value,
-                        }))
-                      }
-                      sx={{
-                        "& .MuiOutlinedInput-root": {
-                          borderRadius: 2,
-                          bgcolor: isDark ? alpha(theme.palette.common.black, 0.2) : alpha(theme.palette.common.white, 0.5),
-                        },
-                      }}
-                    />
-                    <Button
-                      fullWidth
-                      variant="contained"
-                      onClick={() => handleResetPassword(item)}
-                      disabled={resetBusy || !passwordDrafts[item.id]}
-                      sx={{
-                        mt: 1.5,
-                        borderRadius: 2,
-                        textTransform: "none",
-                        fontWeight: 700,
-                        bgcolor: isAdmin ? secondary : userBlue,
-                        boxShadow: `0 4px 12px ${alpha(isAdmin ? secondary : userBlue, 0.3)}`,
-                        "&:hover": {
-                          bgcolor: isAdmin ? secondary : userBlue,
-                          boxShadow: `0 6px 16px ${alpha(isAdmin ? secondary : userBlue, 0.4)}`,
-                        },
-                      }}
-                    >
-                      {resetBusy ? "Updating..." : "Update Password"}
-                    </Button>
-                  </Box>
-                )}
               </Box>
             );
           })}
         </Box>
+        )
       ) : (
         <Box
           sx={{

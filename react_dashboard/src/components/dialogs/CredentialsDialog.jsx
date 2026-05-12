@@ -41,7 +41,6 @@ import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
 import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
-import PeopleOutlineIcon from "@mui/icons-material/PeopleOutline";
 import {
   uploadCredentials,
   listTokens,
@@ -174,11 +173,30 @@ const CredentialsDialog = ({
   const [editingProjectName, setEditingProjectName] = useState("");
   const [editingProjectDraft, setEditingProjectDraft] = useState("");
   const [savingGroup, setSavingGroup] = useState(false);
-  const [projectAccessDialog, setProjectAccessDialog] = useState(null);
-  const [projectAccessLoading, setProjectAccessLoading] = useState(false);
-  const [projectAccessSaving, setProjectAccessSaving] = useState(false);
-  const [projectAccessUsers, setProjectAccessUsers] = useState([]);
-  const [projectAccessError, setProjectAccessError] = useState("");
+  const [selectedAccessUser, setSelectedAccessUser] = useState(null);
+  const [selectedAccessUserData, setSelectedAccessUserData] = useState({
+    projects: [],
+    channels: [],
+  });
+  const [selectedAccessProject, setSelectedAccessProject] = useState("");
+  const [selectedAccessProjectUserIds, setSelectedAccessProjectUserIds] =
+    useState([]);
+  const [accessLoading, setAccessLoading] = useState(false);
+  const [accessBusy, setAccessBusy] = useState(false);
+  const [usersAccessList, setUsersAccessList] = useState([]);
+  const [projectUserMenuAnchor, setProjectUserMenuAnchor] = useState(null);
+  const [projectUserMenuProject, setProjectUserMenuProject] = useState("");
+
+  const projectUserMap = useMemo(() => {
+    const map = {};
+    usersAccessList.forEach((u) => {
+      (u.projects || []).forEach((p) => {
+        if (!map[p]) map[p] = [];
+        map[p].push(u);
+      });
+    });
+    return map;
+  }, [usersAccessList]);
   const [runSelectedMode, setRunSelectedMode] = useState(false);
   const [selectedTokenNames, setSelectedTokenNames] = useState([]);
   const [runningSelected, setRunningSelected] = useState(false);
@@ -498,6 +516,33 @@ const CredentialsDialog = ({
     }
   }, [isAdmin]);
 
+  const loadProjectUserMap = useCallback(async () => {
+    try {
+      const usersData = await listAdminUsers();
+      const allUsers = (usersData?.items || []).filter((u) => !u.is_admin);
+      const accessList = await Promise.all(
+        allUsers.map((u) =>
+          getAdminUserAccess(u.id).catch(() => ({
+            projects: [],
+            channels: [],
+          }))
+        )
+      );
+      setUsersAccessList(
+        allUsers.map((u, idx) => ({
+          id: u.id,
+          name: u.name || u.username,
+          username: u.username,
+          avatar_url: u.avatar_url,
+          projects: accessList[idx]?.projects || [],
+          channels: accessList[idx]?.channels || [],
+        }))
+      );
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     if (open) {
       hydratedProgressOnceRef.current = false;
@@ -520,6 +565,7 @@ const CredentialsDialog = ({
       if (isAdmin) {
         loadTokenProjects();
         loadSchedules();
+        loadProjectUserMap();
       } else {
         setTokenProjects([]);
         setSchedules([]);
@@ -528,7 +574,7 @@ const CredentialsDialog = ({
         setRunsError("");
       }
     }
-  }, [open, loadSchedules, loadTokenProjects, loadTokens, defaultTokenView, isAdmin, forceTab]);
+  }, [open, loadSchedules, loadTokenProjects, loadTokens, loadProjectUserMap, defaultTokenView, isAdmin, forceTab]);
 
   useEffect(() => {
     if (!forceTab) return;
@@ -538,7 +584,7 @@ const CredentialsDialog = ({
   useEffect(() => {
     if (
       isAdmin ||
-      !["groups", "schedule", "logs", "manage-user"].includes(activeTab)
+      !["groups", "schedule", "logs"].includes(activeTab)
     ) {
       return;
     }
@@ -741,6 +787,7 @@ const CredentialsDialog = ({
       await Promise.all([loadTokenProjects(), loadTokens()]);
       setEditingProjectName("");
       setEditingProjectDraft("");
+      loadProjectUserMap();
       setStatus({ type: "success", message: "Project renamed." });
       notifyDataChanged();
     } catch (err) {
@@ -762,6 +809,12 @@ const CredentialsDialog = ({
         setEditingProjectName("");
         setEditingProjectDraft("");
       }
+      setUsersAccessList((prev) =>
+        prev.map((u) => ({
+          ...u,
+          projects: (u.projects || []).filter((p) => p !== projectName),
+        }))
+      );
       setStatus({ type: "success", message: "Project deleted." });
       notifyDataChanged();
     } catch (err) {
@@ -773,93 +826,152 @@ const CredentialsDialog = ({
     }
   };
 
-  const openProjectAccessDialog = async (projectName) => {
-    setProjectAccessDialog(projectName);
-    setProjectAccessLoading(true);
-    setProjectAccessError("");
-    setProjectAccessUsers([]);
+  const openProjectUserMenu = (event, projectName) => {
+    event.stopPropagation();
+    setProjectUserMenuAnchor(event.currentTarget);
+    setProjectUserMenuProject(projectName);
+  };
+
+  const closeProjectUserMenu = () => {
+    setProjectUserMenuAnchor(null);
+    setProjectUserMenuProject("");
+  };
+
+  const handleSelectAccessUser = async (user) => {
+    if (!user) {
+      setSelectedAccessUser(null);
+      setSelectedAccessUserData({ projects: [], channels: [] });
+      return;
+    }
+    if (selectedAccessUser?.id === user.id) {
+      setSelectedAccessUser(null);
+      setSelectedAccessUserData({ projects: [], channels: [] });
+      return;
+    }
+    setSelectedAccessUser(user);
+    setAccessLoading(true);
+    try {
+      const data = await getAdminUserAccess(user.id);
+      setSelectedAccessUserData({
+        projects: data?.projects || [],
+        channels: data?.channels || [],
+      });
+    } catch (err) {
+      setStatus({
+        type: "error",
+        message:
+          err?.response?.data?.detail || "Failed to load user access.",
+      });
+      setSelectedAccessUser(null);
+    } finally {
+      setAccessLoading(false);
+    }
+  };
+
+  const handleSelectAccessProject = async (projectName) => {
+    if (!projectName || selectedAccessProject === projectName) {
+      setSelectedAccessProject("");
+      setSelectedAccessProjectUserIds([]);
+      return;
+    }
+    setSelectedAccessProject(projectName);
+    setAccessLoading(true);
     try {
       const usersData = await listAdminUsers();
       const allUsers = (usersData?.items || []).filter((u) => !u.is_admin);
       const accessList = await Promise.all(
         allUsers.map((u) =>
-          getAdminUserAccess(u.id).catch(() => ({ projects: [], channels: [] }))
+          getAdminUserAccess(u.id).catch(() => ({ projects: [] }))
         )
       );
-      const merged = allUsers.map((u, idx) => {
-        const access = accessList[idx] || { projects: [], channels: [] };
-        const has = (access.projects || []).includes(projectName);
-        return {
-          id: u.id,
-          name: u.name || u.username,
-          username: u.username,
-          avatar: u.avatar_url,
-          original: has,
-          selected: has,
-          access: {
-            projects: access.projects || [],
-            channels: access.channels || [],
-          },
-        };
-      });
-      setProjectAccessUsers(merged);
+      const ids = allUsers
+        .filter((_, idx) =>
+          (accessList[idx]?.projects || []).includes(projectName)
+        )
+        .map((u) => u.id);
+      setSelectedAccessProjectUserIds(ids);
     } catch (err) {
-      setProjectAccessError(
-        err?.response?.data?.detail || "Failed to load users."
-      );
-      setProjectAccessDialog(null);
+      setStatus({
+        type: "error",
+        message:
+          err?.response?.data?.detail || "Failed to load project users.",
+      });
+      setSelectedAccessProject("");
     } finally {
-      setProjectAccessLoading(false);
+      setAccessLoading(false);
     }
   };
 
-  const closeProjectAccessDialog = () => {
-    if (projectAccessSaving) return;
-    setProjectAccessDialog(null);
-    setProjectAccessUsers([]);
-    setProjectAccessError("");
-  };
+  const toggleUserProjectAccess = async (user, projectName) => {
+    if (!user || !projectName || accessBusy) return;
+    const cached = usersAccessList.find((u) => u.id === user.id);
+    const currentProjects = cached
+      ? cached.projects
+      : selectedAccessUser?.id === user.id
+        ? selectedAccessUserData.projects
+        : [];
+    const currentChannels = cached
+      ? cached.channels
+      : selectedAccessUser?.id === user.id
+        ? selectedAccessUserData.channels
+        : [];
+    const willGrant = !currentProjects.includes(projectName);
+    const nextProjects = willGrant
+      ? [...currentProjects, projectName]
+      : currentProjects.filter((p) => p !== projectName);
 
-  const toggleProjectAccessUser = (userId) => {
-    setProjectAccessUsers((prev) =>
+    setAccessBusy(true);
+    setUsersAccessList((prev) =>
       prev.map((u) =>
-        u.id === userId ? { ...u, selected: !u.selected } : u
+        u.id === user.id ? { ...u, projects: nextProjects } : u
       )
     );
-  };
-
-  const saveProjectAccessDialog = async () => {
-    const projectName = projectAccessDialog;
-    if (!projectName) return;
-    setProjectAccessSaving(true);
-    setProjectAccessError("");
-    try {
-      const changed = projectAccessUsers.filter(
-        (u) => u.original !== u.selected
-      );
-      await Promise.all(
-        changed.map((u) => {
-          const projects = new Set(u.access.projects);
-          if (u.selected) projects.add(projectName);
-          else projects.delete(projectName);
-          return updateAdminUserAccess(u.id, {
-            projects: Array.from(projects),
-            channels: u.access.channels,
-          });
-        })
-      );
-      setStatus({
-        type: "success",
-        message: `Updated user access for "${projectName}".`,
+    if (selectedAccessUser?.id === user.id) {
+      setSelectedAccessUserData((prev) => ({
+        ...prev,
+        projects: nextProjects,
+      }));
+    }
+    if (selectedAccessProject === projectName) {
+      setSelectedAccessProjectUserIds((prev) => {
+        const set = new Set(prev);
+        if (willGrant) set.add(user.id);
+        else set.delete(user.id);
+        return Array.from(set);
       });
-      setProjectAccessDialog(null);
-      setProjectAccessUsers([]);
+    }
+    try {
+      await updateAdminUserAccess(user.id, {
+        projects: nextProjects,
+        channels: currentChannels,
+      });
     } catch (err) {
-      setProjectAccessError(
-        err?.response?.data?.detail || "Failed to update user access."
+      setUsersAccessList((prev) =>
+        prev.map((u) =>
+          u.id === user.id ? { ...u, projects: currentProjects } : u
+        )
       );
+      if (selectedAccessUser?.id === user.id) {
+        setSelectedAccessUserData((prev) => ({
+          ...prev,
+          projects: currentProjects,
+        }));
+      }
+      if (selectedAccessProject === projectName) {
+        setSelectedAccessProjectUserIds((prev) => {
+          const set = new Set(prev);
+          if (willGrant) set.delete(user.id);
+          else set.add(user.id);
+          return Array.from(set);
+        });
+      }
+      setStatus({
+        type: "error",
+        message:
+          err?.response?.data?.detail || "Failed to update access.",
+      });
     } finally {
-      setProjectAccessSaving(false);
+      setAccessBusy(false);
     }
   };
 
@@ -1922,7 +2034,6 @@ const CredentialsDialog = ({
             {isAdmin && <Tab value="groups" label="Structure" />}
             {isAdmin && <Tab value="schedule" label="Schedule" />}
             {isAdmin && <Tab value="logs" label="Run logs" />}
-            {isAdmin && <Tab value="manage-user" label="Manage User" />}
           </Tabs>
           )}
 
@@ -2199,10 +2310,99 @@ const CredentialsDialog = ({
                   <Box
                     sx={{
                       display: "flex",
-                      flexDirection: "column",
-                      gap: 1.25,
+                      gap: 2,
+                      flexDirection: { xs: "column", md: "row" },
+                      alignItems: "stretch",
                     }}
                   >
+                    <Box
+                      sx={{
+                        width: { xs: "100%", md: 340 },
+                        flexShrink: 0,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 1,
+                      }}
+                    >
+                      <Typography
+                        variant="subtitle2"
+                        sx={{
+                          fontWeight: 800,
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 1,
+                        }}
+                      >
+                        Users
+                        {accessLoading && (
+                          <Box
+                            component="span"
+                            sx={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: "50%",
+                              border: `2px solid ${alpha(accent, 0.3)}`,
+                              borderTopColor: accent,
+                              animation: "spin 0.8s linear infinite",
+                              "@keyframes spin": {
+                                to: { transform: "rotate(360deg)" },
+                              },
+                            }}
+                          />
+                        )}
+                        {selectedAccessProject && (
+                          <Typography
+                            component="span"
+                            variant="caption"
+                            sx={{ fontWeight: 600, color: accent }}
+                          >
+                            — with access to "{selectedAccessProject}"
+                          </Typography>
+                        )}
+                      </Typography>
+                      <ManageUserRequests
+                        active={activeTab === "groups"}
+                        compact
+                        selectedUserId={selectedAccessUser?.id || null}
+                        onSelectUser={handleSelectAccessUser}
+                        highlightedUserIds={selectedAccessProjectUserIds}
+                        onUsersChanged={loadProjectUserMap}
+                      />
+                    </Box>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 1.25,
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 1,
+                          minHeight: 28,
+                        }}
+                      >
+                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                          Projects
+                          </Typography>
+                        {(selectedAccessUser || selectedAccessProject) && (
+                          <Button
+                            size="small"
+                            onClick={() => {
+                              if (selectedAccessUser) handleSelectAccessUser(null);
+                              if (selectedAccessProject) handleSelectAccessProject(selectedAccessProject);
+                            }}
+                            sx={{ textTransform: "none", fontWeight: 700 }}
+                          >
+                            Clear selection
+                          </Button>
+                        )}
+                      </Box>
                     <Box display="flex" gap={1} flexWrap="wrap">
                       <TextField
                         size="small"
@@ -2241,23 +2441,61 @@ const CredentialsDialog = ({
                           const selectedChannelOptions = assignableChannelOptions.filter((option) =>
                             selectedChannels.includes(option.value)
                           );
+                          const userHasAccess =
+                            !!selectedAccessUser &&
+                            selectedAccessUserData.projects.includes(projectName);
+                          const isAccessSelected =
+                            selectedAccessProject === projectName;
 
                           return (
                             <Box
                               key={projectName}
                               sx={{
                                 p: 1.25,
-                                border: `1px solid ${border}`,
+                                border: `1px solid ${
+                                  isAccessSelected
+                                    ? accent
+                                    : userHasAccess
+                                      ? alpha(accent, 0.55)
+                                      : border
+                                }`,
                                 borderRadius: 1.75,
-                                bgcolor: isDark
-                                  ? "rgba(15,23,42,0.34)"
-                                  : "rgba(255,255,255,0.92)",
+                                bgcolor: isAccessSelected
+                                  ? alpha(accent, 0.1)
+                                  : userHasAccess
+                                    ? alpha(accent, 0.05)
+                                    : isDark
+                                      ? "rgba(15,23,42,0.34)"
+                                      : "rgba(255,255,255,0.92)",
                                 display: "flex",
                                 flexDirection: "column",
                                 gap: 1,
+                                transition: "all 0.15s",
                               }}
                             >
                               <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                                {selectedAccessUser && !isEditingProject && (
+                                  <Tooltip
+                                    title={
+                                      userHasAccess
+                                        ? "Revoke access"
+                                        : "Grant access"
+                                    }
+                                  >
+                                    <Checkbox
+                                      size="small"
+                                      checked={userHasAccess}
+                                      disabled={accessBusy}
+                                      onChange={() =>
+                                        toggleUserProjectAccess(
+                                          selectedAccessUser,
+                                          projectName
+                                        )
+                                      }
+                                      sx={{ p: 0.5 }}
+                                    />
+                                  </Tooltip>
+                                )}
                                 {isEditingProject ? (
                                   <TextField
                                     size="small"
@@ -2268,13 +2506,34 @@ const CredentialsDialog = ({
                                     sx={{ minWidth: 220, flex: 1 }}
                                   />
                                 ) : (
-                                  <Typography variant="body2" sx={{ fontWeight: 700, flex: 1 }}>
+                                  <Typography
+                                    variant="body2"
+                                    onClick={() =>
+                                      handleSelectAccessProject(projectName)
+                                    }
+                                    sx={{
+                                      fontWeight: 700,
+                                      flex: 1,
+                                      cursor: "pointer",
+                                      "&:hover": { color: accent },
+                                    }}
+                                  >
                                     {projectName}
                                   </Typography>
                                 )}
                                 <Chip
                                   size="small"
-                                  label={`${selectedChannelOptions.length} channel${selectedChannelOptions.length === 1 ? "" : "s"}`}
+                                  clickable
+                                  onClick={(event) =>
+                                    openProjectUserMenu(event, projectName)
+                                  }
+                                  label={`${(projectUserMap[projectName] || []).length} user${
+                                    (projectUserMap[projectName] || []).length === 1 ? "" : "s"
+                                  }`}
+                                  sx={{
+                                    fontWeight: 700,
+                                    "& .MuiChip-label": { px: 1 },
+                                  }}
                                 />
                                 <Box display="flex" alignItems="center" gap={0.5}>
                                   {isEditingProject ? (
@@ -2311,16 +2570,6 @@ const CredentialsDialog = ({
                                       <EditOutlinedIcon fontSize="small" />
                                     </IconButton>
                                   )}
-                                  <Tooltip title="User Access">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => openProjectAccessDialog(projectName)}
-                                      disabled={savingGroup}
-                                      sx={{ border: `1px solid ${border}` }}
-                                    >
-                                      <PeopleOutlineIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
                                   <IconButton
                                     size="small"
                                     color="error"
@@ -2453,6 +2702,7 @@ const CredentialsDialog = ({
                         })}
                       </Box>
                     )}
+                    </Box>
                   </Box>
                 ) : false ? (
                   <Box
@@ -2855,8 +3105,6 @@ const CredentialsDialog = ({
                       )}
                     </Box>
                   </Box>
-                ) : activeTab === "manage-user" ? (
-                  <ManageUserRequests active={activeTab === "manage-user"} />
                 ) : activeTab === "schedule" ? (
                   <Box
                     sx={{
@@ -3246,118 +3494,6 @@ const CredentialsDialog = ({
         </DialogActions>
       )}
       <Dialog
-        open={!!projectAccessDialog}
-        onClose={closeProjectAccessDialog}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 3,
-            bgcolor: isDark ? "#1e293b" : "#ffffff",
-            backgroundImage: "none",
-          },
-        }}
-      >
-        <DialogTitle sx={{ fontWeight: 800, pt: 3 }}>
-          User Access
-        </DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Project: {projectAccessDialog}
-          </Typography>
-          {projectAccessError && (
-            <Typography
-              variant="body2"
-              sx={{ color: "error.main", mb: 1.5 }}
-            >
-              {projectAccessError}
-            </Typography>
-          )}
-          {projectAccessLoading ? (
-            <Box display="flex" justifyContent="center" py={5}>
-              <Typography variant="body2" color="text.secondary">
-                Loading users...
-              </Typography>
-            </Box>
-          ) : projectAccessUsers.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              No non-admin users found.
-            </Typography>
-          ) : (
-            <Box display="flex" flexDirection="column" gap={0.5}>
-              {projectAccessUsers.map((u) => (
-                <Box
-                  key={u.id}
-                  onClick={() => toggleProjectAccessUser(u.id)}
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 1.25,
-                    px: 1,
-                    py: 0.75,
-                    borderRadius: 1.5,
-                    cursor: "pointer",
-                    border: `1px solid ${border}`,
-                    bgcolor: u.selected
-                      ? alpha(accent, 0.08)
-                      : "transparent",
-                    "&:hover": {
-                      bgcolor: alpha(accent, 0.12),
-                    },
-                  }}
-                >
-                  <Checkbox
-                    size="small"
-                    checked={u.selected}
-                    onChange={() => toggleProjectAccessUser(u.id)}
-                    onClick={(e) => e.stopPropagation()}
-                    sx={{ p: 0.5 }}
-                  />
-                  <Avatar
-                    src={resolveAvatarSrc(u.avatar)}
-                    alt={u.name}
-                    sx={{ width: 32, height: 32, fontSize: 14 }}
-                  >
-                    {(u.name || "?").slice(0, 1).toUpperCase()}
-                  </Avatar>
-                  <Box sx={{ minWidth: 0, flex: 1 }}>
-                    <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
-                      {u.name}
-                    </Typography>
-                    {u.username && u.username !== u.name && (
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        noWrap
-                      >
-                        {u.username}
-                      </Typography>
-                    )}
-                  </Box>
-                </Box>
-              ))}
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ p: 3, pt: 1 }}>
-          <Button
-            onClick={closeProjectAccessDialog}
-            disabled={projectAccessSaving}
-            sx={{ textTransform: "none", fontWeight: 700 }}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            onClick={saveProjectAccessDialog}
-            disabled={projectAccessLoading || projectAccessSaving}
-            sx={{ borderRadius: 2, textTransform: "none", fontWeight: 700 }}
-          >
-            {projectAccessSaving ? "Saving..." : "Save Access"}
-          </Button>
-        </DialogActions>
-      </Dialog>
-      <Dialog
         open={confirmOpen}
         onClose={handleConfirmClose}
         maxWidth="xs"
@@ -3387,6 +3523,73 @@ const CredentialsDialog = ({
           </Button>
         </DialogActions>
       </Dialog>
+      <Menu
+        anchorEl={projectUserMenuAnchor}
+        open={Boolean(projectUserMenuAnchor)}
+        onClose={closeProjectUserMenu}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        transformOrigin={{ vertical: "top", horizontal: "left" }}
+        PaperProps={{
+          sx: {
+            mt: 0.5,
+            minWidth: 220,
+            maxHeight: 320,
+            borderRadius: 2,
+            bgcolor: isDark ? "#0f172a" : "#ffffff",
+            backgroundImage: "none",
+          },
+        }}
+      >
+        {(() => {
+          if (!usersAccessList.length) {
+            return (
+              <MenuItem disabled sx={{ fontSize: "0.85rem" }}>
+                No users available.
+              </MenuItem>
+            );
+          }
+          return usersAccessList.map((u) => {
+            const hasAccess = (u.projects || []).includes(
+              projectUserMenuProject
+            );
+            return (
+              <MenuItem
+                key={`project-user-${u.id}`}
+                onClick={() =>
+                  toggleUserProjectAccess(u, projectUserMenuProject)
+                }
+                disabled={accessBusy}
+                sx={{ gap: 1.25 }}
+              >
+                <Checkbox
+                  size="small"
+                  checked={hasAccess}
+                  disabled={accessBusy}
+                  sx={{ p: 0.5 }}
+                  tabIndex={-1}
+                />
+                <Avatar
+                  src={resolveAvatarSrc(u.avatar_url)}
+                  alt={u.name}
+                  sx={{ width: 26, height: 26, fontSize: 12 }}
+                >
+                  {(u.name || "?").slice(0, 1).toUpperCase()}
+                </Avatar>
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+                    {u.name}
+                  </Typography>
+                  {u.username && u.username !== u.name && (
+                    <Typography variant="caption" color="text.secondary" noWrap>
+                      {u.username}
+                    </Typography>
+                  )}
+                </Box>
+              </MenuItem>
+            );
+          });
+        })()}
+      </Menu>
       <Menu
         anchorEl={runAllAnchorEl}
         open={Boolean(runAllAnchorEl)}
