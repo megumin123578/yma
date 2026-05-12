@@ -41,6 +41,7 @@ import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
 import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
+import PeopleOutlineIcon from "@mui/icons-material/PeopleOutline";
 import {
   uploadCredentials,
   listTokens,
@@ -65,6 +66,9 @@ import {
   listScheduleRuns,
   stopScheduleRun,
   resumeScheduleRun,
+  listAdminUsers,
+  getAdminUserAccess,
+  updateAdminUserAccess,
 } from "../../services/userService";
 import { subscribeSSE } from "../../services/sse";
 import { UserContext } from "../../context/UserContext";
@@ -170,6 +174,11 @@ const CredentialsDialog = ({
   const [editingProjectName, setEditingProjectName] = useState("");
   const [editingProjectDraft, setEditingProjectDraft] = useState("");
   const [savingGroup, setSavingGroup] = useState(false);
+  const [projectAccessDialog, setProjectAccessDialog] = useState(null);
+  const [projectAccessLoading, setProjectAccessLoading] = useState(false);
+  const [projectAccessSaving, setProjectAccessSaving] = useState(false);
+  const [projectAccessUsers, setProjectAccessUsers] = useState([]);
+  const [projectAccessError, setProjectAccessError] = useState("");
   const [runSelectedMode, setRunSelectedMode] = useState(false);
   const [selectedTokenNames, setSelectedTokenNames] = useState([]);
   const [runningSelected, setRunningSelected] = useState(false);
@@ -301,29 +310,20 @@ const CredentialsDialog = ({
   };
 
   const tokenHierarchy = useMemo(() => {
-    const groups = new Map();
+    const projects = new Map();
     (tokens || []).forEach((token) => {
       const tokenName = typeof token === "string" ? token : token?.name || "";
       if (!tokenName) return;
-      const groupName = typeof token === "object" ? token.group_name || "" : "";
       const projectName = typeof token === "object" ? token.project_name || "" : "";
-      const groupKey = groupName || "Ungrouped";
       const projectKey = projectName || "No project";
-      if (!groups.has(groupKey)) {
-        groups.set(groupKey, new Map());
-      }
-      const projects = groups.get(groupKey);
       if (!projects.has(projectKey)) {
         projects.set(projectKey, []);
       }
       projects.get(projectKey).push(token);
     });
-    return Array.from(groups.entries()).map(([groupName, projects]) => ({
-      groupName,
-      projects: Array.from(projects.entries()).map(([projectName, items]) => ({
-        projectName,
-        items,
-      })),
+    return Array.from(projects.entries()).map(([projectName, items]) => ({
+      projectName,
+      items,
     }));
   }, [tokens]);
 
@@ -770,6 +770,96 @@ const CredentialsDialog = ({
       setStatus({ type: "error", message });
     } finally {
       setSavingGroup(false);
+    }
+  };
+
+  const openProjectAccessDialog = async (projectName) => {
+    setProjectAccessDialog(projectName);
+    setProjectAccessLoading(true);
+    setProjectAccessError("");
+    setProjectAccessUsers([]);
+    try {
+      const usersData = await listAdminUsers();
+      const allUsers = (usersData?.items || []).filter((u) => !u.is_admin);
+      const accessList = await Promise.all(
+        allUsers.map((u) =>
+          getAdminUserAccess(u.id).catch(() => ({ projects: [], channels: [] }))
+        )
+      );
+      const merged = allUsers.map((u, idx) => {
+        const access = accessList[idx] || { projects: [], channels: [] };
+        const has = (access.projects || []).includes(projectName);
+        return {
+          id: u.id,
+          name: u.name || u.username,
+          username: u.username,
+          avatar: u.avatar_url,
+          original: has,
+          selected: has,
+          access: {
+            projects: access.projects || [],
+            channels: access.channels || [],
+          },
+        };
+      });
+      setProjectAccessUsers(merged);
+    } catch (err) {
+      setProjectAccessError(
+        err?.response?.data?.detail || "Failed to load users."
+      );
+      setProjectAccessDialog(null);
+    } finally {
+      setProjectAccessLoading(false);
+    }
+  };
+
+  const closeProjectAccessDialog = () => {
+    if (projectAccessSaving) return;
+    setProjectAccessDialog(null);
+    setProjectAccessUsers([]);
+    setProjectAccessError("");
+  };
+
+  const toggleProjectAccessUser = (userId) => {
+    setProjectAccessUsers((prev) =>
+      prev.map((u) =>
+        u.id === userId ? { ...u, selected: !u.selected } : u
+      )
+    );
+  };
+
+  const saveProjectAccessDialog = async () => {
+    const projectName = projectAccessDialog;
+    if (!projectName) return;
+    setProjectAccessSaving(true);
+    setProjectAccessError("");
+    try {
+      const changed = projectAccessUsers.filter(
+        (u) => u.original !== u.selected
+      );
+      await Promise.all(
+        changed.map((u) => {
+          const projects = new Set(u.access.projects);
+          if (u.selected) projects.add(projectName);
+          else projects.delete(projectName);
+          return updateAdminUserAccess(u.id, {
+            projects: Array.from(projects),
+            channels: u.access.channels,
+          });
+        })
+      );
+      setStatus({
+        type: "success",
+        message: `Updated user access for "${projectName}".`,
+      });
+      setProjectAccessDialog(null);
+      setProjectAccessUsers([]);
+    } catch (err) {
+      setProjectAccessError(
+        err?.response?.data?.detail || "Failed to update user access."
+      );
+    } finally {
+      setProjectAccessSaving(false);
     }
   };
 
@@ -1352,9 +1442,7 @@ const CredentialsDialog = ({
     const isHidden = typeof token === "string" ? false : !!token.hidden;
     const isOwned = typeof token === "string" ? true : token.owned !== false;
     const avatarSrc = typeof token === "object" ? resolveAvatarSrc(token.avatar) : "";
-    const groupName = typeof token === "object" ? token.group_name || "" : "";
     const projectName = typeof token === "object" ? token.project_name || "" : "";
-    const groupColor = typeof token === "object" ? token.group_color || "" : "";
     const isSelected = selectedTokenNames.includes(tokenName);
     const tokenUpdatedAt = tokenUpdatedAtMap[tokenName] || tokenProgress[tokenName]?.updated_at || "";
     const canToggleSelectedFromCard = runSelectedMode && isOwned && !isHidden;
@@ -1364,19 +1452,9 @@ const CredentialsDialog = ({
     };
 
     if (layout === "card") {
-      const cardBg = groupColor
-        ? alpha(groupColor, isDark ? 0.16 : 0.1)
-        : isDark
-          ? "rgba(255,255,255,0.06)"
-          : "rgba(255,255,255,0.85)";
-      const cardBorder = groupColor
-        ? alpha(groupColor, isDark ? 0.42 : 0.26)
-        : border;
-      const cardHoverBg = groupColor
-        ? alpha(groupColor, isDark ? 0.22 : 0.14)
-        : isDark
-          ? "rgba(255,255,255,0.09)"
-          : "rgba(255,255,255,1)";
+      const cardBg = isDark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.85)";
+      const cardBorder = border;
+      const cardHoverBg = isDark ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,1)";
       return (
         <Box
           key={tokenName}
@@ -1400,11 +1478,9 @@ const CredentialsDialog = ({
               transform: "translateY(-4px)",
               boxShadow: isDark ? "0 10px 25px -5px rgba(0,0,0,0.3)" : "0 10px 25px -5px rgba(25,118,210,0.15)",
               bgcolor: cardHoverBg,
-              borderColor: groupColor
-                ? alpha(groupColor, isDark ? 0.58 : 0.38)
-                : isDark
-                  ? "rgba(125,224,210,0.4)"
-                  : "rgba(25,118,210,0.3)",
+              borderColor: isDark
+                ? "rgba(125,224,210,0.4)"
+                : "rgba(25,118,210,0.3)",
             },
             opacity: isHidden ? 0.7 : 1,
             position: "relative",
@@ -1497,16 +1573,6 @@ const CredentialsDialog = ({
                     </Typography>
                   )}
                   <Box display="flex" alignItems="center" gap={0.75} flexWrap="wrap" mt={0.75}>
-                    {!!groupName && (
-                      <Chip
-                        size="small"
-                        label={`Group: ${groupName}`}
-                        sx={{
-                          bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)",
-                          color: isDark ? "#e5e7eb" : "rgba(15,23,42,0.78)",
-                        }}
-                      />
-                    )}
                     {!!projectName && (
                       <Chip
                         size="small"
@@ -1689,29 +1755,21 @@ const CredentialsDialog = ({
             border: `1px solid ${border}`,
             borderRadius: 1,
             p: 1,
-            bgcolor: groupColor
-              ? alpha(groupColor, isDark ? 0.14 : 0.1)
-              : isDark
-                ? "rgba(255,255,255,0.08)"
-                : "rgba(255,255,255,0.75)",
+            bgcolor: isDark
+              ? "rgba(255,255,255,0.08)"
+              : "rgba(255,255,255,0.75)",
             backdropFilter: "blur(10px)",
             WebkitBackdropFilter: "blur(10px)",
             opacity: isHidden ? 0.5 : 1,
             transition: "opacity 220ms ease, border-color 180ms ease, background-color 180ms ease",
-            borderColor: groupColor
-              ? alpha(groupColor, isDark ? 0.38 : 0.24)
-              : border,
+            borderColor: border,
             "&:hover": {
-              bgcolor: groupColor
-                ? alpha(groupColor, isDark ? 0.2 : 0.14)
-                : isDark
-                  ? "rgba(255,255,255,0.12)"
-                  : "rgba(25,118,210,0.08)",
-              borderColor: groupColor
-                ? alpha(groupColor, isDark ? 0.52 : 0.34)
-                : isDark
-                  ? "rgba(255,255,255,0.2)"
-                  : "rgba(25,118,210,0.2)",
+              bgcolor: isDark
+                ? "rgba(255,255,255,0.12)"
+                : "rgba(25,118,210,0.08)",
+              borderColor: isDark
+                ? "rgba(255,255,255,0.2)"
+                : "rgba(25,118,210,0.2)",
               opacity: isHidden ? 0.6 : 1,
             },
             cursor: "grab",
@@ -1740,16 +1798,6 @@ const CredentialsDialog = ({
                 <Typography variant="caption" color="text.secondary">
                   View only
                 </Typography>
-              )}
-              {!!groupName && (
-                <Chip
-                  size="small"
-                  label={`Group: ${groupName}`}
-                  sx={{
-                    bgcolor: isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.06)",
-                    color: isDark ? "#e5e7eb" : "rgba(15,23,42,0.78)",
-                  }}
-                />
               )}
               {!!projectName && (
                 <Chip
@@ -2105,9 +2153,9 @@ const CredentialsDialog = ({
                     </Typography>
                   ) : (
                     <Box display="flex" flexDirection="column" gap={2}>
-                      {tokenHierarchy.map((group) => (
+                      {tokenHierarchy.map((project) => (
                         <Box
-                          key={group.groupName}
+                          key={project.projectName}
                           sx={{
                             border: `1px solid ${border}`,
                             borderRadius: 2,
@@ -2116,46 +2164,29 @@ const CredentialsDialog = ({
                           }}
                         >
                           <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>
-                            {group.groupName}
+                            {project.projectName}
                           </Typography>
-                          <Box display="flex" flexDirection="column" gap={1.5}>
-                            {group.projects.map((project) => (
-                              <Box
-                                key={`${group.groupName}-${project.projectName}`}
-                                sx={{
-                                  border: `1px dashed ${border}`,
-                                  borderRadius: 2,
-                                  p: 1.25,
-                                  bgcolor: isDark ? "rgba(15,23,42,0.35)" : "rgba(248,250,252,0.9)",
-                                }}
-                              >
-                                <Typography variant="body2" sx={{ fontWeight: 700, mb: 1 }}>
-                                  {project.projectName}
-                                </Typography>
-                                {tokenView === "card" ? (
-                                  <Box
-                                    display="grid"
-                                    gap={1.5}
-                                    sx={{
-                                      justifyContent: "start",
-                                      justifyItems: "start",
-                                      gridTemplateColumns: {
-                                        xs: "1fr",
-                                        sm: "repeat(auto-fill, minmax(220px, 1fr))",
-                                        lg: "repeat(auto-fill, minmax(240px, 1fr))",
-                                      },
-                                    }}
-                                  >
-                                    {project.items.map((token) => renderTokenItem(token, "card"))}
-                                  </Box>
-                                ) : (
-                                  <Box display="flex" flexDirection="column" gap={1}>
-                                    {project.items.map((token) => renderTokenItem(token, "list"))}
-                                  </Box>
-                                )}
-                              </Box>
-                            ))}
-                          </Box>
+                          {tokenView === "card" ? (
+                            <Box
+                              display="grid"
+                              gap={1.5}
+                              sx={{
+                                justifyContent: "start",
+                                justifyItems: "start",
+                                gridTemplateColumns: {
+                                  xs: "1fr",
+                                  sm: "repeat(auto-fill, minmax(220px, 1fr))",
+                                  lg: "repeat(auto-fill, minmax(240px, 1fr))",
+                                },
+                              }}
+                            >
+                              {project.items.map((token) => renderTokenItem(token, "card"))}
+                            </Box>
+                          ) : (
+                            <Box display="flex" flexDirection="column" gap={1}>
+                              {project.items.map((token) => renderTokenItem(token, "list"))}
+                            </Box>
+                          )}
                         </Box>
                       ))}
                     </Box>
@@ -2280,6 +2311,16 @@ const CredentialsDialog = ({
                                       <EditOutlinedIcon fontSize="small" />
                                     </IconButton>
                                   )}
+                                  <Tooltip title="User Access">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => openProjectAccessDialog(projectName)}
+                                      disabled={savingGroup}
+                                      sx={{ border: `1px solid ${border}` }}
+                                    >
+                                      <PeopleOutlineIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
                                   <IconButton
                                     size="small"
                                     color="error"
@@ -2962,15 +3003,7 @@ const CredentialsDialog = ({
                     </Box>
                   </Box>
                 ) : (
-                  <Box
-                    sx={{
-                      bgcolor: panel,
-                      border: `1px solid ${border}`,
-                      borderRadius: 2,
-                      p: 2,
-                    }}
-                  >
-                    <Box display="flex" flexDirection="column" gap={1} mt={1}>
+                  <Box display="flex" flexDirection="column" gap={1}>
                       {runsError ? (
                         <Typography variant="body2" color="text.secondary">
                           {cleanError(runsError)}
@@ -3137,7 +3170,6 @@ const CredentialsDialog = ({
                           })}
                         </Box>
                       )}
-                    </Box>
                   </Box>
                 )}
               </>
@@ -3213,6 +3245,118 @@ const CredentialsDialog = ({
           </Button>
         </DialogActions>
       )}
+      <Dialog
+        open={!!projectAccessDialog}
+        onClose={closeProjectAccessDialog}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            bgcolor: isDark ? "#1e293b" : "#ffffff",
+            backgroundImage: "none",
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, pt: 3 }}>
+          User Access
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Project: {projectAccessDialog}
+          </Typography>
+          {projectAccessError && (
+            <Typography
+              variant="body2"
+              sx={{ color: "error.main", mb: 1.5 }}
+            >
+              {projectAccessError}
+            </Typography>
+          )}
+          {projectAccessLoading ? (
+            <Box display="flex" justifyContent="center" py={5}>
+              <Typography variant="body2" color="text.secondary">
+                Loading users...
+              </Typography>
+            </Box>
+          ) : projectAccessUsers.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No non-admin users found.
+            </Typography>
+          ) : (
+            <Box display="flex" flexDirection="column" gap={0.5}>
+              {projectAccessUsers.map((u) => (
+                <Box
+                  key={u.id}
+                  onClick={() => toggleProjectAccessUser(u.id)}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1.25,
+                    px: 1,
+                    py: 0.75,
+                    borderRadius: 1.5,
+                    cursor: "pointer",
+                    border: `1px solid ${border}`,
+                    bgcolor: u.selected
+                      ? alpha(accent, 0.08)
+                      : "transparent",
+                    "&:hover": {
+                      bgcolor: alpha(accent, 0.12),
+                    },
+                  }}
+                >
+                  <Checkbox
+                    size="small"
+                    checked={u.selected}
+                    onChange={() => toggleProjectAccessUser(u.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    sx={{ p: 0.5 }}
+                  />
+                  <Avatar
+                    src={resolveAvatarSrc(u.avatar)}
+                    alt={u.name}
+                    sx={{ width: 32, height: 32, fontSize: 14 }}
+                  >
+                    {(u.name || "?").slice(0, 1).toUpperCase()}
+                  </Avatar>
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+                      {u.name}
+                    </Typography>
+                    {u.username && u.username !== u.name && (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        noWrap
+                      >
+                        {u.username}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 1 }}>
+          <Button
+            onClick={closeProjectAccessDialog}
+            disabled={projectAccessSaving}
+            sx={{ textTransform: "none", fontWeight: 700 }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={saveProjectAccessDialog}
+            disabled={projectAccessLoading || projectAccessSaving}
+            sx={{ borderRadius: 2, textTransform: "none", fontWeight: 700 }}
+          >
+            {projectAccessSaving ? "Saving..." : "Save Access"}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <Dialog
         open={confirmOpen}
         onClose={handleConfirmClose}
