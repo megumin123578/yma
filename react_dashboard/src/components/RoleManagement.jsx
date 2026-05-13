@@ -12,8 +12,6 @@ import {
   DialogTitle,
   Divider,
   IconButton,
-  MenuItem,
-  Select,
   TextField,
   Tooltip,
   Typography,
@@ -24,20 +22,20 @@ import { Reorder, AnimatePresence } from "framer-motion";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
-import SaveOutlinedIcon from "@mui/icons-material/SaveOutlined";
 import {
   ADMIN_ACTIONS,
   DATA_ACTIONS,
-  PAGE_ACTIONS,
-  SCOPE_TYPES,
+  PAGE_GROUPS,
 } from "../constants/permissions";
 import {
   createRole,
   deleteRole,
   listRoles,
+  listTokenProjects,
   setRolePermissions,
   updateRole,
 } from "../services/userService";
+import { useIsOwner } from "../context/UserContext";
 
 const ROLE_COLORS = [
   "#ef4444",
@@ -58,6 +56,7 @@ const RoleManagement = () => {
   const isDark = theme.palette.mode === "dark";
   const border = isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.08)";
   const surface = isDark ? "rgba(15,23,42,0.5)" : "#ffffff";
+  const accent = isDark ? "#7de0d2" : theme.palette.primary.main;
 
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -75,6 +74,26 @@ const RoleManagement = () => {
   const [permsDraft, setPermsDraft] = useState([]);
 
   const [reordering, setReordering] = useState(false);
+  const [projectNames, setProjectNames] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listTokenProjects()
+      .then((data) => {
+        if (cancelled) return;
+        const names = (data?.projects || [])
+          .map((p) => (p?.project_name || "").trim())
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b));
+        setProjectNames(names);
+      })
+      .catch(() => {
+        if (!cancelled) setProjectNames([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadRolesList = useCallback(async () => {
     setLoading(true);
@@ -123,7 +142,9 @@ const RoleManagement = () => {
     );
   }, [selectedRole]);
 
+  const isOwner = useIsOwner();
   const isSystemRole = !!selectedRole?.is_system;
+  const readOnlyRole = isSystemRole && !isOwner;
 
   const handleCreateRole = async () => {
     setCreating(true);
@@ -143,39 +164,73 @@ const RoleManagement = () => {
     }
   };
 
-  const handleSaveMeta = async () => {
-    if (!selectedRole) return;
-    setSavingMeta(true);
-    setError("");
-    try {
-      await updateRole(selectedRole.id, {
-        name: nameDraft.trim(),
-        color: colorDraft || null,
-        is_default: isDefaultDraft,
-      });
-      await loadRolesList();
-    } catch (err) {
-      setError(err?.response?.data?.detail || "Failed to update role.");
-    } finally {
-      setSavingMeta(false);
-    }
+  // ---- Auto-save (debounced) ----
+
+  const samePermsList = (a, b) => {
+    if (a.length !== b.length) return false;
+    const key = (p) => `${p.action}|${p.scope_type}|${p.scope_value || ""}`;
+    const sa = a.map(key).sort();
+    const sb = b.map(key).sort();
+    return sa.every((x, i) => x === sb[i]);
   };
 
-  const handleSavePerms = async () => {
-    if (!selectedRole || isSystemRole) return;
-    setSavingPerms(true);
-    setError("");
-    try {
-      await setRolePermissions(selectedRole.id, permsDraft);
-      await loadRolesList();
-    } catch (err) {
-      setError(
-        err?.response?.data?.detail || "Failed to update permissions."
-      );
-    } finally {
-      setSavingPerms(false);
-    }
-  };
+  useEffect(() => {
+    if (!selectedRole || readOnlyRole) return;
+    const nameClean = nameDraft.trim();
+    if (!nameClean) return;
+    const nameChanged = nameClean !== (selectedRole.name || "");
+    const colorChanged = (colorDraft || "") !== (selectedRole.color || "");
+    const defaultChanged = !!isDefaultDraft !== !!selectedRole.is_default;
+    if (!nameChanged && !colorChanged && !defaultChanged) return;
+
+    const timer = setTimeout(async () => {
+      setSavingMeta(true);
+      setError("");
+      try {
+        await updateRole(selectedRole.id, {
+          name: nameClean,
+          color: colorDraft || null,
+          is_default: isDefaultDraft,
+        });
+        await loadRolesList();
+      } catch (err) {
+        setError(err?.response?.data?.detail || "Failed to update role.");
+      } finally {
+        setSavingMeta(false);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [nameDraft, colorDraft, isDefaultDraft, selectedRole, readOnlyRole, loadRolesList]);
+
+  useEffect(() => {
+    if (!selectedRole || readOnlyRole) return;
+    const original = (selectedRole.permissions || []).map((p) => ({
+      action: p.action,
+      scope_type: p.scope_type || "*",
+      scope_value: p.scope_value || "",
+    }));
+    if (samePermsList(original, permsDraft)) return;
+    const hasIncomplete = permsDraft.some(
+      (p) => p.scope_type !== "*" && !(p.scope_value || "").trim()
+    );
+    if (hasIncomplete) return;
+
+    const timer = setTimeout(async () => {
+      setSavingPerms(true);
+      setError("");
+      try {
+        await setRolePermissions(selectedRole.id, permsDraft);
+        await loadRolesList();
+      } catch (err) {
+        setError(
+          err?.response?.data?.detail || "Failed to update permissions."
+        );
+      } finally {
+        setSavingPerms(false);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [permsDraft, selectedRole, readOnlyRole, loadRolesList]);
 
   const handleDeleteRole = async () => {
     if (!selectedRole || isSystemRole) return;
@@ -210,28 +265,6 @@ const RoleManagement = () => {
       }
       return filtered;
     });
-  };
-
-  const scopedRows = (action) =>
-    permsDraft
-      .map((p, idx) => ({ ...p, idx }))
-      .filter((p) => p.action === action && p.scope_type !== "*");
-
-  const addScopedRow = (action) => {
-    setPermsDraft((prev) => [
-      ...prev,
-      { action, scope_type: "project", scope_value: "" },
-    ]);
-  };
-
-  const updateScopedRow = (origIdx, field, value) => {
-    setPermsDraft((prev) =>
-      prev.map((p, idx) => (idx === origIdx ? { ...p, [field]: value } : p))
-    );
-  };
-
-  const removeScopedRow = (origIdx) => {
-    setPermsDraft((prev) => prev.filter((_, idx) => idx !== origIdx));
   };
 
   // ---- Drag-to-reorder ----
@@ -423,34 +456,29 @@ const RoleManagement = () => {
               }}
             >
               <Box display="flex" alignItems="center" justifyContent="space-between" gap={1}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                  Role details
-                </Typography>
-                <Box display="flex" gap={1}>
-                  <Button
-                    size="small"
-                    variant="contained"
-                    startIcon={<SaveOutlinedIcon />}
-                    onClick={handleSaveMeta}
-                    disabled={savingMeta || isSystemRole}
-                    sx={{ textTransform: "none", fontWeight: 700 }}
-                  >
-                    {savingMeta ? "Saving..." : "Save details"}
-                  </Button>
-                  <Tooltip title={isSystemRole ? "System role cannot be deleted" : "Delete role"}>
-                    <span>
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() => setConfirmDelete(true)}
-                        disabled={isSystemRole || deletingId === selectedRole.id}
-                        sx={{ border: `1px solid ${border}` }}
-                      >
-                        <DeleteOutlineIcon fontSize="small" />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
+                <Box display="flex" alignItems="center" gap={1}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                    Role details
+                  </Typography>
+                  {savingMeta && (
+                    <Typography variant="caption" color="text.secondary">
+                      Saving…
+                    </Typography>
+                  )}
                 </Box>
+                <Tooltip title={isSystemRole ? "System role cannot be deleted" : "Delete role"}>
+                  <span>
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => setConfirmDelete(true)}
+                      disabled={isSystemRole || deletingId === selectedRole.id}
+                      sx={{ border: `1px solid ${border}` }}
+                    >
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
               </Box>
               <Box display="flex" gap={1.5} flexWrap="wrap" alignItems="center">
                 <TextField
@@ -458,7 +486,7 @@ const RoleManagement = () => {
                   label="Name"
                   value={nameDraft}
                   onChange={(e) => setNameDraft(e.target.value)}
-                  disabled={isSystemRole}
+                  disabled={readOnlyRole}
                   sx={{ minWidth: 220, flex: 1 }}
                 />
                 <Box display="flex" alignItems="center" gap={0.5}>
@@ -468,13 +496,13 @@ const RoleManagement = () => {
                   {ROLE_COLORS.map((c) => (
                     <Box
                       key={c}
-                      onClick={() => !isSystemRole && setColorDraft(c)}
+                      onClick={() => !readOnlyRole && setColorDraft(c)}
                       sx={{
                         width: 22,
                         height: 22,
                         borderRadius: "50%",
                         bgcolor: c,
-                        cursor: isSystemRole ? "not-allowed" : "pointer",
+                        cursor: readOnlyRole ? "not-allowed" : "pointer",
                         border:
                           colorDraft === c
                             ? `3px solid ${alpha(c, 0.6)}`
@@ -488,7 +516,7 @@ const RoleManagement = () => {
                     size="small"
                     checked={isDefaultDraft}
                     onChange={(e) => setIsDefaultDraft(e.target.checked)}
-                    disabled={isSystemRole}
+                    disabled={readOnlyRole}
                   />
                   <Typography variant="caption" sx={{ fontWeight: 700 }}>
                     Default for new users
@@ -508,41 +536,69 @@ const RoleManagement = () => {
                 gap: 1,
               }}
             >
-              <Box display="flex" alignItems="center" justifyContent="space-between">
+              <Box display="flex" alignItems="center" gap={1}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
                   Page access
                 </Typography>
-                <Button
-                  size="small"
-                  variant="contained"
-                  startIcon={<SaveOutlinedIcon />}
-                  onClick={handleSavePerms}
-                  disabled={savingPerms || isSystemRole}
-                  sx={{ textTransform: "none", fontWeight: 700 }}
-                >
-                  {savingPerms ? "Saving..." : "Save permissions"}
-                </Button>
+                {savingPerms && (
+                  <Typography variant="caption" color="text.secondary">
+                    Saving…
+                  </Typography>
+                )}
               </Box>
-              <Box
-                display="grid"
-                gap={0.5}
-                sx={{
-                  gridTemplateColumns: {
-                    xs: "1fr",
-                    sm: "1fr 1fr",
-                    md: "1fr 1fr 1fr",
-                  },
-                }}
-              >
-                {PAGE_ACTIONS.map((a) => (
-                  <Box key={a.value} display="flex" alignItems="center" gap={0.5}>
-                    <Checkbox
-                      size="small"
-                      checked={hasGlobalPerm(a.value)}
-                      onChange={(e) => togglePerm(a.value, e.target.checked)}
-                      disabled={isSystemRole}
-                    />
-                    <Typography variant="body2">{a.label}</Typography>
+              <Box display="flex" flexDirection="column" gap={1.5}>
+                {PAGE_GROUPS.map((group) => (
+                  <Box key={group.label} display="flex" flexDirection="column" gap={0.25}>
+                    <Typography
+                      variant="caption"
+                      sx={{
+                        fontWeight: 800,
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                        color: "text.secondary",
+                        mb: 0.25,
+                      }}
+                    >
+                      {group.label}
+                    </Typography>
+                    <Box
+                      display="grid"
+                      gap={0.25}
+                      sx={{
+                        pl: 0.5,
+                        gridTemplateColumns: {
+                          xs: "1fr",
+                          sm: "1fr 1fr",
+                          md: group.actions.length > 2 ? "1fr 1fr 1fr" : "1fr 1fr",
+                        },
+                      }}
+                    >
+                      {group.actions.map((a) => (
+                        <Box key={a.value} display="flex" alignItems="flex-start" gap={0.5}>
+                          <Checkbox
+                            size="small"
+                            checked={hasGlobalPerm(a.value)}
+                            onChange={(e) => togglePerm(a.value, e.target.checked)}
+                            disabled={readOnlyRole}
+                            sx={{ p: 0.5, mt: -0.25 }}
+                          />
+                          <Box sx={{ minWidth: 0, pt: 0.25 }}>
+                            <Typography variant="body2" sx={{ lineHeight: 1.3 }}>
+                              {a.label}
+                            </Typography>
+                            {a.hint && (
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                sx={{ display: "block", lineHeight: 1.2 }}
+                              >
+                                {a.hint}
+                              </Typography>
+                            )}
+                          </Box>
+                        </Box>
+                      ))}
+                    </Box>
                   </Box>
                 ))}
               </Box>
@@ -568,7 +624,7 @@ const RoleManagement = () => {
                     size="small"
                     checked={hasGlobalPerm(a.value)}
                     onChange={(e) => togglePerm(a.value, e.target.checked)}
-                    disabled={isSystemRole}
+                    disabled={readOnlyRole}
                   />
                   <Box sx={{ minWidth: 0 }}>
                     <Typography variant="body2" sx={{ fontWeight: 600 }}>
@@ -599,102 +655,150 @@ const RoleManagement = () => {
                 Data permissions
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Tick "All" to grant globally, or add scoped rows for specific projects / channels.
+                Tick "All projects" for global grant, or pick per project.
               </Typography>
-              {DATA_ACTIONS.map((a) => {
-                const rows = scopedRows(a.value);
-                return (
-                  <Box
+
+              {/* Global row */}
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: `minmax(160px, 1fr) repeat(${DATA_ACTIONS.length}, minmax(60px, 90px))`,
+                  alignItems: "center",
+                  gap: 0.5,
+                  px: 1,
+                  py: 0.5,
+                  borderRadius: 1,
+                  bgcolor: alpha(isDark ? "#fff" : "#000", 0.03),
+                }}
+              >
+                <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: "0.06em" }}>
+                  PROJECT
+                </Typography>
+                {DATA_ACTIONS.map((a) => (
+                  <Typography
                     key={a.value}
+                    variant="caption"
                     sx={{
-                      p: 1,
-                      borderRadius: 1.5,
-                      border: `1px dashed ${border}`,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 0.75,
+                      fontWeight: 800,
+                      letterSpacing: "0.06em",
+                      textAlign: "center",
                     }}
                   >
-                    <Box display="flex" alignItems="center" justifyContent="space-between" gap={1}>
-                      <Box display="flex" alignItems="center" gap={0.75}>
-                        <Checkbox
-                          size="small"
-                          checked={hasGlobalPerm(a.value)}
-                          onChange={(e) => togglePerm(a.value, e.target.checked)}
-                          disabled={isSystemRole}
-                        />
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                            {a.label}
-                          </Typography>
-                          {a.description && (
-                            <Typography variant="caption" color="text.secondary">
-                              {a.description}
-                            </Typography>
-                          )}
-                        </Box>
-                      </Box>
-                      <Button
-                        size="small"
-                        startIcon={<AddIcon fontSize="small" />}
-                        onClick={() => addScopedRow(a.value)}
-                        disabled={isSystemRole}
-                        sx={{ textTransform: "none" }}
-                      >
-                        Add scope
-                      </Button>
-                    </Box>
-                    {rows.length > 0 && (
-                      <Box display="flex" flexDirection="column" gap={0.5}>
-                        {rows.map((row) => (
-                          <Box
-                            key={row.idx}
-                            display="flex"
-                            gap={0.75}
-                            alignItems="center"
-                          >
-                            <Select
-                              size="small"
-                              value={row.scope_type}
-                              onChange={(e) =>
-                                updateScopedRow(row.idx, "scope_type", e.target.value)
-                              }
-                              disabled={isSystemRole}
-                              sx={{ width: 130 }}
-                            >
-                              {SCOPE_TYPES.filter((s) => s.value !== "*").map(
-                                (s) => (
-                                  <MenuItem key={s.value} value={s.value}>
-                                    {s.label}
-                                  </MenuItem>
-                                )
-                              )}
-                            </Select>
-                            <TextField
-                              size="small"
-                              placeholder="name / account_tag"
-                              value={row.scope_value}
-                              onChange={(e) =>
-                                updateScopedRow(row.idx, "scope_value", e.target.value)
-                              }
-                              disabled={isSystemRole}
-                              sx={{ flex: 1 }}
-                            />
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => removeScopedRow(row.idx)}
-                              disabled={isSystemRole}
-                            >
-                              <DeleteOutlineIcon fontSize="small" />
-                            </IconButton>
-                          </Box>
-                        ))}
-                      </Box>
-                    )}
+                    {a.label.toUpperCase()}
+                  </Typography>
+                ))}
+              </Box>
+
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: `minmax(160px, 1fr) repeat(${DATA_ACTIONS.length}, minmax(60px, 90px))`,
+                  alignItems: "center",
+                  gap: 0.5,
+                  px: 1,
+                  py: 0.5,
+                  borderRadius: 1,
+                  bgcolor: alpha(accent, 0.06),
+                  borderLeft: `3px solid ${accent}`,
+                }}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                  All projects
+                  <Typography variant="caption" color="text.secondary" component="span" sx={{ ml: 0.5 }}>
+                    (global)
+                  </Typography>
+                </Typography>
+                {DATA_ACTIONS.map((a) => (
+                  <Box key={a.value} display="flex" justifyContent="center">
+                    <Checkbox
+                      size="small"
+                      checked={hasGlobalPerm(a.value)}
+                      onChange={(e) => togglePerm(a.value, e.target.checked)}
+                      disabled={readOnlyRole}
+                      sx={{ p: 0.5 }}
+                    />
                   </Box>
-                );
-              })}
+                ))}
+              </Box>
+
+              {projectNames.length === 0 ? (
+                <Typography variant="caption" color="text.secondary" sx={{ pl: 1 }}>
+                  No projects yet. Create projects in Structure to scope permissions.
+                </Typography>
+              ) : (
+                <Box display="flex" flexDirection="column" gap={0.25}>
+                  {projectNames.map((name) => (
+                    <Box
+                      key={name}
+                      sx={{
+                        display: "grid",
+                        gridTemplateColumns: `minmax(160px, 1fr) repeat(${DATA_ACTIONS.length}, minmax(60px, 90px))`,
+                        alignItems: "center",
+                        gap: 0.5,
+                        px: 1,
+                        py: 0.25,
+                        borderRadius: 1,
+                        "&:hover": { bgcolor: alpha(isDark ? "#fff" : "#000", 0.03) },
+                      }}
+                    >
+                      <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
+                        {name}
+                      </Typography>
+                      {DATA_ACTIONS.map((a) => {
+                        const globalOn = hasGlobalPerm(a.value);
+                        const idx = permsDraft.findIndex(
+                          (p) =>
+                            p.action === a.value &&
+                            p.scope_type === "project" &&
+                            p.scope_value === name
+                        );
+                        const checked = globalOn || idx !== -1;
+                        return (
+                          <Box key={a.value} display="flex" justifyContent="center">
+                            <Tooltip
+                              title={
+                                globalOn
+                                  ? "Granted globally"
+                                  : checked
+                                    ? "Granted on this project"
+                                    : ""
+                              }
+                              disableHoverListener={!globalOn && !checked}
+                            >
+                              <span>
+                                <Checkbox
+                                  size="small"
+                                  checked={checked}
+                                  disabled={readOnlyRole || globalOn}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      if (idx !== -1) return;
+                                      setPermsDraft((prev) => [
+                                        ...prev,
+                                        {
+                                          action: a.value,
+                                          scope_type: "project",
+                                          scope_value: name,
+                                        },
+                                      ]);
+                                    } else {
+                                      if (idx === -1) return;
+                                      setPermsDraft((prev) =>
+                                        prev.filter((_, i) => i !== idx)
+                                      );
+                                    }
+                                  }}
+                                  sx={{ p: 0.5 }}
+                                />
+                              </span>
+                            </Tooltip>
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  ))}
+                </Box>
+              )}
             </Box>
           </Box>
         )}

@@ -1,19 +1,45 @@
 // Mirror of python_backend/api/auth/permissions.py action vocabulary.
 // Keep in sync if backend adds/removes verbs.
 
-export const PAGE_ACTIONS = [
-  { value: "page.dashboard", label: "Dashboard" },
-  { value: "page.content", label: "Content / Channels" },
-  { value: "page.audience", label: "Audience" },
-  { value: "page.revenue", label: "Revenue" },
-  { value: "page.reach", label: "Reach" },
-  { value: "page.traffic", label: "Traffic source" },
-  { value: "page.geography", label: "Geography" },
-  { value: "page.smmstore", label: "SMMStore" },
-  { value: "page.mail", label: "Email Manager" },
-  { value: "page.rivals", label: "Rivals" },
-  { value: "page.config", label: "Settings" },
+export const PAGE_GROUPS = [
+  {
+    label: "Dashboard",
+    actions: [{ value: "page.dashboard", label: "Dashboard" }],
+  },
+  {
+    label: "Analytics",
+    actions: [
+      { value: "page.all_channels", label: "All Channels" },
+      {
+        value: "page.content",
+        label: "Content",
+        hint: "Also unlocks Channel Compare",
+      },
+      { value: "page.traffic", label: "Traffic Source" },
+      { value: "page.geography", label: "Geography" },
+      { value: "page.audience", label: "Audience" },
+      { value: "page.reach", label: "Reach" },
+      { value: "page.revenue", label: "Revenue" },
+    ],
+  },
+  {
+    label: "Statistics",
+    actions: [{ value: "page.rivals", label: "Rivals" }],
+  },
+  {
+    label: "Automation",
+    actions: [
+      { value: "page.smmstore", label: "SMMStore" },
+      { value: "page.mail", label: "Email Manager" },
+    ],
+  },
+  {
+    label: "Setting",
+    actions: [{ value: "page.config", label: "Settings" }],
+  },
 ];
+
+export const PAGE_ACTIONS = PAGE_GROUPS.flatMap((g) => g.actions);
 
 export const DATA_ACTIONS = [
   { value: "read", label: "Read", description: "View channel/project data" },

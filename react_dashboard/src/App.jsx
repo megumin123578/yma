@@ -92,7 +92,7 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/all_channels"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <PermissionRoute action="page.content">
+            <PermissionRoute action="page.all_channels">
               <AllChannelsScene />
             </PermissionRoute>
           </ProtectedRoute>

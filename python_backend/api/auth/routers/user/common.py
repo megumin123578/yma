@@ -306,7 +306,13 @@ def _is_env_admin_username(username: str | None) -> bool:
 def _is_admin_user(user: User | None) -> bool:
     if not user:
         return False
-    return bool(getattr(user, "is_admin", False))
+    return bool(getattr(user, "is_admin", False) or getattr(user, "is_owner", False))
+
+
+def _is_owner_user(user: User | None) -> bool:
+    if not user:
+        return False
+    return bool(getattr(user, "is_owner", False))
 
 
 def log_permission_audit(

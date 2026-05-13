@@ -51,6 +51,10 @@ def ensure_users_is_admin_column(db_engine: Engine) -> None:
             conn.exec_driver_sql(
                 "ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"
             )
+        if "is_owner" not in col_names:
+            conn.exec_driver_sql(
+                "ALTER TABLE users ADD COLUMN is_owner BOOLEAN NOT NULL DEFAULT 0"
+            )
 
 
 def ensure_video_live_counter_snapshots_channel_name(db_engine: Engine) -> None:
@@ -313,7 +317,8 @@ def seed_default_roles(db_engine: Engine) -> None:
 
         # Wildcard rows for Admin (every action × *)
         actions = [
-            "page.dashboard", "page.content", "page.audience", "page.revenue",
+            "page.dashboard", "page.content", "page.all_channels",
+            "page.audience", "page.revenue",
             "page.reach", "page.traffic", "page.geography", "page.smmstore",
             "page.mail", "page.rivals", "page.config",
             "read", "write", "run", "delete",
@@ -640,11 +645,12 @@ def create_sqlite_auth_schema(db_engine: Engine) -> None:
 
 
 def seed_env_admins(db_engine: Engine) -> None:
-    """Promote any user whose username appears in env ADMIN_USERNAME to is_admin=True.
+    """Promote any user whose username appears in env ADMIN_USERNAME to Owner.
 
-    Runs once at startup. After this, runtime checks read user.is_admin only.
-    Users not yet registered are ignored (they'll need manual promotion via UI or
-    a future re-bootstrap once they register).
+    Owner is the top-tier role: is_owner=1 implies is_admin=1. Owners cannot be
+    demoted via UI; they are sourced from env at every startup. Users not yet
+    registered are ignored (they'll be promoted on next bootstrap once they
+    register).
     """
     raw = os.getenv("ADMIN_USERNAME", "admin")
     usernames = [u.strip().lower() for u in raw.split(",") if u.strip()]
@@ -653,7 +659,9 @@ def seed_env_admins(db_engine: Engine) -> None:
     placeholders = ",".join(["?"] * len(usernames))
     with db_engine.begin() as conn:
         conn.exec_driver_sql(
-            f"UPDATE users SET is_admin = 1 WHERE LOWER(username) IN ({placeholders}) AND is_admin = 0",
+            f"UPDATE users SET is_admin = 1, is_owner = 1 "
+            f"WHERE LOWER(username) IN ({placeholders}) "
+            f"AND (is_admin = 0 OR is_owner = 0)",
             tuple(usernames),
         )
 

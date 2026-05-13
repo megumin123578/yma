@@ -22,6 +22,7 @@ class User(Base):
     avatar_url = Column(String, nullable=True)
     smmstore_api_key = Column(String, nullable=True)
     is_admin = Column(Boolean, nullable=False, default=False)
+    is_owner = Column(Boolean, nullable=False, default=False)
 
 
 class PasswordChangeRequest(Base):

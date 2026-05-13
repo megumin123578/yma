@@ -47,6 +47,7 @@ class UserMe(BaseModel):
     avatar_url: Optional[str] = None
     smmstore_api_key: Optional[str] = None
     is_admin: bool = False
+    is_owner: bool = False
 
     class Config:
         from_attributes = True

@@ -6,7 +6,7 @@ from python_backend.api.auth.database import get_db
 from python_backend.api.auth.models import User
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
 
-from .common import router, _is_admin_user
+from .common import router, _is_admin_user, _is_owner_user
 
 
 @router.get("/me", response_model=UserMe)
@@ -18,6 +18,7 @@ def get_me(current_user: User = Depends(get_current_user)):
         "avatar_url": current_user.avatar_url,
         "smmstore_api_key": current_user.smmstore_api_key,
         "is_admin": _is_admin_user(current_user),
+        "is_owner": _is_owner_user(current_user),
     }
 
 
@@ -43,6 +44,7 @@ def update_profile(
         "avatar_url": current_user.avatar_url,
         "smmstore_api_key": current_user.smmstore_api_key,
         "is_admin": _is_admin_user(current_user),
+        "is_owner": _is_owner_user(current_user),
     }
 
 

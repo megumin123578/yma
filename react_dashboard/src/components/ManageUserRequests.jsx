@@ -234,7 +234,9 @@ const ManageUserRequests = ({
           {items.map((item) => {
             const deleteBusy = busyKey === `delete:${item.id}`;
             const isAdmin = !!item.is_admin;
-            const accentColor = isAdmin ? secondary : userBlue;
+            const isOwner = !!item.is_owner;
+            const accentColor = isOwner ? "#f59e0b" : isAdmin ? secondary : userBlue;
+            const roleLabel = isOwner ? "Owner" : isAdmin ? "Admin" : "User";
             const isSelected = selectedUserId === item.id;
             const isHighlighted = highlightedUserSet.has(item.id);
             const canSelect = !isAdmin && !!onSelectUser;
@@ -314,11 +316,12 @@ const ManageUserRequests = ({
                       {item.name || item.username}
                     </Typography>
                     <Chip
-                      label={isAdmin ? "Admin" : "User"}
+                      label={roleLabel}
                       size="small"
-                      clickable
+                      clickable={!isOwner}
                       onClick={(event) => {
                         event.stopPropagation();
+                        if (isOwner) return;
                         openActionsMenu(event, item);
                       }}
                       sx={{
@@ -353,26 +356,28 @@ const ManageUserRequests = ({
                         <AdminPanelSettingsOutlinedIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                    <Tooltip title="Delete User">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleDeleteUser(item)}
-                        disabled={deleteBusy}
-                        sx={{
-                          color: isDark ? "#94a3b8" : "text.secondary",
-                          "&:hover": {
-                            color: errorMain,
-                            bgcolor: alpha(errorMain, 0.1),
-                          },
-                        }}
-                      >
-                        {deleteBusy ? (
-                          <CircularProgress size={14} color="inherit" />
-                        ) : (
-                          <DeleteOutlineIcon fontSize="small" />
-                        )}
-                      </IconButton>
-                    </Tooltip>
+                    {!isOwner && (
+                      <Tooltip title="Delete User">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleDeleteUser(item)}
+                          disabled={deleteBusy}
+                          sx={{
+                            color: isDark ? "#94a3b8" : "text.secondary",
+                            "&:hover": {
+                              color: errorMain,
+                              bgcolor: alpha(errorMain, 0.1),
+                            },
+                          }}
+                        >
+                          {deleteBusy ? (
+                            <CircularProgress size={14} color="inherit" />
+                          ) : (
+                            <DeleteOutlineIcon fontSize="small" />
+                          )}
+                        </IconButton>
+                      </Tooltip>
+                    )}
                   </Box>
                 </Box>
               </Box>
@@ -395,8 +400,10 @@ const ManageUserRequests = ({
           {items.map((item) => {
             const deleteBusy = busyKey === `delete:${item.id}`;
             const isAdmin = !!item.is_admin;
-            const accentColor = isAdmin ? secondary : primary;
-            const avatarBorderColor = isAdmin ? secondary : userBlue;
+            const isOwner = !!item.is_owner;
+            const accentColor = isOwner ? "#f59e0b" : isAdmin ? secondary : primary;
+            const avatarBorderColor = isOwner ? "#f59e0b" : isAdmin ? secondary : userBlue;
+            const roleLabel = isOwner ? "Owner" : isAdmin ? "Admin" : "User";
 
             return (
               <Box
@@ -449,27 +456,29 @@ const ManageUserRequests = ({
                       <AdminPanelSettingsOutlinedIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
-                  <Tooltip title="Delete User">
-                    <IconButton
-                      size="small"
-                      onClick={() => handleDeleteUser(item)}
-                      disabled={deleteBusy}
-                      sx={{
-                        color: isDark ? "#94a3b8" : "text.secondary",
-                        bgcolor: alpha(theme.palette.background.default, 0.5),
-                        "&:hover": {
-                          color: errorMain,
-                          bgcolor: alpha(errorMain, 0.1),
-                        },
-                      }}
-                    >
-                      {deleteBusy ? (
-                        <CircularProgress size={18} color="inherit" />
-                      ) : (
-                        <DeleteOutlineIcon fontSize="small" />
-                      )}
-                    </IconButton>
-                  </Tooltip>
+                  {!isOwner && (
+                    <Tooltip title="Delete User">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDeleteUser(item)}
+                        disabled={deleteBusy}
+                        sx={{
+                          color: isDark ? "#94a3b8" : "text.secondary",
+                          bgcolor: alpha(theme.palette.background.default, 0.5),
+                          "&:hover": {
+                            color: errorMain,
+                            bgcolor: alpha(errorMain, 0.1),
+                          },
+                        }}
+                      >
+                        {deleteBusy ? (
+                          <CircularProgress size={18} color="inherit" />
+                        ) : (
+                          <DeleteOutlineIcon fontSize="small" />
+                        )}
+                      </IconButton>
+                    </Tooltip>
+                  )}
                 </Box>
 
                 {/* Avatar Section */}
@@ -523,7 +532,7 @@ const ManageUserRequests = ({
                   <Box sx={{ mb: 1.5 }} />
 
                   <Chip
-                    label={isAdmin ? "Admin" : "User"}
+                    label={roleLabel}
                     clickable
                     onClick={(event) => openActionsMenu(event, item)}
                     sx={{

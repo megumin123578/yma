@@ -15,7 +15,7 @@ from python_backend.api.auth.permissions import (
     user_permissions,
 )
 
-from .common import router, log_permission_audit
+from .common import router, log_permission_audit, _is_owner_user
 
 
 # ---------- Schemas ----------
@@ -179,8 +179,11 @@ def admin_update_role(
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
-    if role.is_system and payload.name and payload.name.strip() != role.name:
-        raise HTTPException(status_code=400, detail="Cannot rename system role")
+    if role.is_system and not _is_owner_user(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Only owners can modify system roles.",
+        )
 
     changes: dict = {}
     if payload.name is not None:
@@ -233,6 +236,9 @@ def admin_delete_role(
         raise HTTPException(status_code=404, detail="Role not found")
     if role.is_system:
         raise HTTPException(status_code=400, detail="System role cannot be deleted")
+    if not _is_owner_user(current_user) and role.name == "Admin":
+        # Defensive: Admin role is system, but in case is_system was relaxed elsewhere.
+        raise HTTPException(status_code=403, detail="Only owners can delete the Admin role.")
 
     role_name = role.name
     db.query(UserRole).filter(UserRole.role_id == role_id).delete()
@@ -258,8 +264,11 @@ def admin_set_role_permissions(
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
         raise HTTPException(status_code=404, detail="Role not found")
-    if role.is_system:
-        raise HTTPException(status_code=400, detail="System role permissions are fixed")
+    if role.is_system and not _is_owner_user(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Only owners can edit system role permissions.",
+        )
 
     previous_rows = (
         db.query(RolePermission)
@@ -393,6 +402,7 @@ def me_permissions(
     )
     return {
         "is_admin": bool(getattr(current_user, "is_admin", False)),
+        "is_owner": bool(getattr(current_user, "is_owner", False)),
         "roles": [
             {
                 "id": r.id,

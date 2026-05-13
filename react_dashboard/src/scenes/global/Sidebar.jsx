@@ -128,6 +128,7 @@ const Sidebar = ({
   const isAdmin = !!user?.is_admin;
   const canDashboard = useHasPermission("page.dashboard");
   const canContent = useHasPermission("page.content");
+  const canAllChannels = useHasPermission("page.all_channels");
   const canAudience = useHasPermission("page.audience");
   const canRevenue = useHasPermission("page.revenue");
   const canReach = useHasPermission("page.reach");
@@ -442,7 +443,7 @@ const Sidebar = ({
                 />
               )}
 
-              {(canContent || canTraffic || canGeography || canAudience || canReach || canRevenue) && (
+              {(canContent || canAllChannels || canTraffic || canGeography || canAudience || canReach || canRevenue) && (
                 <SubMenu
                   label={<Typography sx={subMenuTitleSx}>Analytics</Typography>}
                   icon={<BarChartOutlinedIcon />}
@@ -450,7 +451,7 @@ const Sidebar = ({
                   defaultOpen={defaultOpenAnalytics}
                   title={isDesktopCompact ? "Analytics" : undefined}
                 >
-                  {canContent && (
+                  {canAllChannels && (
                     <Item
                       title="All Channels"
                       to="/all_channels"

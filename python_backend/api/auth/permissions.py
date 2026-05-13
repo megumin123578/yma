@@ -27,6 +27,7 @@ from python_backend.api.auth.models import Role, RolePermission, User, UserRole
 PAGE_ACTIONS: Set[str] = {
     "page.dashboard",
     "page.content",
+    "page.all_channels",
     "page.audience",
     "page.revenue",
     "page.reach",

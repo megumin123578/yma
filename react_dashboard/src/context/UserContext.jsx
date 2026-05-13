@@ -14,7 +14,7 @@ const loadStoredUser = () => {
   }
 };
 
-const EMPTY_PERMISSIONS = { permissions: [], roles: [], is_admin: false };
+const EMPTY_PERMISSIONS = { permissions: [], roles: [], is_admin: false, is_owner: false };
 
 export const UserProvider = ({ children }) => {
   const [user, setUserState] = useState(() => loadStoredUser());
@@ -41,6 +41,7 @@ export const UserProvider = ({ children }) => {
         permissions: Array.isArray(data?.permissions) ? data.permissions : [],
         roles: Array.isArray(data?.roles) ? data.roles : [],
         is_admin: !!data?.is_admin,
+        is_owner: !!data?.is_owner,
       });
     } catch {
       setPermissionData(EMPTY_PERMISSIONS);
@@ -100,6 +101,7 @@ export const UserProvider = ({ children }) => {
       permissions: permissionData.permissions,
       roles: permissionData.roles,
       isAdmin: permissionData.is_admin || !!user?.is_admin,
+      isOwner: permissionData.is_owner || !!user?.is_owner,
       refreshPermissions,
     }),
     [user, loading, permissionData]
@@ -126,6 +128,11 @@ export const useHasPermission = (action, scope) => {
   return perms.some(
     (p) => p.action === action && matchesScope(p, scopeType, scopeValue)
   );
+};
+
+export const useIsOwner = () => {
+  const ctx = useContext(UserContext);
+  return !!ctx?.isOwner;
 };
 
 export const useAllowedScopes = (action, scopeType = "project") => {

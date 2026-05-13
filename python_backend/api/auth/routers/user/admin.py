@@ -24,7 +24,13 @@ from python_backend.api.auth.models import (
     VideoLiveCounterSnapshot,
 )
 
-from .common import router, _is_admin_user, _is_env_admin_username, log_permission_audit
+from .common import (
+    router,
+    _is_admin_user,
+    _is_env_admin_username,
+    _is_owner_user,
+    log_permission_audit,
+)
 
 
 @router.get("/admin/users")
@@ -40,6 +46,7 @@ def admin_list_users(
                 "username": row.username,
                 "name": row.name or "",
                 "is_admin": _is_admin_user(row),
+                "is_owner": _is_owner_user(row),
                 "is_admin_via_env": _is_env_admin_username(row.username),
                 "avatar_url": row.avatar_url or "",
             }
@@ -88,6 +95,11 @@ def admin_update_user_role(
         raise HTTPException(status_code=400, detail="You cannot revoke your own admin access")
     if _is_env_admin_username(user_row.username) and not payload.is_admin:
         raise HTTPException(status_code=400, detail="This environment admin cannot be revoked here")
+    if _is_owner_user(user_row) and not _is_owner_user(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Only an owner can change an owner's admin status.",
+        )
 
     previous_admin = bool(user_row.is_admin)
     user_row.is_admin = bool(payload.is_admin)
@@ -112,6 +124,7 @@ def admin_update_user_role(
             "username": user_row.username,
             "name": user_row.name or "",
             "is_admin": _is_admin_user(user_row),
+            "is_owner": _is_owner_user(user_row),
             "is_admin_via_env": _is_env_admin_username(user_row.username),
             "avatar_url": user_row.avatar_url or "",
         },
@@ -238,6 +251,8 @@ def admin_delete_user(
         raise HTTPException(status_code=400, detail="You cannot delete your own account")
     if _is_env_admin_username(user_row.username):
         raise HTTPException(status_code=400, detail="This environment admin cannot be deleted here")
+    if _is_owner_user(user_row):
+        raise HTTPException(status_code=403, detail="Owner accounts cannot be deleted here")
 
     db.query(PasswordChangeRequest).filter(PasswordChangeRequest.user_id == user_row.id).delete()
     db.query(UserChannelAccess).filter(UserChannelAccess.user_id == user_row.id).delete()
