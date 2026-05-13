@@ -295,7 +295,7 @@ def ensure_user_roles_table(db_engine: Engine) -> None:
 
 
 def seed_default_roles(db_engine: Engine) -> None:
-    """Seed system roles `Admin` and `Member`. Idempotent."""
+    """Seed system role `Admin`. Idempotent."""
     from datetime import datetime
 
     now_iso = datetime.utcnow().isoformat(sep=" ", timespec="seconds")
@@ -318,10 +318,11 @@ def seed_default_roles(db_engine: Engine) -> None:
         # Wildcard rows for Admin (every action × *)
         actions = [
             "page.dashboard", "page.content", "page.all_channels",
+            "page.channel_compare",
             "page.audience", "page.revenue",
             "page.reach", "page.traffic", "page.geography", "page.smmstore",
             "page.mail", "page.rivals", "page.config",
-            "read", "write", "run", "delete",
+            "view",
             "manage_users", "manage_roles", "manage_mail", "manage_structure",
         ]
         for action in actions:
@@ -331,28 +332,37 @@ def seed_default_roles(db_engine: Engine) -> None:
                 (admin_id, action),
             )
 
-        # Member: position 1, is_default, only page.dashboard
+        # Remove legacy `Member` role (and its permissions / assignments) if it
+        # was previously seeded. New users no longer get a default role.
         member_row = conn.exec_driver_sql(
             "SELECT id FROM roles WHERE name = 'Member'"
         ).fetchone()
-        if not member_row:
+        if member_row:
+            member_id = member_row[0]
             conn.exec_driver_sql(
-                "INSERT INTO roles(name, color, position, is_default, is_system, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                ("Member", "#64748b", 1, 1, 1, now_iso),
+                "DELETE FROM role_permissions WHERE role_id = ?", (member_id,)
             )
-            member_row = conn.exec_driver_sql(
-                "SELECT id FROM roles WHERE name = 'Member'"
-            ).fetchone()
-        member_id = member_row[0]
-        conn.exec_driver_sql(
-            "INSERT OR IGNORE INTO role_permissions(role_id, action, scope_type, scope_value) "
-            "VALUES (?, 'page.dashboard', '*', '')",
-            (member_id,),
-        )
+            conn.exec_driver_sql(
+                "DELETE FROM user_roles WHERE role_id = ?", (member_id,)
+            )
+            conn.exec_driver_sql(
+                "DELETE FROM roles WHERE id = ?", (member_id,)
+            )
+
         # Heal any legacy NULL scope_value rows so unique constraint dedups properly.
         conn.exec_driver_sql(
             "UPDATE role_permissions SET scope_value = '' WHERE scope_value IS NULL"
+        )
+        # Migrate legacy data verbs (read/write/run/delete) -> unified 'view'.
+        # Try rename first; conflicting rows (when 'view' already exists for the
+        # same scope) get deleted in the second step.
+        conn.exec_driver_sql(
+            "UPDATE OR IGNORE role_permissions SET action = 'view' "
+            "WHERE action IN ('read', 'write', 'run', 'delete')"
+        )
+        conn.exec_driver_sql(
+            "DELETE FROM role_permissions "
+            "WHERE action IN ('read', 'write', 'run', 'delete')"
         )
 
 

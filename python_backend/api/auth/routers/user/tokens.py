@@ -770,7 +770,7 @@ def run_token_stage(
 def delete_token(
     token_name: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("delete")),
+    current_user: User = Depends(require_permission("manage_structure")),
 ):
     safe_name = _require_valid_token_name(token_name)
 

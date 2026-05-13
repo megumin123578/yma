@@ -11,6 +11,7 @@ from python_backend.api.auth.models import (
     RivalChannel,
     RivalChannelGroup,
     RivalGroup,
+    Role,
     SmmstoreAnalyticsCache,
     SmmstoreScheduledOrder,
     TokenProgress,
@@ -19,6 +20,7 @@ from python_backend.api.auth.models import (
     UserCredential,
     UserCredentialGroup,
     UserHiddenChannel,
+    UserRole,
     UserSchedule,
     UserScheduleRun,
     VideoLiveCounterSnapshot,
@@ -39,6 +41,24 @@ def admin_list_users(
     current_user: User = Depends(require_permission("manage_users")),
 ):
     rows = db.query(User).order_by(User.username.asc(), User.id.asc()).all()
+
+    role_rows = (
+        db.query(UserRole.user_id, Role.id, Role.name, Role.color, Role.position)
+        .join(Role, Role.id == UserRole.role_id)
+        .order_by(Role.position.desc(), Role.id.asc())
+        .all()
+    )
+    roles_by_user: dict[int, list[dict]] = {}
+    for user_id, role_id, role_name, role_color, role_position in role_rows:
+        roles_by_user.setdefault(user_id, []).append(
+            {
+                "id": role_id,
+                "name": role_name,
+                "color": role_color,
+                "position": role_position,
+            }
+        )
+
     return {
         "items": [
             {
@@ -49,6 +69,7 @@ def admin_list_users(
                 "is_owner": _is_owner_user(row),
                 "is_admin_via_env": _is_env_admin_username(row.username),
                 "avatar_url": row.avatar_url or "",
+                "roles": roles_by_user.get(row.id, []),
             }
             for row in rows
         ]

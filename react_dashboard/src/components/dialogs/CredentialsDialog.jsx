@@ -1998,7 +1998,7 @@ const CredentialsDialog = ({
             }}
           >
             <Tab value="add" label="Manage Channel" />
-            {canManageStructure && <Tab value="groups" label="Structure" />}
+            {canManageStructure && <Tab value="groups" label="Project" />}
             {canManageStructure && <Tab value="schedule" label="Schedule" />}
             {canManageStructure && <Tab value="logs" label="Run logs" />}
           </Tabs>

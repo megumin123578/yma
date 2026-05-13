@@ -21,6 +21,7 @@ import SmartDisplayRoundedIcon from "@mui/icons-material/SmartDisplayRounded";
 import AlternateEmailRoundedIcon from "@mui/icons-material/AlternateEmailRounded";
 import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
 import { UserContext, useHasPermission } from "./context/UserContext";
+import NoAccessPage from "./components/NoAccessPage";
 import { motion } from "framer-motion";
 import { startMailOAuth, uploadCredentials } from "./services/userService";
 import ChunkErrorBoundary from "./components/ChunkErrorBoundary";
@@ -61,9 +62,9 @@ const ProtectedRoute = memo(function ProtectedRoute({ children, user, loading })
   return children;
 });
 
-function PermissionRoute({ action, fallback = "/dashboard", children }) {
+function PermissionRoute({ action, children }) {
   const allowed = useHasPermission(action);
-  if (!allowed) return <Navigate to={fallback} replace />;
+  if (!allowed) return <NoAccessPage action={action} />;
   return children;
 }
 
@@ -82,7 +83,7 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/dashboard"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <PermissionRoute action="page.dashboard" fallback="/">
+            <PermissionRoute action="page.dashboard">
               <Dashboard />
             </PermissionRoute>
           </ProtectedRoute>
@@ -132,7 +133,7 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/channel_compare"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <PermissionRoute action="page.content">
+            <PermissionRoute action="page.channel_compare">
               <ChannelCompareScene />
             </PermissionRoute>
           </ProtectedRoute>

@@ -10,11 +10,7 @@ export const PAGE_GROUPS = [
     label: "Analytics",
     actions: [
       { value: "page.all_channels", label: "All Channels" },
-      {
-        value: "page.content",
-        label: "Content",
-        hint: "Also unlocks Channel Compare",
-      },
+      { value: "page.content", label: "Content" },
       { value: "page.traffic", label: "Traffic Source" },
       { value: "page.geography", label: "Geography" },
       { value: "page.audience", label: "Audience" },
@@ -24,7 +20,10 @@ export const PAGE_GROUPS = [
   },
   {
     label: "Statistics",
-    actions: [{ value: "page.rivals", label: "Rivals" }],
+    actions: [
+      { value: "page.channel_compare", label: "Channel Compare" },
+      { value: "page.rivals", label: "Rivals" },
+    ],
   },
   {
     label: "Automation",
@@ -40,13 +39,6 @@ export const PAGE_GROUPS = [
 ];
 
 export const PAGE_ACTIONS = PAGE_GROUPS.flatMap((g) => g.actions);
-
-export const DATA_ACTIONS = [
-  { value: "read", label: "Read", description: "View channel/project data" },
-  { value: "write", label: "Write", description: "Edit configuration, rename, move" },
-  { value: "run", label: "Run", description: "Trigger sync stages" },
-  { value: "delete", label: "Delete", description: "Remove tokens or accounts" },
-];
 
 export const ADMIN_ACTIONS = [
   { value: "manage_users", label: "Manage users", description: "Add/remove users, reset password" },

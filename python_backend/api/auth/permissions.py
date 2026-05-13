@@ -28,6 +28,7 @@ PAGE_ACTIONS: Set[str] = {
     "page.dashboard",
     "page.content",
     "page.all_channels",
+    "page.channel_compare",
     "page.audience",
     "page.revenue",
     "page.reach",
@@ -40,10 +41,7 @@ PAGE_ACTIONS: Set[str] = {
 }
 
 DATA_ACTIONS: Set[str] = {
-    "read",
-    "write",
-    "run",
-    "delete",
+    "view",
 }
 
 ADMIN_ACTIONS: Set[str] = {

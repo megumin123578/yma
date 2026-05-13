@@ -4,13 +4,11 @@ import {
   Box,
   Button,
   Checkbox,
-  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   IconButton,
   TextField,
   Tooltip,
@@ -24,18 +22,24 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import {
   ADMIN_ACTIONS,
-  DATA_ACTIONS,
   PAGE_GROUPS,
 } from "../constants/permissions";
 import {
   createRole,
   deleteRole,
   listRoles,
-  listTokenProjects,
   setRolePermissions,
   updateRole,
 } from "../services/userService";
 import { useIsOwner } from "../context/UserContext";
+
+export const ROLES_CHANGED_EVENT = "roles-data-changed";
+
+const emitRolesChanged = () => {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(ROLES_CHANGED_EVENT));
+  }
+};
 
 const ROLE_COLORS = [
   "#ef4444",
@@ -74,26 +78,6 @@ const RoleManagement = () => {
   const [permsDraft, setPermsDraft] = useState([]);
 
   const [reordering, setReordering] = useState(false);
-  const [projectNames, setProjectNames] = useState([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    listTokenProjects()
-      .then((data) => {
-        if (cancelled) return;
-        const names = (data?.projects || [])
-          .map((p) => (p?.project_name || "").trim())
-          .filter(Boolean)
-          .sort((a, b) => a.localeCompare(b));
-        setProjectNames(names);
-      })
-      .catch(() => {
-        if (!cancelled) setProjectNames([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const loadRolesList = useCallback(async () => {
     setLoading(true);
@@ -156,6 +140,7 @@ const RoleManagement = () => {
         position: 0,
       });
       await loadRolesList();
+      emitRolesChanged();
       setSelectedRoleId(data?.role?.id || null);
     } catch (err) {
       setError(err?.response?.data?.detail || "Failed to create role.");
@@ -193,6 +178,7 @@ const RoleManagement = () => {
           is_default: isDefaultDraft,
         });
         await loadRolesList();
+      emitRolesChanged();
       } catch (err) {
         setError(err?.response?.data?.detail || "Failed to update role.");
       } finally {
@@ -221,6 +207,7 @@ const RoleManagement = () => {
       try {
         await setRolePermissions(selectedRole.id, permsDraft);
         await loadRolesList();
+      emitRolesChanged();
       } catch (err) {
         setError(
           err?.response?.data?.detail || "Failed to update permissions."
@@ -241,6 +228,7 @@ const RoleManagement = () => {
       setConfirmDelete(false);
       setSelectedRoleId(null);
       await loadRolesList();
+      emitRolesChanged();
     } catch (err) {
       setError(err?.response?.data?.detail || "Failed to delete role.");
     } finally {
@@ -266,6 +254,43 @@ const RoleManagement = () => {
       return filtered;
     });
   };
+
+  const toggleManyPerms = (actions, checked) => {
+    setPermsDraft((prev) => {
+      const targets = new Set(actions);
+      const filtered = prev.filter(
+        (p) => !(p.scope_type === "*" && targets.has(p.action))
+      );
+      if (checked) {
+        return [
+          ...filtered,
+          ...actions.map((action) => ({
+            action,
+            scope_type: "*",
+            scope_value: "",
+          })),
+        ];
+      }
+      return filtered;
+    });
+  };
+
+  const allPageActionValues = useMemo(
+    () => PAGE_GROUPS.flatMap((g) => g.actions.map((a) => a.value)),
+    []
+  );
+  const allAdminActionValues = useMemo(
+    () => ADMIN_ACTIONS.map((a) => a.value),
+    []
+  );
+  const pageCheckedCount = allPageActionValues.filter((v) => hasGlobalPerm(v)).length;
+  const adminCheckedCount = allAdminActionValues.filter((v) => hasGlobalPerm(v)).length;
+  const allPagesChecked =
+    allPageActionValues.length > 0 && pageCheckedCount === allPageActionValues.length;
+  const somePagesChecked = pageCheckedCount > 0 && !allPagesChecked;
+  const allAdminChecked =
+    allAdminActionValues.length > 0 && adminCheckedCount === allAdminActionValues.length;
+  const someAdminChecked = adminCheckedCount > 0 && !allAdminChecked;
 
   // ---- Drag-to-reorder ----
 
@@ -537,6 +562,14 @@ const RoleManagement = () => {
               }}
             >
               <Box display="flex" alignItems="center" gap={1}>
+                <Checkbox
+                  size="small"
+                  checked={allPagesChecked}
+                  indeterminate={somePagesChecked}
+                  onChange={(e) => toggleManyPerms(allPageActionValues, e.target.checked)}
+                  disabled={readOnlyRole}
+                  sx={{ p: 0.5, ml: -0.5 }}
+                />
                 <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
                   Page access
                 </Typography>
@@ -615,9 +648,19 @@ const RoleManagement = () => {
                 gap: 1,
               }}
             >
-              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                Admin permissions
-              </Typography>
+              <Box display="flex" alignItems="center" gap={1}>
+                <Checkbox
+                  size="small"
+                  checked={allAdminChecked}
+                  indeterminate={someAdminChecked}
+                  onChange={(e) => toggleManyPerms(allAdminActionValues, e.target.checked)}
+                  disabled={readOnlyRole}
+                  sx={{ p: 0.5, ml: -0.5 }}
+                />
+                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                  Admin permissions
+                </Typography>
+              </Box>
               {ADMIN_ACTIONS.map((a) => (
                 <Box key={a.value} display="flex" alignItems="center" gap={0.75}>
                   <Checkbox
@@ -640,166 +683,6 @@ const RoleManagement = () => {
               ))}
             </Box>
 
-            {/* Data permissions (scoped) */}
-            <Box
-              sx={{
-                p: 2,
-                border: `1px solid ${border}`,
-                borderRadius: 2,
-                display: "flex",
-                flexDirection: "column",
-                gap: 1.5,
-              }}
-            >
-              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                Data permissions
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Tick "All projects" for global grant, or pick per project.
-              </Typography>
-
-              {/* Global row */}
-              <Box
-                sx={{
-                  display: "grid",
-                  gridTemplateColumns: `minmax(160px, 1fr) repeat(${DATA_ACTIONS.length}, minmax(60px, 90px))`,
-                  alignItems: "center",
-                  gap: 0.5,
-                  px: 1,
-                  py: 0.5,
-                  borderRadius: 1,
-                  bgcolor: alpha(isDark ? "#fff" : "#000", 0.03),
-                }}
-              >
-                <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: "0.06em" }}>
-                  PROJECT
-                </Typography>
-                {DATA_ACTIONS.map((a) => (
-                  <Typography
-                    key={a.value}
-                    variant="caption"
-                    sx={{
-                      fontWeight: 800,
-                      letterSpacing: "0.06em",
-                      textAlign: "center",
-                    }}
-                  >
-                    {a.label.toUpperCase()}
-                  </Typography>
-                ))}
-              </Box>
-
-              <Box
-                sx={{
-                  display: "grid",
-                  gridTemplateColumns: `minmax(160px, 1fr) repeat(${DATA_ACTIONS.length}, minmax(60px, 90px))`,
-                  alignItems: "center",
-                  gap: 0.5,
-                  px: 1,
-                  py: 0.5,
-                  borderRadius: 1,
-                  bgcolor: alpha(accent, 0.06),
-                  borderLeft: `3px solid ${accent}`,
-                }}
-              >
-                <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                  All projects
-                  <Typography variant="caption" color="text.secondary" component="span" sx={{ ml: 0.5 }}>
-                    (global)
-                  </Typography>
-                </Typography>
-                {DATA_ACTIONS.map((a) => (
-                  <Box key={a.value} display="flex" justifyContent="center">
-                    <Checkbox
-                      size="small"
-                      checked={hasGlobalPerm(a.value)}
-                      onChange={(e) => togglePerm(a.value, e.target.checked)}
-                      disabled={readOnlyRole}
-                      sx={{ p: 0.5 }}
-                    />
-                  </Box>
-                ))}
-              </Box>
-
-              {projectNames.length === 0 ? (
-                <Typography variant="caption" color="text.secondary" sx={{ pl: 1 }}>
-                  No projects yet. Create projects in Structure to scope permissions.
-                </Typography>
-              ) : (
-                <Box display="flex" flexDirection="column" gap={0.25}>
-                  {projectNames.map((name) => (
-                    <Box
-                      key={name}
-                      sx={{
-                        display: "grid",
-                        gridTemplateColumns: `minmax(160px, 1fr) repeat(${DATA_ACTIONS.length}, minmax(60px, 90px))`,
-                        alignItems: "center",
-                        gap: 0.5,
-                        px: 1,
-                        py: 0.25,
-                        borderRadius: 1,
-                        "&:hover": { bgcolor: alpha(isDark ? "#fff" : "#000", 0.03) },
-                      }}
-                    >
-                      <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
-                        {name}
-                      </Typography>
-                      {DATA_ACTIONS.map((a) => {
-                        const globalOn = hasGlobalPerm(a.value);
-                        const idx = permsDraft.findIndex(
-                          (p) =>
-                            p.action === a.value &&
-                            p.scope_type === "project" &&
-                            p.scope_value === name
-                        );
-                        const checked = globalOn || idx !== -1;
-                        return (
-                          <Box key={a.value} display="flex" justifyContent="center">
-                            <Tooltip
-                              title={
-                                globalOn
-                                  ? "Granted globally"
-                                  : checked
-                                    ? "Granted on this project"
-                                    : ""
-                              }
-                              disableHoverListener={!globalOn && !checked}
-                            >
-                              <span>
-                                <Checkbox
-                                  size="small"
-                                  checked={checked}
-                                  disabled={readOnlyRole || globalOn}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      if (idx !== -1) return;
-                                      setPermsDraft((prev) => [
-                                        ...prev,
-                                        {
-                                          action: a.value,
-                                          scope_type: "project",
-                                          scope_value: name,
-                                        },
-                                      ]);
-                                    } else {
-                                      if (idx === -1) return;
-                                      setPermsDraft((prev) =>
-                                        prev.filter((_, i) => i !== idx)
-                                      );
-                                    }
-                                  }}
-                                  sx={{ p: 0.5 }}
-                                />
-                              </span>
-                            </Tooltip>
-                          </Box>
-                        );
-                      })}
-                    </Box>
-                  ))}
-                </Box>
-              )}
-            </Box>
           </Box>
         )}
       </Box>

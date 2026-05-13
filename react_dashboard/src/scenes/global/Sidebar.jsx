@@ -30,7 +30,7 @@ import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import SmartDisplayOutlinedIcon from "@mui/icons-material/SmartDisplayOutlined";
 
-import { UserContext, useHasPermission } from "../../context/UserContext";
+import { UserContext } from "../../context/UserContext";
 import { tokens } from "../../theme";
 import { resolveApiAssetUrl } from "../../config";
 import { prefetchContentPage } from "../../utils/contentPrefetch";
@@ -121,25 +121,26 @@ const Sidebar = ({
   const defaultOpenSettings = inGroup([
     "/config",
     "/config/channels",
-    "/config/structure",
+    "/config/project",
     "/config/schedule",
     "/config/logs",
   ]);
   const isAdmin = !!user?.is_admin;
-  const canDashboard = useHasPermission("page.dashboard");
-  const canContent = useHasPermission("page.content");
-  const canAllChannels = useHasPermission("page.all_channels");
-  const canAudience = useHasPermission("page.audience");
-  const canRevenue = useHasPermission("page.revenue");
-  const canReach = useHasPermission("page.reach");
-  const canTraffic = useHasPermission("page.traffic");
-  const canGeography = useHasPermission("page.geography");
-  const canSmmstore = useHasPermission("page.smmstore");
-  const canMail = useHasPermission("page.mail");
-  const canRivals = useHasPermission("page.rivals");
-  const canConfig = useHasPermission("page.config");
-  const canManageStructure = useHasPermission("manage_structure");
-  const canManageRoles = useHasPermission("manage_roles");
+  const canDashboard = true;
+  const canContent = true;
+  const canAllChannels = true;
+  const canChannelCompare = true;
+  const canAudience = true;
+  const canRevenue = true;
+  const canReach = true;
+  const canTraffic = true;
+  const canGeography = true;
+  const canSmmstore = true;
+  const canMail = true;
+  const canRivals = true;
+  const canConfig = true;
+  const canManageStructure = true;
+  const canManageRoles = true;
 
   const closeOnMobile = () => {
     if (isMobile) setIsMobileSidebarOpen?.(false);
@@ -526,7 +527,7 @@ const Sidebar = ({
                 </SubMenu>
               )}
 
-              {(canContent || canRivals) && (
+              {(canChannelCompare || canRivals) && (
                 <SubMenu
                   label={<Typography sx={subMenuTitleSx}>Statistics</Typography>}
                   icon={<QueryStatsIcon />}
@@ -534,7 +535,7 @@ const Sidebar = ({
                   defaultOpen={defaultOpenStatistics}
                   title={isDesktopCompact ? "Statistics" : undefined}
                 >
-                  {canContent && (
+                  {canChannelCompare && (
                     <Item
                       title="Channel Compare"
                       to="/channel_compare"
@@ -616,10 +617,10 @@ const Sidebar = ({
                   />
                   {canManageStructure && (
                     <Item
-                      title="Structure"
-                      to="/config/structure"
+                      title="Project"
+                      to="/config/project"
                       icon={<AccountTreeOutlinedIcon />}
-                      isActive={isActivePath("/config/structure")}
+                      isActive={isActivePath("/config/project")}
                       onClick={closeOnMobile}
                       isCompact={isDesktopCompact}
                     />

@@ -377,7 +377,11 @@ def list_filtered(
 
 
 @router.get("/detail/{video_id}")
-def video_detail(video_id: str):
+def video_detail(
+    video_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
     rows = query("""
         SELECT *
         FROM video_overview
@@ -388,7 +392,12 @@ def video_detail(video_id: str):
     if not rows:
         raise HTTPException(404, "Video not found")
 
-    return rows[0]
+    row = rows[0]
+    account_tag = (row.get("account_tag") or "").strip()
+    if _allowed_or_hidden_blocked(current_user, db, account_tag):
+        raise HTTPException(404, "Video not found")
+
+    return row
 
 
 

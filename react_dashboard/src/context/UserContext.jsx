@@ -93,6 +93,26 @@ export const UserProvider = ({ children }) => {
       });
   }, []);
 
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    let inFlight = false;
+    const maybeRefresh = () => {
+      if (document.visibilityState !== "visible") return;
+      if (inFlight) return;
+      if (!localStorage.getItem("access_token")) return;
+      inFlight = true;
+      refreshPermissions().finally(() => {
+        inFlight = false;
+      });
+    };
+    document.addEventListener("visibilitychange", maybeRefresh);
+    window.addEventListener("focus", maybeRefresh);
+    return () => {
+      document.removeEventListener("visibilitychange", maybeRefresh);
+      window.removeEventListener("focus", maybeRefresh);
+    };
+  }, []);
+
   const value = useMemo(
     () => ({
       user,

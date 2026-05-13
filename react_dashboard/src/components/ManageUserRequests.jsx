@@ -4,6 +4,7 @@ import {
   Avatar,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   IconButton,
@@ -17,6 +18,8 @@ import {
   DialogContent,
   DialogActions,
 } from "@mui/material";
+import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
+import CheckBoxIcon from "@mui/icons-material/CheckBox";
 import { alpha } from "@mui/material/styles";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
@@ -55,10 +58,12 @@ const ManageUserRequests = ({
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
   const [menuUser, setMenuUser] = useState(null);
   const [allRoles, setAllRoles] = useState([]);
-  const [rolesDialogUser, setRolesDialogUser] = useState(null);
-  const [rolesDialogSelected, setRolesDialogSelected] = useState([]);
-  const [rolesDialogLoading, setRolesDialogLoading] = useState(false);
-  const [rolesDialogSaving, setRolesDialogSaving] = useState(false);
+  const [rolesMenuAnchor, setRolesMenuAnchor] = useState(null);
+  const [rolesMenuUser, setRolesMenuUser] = useState(null);
+  const [rolesMenuSelected, setRolesMenuSelected] = useState([]);
+  const [rolesMenuOriginal, setRolesMenuOriginal] = useState([]);
+  const [rolesMenuLoading, setRolesMenuLoading] = useState(false);
+  const [rolesMenuSaving, setRolesMenuSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
 
@@ -81,6 +86,13 @@ const ManageUserRequests = ({
   useEffect(() => {
     if (!active) return;
     loadUsers();
+  }, [active, loadUsers]);
+
+  useEffect(() => {
+    if (!active) return;
+    const handler = () => loadUsers();
+    window.addEventListener("roles-data-changed", handler);
+    return () => window.removeEventListener("roles-data-changed", handler);
   }, [active, loadUsers]);
 
   const resolveAvatarSrc = (value) => {
@@ -121,9 +133,11 @@ const ManageUserRequests = ({
     }
   }, []);
 
-  const openRolesDialog = async (item) => {
-    setRolesDialogUser(item);
-    setRolesDialogLoading(true);
+  const openRolesMenu = async (event, item) => {
+    event.stopPropagation();
+    setRolesMenuAnchor(event.currentTarget);
+    setRolesMenuUser(item);
+    setRolesMenuLoading(true);
     setError("");
     try {
       const [, roleData] = await Promise.all([
@@ -131,42 +145,52 @@ const ManageUserRequests = ({
         getAdminUserRoles(item.id),
       ]);
       const ids = (roleData?.roles || []).map((r) => r.id);
-      setRolesDialogSelected(ids);
+      setRolesMenuSelected(ids);
+      setRolesMenuOriginal(ids);
     } catch (err) {
       setError(err?.response?.data?.detail || "Failed to load user roles.");
-      setRolesDialogUser(null);
+      setRolesMenuAnchor(null);
+      setRolesMenuUser(null);
     } finally {
-      setRolesDialogLoading(false);
+      setRolesMenuLoading(false);
     }
   };
 
-  const closeRolesDialog = () => {
-    if (rolesDialogSaving) return;
-    setRolesDialogUser(null);
-    setRolesDialogSelected([]);
-  };
-
-  const toggleRoleSelection = (roleId) => {
-    setRolesDialogSelected((prev) =>
+  const toggleRoleInMenu = (roleId) => {
+    setRolesMenuSelected((prev) =>
       prev.includes(roleId)
         ? prev.filter((id) => id !== roleId)
         : [...prev, roleId]
     );
   };
 
-  const saveRolesDialog = async () => {
-    if (!rolesDialogUser) return;
-    setRolesDialogSaving(true);
+  const closeRolesMenu = async () => {
+    if (rolesMenuSaving) return;
+    const user = rolesMenuUser;
+    const next = rolesMenuSelected;
+    const orig = rolesMenuOriginal;
+    const changed =
+      next.length !== orig.length || next.some((id) => !orig.includes(id));
+    setRolesMenuAnchor(null);
+    if (!changed || !user) {
+      setRolesMenuUser(null);
+      setRolesMenuSelected([]);
+      setRolesMenuOriginal([]);
+      return;
+    }
+    setRolesMenuSaving(true);
     setError("");
     try {
-      await setAdminUserRoles(rolesDialogUser.id, rolesDialogSelected);
-      setRolesDialogUser(null);
-      setRolesDialogSelected([]);
+      await setAdminUserRoles(user.id, next);
+      await loadUsers();
       onUsersChanged?.();
     } catch (err) {
       setError(err?.response?.data?.detail || "Failed to update roles.");
     } finally {
-      setRolesDialogSaving(false);
+      setRolesMenuSaving(false);
+      setRolesMenuUser(null);
+      setRolesMenuSelected([]);
+      setRolesMenuOriginal([]);
     }
   };
 
@@ -235,8 +259,13 @@ const ManageUserRequests = ({
             const deleteBusy = busyKey === `delete:${item.id}`;
             const isAdmin = !!item.is_admin;
             const isOwner = !!item.is_owner;
-            const accentColor = isOwner ? "#f59e0b" : isAdmin ? secondary : userBlue;
-            const roleLabel = isOwner ? "Owner" : isAdmin ? "Admin" : "User";
+            const assignedRoles = Array.isArray(item.roles) ? item.roles : [];
+            const noRoleColor = isDark ? "#94a3b8" : "#64748b";
+            const accentColor = isOwner
+              ? "#f59e0b"
+              : isAdmin
+                ? secondary
+                : assignedRoles[0]?.color || userBlue;
             const isSelected = selectedUserId === item.id;
             const isHighlighted = highlightedUserSet.has(item.id);
             const canSelect = !isAdmin && !!onSelectUser;
@@ -315,27 +344,88 @@ const ManageUserRequests = ({
                     >
                       {item.name || item.username}
                     </Typography>
-                    <Chip
-                      label={roleLabel}
-                      size="small"
-                      clickable={!isOwner}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (isOwner) return;
-                        openActionsMenu(event, item);
-                      }}
+                    <Box
                       sx={{
                         mt: 0.25,
-                        height: 18,
-                        fontSize: "0.6rem",
-                        fontWeight: 800,
-                        letterSpacing: "0.08em",
-                        bgcolor: alpha(accentColor, 0.12),
-                        color: accentColor,
-                        border: `1px solid ${alpha(accentColor, 0.3)}`,
-                        "& .MuiChip-label": { px: 0.75 },
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 0.5,
                       }}
-                    />
+                    >
+                      {isOwner && (
+                        <Chip
+                          label="Owner"
+                          size="small"
+                          sx={{
+                            height: 18,
+                            fontSize: "0.6rem",
+                            fontWeight: 800,
+                            letterSpacing: "0.08em",
+                            bgcolor: alpha("#f59e0b", 0.12),
+                            color: "#f59e0b",
+                            border: `1px solid ${alpha("#f59e0b", 0.3)}`,
+                            "& .MuiChip-label": { px: 0.75 },
+                          }}
+                        />
+                      )}
+                      {!isOwner && isAdmin && (
+                        <Chip
+                          label="Admin"
+                          size="small"
+                          clickable
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openActionsMenu(event, item);
+                          }}
+                          sx={{
+                            height: 18,
+                            fontSize: "0.6rem",
+                            fontWeight: 800,
+                            letterSpacing: "0.08em",
+                            bgcolor: alpha(secondary, 0.12),
+                            color: secondary,
+                            border: `1px solid ${alpha(secondary, 0.3)}`,
+                            "& .MuiChip-label": { px: 0.75 },
+                          }}
+                        />
+                      )}
+                      {assignedRoles.map((role) => {
+                        const roleColor = role.color || userBlue;
+                        return (
+                          <Chip
+                            key={role.id}
+                            label={role.name}
+                            size="small"
+                            sx={{
+                              height: 18,
+                              fontSize: "0.6rem",
+                              fontWeight: 800,
+                              letterSpacing: "0.08em",
+                              bgcolor: alpha(roleColor, 0.12),
+                              color: roleColor,
+                              border: `1px solid ${alpha(roleColor, 0.3)}`,
+                              "& .MuiChip-label": { px: 0.75 },
+                            }}
+                          />
+                        );
+                      })}
+                      {!isOwner && !isAdmin && assignedRoles.length === 0 && (
+                        <Chip
+                          label="No role"
+                          size="small"
+                          sx={{
+                            height: 18,
+                            fontSize: "0.6rem",
+                            fontWeight: 800,
+                            letterSpacing: "0.08em",
+                            bgcolor: alpha(noRoleColor, 0.12),
+                            color: noRoleColor,
+                            border: `1px solid ${alpha(noRoleColor, 0.3)}`,
+                            "& .MuiChip-label": { px: 0.75 },
+                          }}
+                        />
+                      )}
+                    </Box>
                   </Box>
                   <Box
                     sx={{ display: "flex", gap: 0.5 }}
@@ -344,7 +434,7 @@ const ManageUserRequests = ({
                     <Tooltip title="Assign roles">
                       <IconButton
                         size="small"
-                        onClick={() => openRolesDialog(item)}
+                        onClick={(event) => openRolesMenu(event, item)}
                         sx={{
                           color: isDark ? "#94a3b8" : "text.secondary",
                           "&:hover": {
@@ -443,7 +533,7 @@ const ManageUserRequests = ({
                   <Tooltip title="Assign roles">
                     <IconButton
                       size="small"
-                      onClick={() => openRolesDialog(item)}
+                      onClick={(event) => openRolesMenu(event, item)}
                       sx={{
                         color: isDark ? "#94a3b8" : "text.secondary",
                         bgcolor: alpha(theme.palette.background.default, 0.5),
@@ -690,101 +780,72 @@ const ManageUserRequests = ({
         </DialogActions>
       </Dialog>
 
-      <Dialog
-        open={!!rolesDialogUser}
-        onClose={closeRolesDialog}
-        maxWidth="xs"
-        fullWidth
+      <Menu
+        anchorEl={rolesMenuAnchor}
+        open={Boolean(rolesMenuAnchor)}
+        onClose={closeRolesMenu}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+        transformOrigin={{ vertical: "top", horizontal: "right" }}
         PaperProps={{
           sx: {
-            borderRadius: 3,
-            bgcolor: isDark ? "#1e293b" : "#ffffff",
+            mt: 0.5,
+            minWidth: 260,
+            maxHeight: 360,
+            borderRadius: 2,
+            bgcolor: isDark ? "#0f172a" : "#ffffff",
             backgroundImage: "none",
           },
         }}
       >
-        <DialogTitle sx={{ fontWeight: 800, pt: 3 }}>
-          Assign roles
-        </DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            {rolesDialogUser?.name || rolesDialogUser?.username}
-          </Typography>
-          {rolesDialogLoading ? (
-            <Box display="flex" justifyContent="center" py={4}>
-              <CircularProgress size={26} />
-            </Box>
-          ) : allRoles.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              No roles defined yet.
-            </Typography>
-          ) : (
-            <Box display="flex" flexDirection="column" gap={0.5}>
-              {allRoles.map((r) => {
-                const checked = rolesDialogSelected.includes(r.id);
-                return (
-                  <Box
-                    key={r.id}
-                    onClick={() => toggleRoleSelection(r.id)}
-                    sx={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 1.25,
-                      px: 1,
-                      py: 0.75,
-                      borderRadius: 1.5,
-                      cursor: "pointer",
-                      border: `1px solid ${
-                        checked ? r.color || primary : alpha(isDark ? "#fff" : "#000", 0.08)
-                      }`,
-                      bgcolor: checked
-                        ? alpha(r.color || primary, 0.12)
-                        : "transparent",
-                      "&:hover": { bgcolor: alpha(r.color || primary, 0.08) },
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: "50%",
-                        bgcolor: r.color || "#94a3b8",
-                        flexShrink: 0,
-                      }}
-                    />
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography variant="body2" noWrap sx={{ fontWeight: 700 }}>
-                        {r.name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {r.member_count} member{r.member_count === 1 ? "" : "s"}
-                        {r.is_system ? " · system" : ""}
-                      </Typography>
-                    </Box>
-                  </Box>
-                );
-              })}
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ p: 3, pt: 1 }}>
-          <Button
-            onClick={closeRolesDialog}
-            disabled={rolesDialogSaving}
-            sx={{ textTransform: "none", fontWeight: 700 }}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            onClick={saveRolesDialog}
-            disabled={rolesDialogLoading || rolesDialogSaving}
-            sx={{ borderRadius: 2, textTransform: "none", fontWeight: 700 }}
-          >
-            {rolesDialogSaving ? "Saving..." : "Save"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        {rolesMenuLoading ? (
+          <Box display="flex" justifyContent="center" py={2}>
+            <CircularProgress size={20} />
+          </Box>
+        ) : allRoles.length === 0 ? (
+          <MenuItem disabled sx={{ fontSize: "0.85rem" }}>
+            No roles defined yet.
+          </MenuItem>
+        ) : (
+          allRoles.map((r) => {
+            const checked = rolesMenuSelected.includes(r.id);
+            return (
+              <MenuItem
+                key={r.id}
+                onClick={() => toggleRoleInMenu(r.id)}
+                disabled={rolesMenuSaving}
+                sx={{ gap: 1, py: 0.5 }}
+              >
+                <Checkbox
+                  size="small"
+                  icon={<CheckBoxOutlineBlankIcon fontSize="small" />}
+                  checkedIcon={<CheckBoxIcon fontSize="small" />}
+                  checked={checked}
+                  sx={{ p: 0.5 }}
+                  tabIndex={-1}
+                />
+                <Box
+                  sx={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: "50%",
+                    bgcolor: r.color || "#94a3b8",
+                    flexShrink: 0,
+                  }}
+                />
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography variant="body2" noWrap sx={{ fontWeight: 700 }}>
+                    {r.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {r.member_count} member{r.member_count === 1 ? "" : "s"}
+                    {r.is_system ? " · system" : ""}
+                  </Typography>
+                </Box>
+              </MenuItem>
+            );
+          })
+        )}
+      </Menu>
     </Box>
   );
 };
