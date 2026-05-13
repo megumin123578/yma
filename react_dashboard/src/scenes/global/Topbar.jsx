@@ -25,7 +25,7 @@ import { alpha } from "@mui/material/styles";
 
 import { useNavigate } from "react-router-dom";
 import { ColorModeContext, tokens } from "../../theme";
-import { UserContext } from "../../context/UserContext";
+import { UserContext, useHasPermission } from "../../context/UserContext";
 import ProfileDialog from "../../components/dialogs/ProfileDialog";
 import MailMessageDialog from "../../components/MailMessageDialog";
 import { startMailOAuth, uploadCredentials } from "../../services/userService";
@@ -73,7 +73,7 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
   const navigate = useNavigate();
   const colorMode = useContext(ColorModeContext);
   const { user, loading } = useContext(UserContext);
-  const isMailAdmin = !!user?.is_admin;
+  const isMailAdmin = useHasPermission("manage_mail");
 
   const [openProfile, setOpenProfile] = useState(false);
   const [addingChannel, setAddingChannel] = useState(false);

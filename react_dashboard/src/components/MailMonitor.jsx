@@ -35,7 +35,7 @@ import { useSearchParams } from "react-router-dom";
 import api from "../services/api";
 import { subscribeSSE } from "../services/sse";
 import { startMailOAuth } from "../services/userService";
-import { UserContext } from "../context/UserContext";
+import { UserContext, useHasPermission } from "../context/UserContext";
 import { formatDateTimeInSaigon, formatTimeInSaigon } from "../utils/dateTime";
 
 const MAILS_PER_PAGE = 50;
@@ -288,7 +288,7 @@ const MailMonitor = () => {
     () => (Array.isArray(messages?.items) ? messages.items : []).filter(Boolean),
     [messages]
   );
-  const isMailAdmin = !!user?.is_admin;
+  const isMailAdmin = useHasPermission("manage_mail");
   const summary = overview?.summary || {};
   const connectedAccountCount = mailAccounts.length || Number(summary.account_count || 0);
   const accountMailTotals = useMemo(() => {

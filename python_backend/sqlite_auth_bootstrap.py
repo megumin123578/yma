@@ -1,3 +1,5 @@
+import os
+
 from sqlalchemy.engine import Engine
 
 from python_backend.api.auth import models  # noqa: F401
@@ -211,6 +213,189 @@ def ensure_user_channel_access_table(db_engine: Engine) -> None:
         )
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS idx_user_channel_access_scope ON user_channel_access(scope_type, scope_value);"
+        )
+
+
+def ensure_roles_table(db_engine: Engine) -> None:
+    with db_engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS roles (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR NOT NULL,
+                color VARCHAR,
+                position INTEGER NOT NULL DEFAULT 0,
+                is_default BOOLEAN NOT NULL DEFAULT 0,
+                is_system BOOLEAN NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL
+            );
+            """
+        )
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_role_name ON roles(name);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_roles_position ON roles(position);"
+        )
+
+
+def ensure_role_permissions_table(db_engine: Engine) -> None:
+    with db_engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS role_permissions (
+                id INTEGER PRIMARY KEY,
+                role_id INTEGER NOT NULL,
+                action VARCHAR NOT NULL,
+                scope_type VARCHAR NOT NULL DEFAULT '*',
+                scope_value VARCHAR NOT NULL DEFAULT ''
+            );
+            """
+        )
+        conn.exec_driver_sql(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_role_permission
+            ON role_permissions(role_id, action, scope_type, scope_value);
+            """
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_role_permissions_role ON role_permissions(role_id);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_role_permissions_action ON role_permissions(action);"
+        )
+
+
+def ensure_user_roles_table(db_engine: Engine) -> None:
+    with db_engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS user_roles (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                role_id INTEGER NOT NULL,
+                assigned_by INTEGER,
+                assigned_at DATETIME NOT NULL
+            );
+            """
+        )
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_role ON user_roles(user_id, role_id);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_user_roles_user ON user_roles(user_id);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_user_roles_role ON user_roles(role_id);"
+        )
+
+
+def seed_default_roles(db_engine: Engine) -> None:
+    """Seed system roles `Admin` and `Member`. Idempotent."""
+    from datetime import datetime
+
+    now_iso = datetime.utcnow().isoformat(sep=" ", timespec="seconds")
+    with db_engine.begin() as conn:
+        # Admin: position 100, is_system, all actions wildcard
+        admin_row = conn.exec_driver_sql(
+            "SELECT id FROM roles WHERE name = 'Admin'"
+        ).fetchone()
+        if not admin_row:
+            conn.exec_driver_sql(
+                "INSERT INTO roles(name, color, position, is_default, is_system, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("Admin", "#ef4444", 100, 0, 1, now_iso),
+            )
+            admin_row = conn.exec_driver_sql(
+                "SELECT id FROM roles WHERE name = 'Admin'"
+            ).fetchone()
+        admin_id = admin_row[0]
+
+        # Wildcard rows for Admin (every action × *)
+        actions = [
+            "page.dashboard", "page.content", "page.audience", "page.revenue",
+            "page.reach", "page.traffic", "page.geography", "page.smmstore",
+            "page.mail", "page.rivals", "page.config",
+            "read", "write", "run", "delete",
+            "manage_users", "manage_roles", "manage_mail", "manage_structure",
+        ]
+        for action in actions:
+            conn.exec_driver_sql(
+                "INSERT OR IGNORE INTO role_permissions(role_id, action, scope_type, scope_value) "
+                "VALUES (?, ?, '*', '')",
+                (admin_id, action),
+            )
+
+        # Member: position 1, is_default, only page.dashboard
+        member_row = conn.exec_driver_sql(
+            "SELECT id FROM roles WHERE name = 'Member'"
+        ).fetchone()
+        if not member_row:
+            conn.exec_driver_sql(
+                "INSERT INTO roles(name, color, position, is_default, is_system, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("Member", "#64748b", 1, 1, 1, now_iso),
+            )
+            member_row = conn.exec_driver_sql(
+                "SELECT id FROM roles WHERE name = 'Member'"
+            ).fetchone()
+        member_id = member_row[0]
+        conn.exec_driver_sql(
+            "INSERT OR IGNORE INTO role_permissions(role_id, action, scope_type, scope_value) "
+            "VALUES (?, 'page.dashboard', '*', '')",
+            (member_id,),
+        )
+        # Heal any legacy NULL scope_value rows so unique constraint dedups properly.
+        conn.exec_driver_sql(
+            "UPDATE role_permissions SET scope_value = '' WHERE scope_value IS NULL"
+        )
+
+
+def seed_admin_user_roles(db_engine: Engine) -> None:
+    """Assign Admin role to every user with is_admin=True. Idempotent."""
+    from datetime import datetime
+
+    now_iso = datetime.utcnow().isoformat(sep=" ", timespec="seconds")
+    with db_engine.begin() as conn:
+        admin_row = conn.exec_driver_sql(
+            "SELECT id FROM roles WHERE name = 'Admin'"
+        ).fetchone()
+        if not admin_row:
+            return
+        admin_id = admin_row[0]
+        conn.exec_driver_sql(
+            "INSERT OR IGNORE INTO user_roles(user_id, role_id, assigned_by, assigned_at) "
+            "SELECT id, ?, NULL, ? FROM users WHERE is_admin = 1",
+            (admin_id, now_iso),
+        )
+
+
+def ensure_permission_audit_table(db_engine: Engine) -> None:
+    with db_engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS permission_audit (
+                id INTEGER PRIMARY KEY,
+                actor_id INTEGER NOT NULL,
+                target_user_id INTEGER,
+                action VARCHAR NOT NULL,
+                scope VARCHAR,
+                meta TEXT,
+                at DATETIME NOT NULL
+            );
+            """
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_permission_audit_actor ON permission_audit(actor_id);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_permission_audit_target ON permission_audit(target_user_id);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_permission_audit_action ON permission_audit(action);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_permission_audit_at ON permission_audit(at);"
         )
 
 
@@ -454,6 +639,25 @@ def create_sqlite_auth_schema(db_engine: Engine) -> None:
     Base.metadata.create_all(bind=db_engine)
 
 
+def seed_env_admins(db_engine: Engine) -> None:
+    """Promote any user whose username appears in env ADMIN_USERNAME to is_admin=True.
+
+    Runs once at startup. After this, runtime checks read user.is_admin only.
+    Users not yet registered are ignored (they'll need manual promotion via UI or
+    a future re-bootstrap once they register).
+    """
+    raw = os.getenv("ADMIN_USERNAME", "admin")
+    usernames = [u.strip().lower() for u in raw.split(",") if u.strip()]
+    if not usernames:
+        return
+    placeholders = ",".join(["?"] * len(usernames))
+    with db_engine.begin() as conn:
+        conn.exec_driver_sql(
+            f"UPDATE users SET is_admin = 1 WHERE LOWER(username) IN ({placeholders}) AND is_admin = 0",
+            tuple(usernames),
+        )
+
+
 def ensure_sqlite_auth_state(db_engine: Engine) -> None:
     ensure_token_progress_table(db_engine)
     ensure_users_is_admin_column(db_engine)
@@ -466,6 +670,7 @@ def ensure_sqlite_auth_state(db_engine: Engine) -> None:
     ensure_user_credential_groups_table(db_engine)
     ensure_user_credential_projects_table(db_engine)
     ensure_user_channel_access_table(db_engine)
+    ensure_permission_audit_table(db_engine)
     ensure_rival_channel_avatar_column(db_engine)
     ensure_rival_channel_group_column(db_engine)
     ensure_rival_channel_groups_table(db_engine)
@@ -477,3 +682,9 @@ def ensure_sqlite_auth_state(db_engine: Engine) -> None:
     ensure_user_credentials_selected_channel(db_engine)
     ensure_user_credentials_avatar(db_engine)
     ensure_oauth_tokens_table(db_engine)
+    ensure_roles_table(db_engine)
+    ensure_role_permissions_table(db_engine)
+    ensure_user_roles_table(db_engine)
+    seed_env_admins(db_engine)
+    seed_default_roles(db_engine)
+    seed_admin_user_roles(db_engine)

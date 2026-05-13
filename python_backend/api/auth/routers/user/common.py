@@ -19,7 +19,7 @@ from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional, hash_password
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
-from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun, TokenProgress, PasswordChangeRequest, SmmstoreAnalyticsCache, SmmstoreScheduledOrder, LiveCounterSnapshot, VideoLiveCounterSnapshot, OAuthState, MailOAuthState
+from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun, TokenProgress, PasswordChangeRequest, SmmstoreAnalyticsCache, SmmstoreScheduledOrder, LiveCounterSnapshot, VideoLiveCounterSnapshot, OAuthState, MailOAuthState, PermissionAudit
 from python_backend.api.auth.visibility import get_hidden_account_tags
 from python_backend.mail_gmail_api import (
     build_mail_oauth_flow,
@@ -306,7 +306,31 @@ def _is_env_admin_username(username: str | None) -> bool:
 def _is_admin_user(user: User | None) -> bool:
     if not user:
         return False
-    return bool(getattr(user, "is_admin", False) or _is_env_admin_username(user.username))
+    return bool(getattr(user, "is_admin", False))
+
+
+def log_permission_audit(
+    db: Session,
+    actor: User,
+    action: str,
+    target_user_id: int | None = None,
+    scope: str | None = None,
+    meta: dict | None = None,
+) -> None:
+    """Record a permission-related change. Failures are swallowed to avoid breaking the main flow."""
+    try:
+        db.add(
+            PermissionAudit(
+                actor_id=getattr(actor, "id", 0) or 0,
+                target_user_id=target_user_id,
+                action=action,
+                scope=scope,
+                meta=json.dumps(meta, default=str) if meta is not None else None,
+            )
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 def _resolve_oauth_owner_user(db: Session, current_user: User | None) -> User:

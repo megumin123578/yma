@@ -1,4 +1,3 @@
-import os
 from typing import Optional, Set
 
 from sqlalchemy import or_
@@ -20,12 +19,7 @@ def get_hidden_account_tags(db: Session, user_id: int) -> Set[str]:
 def get_allowed_account_tags(db: Session, user: Optional[User]) -> Optional[Set[str]]:
     if not user:
         return set()
-    admin_names = {
-        item.strip().lower()
-        for item in os.getenv("ADMIN_USERNAME", "admin").split(",")
-        if item.strip()
-    }
-    if bool(getattr(user, "is_admin", False)) or (user.username or "").lower() in admin_names:
+    if bool(getattr(user, "is_admin", False)):
         return None
 
     def add_tag(out: Set[str], value: str) -> None:

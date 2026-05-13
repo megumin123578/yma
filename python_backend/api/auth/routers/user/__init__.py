@@ -5,5 +5,6 @@ from . import scheduler as _scheduler  # noqa: F401
 from . import admin as _admin  # noqa: F401
 from . import profile as _profile  # noqa: F401
 from . import rivals as _rivals  # noqa: F401
+from . import roles as _roles  # noqa: F401
 
 __all__ = ["router"]

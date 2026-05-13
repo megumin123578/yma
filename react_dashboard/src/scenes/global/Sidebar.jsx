@@ -30,7 +30,7 @@ import ScheduleOutlinedIcon from "@mui/icons-material/ScheduleOutlined";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import SmartDisplayOutlinedIcon from "@mui/icons-material/SmartDisplayOutlined";
 
-import { UserContext } from "../../context/UserContext";
+import { UserContext, useHasPermission } from "../../context/UserContext";
 import { tokens } from "../../theme";
 import { resolveApiAssetUrl } from "../../config";
 import { prefetchContentPage } from "../../utils/contentPrefetch";
@@ -126,6 +126,19 @@ const Sidebar = ({
     "/config/logs",
   ]);
   const isAdmin = !!user?.is_admin;
+  const canDashboard = useHasPermission("page.dashboard");
+  const canContent = useHasPermission("page.content");
+  const canAudience = useHasPermission("page.audience");
+  const canRevenue = useHasPermission("page.revenue");
+  const canReach = useHasPermission("page.reach");
+  const canTraffic = useHasPermission("page.traffic");
+  const canGeography = useHasPermission("page.geography");
+  const canSmmstore = useHasPermission("page.smmstore");
+  const canMail = useHasPermission("page.mail");
+  const canRivals = useHasPermission("page.rivals");
+  const canConfig = useHasPermission("page.config");
+  const canManageStructure = useHasPermission("manage_structure");
+  const canManageRoles = useHasPermission("manage_roles");
 
   const closeOnMobile = () => {
     if (isMobile) setIsMobileSidebarOpen?.(false);
@@ -418,186 +431,230 @@ const Sidebar = ({
 
           <Box px={isDesktopCompact ? "4px" : "6px"} pt="2px" pb="8px">
             <Menu closeOnClick={isDesktopCompact} menuItemStyles={menuItemStyles}>
-              <Item
-                title="Dashboard"
-                to="/dashboard"
-                icon={<HomeOutlinedIcon />}
-                isActive={isActivePath("/dashboard")}
-                onClick={closeOnMobile}
-                isCompact={isDesktopCompact}
-              />
+              {canDashboard && (
+                <Item
+                  title="Dashboard"
+                  to="/dashboard"
+                  icon={<HomeOutlinedIcon />}
+                  isActive={isActivePath("/dashboard")}
+                  onClick={closeOnMobile}
+                  isCompact={isDesktopCompact}
+                />
+              )}
 
-              <SubMenu
-                label={<Typography sx={subMenuTitleSx}>Analytics</Typography>}
-                icon={<BarChartOutlinedIcon />}
-                active={defaultOpenAnalytics}
-                defaultOpen={defaultOpenAnalytics}
-                title={isDesktopCompact ? "Analytics" : undefined}
-              >
-                <Item
-                  title="All Channels"
-                  to="/all_channels"
-                  icon={<ViewModuleOutlinedIcon />}
-                  isActive={isActivePath("/all_channels")}
-                  onClick={closeOnMobile}
-                  onMouseEnter={() => prefetchContentPage({ forceAllChannels: true })}
-                  isCompact={isDesktopCompact}
-                />
-                <Item
-                  title="Content"
-                  to="/content"
-                  icon={<DatasetIcon />}
-                  isActive={isActivePath("/content")}
-                  onClick={closeOnMobile}
-                  onMouseEnter={() => prefetchContentPage()}
-                  isCompact={isDesktopCompact}
-                />
-                <Item
-                  title="Traffic Source"
-                  to="/traffic_source"
-                  icon={<DeviceUnknownIcon />}
-                  isActive={isActivePath("/traffic_source")}
-                  onClick={closeOnMobile}
-                  isCompact={isDesktopCompact}
-                />
-                <Item
-                  title="Geography Chart"
-                  to="/geography"
-                  icon={<MapOutlinedIcon />}
-                  isActive={isActivePath("/geography")}
-                  onClick={closeOnMobile}
-                  isCompact={isDesktopCompact}
-                />
-                <Item
-                  title="Audience"
-                  to="/audience_analytics"
-                  icon={<GroupsOutlinedIcon />}
-                  isActive={isActivePath("/audience_analytics")}
-                  onClick={closeOnMobile}
-                  isCompact={isDesktopCompact}
-                />
-                <Item
-                  title="Reach"
-                  to="/reach"
-                  icon={<VisibilityOutlinedIcon />}
-                  isActive={isActivePath("/reach")}
-                  onClick={closeOnMobile}
-                  isCompact={isDesktopCompact}
-                />
-                <Item
-                  title="Revenue"
-                  to="/revenue"
-                  icon={<AttachMoneyIcon />}
-                  isActive={isActivePath("/revenue")}
-                  onClick={closeOnMobile}
-                  isCompact={isDesktopCompact}
-                />
-              </SubMenu>
-
-              <SubMenu
-                label={<Typography sx={subMenuTitleSx}>Statistics</Typography>}
-                icon={<QueryStatsIcon />}
-                active={defaultOpenStatistics}
-                defaultOpen={defaultOpenStatistics}
-                title={isDesktopCompact ? "Statistics" : undefined}
-              >
-                <Item
-                  title="Channel Compare"
-                  to="/channel_compare"
+              {(canContent || canTraffic || canGeography || canAudience || canReach || canRevenue) && (
+                <SubMenu
+                  label={<Typography sx={subMenuTitleSx}>Analytics</Typography>}
                   icon={<BarChartOutlinedIcon />}
-                  isActive={isActivePath("/channel_compare")}
-                  onClick={closeOnMobile}
-                  isCompact={isDesktopCompact}
-                />
-                <Item
-                  title="Rivals"
-                  to="/rivals"
-                  icon={<WebhookIcon />}
-                  isActive={isActivePath("/rivals")}
-                  onClick={closeOnMobile}
-                  isCompact={isDesktopCompact}
-                />
-              </SubMenu>
+                  active={defaultOpenAnalytics}
+                  defaultOpen={defaultOpenAnalytics}
+                  title={isDesktopCompact ? "Analytics" : undefined}
+                >
+                  {canContent && (
+                    <Item
+                      title="All Channels"
+                      to="/all_channels"
+                      icon={<ViewModuleOutlinedIcon />}
+                      isActive={isActivePath("/all_channels")}
+                      onClick={closeOnMobile}
+                      onMouseEnter={() => prefetchContentPage({ forceAllChannels: true })}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                  {canContent && (
+                    <Item
+                      title="Content"
+                      to="/content"
+                      icon={<DatasetIcon />}
+                      isActive={isActivePath("/content")}
+                      onClick={closeOnMobile}
+                      onMouseEnter={() => prefetchContentPage()}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                  {canTraffic && (
+                    <Item
+                      title="Traffic Source"
+                      to="/traffic_source"
+                      icon={<DeviceUnknownIcon />}
+                      isActive={isActivePath("/traffic_source")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                  {canGeography && (
+                    <Item
+                      title="Geography Chart"
+                      to="/geography"
+                      icon={<MapOutlinedIcon />}
+                      isActive={isActivePath("/geography")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                  {canAudience && (
+                    <Item
+                      title="Audience"
+                      to="/audience_analytics"
+                      icon={<GroupsOutlinedIcon />}
+                      isActive={isActivePath("/audience_analytics")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                  {canReach && (
+                    <Item
+                      title="Reach"
+                      to="/reach"
+                      icon={<VisibilityOutlinedIcon />}
+                      isActive={isActivePath("/reach")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                  {canRevenue && (
+                    <Item
+                      title="Revenue"
+                      to="/revenue"
+                      icon={<AttachMoneyIcon />}
+                      isActive={isActivePath("/revenue")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                </SubMenu>
+              )}
 
-              <SubMenu
-                label={<Typography sx={subMenuTitleSx}>Automation</Typography>}
-                icon={<AutoModeIcon />}
-                active={defaultOpenAutomation}
-                defaultOpen={defaultOpenAutomation}
-                title={isDesktopCompact ? "Automation" : undefined}
-              >
-                <Item
-                  title="SMMStore Orders"
-                  to="/smmstore"
-                  icon={<AttachMoneyIcon />}
-                  isActive={isActivePath("/smmstore")}
-                  onClick={closeOnMobile}
-                  isCompact={isDesktopCompact}
-                />
-                <Item
-                  title="SMMStore Analytics"
-                  to="/smmstore_analytics"
-                  icon={<BarChartOutlinedIcon />}
-                  isActive={isActivePath("/smmstore_analytics")}
-                  onClick={closeOnMobile}
-                  isCompact={isDesktopCompact}
-                />
-                <Item
-                  title="Email Manager"
-                  to="/mail_monitor"
-                  icon={<MailOutlineRoundedIcon />}
-                  isActive={isActivePath("/mail_monitor")}
-                  onClick={closeOnMobile}
-                  isCompact={isDesktopCompact}
-                />
-              </SubMenu>
+              {(canContent || canRivals) && (
+                <SubMenu
+                  label={<Typography sx={subMenuTitleSx}>Statistics</Typography>}
+                  icon={<QueryStatsIcon />}
+                  active={defaultOpenStatistics}
+                  defaultOpen={defaultOpenStatistics}
+                  title={isDesktopCompact ? "Statistics" : undefined}
+                >
+                  {canContent && (
+                    <Item
+                      title="Channel Compare"
+                      to="/channel_compare"
+                      icon={<BarChartOutlinedIcon />}
+                      isActive={isActivePath("/channel_compare")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                  {canRivals && (
+                    <Item
+                      title="Rivals"
+                      to="/rivals"
+                      icon={<WebhookIcon />}
+                      isActive={isActivePath("/rivals")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                </SubMenu>
+              )}
 
-              <SubMenu
-                label={<Typography sx={subMenuTitleSx}>Setting</Typography>}
-                icon={<SettingsOutlinedIcon />}
-                active={defaultOpenSettings}
-                defaultOpen={defaultOpenSettings}
-                title={isDesktopCompact ? "Setting" : undefined}
-              >
-                <Item
-                  title="Manage Channel"
-                  to="/config/channels"
-                  icon={<SmartDisplayOutlinedIcon />}
-                  isActive={isActivePath("/config/channels")}
-                  onClick={closeOnMobile}
-                  isCompact={isDesktopCompact}
-                />
-                {isAdmin && (
+              {(canSmmstore || canMail) && (
+                <SubMenu
+                  label={<Typography sx={subMenuTitleSx}>Automation</Typography>}
+                  icon={<AutoModeIcon />}
+                  active={defaultOpenAutomation}
+                  defaultOpen={defaultOpenAutomation}
+                  title={isDesktopCompact ? "Automation" : undefined}
+                >
+                  {canSmmstore && (
+                    <Item
+                      title="SMMStore Orders"
+                      to="/smmstore"
+                      icon={<AttachMoneyIcon />}
+                      isActive={isActivePath("/smmstore")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                  {canSmmstore && (
+                    <Item
+                      title="SMMStore Analytics"
+                      to="/smmstore_analytics"
+                      icon={<BarChartOutlinedIcon />}
+                      isActive={isActivePath("/smmstore_analytics")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                  {canMail && (
+                    <Item
+                      title="Email Manager"
+                      to="/mail_monitor"
+                      icon={<MailOutlineRoundedIcon />}
+                      isActive={isActivePath("/mail_monitor")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                </SubMenu>
+              )}
+
+              {canConfig && (
+                <SubMenu
+                  label={<Typography sx={subMenuTitleSx}>Setting</Typography>}
+                  icon={<SettingsOutlinedIcon />}
+                  active={defaultOpenSettings}
+                  defaultOpen={defaultOpenSettings}
+                  title={isDesktopCompact ? "Setting" : undefined}
+                >
                   <Item
-                    title="Structure"
-                    to="/config/structure"
-                    icon={<AccountTreeOutlinedIcon />}
-                    isActive={isActivePath("/config/structure")}
+                    title="Manage Channel"
+                    to="/config/channels"
+                    icon={<SmartDisplayOutlinedIcon />}
+                    isActive={isActivePath("/config/channels")}
                     onClick={closeOnMobile}
                     isCompact={isDesktopCompact}
                   />
-                )}
-                {isAdmin && (
-                  <Item
-                    title="Schedule"
-                    to="/config/schedule"
-                    icon={<ScheduleOutlinedIcon />}
-                    isActive={isActivePath("/config/schedule")}
-                    onClick={closeOnMobile}
-                    isCompact={isDesktopCompact}
-                  />
-                )}
-                {isAdmin && (
-                  <Item
-                    title="Run logs"
-                    to="/config/logs"
-                    icon={<HistoryOutlinedIcon />}
-                    isActive={isActivePath("/config/logs")}
-                    onClick={closeOnMobile}
-                    isCompact={isDesktopCompact}
-                  />
-                )}
-              </SubMenu>
+                  {canManageStructure && (
+                    <Item
+                      title="Structure"
+                      to="/config/structure"
+                      icon={<AccountTreeOutlinedIcon />}
+                      isActive={isActivePath("/config/structure")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                  {canManageStructure && (
+                    <Item
+                      title="Schedule"
+                      to="/config/schedule"
+                      icon={<ScheduleOutlinedIcon />}
+                      isActive={isActivePath("/config/schedule")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                  {canManageStructure && (
+                    <Item
+                      title="Run logs"
+                      to="/config/logs"
+                      icon={<HistoryOutlinedIcon />}
+                      isActive={isActivePath("/config/logs")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                  {canManageRoles && (
+                    <Item
+                      title="Roles"
+                      to="/config/roles"
+                      icon={<AccountTreeOutlinedIcon />}
+                      isActive={isActivePath("/config/roles")}
+                      onClick={closeOnMobile}
+                      isCompact={isDesktopCompact}
+                    />
+                  )}
+                </SubMenu>
+              )}
             </Menu>
           </Box>
         </ProSidebar>

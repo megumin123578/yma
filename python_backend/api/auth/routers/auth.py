@@ -19,6 +19,7 @@ from python_backend.api.auth.schemas import (
     PasswordChangeRequestOut,
 )
 from python_backend.api.auth.auth_utils import get_current_user
+from python_backend.api.auth.permissions import require_permission
 
 router = APIRouter(
     prefix="/api/auth",
@@ -40,7 +41,7 @@ def _get_admin_users() -> set[str]:
 def _is_admin_user(user: User | None) -> bool:
     if not user:
         return False
-    return bool(getattr(user, "is_admin", False) or (user.username or "").lower() in _get_admin_users())
+    return bool(getattr(user, "is_admin", False))
 
 
 def _require_admin(current_user: User) -> None:
@@ -76,6 +77,7 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
         username=data.username,
         password=hash_password(data.password),
         name=data.username,  # default display name
+        is_admin=(data.username or "").lower() in _get_admin_users(),
     )
 
     db.add(new_user)
@@ -179,9 +181,8 @@ def list_password_change_requests(
 def approve_password_change_request(
     request_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("manage_users")),
 ):
-    _require_admin(current_user)
     row = db.query(PasswordChangeRequest).filter(PasswordChangeRequest.id == request_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Request not found")
@@ -212,9 +213,8 @@ def approve_password_change_request(
 def reject_password_change_request(
     request_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("manage_users")),
 ):
-    _require_admin(current_user)
     row = db.query(PasswordChangeRequest).filter(PasswordChangeRequest.id == request_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Request not found")

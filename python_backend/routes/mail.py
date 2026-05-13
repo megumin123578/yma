@@ -61,12 +61,16 @@ def _get_admin_usernames_in_order() -> list[str]:
 
 
 def _is_admin_user(current_user) -> bool:
-    username = str(getattr(current_user, "username", "") or "").strip().lower()
-    return bool(getattr(current_user, "is_admin", False) or username in _get_admin_users())
+    return bool(getattr(current_user, "is_admin", False))
 
 
-def _require_mail_admin_user(current_user=Depends(get_current_user)):
-    if _is_admin_user(current_user):
+def _require_mail_admin_user(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from python_backend.api.auth.permissions import user_has_permission
+
+    if user_has_permission(db, current_user, "manage_mail"):
         return current_user
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

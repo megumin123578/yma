@@ -20,7 +20,7 @@ import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import SmartDisplayRoundedIcon from "@mui/icons-material/SmartDisplayRounded";
 import AlternateEmailRoundedIcon from "@mui/icons-material/AlternateEmailRounded";
 import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
-import { UserContext } from "./context/UserContext";
+import { UserContext, useHasPermission } from "./context/UserContext";
 import { motion } from "framer-motion";
 import { startMailOAuth, uploadCredentials } from "./services/userService";
 import ChunkErrorBoundary from "./components/ChunkErrorBoundary";
@@ -61,6 +61,12 @@ const ProtectedRoute = memo(function ProtectedRoute({ children, user, loading })
   return children;
 });
 
+function PermissionRoute({ action, fallback = "/dashboard", children }) {
+  const allowed = useHasPermission(action);
+  if (!allowed) return <Navigate to={fallback} replace />;
+  return children;
+}
+
 const AppRoutes = memo(function AppRoutes({ user, loading }) {
   return (
     <Routes>
@@ -76,7 +82,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/dashboard"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <Dashboard />
+            <PermissionRoute action="page.dashboard" fallback="/">
+              <Dashboard />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -84,7 +92,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/all_channels"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <AllChannelsScene />
+            <PermissionRoute action="page.content">
+              <AllChannelsScene />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -92,7 +102,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/content"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <Daily />
+            <PermissionRoute action="page.content">
+              <Daily />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -100,7 +112,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/traffic_source"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <TrafficSource />
+            <PermissionRoute action="page.traffic">
+              <TrafficSource />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -108,7 +122,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/geography"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <GeographyScene />
+            <PermissionRoute action="page.geography">
+              <GeographyScene />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -116,7 +132,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/channel_compare"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <ChannelCompareScene />
+            <PermissionRoute action="page.content">
+              <ChannelCompareScene />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -124,7 +142,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/rivals"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <RivalsData />
+            <PermissionRoute action="page.rivals">
+              <RivalsData />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -132,7 +152,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/smmstore"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <SmmstoreScene />
+            <PermissionRoute action="page.smmstore">
+              <SmmstoreScene />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -140,7 +162,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/smmstore_analytics"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <SmmstoreAnalyticsScene />
+            <PermissionRoute action="page.smmstore">
+              <SmmstoreAnalyticsScene />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -148,7 +172,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/audience_analytics"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <AudienceAnalyticsScene />
+            <PermissionRoute action="page.audience">
+              <AudienceAnalyticsScene />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -156,7 +182,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/reach"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <ReachAnalyticsScene />
+            <PermissionRoute action="page.reach">
+              <ReachAnalyticsScene />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -164,7 +192,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/revenue"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <RevenueAnalyticsScene />
+            <PermissionRoute action="page.revenue">
+              <RevenueAnalyticsScene />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -172,7 +202,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/mail_monitor"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <MailMonitorScene />
+            <PermissionRoute action="page.mail">
+              <MailMonitorScene />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />
@@ -184,7 +216,9 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         path="/config/:section"
         element={
           <ProtectedRoute user={user} loading={loading}>
-            <ConfigPage />
+            <PermissionRoute action="page.config">
+              <ConfigPage />
+            </PermissionRoute>
           </ProtectedRoute>
         }
       />

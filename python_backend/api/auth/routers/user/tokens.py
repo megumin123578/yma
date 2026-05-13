@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user
 from python_backend.api.auth.database import get_db
+from python_backend.api.auth.permissions import require_permission
 from python_backend.api.auth.models import (
     TokenProgress,
     User,
@@ -37,7 +38,6 @@ from .common import (
     _list_token_projects,
     _load_token_credentials,
     _purge_postgres_account,
-    _require_admin,
     _require_valid_token_name,
     _safe_token_name,
 )
@@ -200,9 +200,8 @@ def set_token_visibility(
 @router.get("/tokens/projects")
 def list_token_projects(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("manage_structure")),
 ):
-    _require_admin(current_user)
     return {"projects": _list_token_projects(db)}
 
 
@@ -210,9 +209,8 @@ def list_token_projects(
 def create_token_project(
     payload: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("manage_structure")),
 ):
-    _require_admin(current_user)
     project_name = (payload.get("project_name") or "").strip()
     if not project_name:
         raise HTTPException(status_code=400, detail="project_name is required")
@@ -235,9 +233,8 @@ def rename_token_project(
     project_name: str,
     payload: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("manage_structure")),
 ):
-    _require_admin(current_user)
     current_name = (project_name or "").strip()
     next_name = (payload.get("project_name") or "").strip()
     if not current_name:
@@ -272,9 +269,8 @@ def rename_token_project(
 def delete_token_project(
     project_name: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("manage_structure")),
 ):
-    _require_admin(current_user)
     current_name = (project_name or "").strip()
     if not current_name:
         raise HTTPException(status_code=400, detail="project_name is required")
@@ -300,9 +296,8 @@ def assign_token_project(
     token_name: str,
     payload: TokenProjectUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("manage_structure")),
 ):
-    _require_admin(current_user)
     safe_name = _require_valid_token_name(token_name)
     owned = _find_owned_credential_by_identifier(
         db,
@@ -775,9 +770,8 @@ def run_token_stage(
 def delete_token(
     token_name: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("delete")),
 ):
-    _require_admin(current_user)
     safe_name = _require_valid_token_name(token_name)
 
     row = (

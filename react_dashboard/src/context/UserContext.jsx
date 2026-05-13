@@ -1,9 +1,8 @@
-import { createContext, useEffect, useState } from "react";
-import { getMe } from "../services/userService";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { getMe, getMyPermissions } from "../services/userService";
 
 export const UserContext = createContext(null);
 
-// Persist user to localStorage so display name/avatar survive reloads until logout
 const STORAGE_KEY = "userProfile";
 
 const loadStoredUser = () => {
@@ -15,8 +14,11 @@ const loadStoredUser = () => {
   }
 };
 
+const EMPTY_PERMISSIONS = { permissions: [], roles: [], is_admin: false };
+
 export const UserProvider = ({ children }) => {
   const [user, setUserState] = useState(() => loadStoredUser());
+  const [permissionData, setPermissionData] = useState(EMPTY_PERMISSIONS);
   const [loading, setLoading] = useState(true);
 
   const setUser = (value) => {
@@ -26,9 +28,23 @@ export const UserProvider = ({ children }) => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       } else {
         localStorage.removeItem(STORAGE_KEY);
+        setPermissionData(EMPTY_PERMISSIONS);
       }
       return next;
     });
+  };
+
+  const refreshPermissions = async () => {
+    try {
+      const data = await getMyPermissions();
+      setPermissionData({
+        permissions: Array.isArray(data?.permissions) ? data.permissions : [],
+        roles: Array.isArray(data?.roles) ? data.roles : [],
+        is_admin: !!data?.is_admin,
+      });
+    } catch {
+      setPermissionData(EMPTY_PERMISSIONS);
+    }
   };
 
   useEffect(() => {
@@ -36,15 +52,15 @@ export const UserProvider = ({ children }) => {
 
     if (!token) {
       setUser(null);
+      setPermissionData(EMPTY_PERMISSIONS);
       setLoading(false);
       return;
     }
 
     const storedUser = loadStoredUser();
 
-    getMe()
-      .then((userData) => {
-        // Keep locally edited fields (e.g., display name) if backend doesn't provide them
+    Promise.all([getMe(), getMyPermissions().catch(() => null)])
+      .then(([userData, permData]) => {
         const merged = {
           ...userData,
           name: userData?.name || storedUser?.name || userData?.username || "",
@@ -58,19 +74,70 @@ export const UserProvider = ({ children }) => {
               : storedUser?.smmstore_api_key || "",
         };
         setUser(merged);
+        if (permData) {
+          setPermissionData({
+            permissions: Array.isArray(permData?.permissions) ? permData.permissions : [],
+            roles: Array.isArray(permData?.roles) ? permData.roles : [],
+            is_admin: !!permData?.is_admin,
+          });
+        }
       })
       .catch(() => {
         localStorage.removeItem("access_token");
         setUser(null);
+        setPermissionData(EMPTY_PERMISSIONS);
       })
       .finally(() => {
         setLoading(false);
       });
   }, []);
 
-  return (
-    <UserContext.Provider value={{ user, setUser, loading }}>
-      {children}
-    </UserContext.Provider>
+  const value = useMemo(
+    () => ({
+      user,
+      setUser,
+      loading,
+      permissions: permissionData.permissions,
+      roles: permissionData.roles,
+      isAdmin: permissionData.is_admin || !!user?.is_admin,
+      refreshPermissions,
+    }),
+    [user, loading, permissionData]
   );
+
+  return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
+};
+
+// ---------- Hooks ----------
+
+const matchesScope = (perm, scopeType, scopeValue) => {
+  if (perm.scope_type === "*") return true;
+  if (!scopeType) return false;
+  return perm.scope_type === scopeType && (perm.scope_value || "") === scopeValue;
+};
+
+export const useHasPermission = (action, scope) => {
+  const ctx = useContext(UserContext);
+  if (!ctx) return false;
+  if (ctx.isAdmin) return true;
+  const perms = ctx.permissions || [];
+  const scopeType = scope?.type || scope?.scope_type;
+  const scopeValue = scope?.value ?? scope?.scope_value ?? "";
+  return perms.some(
+    (p) => p.action === action && matchesScope(p, scopeType, scopeValue)
+  );
+};
+
+export const useAllowedScopes = (action, scopeType = "project") => {
+  const ctx = useContext(UserContext);
+  if (!ctx) return new Set();
+  if (ctx.isAdmin) return null; // null = unlimited
+  const perms = ctx.permissions || [];
+  const out = new Set();
+  for (const p of perms) {
+    if (p.action !== action) continue;
+    if (p.scope_type === "*") return null;
+    if (p.scope_type === scopeType && p.scope_value) out.add(p.scope_value);
+  }
+  return out;
 };

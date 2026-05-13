@@ -40,6 +40,50 @@ export const getMe = async () => {
   return mapUser(res.data);
 };
 
+export const getMyPermissions = async () => {
+  const res = await api.get("/api/users/me/permissions");
+  return res.data;
+};
+
+export const listRoles = async () => {
+  const res = await api.get("/api/users/admin/roles");
+  return res.data;
+};
+
+export const createRole = async (payload) => {
+  const res = await api.post("/api/users/admin/roles", payload);
+  return res.data;
+};
+
+export const updateRole = async (roleId, payload) => {
+  const res = await api.patch(`/api/users/admin/roles/${roleId}`, payload);
+  return res.data;
+};
+
+export const deleteRole = async (roleId) => {
+  const res = await api.delete(`/api/users/admin/roles/${roleId}`);
+  return res.data;
+};
+
+export const setRolePermissions = async (roleId, permissions) => {
+  const res = await api.put(`/api/users/admin/roles/${roleId}/permissions`, {
+    permissions,
+  });
+  return res.data;
+};
+
+export const getAdminUserRoles = async (userId) => {
+  const res = await api.get(`/api/users/admin/users/${userId}/roles`);
+  return res.data;
+};
+
+export const setAdminUserRoles = async (userId, roleIds) => {
+  const res = await api.put(`/api/users/admin/users/${userId}/roles`, {
+    role_ids: roleIds,
+  });
+  return res.data;
+};
+
 export const updateProfile = async (payload) => {
   const res = await api.put("/api/users/profile", payload);
   return mapUser(res.data);

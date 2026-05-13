@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional
 from python_backend.api.auth.database import SessionLocal, get_db
 from python_backend.api.auth.models import User, UserSchedule, UserScheduleRun
+from python_backend.api.auth.permissions import require_permission
 from python_backend.progress_state import write_progress
 from python_backend.sse_utils import sse_response
 from python_backend.token_store import account_tag_from_token_name, token_exists
@@ -18,7 +19,6 @@ from .common import (
     _ALLOWED_RUN_STAGES,
     _is_admin_user,
     _kickoff_get_data,
-    _require_admin,
     _run_channel_titles,
     _run_token_names_from_row,
     _safe_token_name,
@@ -180,9 +180,8 @@ async def stream_schedule_runs(
 def stop_schedule_run(
     run_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("manage_structure")),
 ):
-    _require_admin(current_user)
     row = (
         db.query(UserScheduleRun)
         .filter(UserScheduleRun.id == run_id)
@@ -204,9 +203,8 @@ def stop_schedule_run(
 def resume_schedule_run(
     run_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("manage_structure")),
 ):
-    _require_admin(current_user)
     row = (
         db.query(UserScheduleRun)
         .filter(UserScheduleRun.id == run_id)
@@ -349,9 +347,8 @@ def resume_schedule_run(
 def create_schedule(
     payload: ScheduleCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("manage_structure")),
 ):
-    _require_admin(current_user)
     if not payload.time_of_day:
         raise HTTPException(status_code=400, detail="time_of_day is required")
 
@@ -374,9 +371,8 @@ def update_schedule(
     schedule_id: int,
     payload: ScheduleUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("manage_structure")),
 ):
-    _require_admin(current_user)
     row = (
         db.query(UserSchedule)
         .filter(
@@ -402,9 +398,8 @@ def update_schedule(
 def delete_schedule(
     schedule_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("manage_structure")),
 ):
-    _require_admin(current_user)
     row = (
         db.query(UserSchedule)
         .filter(

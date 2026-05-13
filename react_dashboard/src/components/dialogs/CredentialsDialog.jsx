@@ -68,7 +68,7 @@ import {
   updateAdminUserAccess,
 } from "../../services/userService";
 import { subscribeSSE } from "../../services/sse";
-import { UserContext } from "../../context/UserContext";
+import { UserContext, useHasPermission } from "../../context/UserContext";
 import ManageUserRequests from "../ManageUserRequests";
 
 import { getApiBase } from "../../config";
@@ -136,6 +136,8 @@ const CredentialsDialog = ({
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const isDark = theme.palette.mode === "dark";
   const isAdmin = !!user?.is_admin;
+  const canManageStructure = useHasPermission("manage_structure");
+  const canManageRoles = useHasPermission("manage_roles");
   const surface = isDark ? "rgba(17, 24, 39, 0.72)" : "rgba(255,255,255,0.82)";
   const panel = isDark ? "rgba(20, 28, 40, 0.55)" : "rgba(255,255,255,0.7)";
   const border = isDark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.08)";
@@ -1996,9 +1998,9 @@ const CredentialsDialog = ({
             }}
           >
             <Tab value="add" label="Manage Channel" />
-            {isAdmin && <Tab value="groups" label="Structure" />}
-            {isAdmin && <Tab value="schedule" label="Schedule" />}
-            {isAdmin && <Tab value="logs" label="Run logs" />}
+            {canManageStructure && <Tab value="groups" label="Structure" />}
+            {canManageStructure && <Tab value="schedule" label="Schedule" />}
+            {canManageStructure && <Tab value="logs" label="Run logs" />}
           </Tabs>
           )}
 

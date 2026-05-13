@@ -19,9 +19,13 @@ import {
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
 import {
   deleteAdminUser,
+  getAdminUserRoles,
   listAdminUsers,
+  listRoles,
+  setAdminUserRoles,
   updateAdminUserRole,
 } from "../services/userService";
 import { getApiBase } from "../config";
@@ -50,6 +54,11 @@ const ManageUserRequests = ({
   const [busyKey, setBusyKey] = useState("");
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
   const [menuUser, setMenuUser] = useState(null);
+  const [allRoles, setAllRoles] = useState([]);
+  const [rolesDialogUser, setRolesDialogUser] = useState(null);
+  const [rolesDialogSelected, setRolesDialogSelected] = useState([]);
+  const [rolesDialogLoading, setRolesDialogLoading] = useState(false);
+  const [rolesDialogSaving, setRolesDialogSaving] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState(null);
 
@@ -101,6 +110,64 @@ const ManageUserRequests = ({
   const handleDeleteUser = (item) => {
     setUserToDelete(item);
     setDeleteConfirmOpen(true);
+  };
+
+  const loadAllRoles = useCallback(async () => {
+    try {
+      const data = await listRoles();
+      setAllRoles(Array.isArray(data?.items) ? data.items : []);
+    } catch {
+      setAllRoles([]);
+    }
+  }, []);
+
+  const openRolesDialog = async (item) => {
+    setRolesDialogUser(item);
+    setRolesDialogLoading(true);
+    setError("");
+    try {
+      const [, roleData] = await Promise.all([
+        loadAllRoles(),
+        getAdminUserRoles(item.id),
+      ]);
+      const ids = (roleData?.roles || []).map((r) => r.id);
+      setRolesDialogSelected(ids);
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Failed to load user roles.");
+      setRolesDialogUser(null);
+    } finally {
+      setRolesDialogLoading(false);
+    }
+  };
+
+  const closeRolesDialog = () => {
+    if (rolesDialogSaving) return;
+    setRolesDialogUser(null);
+    setRolesDialogSelected([]);
+  };
+
+  const toggleRoleSelection = (roleId) => {
+    setRolesDialogSelected((prev) =>
+      prev.includes(roleId)
+        ? prev.filter((id) => id !== roleId)
+        : [...prev, roleId]
+    );
+  };
+
+  const saveRolesDialog = async () => {
+    if (!rolesDialogUser) return;
+    setRolesDialogSaving(true);
+    setError("");
+    try {
+      await setAdminUserRoles(rolesDialogUser.id, rolesDialogSelected);
+      setRolesDialogUser(null);
+      setRolesDialogSelected([]);
+      onUsersChanged?.();
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Failed to update roles.");
+    } finally {
+      setRolesDialogSaving(false);
+    }
   };
 
   const confirmDeleteUser = async () => {
@@ -271,6 +338,21 @@ const ManageUserRequests = ({
                     sx={{ display: "flex", gap: 0.5 }}
                     onClick={(event) => event.stopPropagation()}
                   >
+                    <Tooltip title="Assign roles">
+                      <IconButton
+                        size="small"
+                        onClick={() => openRolesDialog(item)}
+                        sx={{
+                          color: isDark ? "#94a3b8" : "text.secondary",
+                          "&:hover": {
+                            color: accentColor,
+                            bgcolor: alpha(accentColor, 0.1),
+                          },
+                        }}
+                      >
+                        <AdminPanelSettingsOutlinedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title="Delete User">
                       <IconButton
                         size="small"
@@ -351,6 +433,22 @@ const ManageUserRequests = ({
                     "&:hover": { opacity: 1 },
                   }}
                 >
+                  <Tooltip title="Assign roles">
+                    <IconButton
+                      size="small"
+                      onClick={() => openRolesDialog(item)}
+                      sx={{
+                        color: isDark ? "#94a3b8" : "text.secondary",
+                        bgcolor: alpha(theme.palette.background.default, 0.5),
+                        "&:hover": {
+                          color: isAdmin ? secondary : userBlue,
+                          bgcolor: alpha(isAdmin ? secondary : userBlue, 0.1),
+                        },
+                      }}
+                    >
+                      <AdminPanelSettingsOutlinedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                   <Tooltip title="Delete User">
                     <IconButton
                       size="small"
@@ -579,6 +677,102 @@ const ManageUserRequests = ({
             }}
           >
             Delete User
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={!!rolesDialogUser}
+        onClose={closeRolesDialog}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            bgcolor: isDark ? "#1e293b" : "#ffffff",
+            backgroundImage: "none",
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, pt: 3 }}>
+          Assign roles
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {rolesDialogUser?.name || rolesDialogUser?.username}
+          </Typography>
+          {rolesDialogLoading ? (
+            <Box display="flex" justifyContent="center" py={4}>
+              <CircularProgress size={26} />
+            </Box>
+          ) : allRoles.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No roles defined yet.
+            </Typography>
+          ) : (
+            <Box display="flex" flexDirection="column" gap={0.5}>
+              {allRoles.map((r) => {
+                const checked = rolesDialogSelected.includes(r.id);
+                return (
+                  <Box
+                    key={r.id}
+                    onClick={() => toggleRoleSelection(r.id)}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1.25,
+                      px: 1,
+                      py: 0.75,
+                      borderRadius: 1.5,
+                      cursor: "pointer",
+                      border: `1px solid ${
+                        checked ? r.color || primary : alpha(isDark ? "#fff" : "#000", 0.08)
+                      }`,
+                      bgcolor: checked
+                        ? alpha(r.color || primary, 0.12)
+                        : "transparent",
+                      "&:hover": { bgcolor: alpha(r.color || primary, 0.08) },
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: "50%",
+                        bgcolor: r.color || "#94a3b8",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="body2" noWrap sx={{ fontWeight: 700 }}>
+                        {r.name}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {r.member_count} member{r.member_count === 1 ? "" : "s"}
+                        {r.is_system ? " · system" : ""}
+                      </Typography>
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 1 }}>
+          <Button
+            onClick={closeRolesDialog}
+            disabled={rolesDialogSaving}
+            sx={{ textTransform: "none", fontWeight: 700 }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={saveRolesDialog}
+            disabled={rolesDialogLoading || rolesDialogSaving}
+            sx={{ borderRadius: 2, textTransform: "none", fontWeight: 700 }}
+          >
+            {rolesDialogSaving ? "Saving..." : "Save"}
           </Button>
         </DialogActions>
       </Dialog>
