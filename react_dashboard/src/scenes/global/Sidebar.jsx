@@ -608,7 +608,7 @@ const Sidebar = ({
                   title={isDesktopCompact ? "Setting" : undefined}
                 >
                   <Item
-                    title="Manage Channel"
+                    title="Channel"
                     to="/config/channels"
                     icon={<SmartDisplayOutlinedIcon />}
                     isActive={isActivePath("/config/channels")}
@@ -617,7 +617,7 @@ const Sidebar = ({
                   />
                   {(canManageStructure || canManageRoles) && (
                     <Item
-                      title="Project"
+                      title="Permissions"
                       to="/config/project"
                       icon={<AccountTreeOutlinedIcon />}
                       isActive={isActivePath("/config/project")}
