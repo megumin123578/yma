@@ -1,4 +1,5 @@
-import { Box } from "@mui/material";
+import { useMemo, useState, useEffect } from "react";
+import { Box, Tab, Tabs } from "@mui/material";
 import { useParams, Navigate } from "react-router-dom";
 import Header from "../../components/Header";
 import CredentialsDialog from "../../components/dialogs/CredentialsDialog";
@@ -15,30 +16,34 @@ const SECTION_TO_TAB = {
 
 const SECTION_TO_SUBTITLE = {
   channels: "Manage YouTube channels and credentials.",
-  project: "Manage users, projects, channels and access.",
+  project: "Manage users, projects, channels, access and roles.",
   schedule: "Configure automated sync schedules.",
   logs: "Inspect background run history.",
-  roles: "Define roles and assign permissions.",
 };
 
 const ConfigPage = () => {
   const { section = "channels" } = useParams();
   const canManageRoles = useHasPermission("manage_roles");
+  const canManageStructure = useHasPermission("manage_structure");
 
-  if (section === "users" || section === "structure") {
-    return <Navigate to="/config/project" replace />;
-  }
+  const projectTabs = useMemo(() => {
+    const list = [];
+    if (canManageStructure) list.push({ value: "project", label: "Project" });
+    if (canManageRoles) list.push({ value: "roles", label: "Roles" });
+    return list;
+  }, [canManageStructure, canManageRoles]);
 
-  if (section === "roles") {
-    if (!canManageRoles) {
-      return <NoAccessPage action="manage_roles" />;
+  const [projectTab, setProjectTab] = useState(projectTabs[0]?.value || "project");
+
+  useEffect(() => {
+    if (!projectTabs.length) return;
+    if (!projectTabs.some((t) => t.value === projectTab)) {
+      setProjectTab(projectTabs[0].value);
     }
-    return (
-      <Box m="20px">
-        <Header title="SETTING" subtitle={SECTION_TO_SUBTITLE.roles} />
-        <RoleManagement />
-      </Box>
-    );
+  }, [projectTabs, projectTab]);
+
+  if (section === "users" || section === "structure" || section === "roles") {
+    return <Navigate to="/config/project" replace />;
   }
 
   if (!Object.prototype.hasOwnProperty.call(SECTION_TO_TAB, section)) {
@@ -47,6 +52,44 @@ const ConfigPage = () => {
 
   const forceTab = SECTION_TO_TAB[section];
   const subtitle = SECTION_TO_SUBTITLE[section];
+
+  if (section === "project") {
+    if (!projectTabs.length) {
+      return <NoAccessPage action="manage_structure" />;
+    }
+    return (
+      <Box m="20px" display="flex" flexDirection="column" gap={2}>
+        <Header title="SETTING" subtitle={subtitle} />
+        {projectTabs.length > 1 && (
+          <Tabs
+            value={projectTab}
+            onChange={(_, next) => setProjectTab(next)}
+            sx={{
+              minHeight: 36,
+              "& .MuiTab-root": {
+                minHeight: 36,
+                textTransform: "none",
+                fontWeight: 700,
+              },
+            }}
+          >
+            {projectTabs.map((t) => (
+              <Tab key={t.value} value={t.value} label={t.label} />
+            ))}
+          </Tabs>
+        )}
+        {projectTab === "project" && canManageStructure && (
+          <CredentialsDialog
+            open
+            inline
+            defaultTokenView="card"
+            forceTab={forceTab}
+          />
+        )}
+        {projectTab === "roles" && canManageRoles && <RoleManagement />}
+      </Box>
+    );
+  }
 
   return (
     <Box m="20px">

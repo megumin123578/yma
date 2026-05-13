@@ -615,7 +615,7 @@ const Sidebar = ({
                     onClick={closeOnMobile}
                     isCompact={isDesktopCompact}
                   />
-                  {canManageStructure && (
+                  {(canManageStructure || canManageRoles) && (
                     <Item
                       title="Project"
                       to="/config/project"
@@ -641,16 +641,6 @@ const Sidebar = ({
                       to="/config/logs"
                       icon={<HistoryOutlinedIcon />}
                       isActive={isActivePath("/config/logs")}
-                      onClick={closeOnMobile}
-                      isCompact={isDesktopCompact}
-                    />
-                  )}
-                  {canManageRoles && (
-                    <Item
-                      title="Roles"
-                      to="/config/roles"
-                      icon={<AccountTreeOutlinedIcon />}
-                      isActive={isActivePath("/config/roles")}
                       onClick={closeOnMobile}
                       isCompact={isDesktopCompact}
                     />
