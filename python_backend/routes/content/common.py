@@ -1040,7 +1040,13 @@ def _list_content_channels_both(db: Session, current_user):
             seen.add(value)
             label = row.selected_channel_title or row.account_tag or value
             avatar = row.selected_channel_avatar or None
-            item = {"value": value, "label": label, "avatar": avatar}
+            project_name = (row.project_name or "").strip()
+            item = {
+                "value": value,
+                "label": label,
+                "avatar": avatar,
+                "project_name": project_name,
+            }
             all_items.append(item)
             if not (hidden_all and value in hidden_all):
                 visible_items.append(item)

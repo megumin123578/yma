@@ -454,7 +454,7 @@ const Sidebar = ({
                 >
                   {canAllChannels && (
                     <Item
-                      title="All Channels"
+                      title="Overview"
                       to="/all_channels"
                       icon={<ViewModuleOutlinedIcon />}
                       isActive={isActivePath("/all_channels")}

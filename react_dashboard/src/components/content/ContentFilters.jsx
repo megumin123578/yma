@@ -41,6 +41,7 @@ const ContentFilters = ({
     setStartDate,
     endDate,
     setEndDate,
+    leadingFilters,
 }) => {
     const theme = useTheme();
     const isDark = theme.palette.mode === "dark";
@@ -59,6 +60,7 @@ const ContentFilters = ({
                 alignItems: { xs: "stretch", md: "center" },
             }}
         >
+            {leadingFilters}
             {!hideChannelSwitcher && (
                 <ChannelSwitcher
                     options={channelList.map((channelOption) => ({

@@ -559,7 +559,24 @@ const buildTopVideoLineData = ({
 const ContentAnalytics = ({
   hideChannelSwitcher = false,
   forcedChannelId = "",
+  allowedChannelIds = null,
+  leadingFilters = null,
 }) => {
+  const allowedChannelIdSet = useMemo(() => {
+    if (!allowedChannelIds) return null;
+    return new Set(
+      Array.from(allowedChannelIds)
+        .map((v) => String(v || "").trim())
+        .filter(Boolean)
+    );
+  }, [allowedChannelIds]);
+  const isAllowedChannel = useCallback(
+    (channelId) => {
+      if (!allowedChannelIdSet) return true;
+      return allowedChannelIdSet.has(String(channelId || "").trim());
+    },
+    [allowedChannelIdSet]
+  );
   const normalizedForcedChannelId =
     forcedChannelId === CONTENT_ALL_CHANNELS_VALUE ? CONTENT_ALL_CHANNELS_VALUE : "";
   const hasForcedChannelId = !!normalizedForcedChannelId;
@@ -1184,17 +1201,19 @@ const ContentAnalytics = ({
 
   const allChannelTableRows = useMemo(
     () =>
-      allChannelRows.map((row) => {
-        const revenueKey = String(row.channelId || row.id || "").trim();
-        return {
-          ...row,
-          revenue:
-            revenueKey && Object.prototype.hasOwnProperty.call(channelRevenueAmountMap, revenueKey)
-              ? channelRevenueAmountMap[revenueKey]
-              : null,
-        };
-      }),
-    [allChannelRows, channelRevenueAmountMap]
+      allChannelRows
+        .filter((row) => isAllowedChannel(row.channelId || row.id))
+        .map((row) => {
+          const revenueKey = String(row.channelId || row.id || "").trim();
+          return {
+            ...row,
+            revenue:
+              revenueKey && Object.prototype.hasOwnProperty.call(channelRevenueAmountMap, revenueKey)
+                ? channelRevenueAmountMap[revenueKey]
+                : null,
+          };
+        }),
+    [allChannelRows, channelRevenueAmountMap, isAllowedChannel]
   );
 
   const tableRows = showAllMode ? allChannelTableRows : deferredRows;
@@ -2210,6 +2229,7 @@ const ContentAnalytics = ({
 
       {hasContentFiltersComponent ? (
         <ContentFilters
+          leadingFilters={leadingFilters}
           hideChannelSwitcher={hideChannelSwitcher}
           channelList={channelList}
           channelId={channelId}
