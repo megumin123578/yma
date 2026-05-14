@@ -965,9 +965,13 @@ const ContentAnalytics = ({
 
 
   const fetchAllChannels = useCallback(
-    async (start, end, requestSeq) => {
+    async (start, end, requestSeq, channelIds) => {
       try {
-        const resp = await api.post("/api/content/all_channels", { start, end, contentType });
+        const payload = { start, end, contentType };
+        if (Array.isArray(channelIds) && channelIds.length) {
+          payload.channelIds = channelIds;
+        }
+        const resp = await api.post("/api/content/all_channels", payload);
         if (requestSeq !== contentRequestSeqRef.current) return;
         const raw = resp.data;
         startTransition(() => {
@@ -1111,7 +1115,8 @@ const ContentAnalytics = ({
     const requestSeq = contentRequestSeqRef.current + 1;
     contentRequestSeqRef.current = requestSeq;
     if (channelId === CONTENT_ALL_CHANNELS_VALUE) {
-      fetchAllChannels(start, end, requestSeq);
+      const ids = allowedChannelIdSet ? Array.from(allowedChannelIdSet) : null;
+      fetchAllChannels(start, end, requestSeq, ids);
     } else {
       // Sequential: /list first (fast), derive top-5, then /timeseries with filter.
       // This shrinks the timeseries payload by ~95% (server filters by video_id).
@@ -1125,7 +1130,7 @@ const ContentAnalytics = ({
 
     return undefined;
 
-  }, [resolvePeriod, fetchVideos, fetchTimeseries, fetchAllChannels, channelId, computeTopVideoIds]);
+  }, [resolvePeriod, fetchVideos, fetchTimeseries, fetchAllChannels, channelId, computeTopVideoIds, allowedChannelIdSet]);
 
   // Re-fetch /timeseries when table sort changes (top-5 may differ)
   useEffect(() => {
@@ -1312,12 +1317,12 @@ const ContentAnalytics = ({
       ? [
           {
             label: "Channels",
-            value: formatNumber(allChannelRows.length),
+            value: formatNumber(allChannelTableRows.length),
           },
           {
             label: "Videos",
             value: formatNumber(
-              allChannelRows.reduce((sum, row) => sum + n(row.videoCount), 0)
+              allChannelTableRows.reduce((sum, row) => sum + n(row.videoCount), 0)
             ),
           },
         ]
@@ -1413,7 +1418,7 @@ const ContentAnalytics = ({
           ];
 
     return [...leadingCards, ...trailingCards];
-  }, [allChannelRows, contentType, deferredRows.length, showAllMode, totals]);
+  }, [allChannelTableRows, contentType, deferredRows.length, showAllMode, totals]);
 
 
 
@@ -1771,7 +1776,7 @@ const ContentAnalytics = ({
     // 🔴 Limit to Top 5 for Bar chart too
 
     const sourceRows = showAllMode
-      ? [...allChannelRows].sort((a, b) => n(b[metricKey]) - n(a[metricKey]))
+      ? [...allChannelTableRows].sort((a, b) => n(b[metricKey]) - n(a[metricKey]))
       : deferredSortedRows;
 
     const topRows = sourceRows
@@ -1794,7 +1799,7 @@ const ContentAnalytics = ({
 
     };
 
-  }, [allChannelRows, chartType, metric, showAllMode, deferredSortedRows]);
+  }, [allChannelTableRows, chartType, metric, showAllMode, deferredSortedRows]);
 
 
 

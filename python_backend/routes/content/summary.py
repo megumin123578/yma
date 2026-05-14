@@ -1,5 +1,6 @@
 import threading
 from datetime import date, timedelta
+from typing import List, Optional
 
 from fastapi import Depends
 from pydantic import BaseModel
@@ -45,6 +46,7 @@ class AllChannelsSummaryRequest(BaseModel):
     start: date
     end: date
     contentType: str = CONTENT_TYPE_ALL
+    channelIds: Optional[List[str]] = None
 
 
 @router.post("/all_channels")
@@ -56,6 +58,11 @@ def content_all_channels(
     content_type = _normalize_content_type(req.contentType)
     channel_items, all_channel_items = _list_content_channels_both(db, current_user)
     requested_tags = _resolve_content_account_tags(ALL_CHANNELS_VALUE, channel_items, all_channel_items)
+
+    if req.channelIds is not None:
+        requested_set = {str(t).strip() for t in requested_tags if t}
+        filter_set = {str(c).strip() for c in req.channelIds if c and str(c).strip()}
+        requested_tags = [t for t in requested_tags if t in filter_set and t in requested_set]
 
     if not requested_tags:
         return _fast_response({"channels": [], "timeseries": [], "channelMetrics": {"impressions": 0, "ctr": None, "supported": False}})
