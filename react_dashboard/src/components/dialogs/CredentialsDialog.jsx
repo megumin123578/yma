@@ -1505,11 +1505,6 @@ const CredentialsDialog = ({
             }}
           />
         </Box>
-        {tokenProgress[tokenName]?.stage && (
-          <Typography variant="caption" color="text.secondary">
-            {tokenProgress[tokenName].stage}
-          </Typography>
-        )}
       </Box>
     ) : null;
 
@@ -1735,16 +1730,15 @@ const CredentialsDialog = ({
                   openTokenMenu(event, tokenName);
                 }}
                 disabled={!isOwned}
-                startIcon={<PlayArrowIcon />}
-                endIcon={<ExpandMoreIcon fontSize="small" />}
                 sx={{
                   ...shimmerSx,
                   bgcolor: isDark ? "rgba(125,224,210,0.15)" : "rgba(25,118,210,0.1)",
                   color: isDark ? "#7de0d2" : accent,
                   boxShadow: "none",
                   fontWeight: 600,
-                  px: 2,
-                  py: 0.5,
+                  minWidth: 0,
+                  px: 0.75,
+                  py: 0.25,
                   borderRadius: 2,
                   "&:hover": {
                     bgcolor: isDark ? "rgba(125,224,210,0.25)" : "rgba(25,118,210,0.18)",
@@ -1753,7 +1747,8 @@ const CredentialsDialog = ({
                 }}
                 aria-label={`Run ${displayName}`}
               >
-                Run
+                <PlayArrowIcon fontSize="small" />
+                <ExpandMoreIcon fontSize="small" />
               </Button>
             </Box>
           </Box>
