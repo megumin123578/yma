@@ -492,11 +492,11 @@ def _purge_postgres_account(account_tag: str) -> None:
 
 def _kickoff_get_data(account_tag: str, env_extra: Optional[dict] = None) -> None:
     script_path = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", "..", "get_data.py")
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "get_data.py")
     )
     if not os.path.exists(script_path):
         script_path = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "..", "..", "..", "python_backend", "get_data.py")
+            os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "python_backend", "get_data.py")
         )
     repo_root = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
