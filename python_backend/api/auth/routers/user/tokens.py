@@ -118,7 +118,7 @@ def list_tokens(
                 "label": labels.get(name, ""),
                 "avatar": avatars.get(name, ""),
                 "project_name": projects.get(name, ""),
-                "owned": name in owned_names,
+                "owned": True if is_admin else (name in owned_names),
             }
         )
     files.sort(key=lambda x: x["name"])
