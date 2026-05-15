@@ -123,6 +123,18 @@ _PAYLOAD_CACHE_TTL_SEC = 60.0
 _payload_cache_lock = threading.Lock()
 _payload_cache: dict[tuple, tuple[float, object]] = {}
 
+_LIST_CACHE_TTL_SEC = 6 * 60 * 60
+
+
+def _payload_has_data(payload) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    for key in ("items", "channels", "timeseries"):
+        value = payload.get(key)
+        if isinstance(value, list) and value:
+            return True
+    return False
+
 
 def _payload_cache_get(key: tuple):
     now = time.monotonic()
@@ -846,9 +858,15 @@ def _load_timeseries_cache(account_tag: str, start_date, end_date):
                     WHERE account_tag = :tag
                       AND start_date = :start_date
                       AND end_date = :end_date
+                      AND updated_at >= NOW() - make_interval(secs => :ttl)
                     LIMIT 1;
                 """),
-                {"tag": account_tag, "start_date": start_date, "end_date": end_date},
+                {
+                    "tag": account_tag,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "ttl": _LIST_CACHE_TTL_SEC,
+                },
             ).mappings().first()
         if not row:
             return None
@@ -865,6 +883,8 @@ def _load_timeseries_cache(account_tag: str, start_date, end_date):
 
 
 def _save_timeseries_cache(account_tag: str, start_date, end_date, rows):
+    if not rows:
+        return
     _ensure_timeseries_cache_table()
     try:
         payload_rows = [dict(r) for r in rows]
@@ -936,9 +956,15 @@ def _load_list_cache(cache_key: str, start_date, end_date):
                     WHERE account_tag = :tag
                       AND start_date = :start_date
                       AND end_date = :end_date
+                      AND updated_at >= NOW() - make_interval(secs => :ttl)
                     LIMIT 1;
                 """),
-                {"tag": f"list:{cache_key}", "start_date": start_date, "end_date": end_date},
+                {
+                    "tag": f"list:{cache_key}",
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "ttl": _LIST_CACHE_TTL_SEC,
+                },
             ).mappings().first()
         if not row:
             return None
@@ -957,6 +983,8 @@ def _load_list_cache(cache_key: str, start_date, end_date):
 
 def _save_list_cache(cache_key: str, start_date, end_date, payload: dict):
     """Save cache cho /list endpoint."""
+    if not _payload_has_data(payload):
+        return
     _ensure_timeseries_cache_table()
     try:
         _payload_cache_set(("list", cache_key, start_date, end_date), payload)
