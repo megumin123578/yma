@@ -1485,8 +1485,12 @@ const CredentialsDialog = ({
     </Box>
   );
 
-  const renderTokenProgress = (tokenName) =>
-    tokenProgress[tokenName] ? (
+  const renderTokenProgress = (tokenName) => {
+    const entry = tokenProgress[tokenName];
+    if (!entry) return null;
+    const percent = Math.min(100, Math.max(0, entry.percent ?? 0));
+    if (percent <= 0 || percent >= 100) return null;
+    return (
       <Box display="flex" flexDirection="column" gap={0.4} mt={1}>
         <Box
           sx={{
@@ -1499,14 +1503,15 @@ const CredentialsDialog = ({
           <Box
             sx={{
               height: "100%",
-              width: `${Math.min(100, Math.max(0, tokenProgress[tokenName]?.percent ?? 0))}%`,
+              width: `${percent}%`,
               bgcolor: isDark ? "#7de0d2" : "#1aa86c",
               transition: "width 200ms ease",
             }}
           />
         </Box>
       </Box>
-    ) : null;
+    );
+  };
 
   const renderTokenItem = (token, layout = "list") => {
     const tokenName = typeof token === "string" ? token : token.name || "";
@@ -1649,23 +1654,6 @@ const CredentialsDialog = ({
                       View only
                     </Typography>
                   )}
-                  <Box display="flex" alignItems="center" gap={0.75} flexWrap="wrap" mt={0.75} sx={{ minWidth: 0 }}>
-                    {!!projectName && (
-                      <Chip
-                        size="small"
-                        label={`Project: ${projectName}`}
-                        sx={{
-                          maxWidth: "100%",
-                          bgcolor: isDark ? "rgba(125,224,210,0.12)" : "rgba(25,118,210,0.08)",
-                          color: isDark ? "#d7fff7" : "rgba(15,23,42,0.82)",
-                          "& .MuiChip-label": {
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          },
-                        }}
-                      />
-                    )}
-                  </Box>
                 </Box>
               </Box>
 
