@@ -1514,7 +1514,7 @@ const CredentialsDialog = ({
       (typeof token === "object" && token.label) ||
       tokenName;
     const isHidden = typeof token === "string" ? false : !!token.hidden;
-    const isOwned = typeof token === "string" ? true : token.owned !== false;
+    const isOwned = isAdmin || (typeof token === "string" ? true : token.owned !== false);
     const avatarSrc = typeof token === "object" ? resolveAvatarSrc(token.avatar) : "";
     const projectName = typeof token === "object" ? token.project_name || "" : "";
     const isSelected = selectedTokenNames.includes(tokenName);
@@ -1598,8 +1598,8 @@ const CredentialsDialog = ({
             />
           )}
           <Box sx={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", height: "100%" }}>
-            <Box display="flex" alignItems="flex-start" justifyContent="space-between" gap={1.5}>
-              <Box display="flex" alignItems="center" gap={2}>
+            <Box display="flex" alignItems="flex-start" justifyContent="space-between" gap={1.5} sx={{ minWidth: 0 }}>
+              <Box display="flex" alignItems="center" gap={2} sx={{ flex: 1, minWidth: 0 }}>
                 <Avatar
                   src={avatarSrc}
                   alt={displayName}
@@ -1608,6 +1608,7 @@ const CredentialsDialog = ({
                     height: 56,
                     fontSize: 22,
                     fontWeight: 700,
+                    flexShrink: 0,
                     bgcolor: isDark ? "rgba(125,224,210,0.15)" : "rgba(25,118,210,0.1)",
                     color: isDark ? "#7de0d2" : accent,
                     border: `1.5px solid ${isDark ? "rgba(125,224,210,0.3)" : "rgba(25,118,210,0.2)"}`,
@@ -1616,7 +1617,7 @@ const CredentialsDialog = ({
                 >
                   {displayName.slice(0, 1).toUpperCase()}
                 </Avatar>
-                <Box>
+                <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography
                     variant="h6"
                     fontWeight={700}
@@ -1626,6 +1627,8 @@ const CredentialsDialog = ({
                       fontSize: "1.05rem",
                       display: "-webkit-box",
                       overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      wordBreak: "break-word",
                       WebkitBoxOrient: "vertical",
                       WebkitLineClamp: 2,
                     }}
@@ -1646,22 +1649,27 @@ const CredentialsDialog = ({
                       View only
                     </Typography>
                   )}
-                  <Box display="flex" alignItems="center" gap={0.75} flexWrap="wrap" mt={0.75}>
+                  <Box display="flex" alignItems="center" gap={0.75} flexWrap="wrap" mt={0.75} sx={{ minWidth: 0 }}>
                     {!!projectName && (
                       <Chip
                         size="small"
                         label={`Project: ${projectName}`}
                         sx={{
+                          maxWidth: "100%",
                           bgcolor: isDark ? "rgba(125,224,210,0.12)" : "rgba(25,118,210,0.08)",
                           color: isDark ? "#d7fff7" : "rgba(15,23,42,0.82)",
+                          "& .MuiChip-label": {
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          },
                         }}
                       />
                     )}
                   </Box>
                 </Box>
               </Box>
-              
-              <Box display="flex" alignItems="center" gap={0.5}>
+
+              <Box display="flex" alignItems="center" gap={0.5} sx={{ flexShrink: 0 }}>
                 <Tooltip title={isHidden ? "Hidden. Click to show." : "Visible. Click to hide."}>
                   <span style={{ display: "inline-flex" }}>
                     <IconButton
