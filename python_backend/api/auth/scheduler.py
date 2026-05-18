@@ -446,7 +446,7 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
         try:
             creds = _load_scheduler_token_credentials(token_name)
             youtube = build("youtube", "v3", credentials=creds)
-            query = {"part": "snippet,statistics", "id": data["selected_channel_id"]}
+            query = {"part": "snippet,statistics,contentDetails", "id": data["selected_channel_id"]}
             resp = youtube.channels().list(**query).execute() or {}
             items = resp.get("items") or []
             if not items:
@@ -454,6 +454,10 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
                 continue
             channel_snippet = items[0].get("snippet", {}) or {}
             stats = (items[0].get("statistics") or {})
+            uploads_playlist_id = (
+                ((items[0].get("contentDetails") or {}).get("relatedPlaylists") or {}).get("uploads")
+                or ""
+            )
             channel_id = data["selected_channel_id"] or items[0].get("id") or None
             channel_name = (
                 channel_snippet.get("title")
@@ -474,6 +478,10 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
                 captured_at=now,
             )
             recent_video_rows = _load_tracked_video_rows(data["account_tag"])
+            if not recent_video_rows and uploads_playlist_id:
+                recent_video_rows = _fetch_uploads_video_rows(
+                    youtube, uploads_playlist_id, limit=50
+                )
             video_ids = [
                 str(video_row.get("video_id") or "").strip()
                 for video_row in recent_video_rows
@@ -604,6 +612,47 @@ def _load_recent_video_rows(account_tag: str, limit: int = 3):
     except Exception as e:
         print(f"[WARN] recent video lookup failed for {account_tag}: {e}")
         return []
+
+
+def _fetch_uploads_video_rows(youtube, uploads_playlist_id: str, limit: int = 50):
+    if not uploads_playlist_id or limit <= 0:
+        return []
+    out = []
+    page_token = None
+    try:
+        while len(out) < limit:
+            page_size = min(50, limit - len(out))
+            params = {
+                "part": "snippet,contentDetails",
+                "playlistId": uploads_playlist_id,
+                "maxResults": page_size,
+            }
+            if page_token:
+                params["pageToken"] = page_token
+            resp = youtube.playlistItems().list(**params).execute() or {}
+            for item in (resp.get("items") or []):
+                snippet = item.get("snippet") or {}
+                content = item.get("contentDetails") or {}
+                vid = str(content.get("videoId") or snippet.get("resourceId", {}).get("videoId") or "").strip()
+                if not vid:
+                    continue
+                thumbs = snippet.get("thumbnails") or {}
+                out.append({
+                    "video_id": vid,
+                    "title": snippet.get("title") or vid,
+                    "thumbnail": (
+                        (thumbs.get("medium") or {}).get("url")
+                        or (thumbs.get("default") or {}).get("url")
+                        or ""
+                    ),
+                    "publish_date": snippet.get("publishedAt") or content.get("videoPublishedAt") or "",
+                })
+            page_token = resp.get("nextPageToken")
+            if not page_token:
+                break
+    except Exception as e:
+        print(f"[WARN] uploads playlist fetch failed for {uploads_playlist_id}: {e}")
+    return out
 
 
 def _load_tracked_video_rows(
