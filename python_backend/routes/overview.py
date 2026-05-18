@@ -794,6 +794,124 @@ def live_counters_history(
     }
 
 
+def _bucket_floor(value: datetime, unit: str) -> datetime:
+    if unit == "minute":
+        return value.replace(second=0, microsecond=0)
+    return value.replace(minute=0, second=0, microsecond=0)
+
+
+def _bucket_step(unit: str) -> timedelta:
+    if unit == "minute":
+        return timedelta(minutes=1)
+    return timedelta(hours=1)
+
+
+def _build_realtime_series(
+    db: Session,
+    account_tag: str,
+    window_delta: timedelta,
+    unit: str,
+):
+    now = _now_saigon_naive()
+    cutoff = now - window_delta
+
+    window_rows = (
+        db.query(LiveCounterSnapshot)
+        .filter(
+            LiveCounterSnapshot.account_tag == account_tag,
+            LiveCounterSnapshot.captured_at >= cutoff,
+        )
+        .order_by(LiveCounterSnapshot.captured_at.asc(), LiveCounterSnapshot.id.asc())
+        .all()
+    )
+    baseline_row = (
+        db.query(LiveCounterSnapshot)
+        .filter(
+            LiveCounterSnapshot.account_tag == account_tag,
+            LiveCounterSnapshot.captured_at < cutoff,
+        )
+        .order_by(LiveCounterSnapshot.captured_at.desc(), LiveCounterSnapshot.id.desc())
+        .first()
+    )
+
+    sequence = []
+    if baseline_row:
+        sequence.append(baseline_row)
+    sequence.extend(window_rows)
+
+    bucket_views: dict[datetime, int] = {}
+    bucket_subs: dict[datetime, int] = {}
+    step = _bucket_step(unit)
+
+    for prev, curr in zip(sequence, sequence[1:]):
+        prev_views = int(prev.view_count or 0)
+        curr_views = int(curr.view_count or 0)
+        prev_subs = int(prev.subscriber_count or 0)
+        curr_subs = int(curr.subscriber_count or 0)
+        delta_views = max(0, curr_views - prev_views)
+        delta_subs = curr_subs - prev_subs
+        bucket_key = _bucket_floor(curr.captured_at, unit)
+        if bucket_key < _bucket_floor(cutoff, unit):
+            continue
+        bucket_views[bucket_key] = bucket_views.get(bucket_key, 0) + delta_views
+        bucket_subs[bucket_key] = bucket_subs.get(bucket_key, 0) + delta_subs
+
+    end_bucket = _bucket_floor(now, unit)
+    start_bucket = _bucket_floor(cutoff, unit) + step
+    rows = []
+    cursor = start_bucket
+    while cursor <= end_bucket:
+        rows.append(
+            {
+                "bucket": cursor.isoformat(),
+                "views": bucket_views.get(cursor, 0),
+                "subscribers": bucket_subs.get(cursor, 0),
+            }
+        )
+        cursor += step
+
+    total_views = sum(bucket_views.values())
+    total_subs = sum(bucket_subs.values())
+    latest = window_rows[-1] if window_rows else baseline_row
+
+    return {
+        "unit": unit,
+        "rows": rows,
+        "totals": {
+            "views": total_views,
+            "subscribers": total_subs,
+            "currentViewCount": int(latest.view_count or 0) if latest else None,
+            "currentSubscriberCount": int(latest.subscriber_count or 0) if latest else None,
+            "capturedAt": _serialize_saigon_naive(latest.captured_at) if latest else None,
+            "sampleCount": len(window_rows),
+        },
+    }
+
+
+@router.get("/realtime_48h")
+@_log_handler("realtime_48h")
+def realtime_last_48h(
+    accountTag: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    if _allowed_or_hidden_blocked(current_user, db, accountTag):
+        return {"unit": "hour", "rows": [], "totals": {}}
+    return _build_realtime_series(db, accountTag, timedelta(hours=48), "hour")
+
+
+@router.get("/realtime_60m")
+@_log_handler("realtime_60m")
+def realtime_last_60m(
+    accountTag: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    if _allowed_or_hidden_blocked(current_user, db, accountTag):
+        return {"unit": "minute", "rows": [], "totals": {}}
+    return _build_realtime_series(db, accountTag, timedelta(minutes=60), "minute")
+
+
 @router.get("/live_counters/summary")
 def live_counters_summary(
     accountTag: str,

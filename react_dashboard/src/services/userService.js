@@ -247,6 +247,16 @@ export const deleteSchedule = async (scheduleId) => {
   return res.data;
 };
 
+export const getLiveCounterSetting = async () => {
+  const res = await api.get("/api/users/app_settings/live_counter");
+  return res.data;
+};
+
+export const updateLiveCounterSetting = async (payload) => {
+  const res = await api.patch("/api/users/app_settings/live_counter", payload);
+  return res.data;
+};
+
 export const listScheduleRuns = async (limit = 10) => {
   const res = await api.get("/api/users/schedules/runs", {
     params: { limit },

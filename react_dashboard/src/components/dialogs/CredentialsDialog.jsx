@@ -66,6 +66,8 @@ import {
   listAdminUsers,
   getAdminUserAccess,
   updateAdminUserAccess,
+  getLiveCounterSetting,
+  updateLiveCounterSetting,
 } from "../../services/userService";
 import { subscribeSSE } from "../../services/sse";
 import { UserContext, useHasPermission } from "../../context/UserContext";
@@ -210,6 +212,15 @@ const CredentialsDialog = ({
   const [scheduleForm, setScheduleForm] = useState({
     time_of_day: "08:00",
   });
+  const [liveCounterSetting, setLiveCounterSetting] = useState({
+    enabled: false,
+    interval_seconds: 60,
+  });
+  const [liveCounterDraft, setLiveCounterDraft] = useState({
+    interval_seconds: 60,
+  });
+  const [savingLiveCounter, setSavingLiveCounter] = useState(false);
+  const [liveCounterError, setLiveCounterError] = useState("");
   const shimmerSx = {
     position: "relative",
     overflow: "hidden",
@@ -494,6 +505,67 @@ const CredentialsDialog = ({
     }
   }, [isAdmin]);
 
+  const loadLiveCounterSetting = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      setLiveCounterError("");
+      const data = await getLiveCounterSetting();
+      const normalized = {
+        enabled: !!data?.enabled,
+        interval_seconds: Number(data?.interval_seconds) || 60,
+      };
+      setLiveCounterSetting(normalized);
+      setLiveCounterDraft({
+        interval_seconds: normalized.interval_seconds,
+      });
+    } catch (err) {
+      setLiveCounterError(err?.response?.data?.detail || "Failed to load live counter setting.");
+    }
+  }, [isAdmin]);
+
+  const handleLiveCounterToggle = async (enabled) => {
+    try {
+      setSavingLiveCounter(true);
+      setLiveCounterError("");
+      const data = await updateLiveCounterSetting({ enabled });
+      setLiveCounterSetting({
+        enabled: !!data?.enabled,
+        interval_seconds: Number(data?.interval_seconds) || 60,
+      });
+    } catch (err) {
+      setLiveCounterError(err?.response?.data?.detail || "Failed to update live counter setting.");
+    } finally {
+      setSavingLiveCounter(false);
+    }
+  };
+
+  const handleLiveCounterSave = async () => {
+    const interval = Number(liveCounterDraft.interval_seconds) || 0;
+    if (interval < 30 || interval > 86400) {
+      setLiveCounterError("Interval must be between 30 and 86400 seconds.");
+      return;
+    }
+    try {
+      setSavingLiveCounter(true);
+      setLiveCounterError("");
+      const data = await updateLiveCounterSetting({
+        interval_seconds: interval,
+      });
+      const normalized = {
+        enabled: !!data?.enabled,
+        interval_seconds: Number(data?.interval_seconds) || 60,
+      };
+      setLiveCounterSetting(normalized);
+      setLiveCounterDraft({
+        interval_seconds: normalized.interval_seconds,
+      });
+    } catch (err) {
+      setLiveCounterError(err?.response?.data?.detail || "Failed to update live counter setting.");
+    } finally {
+      setSavingLiveCounter(false);
+    }
+  };
+
   const loadTokenProjects = useCallback(async () => {
     if (!isAdmin) {
       setTokenProjects([]);
@@ -563,6 +635,7 @@ const CredentialsDialog = ({
       if (isAdmin) {
         loadTokenProjects();
         loadSchedules();
+        loadLiveCounterSetting();
         loadProjectUserMap();
       } else {
         setTokenProjects([]);
@@ -572,7 +645,7 @@ const CredentialsDialog = ({
         setRunsError("");
       }
     }
-  }, [open, loadSchedules, loadTokenProjects, loadTokens, loadProjectUserMap, defaultTokenView, isAdmin, forceTab]);
+  }, [open, loadSchedules, loadLiveCounterSetting, loadTokenProjects, loadTokens, loadProjectUserMap, defaultTokenView, isAdmin, forceTab]);
 
   useEffect(() => {
     if (!forceTab) return;
@@ -601,8 +674,9 @@ const CredentialsDialog = ({
   useEffect(() => {
     if (isAdmin && activeTab === "schedule") {
       loadSchedules();
+      loadLiveCounterSetting();
     }
-  }, [activeTab, isAdmin, loadSchedules]);
+  }, [activeTab, isAdmin, loadSchedules, loadLiveCounterSetting]);
 
   useEffect(() => {
     if (!open || !isAdmin || activeTab !== "logs") return undefined;
@@ -2737,6 +2811,57 @@ const CredentialsDialog = ({
                               ))}
                             </Box>
                           )}
+
+                          <Divider />
+
+                          <Box display="flex" flexDirection="column" gap={1.5}>
+                            <Box display="flex" alignItems="center" justifyContent="space-between">
+                              <Box>
+                                <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
+                                  Realtime snapshots (last 48h / 60m)
+                                </Typography>
+                              </Box>
+                              <Switch
+                                size="small"
+                                checked={!!liveCounterSetting.enabled}
+                                disabled={savingLiveCounter}
+                                onChange={(e) => handleLiveCounterToggle(e.target.checked)}
+                              />
+                            </Box>
+                            {liveCounterError && (
+                              <Typography variant="body2" color={theme.palette.error.main}>
+                                {cleanError(liveCounterError)}
+                              </Typography>
+                            )}
+                            <Box display="flex" gap={1} flexWrap="wrap">
+                              <TextField
+                                size="small"
+                                label="Interval (seconds)"
+                                type="number"
+                                inputProps={{ min: 30, max: 86400, step: 30 }}
+                                value={liveCounterDraft.interval_seconds}
+                                onChange={(e) =>
+                                  setLiveCounterDraft((prev) => ({
+                                    ...prev,
+                                    interval_seconds: e.target.value,
+                                  }))
+                                }
+                                disabled={savingLiveCounter}
+                                sx={{ flex: 1, minWidth: 160 }}
+                              />
+                            </Box>
+                            <Box display="flex" justifyContent="flex-end">
+                              <Button
+                                variant="contained"
+                                size="small"
+                                disabled={savingLiveCounter}
+                                onClick={handleLiveCounterSave}
+                                sx={shimmerSx}
+                              >
+                                Save Realtime Settings
+                              </Button>
+                            </Box>
+                          </Box>
                         </>
                       )}
                     </Box>

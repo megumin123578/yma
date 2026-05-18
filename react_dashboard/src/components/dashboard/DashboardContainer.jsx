@@ -19,6 +19,7 @@ import DashboardFilters from "./DashboardFilters";
 import DashboardSkeleton from "./DashboardSkeleton";
 import LatestVideosSection from "./LatestVideosSection";
 import MetricProgressSection from "./MetricProgressSection";
+import RealtimeSection from "./RealtimeSection";
 import RevenueOverviewSection from "./RevenueOverviewSection";
 import SubscribersOverviewSection from "./SubscribersOverviewSection";
 import {
@@ -121,6 +122,8 @@ const DashboardContainer = () => {
     const [animateOverviewBars, setAnimateOverviewBars] = useState(false);
     const [error, setError] = useState("");
     const [latestVisibleCount, setLatestVisibleCount] = useState(LATEST_VIDEOS_PAGE_SIZE);
+    const [realtime48h, setRealtime48h] = useState({ rows: [], totals: {} });
+    const [realtime60m, setRealtime60m] = useState({ rows: [], totals: {} });
 
     const activeRange =
         OVERVIEW_RANGES.find((range) => range.value === overviewRange) ||
@@ -573,6 +576,52 @@ const DashboardContainer = () => {
         fetchOverviewExtras();
     }, [selectedChannel, overviewRange, rangeDays, keywordLimit, sourceLimit]);
 
+    useEffect(() => {
+        if (!selectedChannel) {
+            setRealtime48h({ rows: [], totals: {} });
+            setRealtime60m({ rows: [], totals: {} });
+            return undefined;
+        }
+
+        let active = true;
+        const fetchRealtime = async () => {
+            try {
+                const [r48, r60] = await Promise.all([
+                    api.get(
+                        `/api/video_overview/realtime_48h?accountTag=${encodeURIComponent(
+                            selectedChannel
+                        )}`
+                    ),
+                    api.get(
+                        `/api/video_overview/realtime_60m?accountTag=${encodeURIComponent(
+                            selectedChannel
+                        )}`
+                    ),
+                ]);
+                if (!active) return;
+                setRealtime48h({
+                    rows: Array.isArray(r48.data?.rows) ? r48.data.rows : [],
+                    totals: r48.data?.totals || {},
+                });
+                setRealtime60m({
+                    rows: Array.isArray(r60.data?.rows) ? r60.data.rows : [],
+                    totals: r60.data?.totals || {},
+                });
+            } catch {
+                if (!active) return;
+                setRealtime48h({ rows: [], totals: {} });
+                setRealtime60m({ rows: [], totals: {} });
+            }
+        };
+
+        fetchRealtime();
+        const intervalId = setInterval(fetchRealtime, 60_000);
+        return () => {
+            active = false;
+            clearInterval(intervalId);
+        };
+    }, [selectedChannel]);
+
     const sectionSx = {
         borderRadius: 3,
         border: "1px solid",
@@ -732,6 +781,15 @@ const DashboardContainer = () => {
                 </Box>
             ) : (
                 <>
+                    <RealtimeSection
+                        sectionSx={sectionSx}
+                        chartCardSx={chartCardSx}
+                        chartTooltipStyles={chartTooltipStyles}
+                        dashboardPalette={dashboardPalette}
+                        realtime48h={realtime48h}
+                        realtime60m={realtime60m}
+                    />
+
                     <Box
                         mt={2}
                         sx={{

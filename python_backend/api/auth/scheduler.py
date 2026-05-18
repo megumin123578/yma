@@ -45,13 +45,12 @@ def _env_int(name: str, default: int, minimum: Optional[int] = None) -> int:
 
 
 _RUNS_MAX = int(os.getenv("SCHEDULE_RUNS_MAX", "200"))
-_LIVE_COUNTER_SNAPSHOTS_ENABLED = str(
-    os.getenv("LIVE_COUNTER_SNAPSHOTS_ENABLED", "0")
-).strip().lower() in {"1", "true", "yes", "on"}
-_LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS = int(
-    os.getenv("LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS", str(24 * 60))
-)
-_LIVE_COUNTER_RETENTION_DAYS = int(os.getenv("LIVE_COUNTER_RETENTION_DAYS", "7"))
+
+
+def _live_counter_settings() -> dict:
+    from python_backend.api.auth.routers.user.scheduler import load_live_counter_setting
+
+    return load_live_counter_setting()
 _TOKEN_PROGRESS_RETENTION_DAYS = int(os.getenv("TOKEN_PROGRESS_RETENTION_DAYS", "10"))
 _MAIL_AUTO_SYNC_ENABLED = str(os.getenv("MAIL_AUTO_SYNC_ENABLED", "1")).strip().lower() in {
     "1",
@@ -162,15 +161,17 @@ def _should_run(schedule: UserSchedule, now_saigon: datetime) -> bool:
 
 def _should_capture_live_counters(now: datetime) -> bool:
     global _LAST_LIVE_COUNTER_SNAPSHOT_AT
-    if not _LIVE_COUNTER_SNAPSHOTS_ENABLED:
+    settings = _live_counter_settings()
+    if not settings.get("enabled"):
         return False
-    if _LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS <= 0:
+    interval = int(settings.get("interval_seconds") or 0)
+    if interval <= 0:
         return False
     if _LAST_LIVE_COUNTER_SNAPSHOT_AT is None:
         _LAST_LIVE_COUNTER_SNAPSHOT_AT = now
         return True
     elapsed = (now - _LAST_LIVE_COUNTER_SNAPSHOT_AT).total_seconds()
-    if elapsed < _LIVE_COUNTER_SNAPSHOT_INTERVAL_SECONDS:
+    if elapsed < interval:
         return False
     _LAST_LIVE_COUNTER_SNAPSHOT_AT = now
     return True
@@ -432,8 +433,9 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
     if channel_snapshots or latest_video_snapshots:
         db.commit()
 
-    if _LIVE_COUNTER_RETENTION_DAYS > 0:
-        cutoff = now - timedelta(days=_LIVE_COUNTER_RETENTION_DAYS)
+    retention_days = int(_live_counter_settings().get("retention_days") or 0)
+    if retention_days > 0:
+        cutoff = now - timedelta(days=retention_days)
         db.query(LiveCounterSnapshot).filter(
             LiveCounterSnapshot.captured_at < cutoff
         ).delete(synchronize_session=False)

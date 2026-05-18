@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional
 from python_backend.api.auth.database import SessionLocal, get_db
-from python_backend.api.auth.models import User, UserSchedule, UserScheduleRun
+from python_backend.api.auth.models import AppSetting, User, UserSchedule, UserScheduleRun
 from python_backend.api.auth.permissions import require_permission
 from python_backend.progress_state import write_progress
 from python_backend.sse_utils import sse_response
@@ -413,5 +413,92 @@ def delete_schedule(
     db.delete(row)
     db.commit()
     return {"ok": True}
+
+
+LIVE_COUNTER_SETTING_KEY = "live_counter_snapshots"
+LIVE_COUNTER_INTERVAL_MIN = 30
+LIVE_COUNTER_INTERVAL_MAX = 24 * 60 * 60
+LIVE_COUNTER_INTERVAL_DEFAULT = 60
+LIVE_COUNTER_RETENTION_DAYS = 2
+
+
+def _load_live_counter_setting(db: Session) -> dict:
+    row = db.query(AppSetting).filter(AppSetting.key == LIVE_COUNTER_SETTING_KEY).first()
+    if row and row.value:
+        try:
+            data = json.loads(row.value)
+        except Exception:
+            data = {}
+    else:
+        data = {}
+    enabled = bool(data.get("enabled", False))
+    interval = int(data.get("interval_seconds") or LIVE_COUNTER_INTERVAL_DEFAULT)
+    interval = max(LIVE_COUNTER_INTERVAL_MIN, min(LIVE_COUNTER_INTERVAL_MAX, interval))
+    return {
+        "enabled": enabled,
+        "interval_seconds": interval,
+        "retention_days": LIVE_COUNTER_RETENTION_DAYS,
+        "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
+    }
+
+
+def load_live_counter_setting() -> dict:
+    db = SessionLocal()
+    try:
+        return _load_live_counter_setting(db)
+    finally:
+        db.close()
+
+
+class LiveCounterSettingUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    interval_seconds: Optional[int] = None
+
+
+@router.get("/app_settings/live_counter")
+def get_live_counter_setting(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Permission Denied")
+    return _load_live_counter_setting(db)
+
+
+@router.patch("/app_settings/live_counter")
+def update_live_counter_setting(
+    payload: LiveCounterSettingUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("manage_structure")),
+):
+    current = _load_live_counter_setting(db)
+    if payload.enabled is not None:
+        current["enabled"] = bool(payload.enabled)
+    if payload.interval_seconds is not None:
+        if not (LIVE_COUNTER_INTERVAL_MIN <= payload.interval_seconds <= LIVE_COUNTER_INTERVAL_MAX):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"interval_seconds must be between {LIVE_COUNTER_INTERVAL_MIN} "
+                    f"and {LIVE_COUNTER_INTERVAL_MAX}"
+                ),
+            )
+        current["interval_seconds"] = int(payload.interval_seconds)
+
+    value = json.dumps(
+        {
+            "enabled": current["enabled"],
+            "interval_seconds": current["interval_seconds"],
+        }
+    )
+    row = db.query(AppSetting).filter(AppSetting.key == LIVE_COUNTER_SETTING_KEY).first()
+    if row is None:
+        row = AppSetting(key=LIVE_COUNTER_SETTING_KEY, value=value, updated_at=datetime.utcnow())
+        db.add(row)
+    else:
+        row.value = value
+        row.updated_at = datetime.utcnow()
+    db.commit()
+    return _load_live_counter_setting(db)
 
 

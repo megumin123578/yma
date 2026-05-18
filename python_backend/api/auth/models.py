@@ -385,3 +385,11 @@ class VideoLiveCounterSnapshot(Base):
     like_count = Column(Integer, nullable=False, default=0)
     comment_count = Column(Integer, nullable=False, default=0)
     captured_at = Column(DateTime, default=_now_saigon_naive, nullable=False, index=True)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key = Column(String, primary_key=True, index=True)
+    value = Column(Text, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
