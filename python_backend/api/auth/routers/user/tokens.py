@@ -11,12 +11,14 @@ from python_backend.api.auth.auth_utils import get_current_user
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.permissions import require_permission
 from python_backend.api.auth.models import (
+    LiveCounterSnapshot,
     TokenProgress,
     User,
     UserCredential,
     UserCredentialProject,
     UserHiddenChannel,
     UserScheduleRun,
+    VideoLiveCounterSnapshot,
 )
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.progress_state import write_progress
@@ -829,6 +831,12 @@ def delete_token(
     db.query(TokenProgress).filter(
         TokenProgress.token_name == token_name,
     ).delete()
+    db.query(LiveCounterSnapshot).filter(
+        LiveCounterSnapshot.account_tag.in_({base_name, token_name})
+    ).delete(synchronize_session=False)
+    db.query(VideoLiveCounterSnapshot).filter(
+        VideoLiveCounterSnapshot.account_tag.in_({base_name, token_name})
+    ).delete(synchronize_session=False)
     db.commit()
     _purge_postgres_account(base_name)
     return {"ok": True}

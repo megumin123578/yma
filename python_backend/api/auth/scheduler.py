@@ -51,6 +51,12 @@ def _live_counter_settings() -> dict:
     from python_backend.api.auth.routers.user.scheduler import load_live_counter_setting
 
     return load_live_counter_setting()
+
+
+def _cron_schedule_settings() -> dict:
+    from python_backend.api.auth.routers.user.scheduler import load_cron_schedule_setting
+
+    return load_cron_schedule_setting()
 _TOKEN_PROGRESS_RETENTION_DAYS = int(os.getenv("TOKEN_PROGRESS_RETENTION_DAYS", "10"))
 _MAIL_AUTO_SYNC_ENABLED = str(os.getenv("MAIL_AUTO_SYNC_ENABLED", "1")).strip().lower() in {
     "1",
@@ -271,6 +277,37 @@ def _cleanup_missing_token_credentials(db) -> int:
     return len(stale_ids)
 
 
+def _cleanup_orphan_live_counter_snapshots(db) -> None:
+    live_tokens = set(list_token_names())
+    if not live_tokens:
+        deleted_channel = db.query(LiveCounterSnapshot).delete(synchronize_session=False)
+        deleted_video = db.query(VideoLiveCounterSnapshot).delete(synchronize_session=False)
+        if deleted_channel or deleted_video:
+            db.commit()
+            print(
+                f"[INFO] live counter snapshot orphan cleanup: "
+                f"channel={deleted_channel} video={deleted_video} (no live tokens)"
+            )
+        return
+
+    deleted_channel = (
+        db.query(LiveCounterSnapshot)
+        .filter(LiveCounterSnapshot.account_tag.notin_(live_tokens))
+        .delete(synchronize_session=False)
+    )
+    deleted_video = (
+        db.query(VideoLiveCounterSnapshot)
+        .filter(VideoLiveCounterSnapshot.account_tag.notin_(live_tokens))
+        .delete(synchronize_session=False)
+    )
+    if deleted_channel or deleted_video:
+        db.commit()
+        print(
+            f"[INFO] live counter snapshot orphan cleanup: "
+            f"channel={deleted_channel} video={deleted_video}"
+        )
+
+
 def _resolve_live_counter_credentials(db) -> list[UserCredential]:
     token_names = _list_schedulable_token_names()
     if not token_names:
@@ -304,6 +341,8 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
         print(
             f"[INFO] live counter snapshot cleanup: removed_missing_token_credentials={deleted_credentials}"
         )
+
+    _cleanup_orphan_live_counter_snapshots(db)
 
     rows = _resolve_live_counter_credentials(db)
     if not rows:
@@ -513,7 +552,8 @@ def _run_loop():
         db = SessionLocal()
         try:
             _sync_due_mail_accounts(db, now_utc)
-            rows = db.query(UserSchedule).all()
+            cron_enabled = bool(_cron_schedule_settings().get("enabled", True))
+            rows = db.query(UserSchedule).all() if cron_enabled else []
             for row in rows:
                 if not _should_run(row, now_saigon):
                     continue

@@ -20,6 +20,12 @@ import {
   Switch,
   TextField,
   Chip,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   useTheme,
   useMediaQuery,
 } from "@mui/material";
@@ -68,6 +74,9 @@ import {
   updateAdminUserAccess,
   getLiveCounterSetting,
   updateLiveCounterSetting,
+  listLatestLiveCounterSnapshots,
+  getCronScheduleSetting,
+  updateCronScheduleSetting,
 } from "../../services/userService";
 import { subscribeSSE } from "../../services/sse";
 import { UserContext, useHasPermission } from "../../context/UserContext";
@@ -221,6 +230,9 @@ const CredentialsDialog = ({
   });
   const [savingLiveCounter, setSavingLiveCounter] = useState(false);
   const [liveCounterError, setLiveCounterError] = useState("");
+  const [liveCounterSnapshots, setLiveCounterSnapshots] = useState([]);
+  const [cronEnabled, setCronEnabled] = useState(true);
+  const [savingCron, setSavingCron] = useState(false);
   const shimmerSx = {
     position: "relative",
     overflow: "hidden",
@@ -523,6 +535,42 @@ const CredentialsDialog = ({
     }
   }, [isAdmin]);
 
+  const loadLiveCounterSnapshots = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const data = await listLatestLiveCounterSnapshots();
+      setLiveCounterSnapshots(Array.isArray(data?.items) ? data.items : []);
+    } catch {
+      setLiveCounterSnapshots([]);
+    }
+  }, [isAdmin]);
+
+  const loadCronEnabled = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const data = await getCronScheduleSetting();
+      setCronEnabled(!!data?.enabled);
+    } catch {
+      setCronEnabled(true);
+    }
+  }, [isAdmin]);
+
+  const handleCronToggle = async (enabled) => {
+    setCronEnabled(enabled);
+    try {
+      setSavingCron(true);
+      await updateCronScheduleSetting({ enabled });
+    } catch (err) {
+      setCronEnabled(!enabled);
+      setStatus({
+        type: "error",
+        message: err?.response?.data?.detail || "Failed to update cron schedule.",
+      });
+    } finally {
+      setSavingCron(false);
+    }
+  };
+
   const handleLiveCounterToggle = async (enabled) => {
     try {
       setSavingLiveCounter(true);
@@ -532,6 +580,7 @@ const CredentialsDialog = ({
         enabled: !!data?.enabled,
         interval_seconds: Number(data?.interval_seconds) || 60,
       });
+      loadLiveCounterSnapshots();
     } catch (err) {
       setLiveCounterError(err?.response?.data?.detail || "Failed to update live counter setting.");
     } finally {
@@ -539,8 +588,8 @@ const CredentialsDialog = ({
     }
   };
 
-  const handleLiveCounterSave = async () => {
-    const interval = Number(liveCounterDraft.interval_seconds) || 0;
+  const saveLiveCounterInterval = useCallback(async (intervalSeconds) => {
+    const interval = Number(intervalSeconds) || 0;
     if (interval < 30 || interval > 86400) {
       setLiveCounterError("Interval must be between 30 and 86400 seconds.");
       return;
@@ -551,20 +600,16 @@ const CredentialsDialog = ({
       const data = await updateLiveCounterSetting({
         interval_seconds: interval,
       });
-      const normalized = {
+      setLiveCounterSetting({
         enabled: !!data?.enabled,
         interval_seconds: Number(data?.interval_seconds) || 60,
-      };
-      setLiveCounterSetting(normalized);
-      setLiveCounterDraft({
-        interval_seconds: normalized.interval_seconds,
       });
     } catch (err) {
       setLiveCounterError(err?.response?.data?.detail || "Failed to update live counter setting.");
     } finally {
       setSavingLiveCounter(false);
     }
-  };
+  }, []);
 
   const loadTokenProjects = useCallback(async () => {
     if (!isAdmin) {
@@ -636,6 +681,7 @@ const CredentialsDialog = ({
         loadTokenProjects();
         loadSchedules();
         loadLiveCounterSetting();
+        loadCronEnabled();
         loadProjectUserMap();
       } else {
         setTokenProjects([]);
@@ -645,7 +691,7 @@ const CredentialsDialog = ({
         setRunsError("");
       }
     }
-  }, [open, loadSchedules, loadLiveCounterSetting, loadTokenProjects, loadTokens, loadProjectUserMap, defaultTokenView, isAdmin, forceTab]);
+  }, [open, loadSchedules, loadLiveCounterSetting, loadCronEnabled, loadTokenProjects, loadTokens, loadProjectUserMap, defaultTokenView, isAdmin, forceTab]);
 
   useEffect(() => {
     if (!forceTab) return;
@@ -675,8 +721,34 @@ const CredentialsDialog = ({
     if (isAdmin && activeTab === "schedule") {
       loadSchedules();
       loadLiveCounterSetting();
+      loadLiveCounterSnapshots();
+      loadCronEnabled();
     }
-  }, [activeTab, isAdmin, loadSchedules, loadLiveCounterSetting]);
+  }, [activeTab, isAdmin, loadSchedules, loadLiveCounterSetting, loadLiveCounterSnapshots, loadCronEnabled]);
+
+  useEffect(() => {
+    if (!isAdmin || activeTab !== "schedule") return undefined;
+    const id = setInterval(() => {
+      loadLiveCounterSnapshots();
+    }, 15_000);
+    return () => clearInterval(id);
+  }, [isAdmin, activeTab, loadLiveCounterSnapshots]);
+
+  useEffect(() => {
+    if (!isAdmin) return undefined;
+    const draftValue = Number(liveCounterDraft.interval_seconds);
+    if (!Number.isFinite(draftValue) || draftValue <= 0) return undefined;
+    if (draftValue === Number(liveCounterSetting.interval_seconds)) return undefined;
+    const timer = setTimeout(() => {
+      saveLiveCounterInterval(draftValue);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [
+    isAdmin,
+    liveCounterDraft.interval_seconds,
+    liveCounterSetting.interval_seconds,
+    saveLiveCounterInterval,
+  ]);
 
   useEffect(() => {
     if (!open || !isAdmin || activeTab !== "logs") return undefined;
@@ -2673,15 +2745,37 @@ const CredentialsDialog = ({
                 ) : activeTab === "schedule" ? (
                   <Box
                     sx={{
+                      display: "grid",
+                      gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+                      gap: 2,
+                    }}
+                  >
+                  <Box
+                    sx={{
                       bgcolor: panel,
                       border: `1px solid ${border}`,
                       borderRadius: 2,
                       p: 2,
                     }}
                   >
-                    <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
-                      Schedule
-                    </Typography>
+                    <Box
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      gap={1}
+                    >
+                      <Typography variant="subtitle2" fontWeight={700} sx={{ color: accent, letterSpacing: 0.3 }}>
+                        Cron job schedule
+                      </Typography>
+                      {isAdmin && (
+                        <Switch
+                          size="small"
+                          checked={!!cronEnabled}
+                          disabled={savingCron}
+                          onChange={(e) => handleCronToggle(e.target.checked)}
+                        />
+                      )}
+                    </Box>
                     <Box display="flex" flexDirection="column" gap={2} mt={1}>
                       {!isAdmin ? (
                         <Typography variant="body2" color="text.secondary">
@@ -2811,60 +2905,146 @@ const CredentialsDialog = ({
                               ))}
                             </Box>
                           )}
-
-                          <Divider />
-
-                          <Box display="flex" flexDirection="column" gap={1.5}>
-                            <Box display="flex" alignItems="center" justifyContent="space-between">
-                              <Box>
-                                <Typography variant="subtitle2" sx={{ color: accent, letterSpacing: 0.3 }}>
-                                  Realtime snapshots (last 48h / 60m)
-                                </Typography>
-                              </Box>
-                              <Switch
-                                size="small"
-                                checked={!!liveCounterSetting.enabled}
-                                disabled={savingLiveCounter}
-                                onChange={(e) => handleLiveCounterToggle(e.target.checked)}
-                              />
-                            </Box>
-                            {liveCounterError && (
-                              <Typography variant="body2" color={theme.palette.error.main}>
-                                {cleanError(liveCounterError)}
-                              </Typography>
-                            )}
-                            <Box display="flex" gap={1} flexWrap="wrap">
-                              <TextField
-                                size="small"
-                                label="Interval (seconds)"
-                                type="number"
-                                inputProps={{ min: 30, max: 86400, step: 30 }}
-                                value={liveCounterDraft.interval_seconds}
-                                onChange={(e) =>
-                                  setLiveCounterDraft((prev) => ({
-                                    ...prev,
-                                    interval_seconds: e.target.value,
-                                  }))
-                                }
-                                disabled={savingLiveCounter}
-                                sx={{ flex: 1, minWidth: 160 }}
-                              />
-                            </Box>
-                            <Box display="flex" justifyContent="flex-end">
-                              <Button
-                                variant="contained"
-                                size="small"
-                                disabled={savingLiveCounter}
-                                onClick={handleLiveCounterSave}
-                                sx={shimmerSx}
-                              >
-                                Save Realtime Settings
-                              </Button>
-                            </Box>
-                          </Box>
                         </>
                       )}
                     </Box>
+                  </Box>
+
+                  <Box
+                    sx={{
+                      bgcolor: panel,
+                      border: `1px solid ${border}`,
+                      borderRadius: 2,
+                      p: 2,
+                    }}
+                  >
+                    <Box
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      gap={1}
+                    >
+                      <Typography variant="subtitle2" fontWeight={700} sx={{ color: accent, letterSpacing: 0.3 }}>
+                        Realtime snapshots (last 48h / 60m)
+                      </Typography>
+                      {isAdmin && (
+                        <Switch
+                          size="small"
+                          checked={!!liveCounterSetting.enabled}
+                          disabled={savingLiveCounter}
+                          onChange={(e) => handleLiveCounterToggle(e.target.checked)}
+                        />
+                      )}
+                    </Box>
+                    <Box display="flex" flexDirection="column" gap={1.5} mt={1}>
+                      {!isAdmin ? (
+                        <Typography variant="body2" color="text.secondary">
+                          Permission Denied
+                        </Typography>
+                      ) : (
+                        <>
+                          {liveCounterError && (
+                            <Typography variant="body2" color={theme.palette.error.main}>
+                              {cleanError(liveCounterError)}
+                            </Typography>
+                          )}
+                          <Box display="flex" gap={1} flexWrap="wrap">
+                            <TextField
+                              size="small"
+                              label="Interval (seconds)"
+                              type="number"
+                              inputProps={{ min: 30, max: 86400, step: 30 }}
+                              value={liveCounterDraft.interval_seconds}
+                              onChange={(e) =>
+                                setLiveCounterDraft((prev) => ({
+                                  ...prev,
+                                  interval_seconds: e.target.value,
+                                }))
+                              }
+                              disabled={savingLiveCounter}
+                              sx={{ flex: 1, minWidth: 160 }}
+                            />
+                          </Box>
+
+                          <TableContainer
+                            sx={{
+                              border: `1px solid ${border}`,
+                              borderRadius: 1,
+                              overflow: "visible",
+                            }}
+                          >
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow>
+                                  <TableCell sx={{ fontWeight: 700 }}>Channel</TableCell>
+                                  <TableCell align="right" sx={{ fontWeight: 700 }}>Views</TableCell>
+                                  <TableCell sx={{ fontWeight: 700 }}>Captured</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {liveCounterSnapshots.length === 0 ? (
+                                  <TableRow>
+                                    <TableCell colSpan={3} align="center">
+                                      <Typography variant="body2" color="text.secondary">
+                                        No snapshots yet
+                                      </Typography>
+                                    </TableCell>
+                                  </TableRow>
+                                ) : (
+                                  liveCounterSnapshots.map((row) => {
+                                    const formatDiff = (n) => {
+                                      if (n == null) return null;
+                                      const sign = n > 0 ? "+" : n < 0 ? "" : "±";
+                                      return `${sign}${Number(n).toLocaleString()}`;
+                                    };
+                                    const diffColor = (n) => {
+                                      if (n == null || n === 0) return theme.palette.text.secondary;
+                                      return n > 0 ? theme.palette.success.main : theme.palette.error.main;
+                                    };
+                                    const renderCell = (value, diff) => (
+                                      <Box>
+                                        <Typography variant="body2">
+                                          {Number(value || 0).toLocaleString()}
+                                        </Typography>
+                                        {diff != null && (
+                                          <Typography
+                                            variant="caption"
+                                            sx={{ color: diffColor(diff) }}
+                                          >
+                                            {formatDiff(diff)}
+                                          </Typography>
+                                        )}
+                                      </Box>
+                                    );
+                                    const d = row.diff || {};
+                                    return (
+                                      <TableRow key={row.account_tag} hover>
+                                        <TableCell>
+                                          <Typography variant="body2" noWrap title={row.account_tag}>
+                                            {row.channel_title || row.account_tag}
+                                          </Typography>
+                                        </TableCell>
+                                        <TableCell align="right">
+                                          {renderCell(row.view_count, d.view_count)}
+                                        </TableCell>
+                                        <TableCell>
+                                          <Typography variant="body2" color="text.secondary">
+                                            {row.captured_at
+                                              ? dayjs(row.captured_at).format("HH:mm:ss")
+                                              : "-"}
+                                          </Typography>
+                                        </TableCell>
+                                      </TableRow>
+                                    );
+                                  })
+                                )}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        </>
+                      )}
+                    </Box>
+                  </Box>
                   </Box>
                 ) : (
                   <Box display="flex" flexDirection="column" gap={1}>

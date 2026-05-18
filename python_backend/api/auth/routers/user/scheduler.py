@@ -8,11 +8,19 @@ from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional
 from python_backend.api.auth.database import SessionLocal, get_db
-from python_backend.api.auth.models import AppSetting, User, UserSchedule, UserScheduleRun
+from python_backend.api.auth.models import (
+    AppSetting,
+    LiveCounterSnapshot,
+    User,
+    UserCredential,
+    UserSchedule,
+    UserScheduleRun,
+)
+from sqlalchemy import func
 from python_backend.api.auth.permissions import require_permission
 from python_backend.progress_state import write_progress
 from python_backend.sse_utils import sse_response
-from python_backend.token_store import account_tag_from_token_name, token_exists
+from python_backend.token_store import account_tag_from_token_name, list_token_names, token_exists
 
 from .common import (
     router,
@@ -421,6 +429,63 @@ LIVE_COUNTER_INTERVAL_MAX = 24 * 60 * 60
 LIVE_COUNTER_INTERVAL_DEFAULT = 60
 LIVE_COUNTER_RETENTION_DAYS = 2
 
+CRON_SCHEDULE_SETTING_KEY = "cron_schedule"
+
+
+def _load_cron_schedule_setting(db: Session) -> dict:
+    row = db.query(AppSetting).filter(AppSetting.key == CRON_SCHEDULE_SETTING_KEY).first()
+    if row and row.value:
+        try:
+            data = json.loads(row.value)
+        except Exception:
+            data = {}
+    else:
+        data = {}
+    return {
+        "enabled": bool(data.get("enabled", True)),
+        "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
+    }
+
+
+def load_cron_schedule_setting() -> dict:
+    db = SessionLocal()
+    try:
+        return _load_cron_schedule_setting(db)
+    finally:
+        db.close()
+
+
+class CronScheduleSettingUpdate(BaseModel):
+    enabled: bool
+
+
+@router.get("/app_settings/cron_schedule")
+def get_cron_schedule_setting(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Permission Denied")
+    return _load_cron_schedule_setting(db)
+
+
+@router.patch("/app_settings/cron_schedule")
+def update_cron_schedule_setting(
+    payload: CronScheduleSettingUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("manage_structure")),
+):
+    value = json.dumps({"enabled": bool(payload.enabled)})
+    row = db.query(AppSetting).filter(AppSetting.key == CRON_SCHEDULE_SETTING_KEY).first()
+    if row is None:
+        row = AppSetting(key=CRON_SCHEDULE_SETTING_KEY, value=value, updated_at=datetime.utcnow())
+        db.add(row)
+    else:
+        row.value = value
+        row.updated_at = datetime.utcnow()
+    db.commit()
+    return _load_cron_schedule_setting(db)
+
 
 def _load_live_counter_setting(db: Session) -> dict:
     row = db.query(AppSetting).filter(AppSetting.key == LIVE_COUNTER_SETTING_KEY).first()
@@ -500,5 +565,77 @@ def update_live_counter_setting(
         row.updated_at = datetime.utcnow()
     db.commit()
     return _load_live_counter_setting(db)
+
+
+@router.get("/app_settings/live_counter/latest")
+def list_latest_live_counter_snapshots(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Permission Denied")
+
+    live_tokens = set(list_token_names())
+    if not live_tokens:
+        return {"items": []}
+
+    items = []
+    for tag in sorted(live_tokens):
+        rows = (
+            db.query(LiveCounterSnapshot)
+            .filter(LiveCounterSnapshot.account_tag == tag)
+            .order_by(
+                LiveCounterSnapshot.captured_at.desc(),
+                LiveCounterSnapshot.id.desc(),
+            )
+            .limit(2)
+            .all()
+        )
+        if not rows:
+            continue
+        latest = rows[0]
+        prev = rows[1] if len(rows) > 1 else None
+        items.append((tag, latest, prev))
+
+    tags = {tag for tag, _, _ in items}
+    titles = {}
+    if tags:
+        cred_rows = (
+            db.query(UserCredential.account_tag, UserCredential.selected_channel_title)
+            .filter(UserCredential.account_tag.in_(tags))
+            .all()
+        )
+        for tag, title in cred_rows:
+            if tag and title:
+                titles[tag] = title
+
+    def _diff(curr, prev_value):
+        if prev_value is None:
+            return None
+        return int(curr or 0) - int(prev_value or 0)
+
+    return {
+        "items": [
+            {
+                "account_tag": tag,
+                "channel_title": titles.get(tag, tag),
+                "subscriber_count": int(latest.subscriber_count or 0),
+                "view_count": int(latest.view_count or 0),
+                "video_count": int(latest.video_count or 0),
+                "captured_at": latest.captured_at.isoformat() if latest.captured_at else None,
+                "diff": {
+                    "view_count": _diff(latest.view_count, prev.view_count if prev else None),
+                    "subscriber_count": _diff(
+                        latest.subscriber_count, prev.subscriber_count if prev else None
+                    ),
+                    "video_count": _diff(latest.video_count, prev.video_count if prev else None),
+                    "previous_captured_at": (
+                        prev.captured_at.isoformat() if prev and prev.captured_at else None
+                    ),
+                },
+            }
+            for tag, latest, prev in items
+        ]
+    }
 
 

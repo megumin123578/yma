@@ -257,6 +257,21 @@ export const updateLiveCounterSetting = async (payload) => {
   return res.data;
 };
 
+export const listLatestLiveCounterSnapshots = async () => {
+  const res = await api.get("/api/users/app_settings/live_counter/latest");
+  return res.data;
+};
+
+export const getCronScheduleSetting = async () => {
+  const res = await api.get("/api/users/app_settings/cron_schedule");
+  return res.data;
+};
+
+export const updateCronScheduleSetting = async (payload) => {
+  const res = await api.patch("/api/users/app_settings/cron_schedule", payload);
+  return res.data;
+};
+
 export const listScheduleRuns = async (limit = 10) => {
   const res = await api.get("/api/users/schedules/runs", {
     params: { limit },
