@@ -1974,7 +1974,9 @@ const ContentAnalytics = ({
     }),
     [isMobileTable]
   );
-  const videoTitleCellWidth = isMobileTable ? 320 : 520;
+  const videoTitleCellWidth = showAllMode
+    ? (isMobileTable ? 180 : 260)
+    : (isMobileTable ? 320 : 520);
 
   const handleSliceMove = useCallback((datum) => {
 
