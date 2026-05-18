@@ -262,6 +262,11 @@ export const listLatestLiveCounterSnapshots = async () => {
   return res.data;
 };
 
+export const getGoogleApiQuota = async () => {
+  const res = await api.get("/api/users/app_settings/google_api_quota");
+  return res.data;
+};
+
 export const getCronScheduleSetting = async () => {
   const res = await api.get("/api/users/app_settings/cron_schedule");
   return res.data;

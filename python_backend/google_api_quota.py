@@ -280,6 +280,45 @@ def execute_with_quota_guard(
     return invoker()
 
 
+def get_quota_state() -> dict:
+    limit = _quota_limit()
+    scope = _quota_scope()
+    window_seconds = _quota_window_seconds()
+    now = time.time()
+    cutoff = now - window_seconds
+    used = 0
+    oldest_ts: Optional[float] = None
+    conn: Optional[sqlite3.Connection] = None
+    try:
+        conn = _sqlite_connect()
+        _ensure_db_ready(conn)
+        row = conn.execute(
+            "SELECT COUNT(1), MIN(ts) FROM google_api_quota_events WHERE scope = ? AND ts >= ?",
+            (scope, cutoff),
+        ).fetchone()
+        if row:
+            used = int(row[0] or 0)
+            oldest_ts = float(row[1]) if row[1] is not None else None
+    except sqlite3.OperationalError:
+        used = 0
+        oldest_ts = None
+    finally:
+        if conn is not None:
+            conn.close()
+    reset_in = 0.0
+    if oldest_ts is not None:
+        reset_in = max(0.0, (oldest_ts + window_seconds) - now)
+    percent = round((used / limit) * 100.0, 1) if limit > 0 else 0.0
+    return {
+        "scope": scope,
+        "used": used,
+        "limit": limit,
+        "window_seconds": int(window_seconds),
+        "percent": percent,
+        "reset_in_seconds": round(reset_in, 1),
+    }
+
+
 def enable_google_api_quota_guard() -> None:
     global _PATCHED, _ORIGINAL_EXECUTE
     if _PATCHED:

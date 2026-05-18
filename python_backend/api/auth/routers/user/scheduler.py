@@ -22,6 +22,7 @@ from python_backend.api.auth.permissions import require_permission
 from python_backend.progress_state import write_progress
 from python_backend.sse_utils import sse_response
 from python_backend.token_store import account_tag_from_token_name, list_token_names, token_exists
+from python_backend.google_api_quota import get_quota_state
 
 from .common import (
     router,
@@ -566,6 +567,15 @@ def update_live_counter_setting(
         row.updated_at = datetime.utcnow()
     db.commit()
     return _load_live_counter_setting(db)
+
+
+@router.get("/app_settings/google_api_quota")
+def get_google_api_quota(
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Permission Denied")
+    return get_quota_state()
 
 
 @router.get("/app_settings/live_counter/latest")

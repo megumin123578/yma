@@ -75,6 +75,7 @@ import {
   getLiveCounterSetting,
   updateLiveCounterSetting,
   listLatestLiveCounterSnapshots,
+  getGoogleApiQuota,
   getCronScheduleSetting,
   updateCronScheduleSetting,
 } from "../../services/userService";
@@ -231,6 +232,7 @@ const CredentialsDialog = ({
   const [savingLiveCounter, setSavingLiveCounter] = useState(false);
   const [liveCounterError, setLiveCounterError] = useState("");
   const [liveCounterSnapshots, setLiveCounterSnapshots] = useState([]);
+  const [apiQuota, setApiQuota] = useState(null);
   const [cronEnabled, setCronEnabled] = useState(true);
   const [savingCron, setSavingCron] = useState(false);
   const shimmerSx = {
@@ -546,6 +548,16 @@ const CredentialsDialog = ({
     }
   }, [isAdmin]);
 
+  const loadApiQuota = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const data = await getGoogleApiQuota();
+      setApiQuota(data || null);
+    } catch {
+      setApiQuota(null);
+    }
+  }, [isAdmin]);
+
   const loadCronEnabled = useCallback(async () => {
     if (!isAdmin) return;
     try {
@@ -731,11 +743,13 @@ const CredentialsDialog = ({
 
   useEffect(() => {
     if (!isAdmin || activeTab !== "schedule") return undefined;
+    loadApiQuota();
     const id = setInterval(() => {
       loadLiveCounterSnapshots();
+      loadApiQuota();
     }, 15_000);
     return () => clearInterval(id);
-  }, [isAdmin, activeTab, loadLiveCounterSnapshots]);
+  }, [isAdmin, activeTab, loadLiveCounterSnapshots, loadApiQuota]);
 
   useEffect(() => {
     if (!isAdmin) return undefined;
@@ -2927,19 +2941,38 @@ const CredentialsDialog = ({
                       alignItems="center"
                       justifyContent="space-between"
                       gap={1}
+                      flexWrap="wrap"
                     >
                       <Typography variant="subtitle2" fontWeight={700} sx={{ color: accent, letterSpacing: 0.3 }}>
                         Realtime snapshots (last 48h / 60m)
                       </Typography>
-                      {isAdmin && (
-                        <Switch
-                          size="small"
-                          color="success"
-                          checked={!!liveCounterSetting.enabled}
-                          disabled={savingLiveCounter}
-                          onChange={(e) => handleLiveCounterToggle(e.target.checked)}
-                        />
-                      )}
+                      <Box display="flex" alignItems="center" gap={1}>
+                        {isAdmin && apiQuota && (
+                          <Chip
+                            size="small"
+                            label={`API: ${apiQuota.used}/${apiQuota.limit} per ${apiQuota.window_seconds}s (${apiQuota.percent}%)`}
+                            sx={{
+                              bgcolor:
+                                apiQuota.percent >= 90
+                                  ? theme.palette.error.main
+                                  : apiQuota.percent >= 70
+                                  ? theme.palette.warning.main
+                                  : theme.palette.success.main,
+                              color: "#fff",
+                              fontWeight: 600,
+                            }}
+                          />
+                        )}
+                        {isAdmin && (
+                          <Switch
+                            size="small"
+                            color="success"
+                            checked={!!liveCounterSetting.enabled}
+                            disabled={savingLiveCounter}
+                            onChange={(e) => handleLiveCounterToggle(e.target.checked)}
+                          />
+                        )}
+                      </Box>
                     </Box>
                     <Box display="flex" flexDirection="column" gap={1.5} mt={1}>
                       {!isAdmin ? (
