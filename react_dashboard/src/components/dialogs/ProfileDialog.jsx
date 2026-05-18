@@ -6,6 +6,7 @@ import {
   Button,
   Avatar,
   Box,
+  Chip,
   Fade,
   Slide,
   Typography,
@@ -14,7 +15,7 @@ import {
   useTheme,
   useMediaQuery,
 } from "@mui/material";
-import { useContext, useEffect, useState, forwardRef } from "react";
+import { useContext, useEffect, useMemo, useState, forwardRef } from "react";
 import { UserContext } from "../../context/UserContext";
 import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
 import ExitToAppIcon from "@mui/icons-material/ExitToApp";
@@ -53,8 +54,30 @@ const ProfileDialog = ({ open, onClose }) => {
   const borderColor = isDark ? "#555" : "#d0d0d0";
   const hoverBorder = isDark ? "#90caf9" : theme.palette.primary.main;
 
-  const { user, setUser } = useContext(UserContext);
+  const { user, setUser, roles, isAdmin, isOwner } = useContext(UserContext);
   const navigate = useNavigate();
+
+  const roleChips = useMemo(() => {
+    const namedRoles = Array.isArray(roles) ? roles : [];
+    const lowerNames = new Set(
+      namedRoles.map((r) => (r.name || "").trim().toLowerCase())
+    );
+    const out = [];
+    if (isOwner && !lowerNames.has("owner")) {
+      out.push({ key: "owner", label: "Owner", color: "#facc15" });
+    }
+    if (isAdmin && !lowerNames.has("admin")) {
+      out.push({ key: "admin", label: "Admin", color: "#3b82f6" });
+    }
+    for (const r of namedRoles) {
+      out.push({
+        key: `r-${r.id}`,
+        label: r.name || "Role",
+        color: r.color || theme.palette.primary.main,
+      });
+    }
+    return out;
+  }, [isAdmin, isOwner, roles, theme.palette.primary.main]);
 
   const [name, setName] = useState("");
   const [smmstoreApiKey, setSmmstoreApiKey] = useState("");
@@ -153,13 +176,6 @@ const ProfileDialog = ({ open, onClose }) => {
         <Typography variant="h5" fontWeight="bold" color={titleColor}>
           Profile Settings
         </Typography>
-        <Typography
-          variant="body2"
-          color={subtitleColor}
-          mt={0.5}
-        >
-          Manage your personal information
-        </Typography>
       </DialogTitle>
 
       <DialogContent sx={{ px: { xs: 2, sm: 3 } }}>
@@ -210,6 +226,30 @@ const ProfileDialog = ({ open, onClose }) => {
                 />
               </IconButton>
             </Box>
+
+            {roleChips.length > 0 && (
+              <Box
+                display="flex"
+                flexWrap="wrap"
+                justifyContent="center"
+                gap={0.75}
+                mt={-1.5}
+              >
+                {roleChips.map((c) => (
+                  <Chip
+                    key={c.key}
+                    label={c.label}
+                    size="small"
+                    sx={{
+                      bgcolor: c.color,
+                      color: "#fff",
+                      fontWeight: 600,
+                      letterSpacing: 0.4,
+                    }}
+                  />
+                ))}
+              </Box>
+            )}
 
             {/* NAME */}
             <TextField
