@@ -223,10 +223,10 @@ const CredentialsDialog = ({
   });
   const [liveCounterSetting, setLiveCounterSetting] = useState({
     enabled: false,
-    interval_seconds: 60,
+    interval_minutes: 1,
   });
   const [liveCounterDraft, setLiveCounterDraft] = useState({
-    interval_seconds: 60,
+    interval_minutes: 1,
   });
   const [savingLiveCounter, setSavingLiveCounter] = useState(false);
   const [liveCounterError, setLiveCounterError] = useState("");
@@ -522,13 +522,14 @@ const CredentialsDialog = ({
     try {
       setLiveCounterError("");
       const data = await getLiveCounterSetting();
+      const seconds = Number(data?.interval_seconds) || 60;
       const normalized = {
         enabled: !!data?.enabled,
-        interval_seconds: Number(data?.interval_seconds) || 60,
+        interval_minutes: Math.max(1, Math.round(seconds / 60)),
       };
       setLiveCounterSetting(normalized);
       setLiveCounterDraft({
-        interval_seconds: normalized.interval_seconds,
+        interval_minutes: normalized.interval_minutes,
       });
     } catch (err) {
       setLiveCounterError(err?.response?.data?.detail || "Failed to load live counter setting.");
@@ -576,9 +577,10 @@ const CredentialsDialog = ({
       setSavingLiveCounter(true);
       setLiveCounterError("");
       const data = await updateLiveCounterSetting({ enabled });
+      const seconds = Number(data?.interval_seconds) || 60;
       setLiveCounterSetting({
         enabled: !!data?.enabled,
-        interval_seconds: Number(data?.interval_seconds) || 60,
+        interval_minutes: Math.max(1, Math.round(seconds / 60)),
       });
       loadLiveCounterSnapshots();
     } catch (err) {
@@ -588,21 +590,22 @@ const CredentialsDialog = ({
     }
   };
 
-  const saveLiveCounterInterval = useCallback(async (intervalSeconds) => {
-    const interval = Number(intervalSeconds) || 0;
-    if (interval < 30 || interval > 86400) {
-      setLiveCounterError("Interval must be between 30 and 86400 seconds.");
+  const saveLiveCounterInterval = useCallback(async (intervalMinutes) => {
+    const minutes = Number(intervalMinutes) || 0;
+    if (minutes < 1 || minutes > 1440) {
+      setLiveCounterError("Interval must be between 1 and 1440 minutes.");
       return;
     }
     try {
       setSavingLiveCounter(true);
       setLiveCounterError("");
       const data = await updateLiveCounterSetting({
-        interval_seconds: interval,
+        interval_seconds: minutes * 60,
       });
+      const seconds = Number(data?.interval_seconds) || 60;
       setLiveCounterSetting({
         enabled: !!data?.enabled,
-        interval_seconds: Number(data?.interval_seconds) || 60,
+        interval_minutes: Math.max(1, Math.round(seconds / 60)),
       });
     } catch (err) {
       setLiveCounterError(err?.response?.data?.detail || "Failed to update live counter setting.");
@@ -736,17 +739,17 @@ const CredentialsDialog = ({
 
   useEffect(() => {
     if (!isAdmin) return undefined;
-    const draftValue = Number(liveCounterDraft.interval_seconds);
+    const draftValue = Number(liveCounterDraft.interval_minutes);
     if (!Number.isFinite(draftValue) || draftValue <= 0) return undefined;
-    if (draftValue === Number(liveCounterSetting.interval_seconds)) return undefined;
+    if (draftValue === Number(liveCounterSetting.interval_minutes)) return undefined;
     const timer = setTimeout(() => {
       saveLiveCounterInterval(draftValue);
     }, 600);
     return () => clearTimeout(timer);
   }, [
     isAdmin,
-    liveCounterDraft.interval_seconds,
-    liveCounterSetting.interval_seconds,
+    liveCounterDraft.interval_minutes,
+    liveCounterSetting.interval_minutes,
     saveLiveCounterInterval,
   ]);
 
@@ -2953,14 +2956,14 @@ const CredentialsDialog = ({
                           <Box display="flex" gap={1} flexWrap="wrap">
                             <TextField
                               size="small"
-                              label="Interval (seconds)"
+                              label="Interval (minutes)"
                               type="number"
-                              inputProps={{ min: 30, max: 86400, step: 30 }}
-                              value={liveCounterDraft.interval_seconds}
+                              inputProps={{ min: 1, max: 1440, step: 1 }}
+                              value={liveCounterDraft.interval_minutes}
                               onChange={(e) =>
                                 setLiveCounterDraft((prev) => ({
                                   ...prev,
-                                  interval_seconds: e.target.value,
+                                  interval_minutes: e.target.value,
                                 }))
                               }
                               disabled={savingLiveCounter}
