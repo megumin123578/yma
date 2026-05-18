@@ -473,7 +473,7 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
                 video_count=int(stats.get("videoCount", 0) or 0),
                 captured_at=now,
             )
-            recent_video_rows = _load_recent_video_rows(data["account_tag"])
+            recent_video_rows = _load_tracked_video_rows(data["account_tag"])
             video_ids = [
                 str(video_row.get("video_id") or "").strip()
                 for video_row in recent_video_rows
@@ -481,15 +481,16 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
             ]
             account_video_snapshots = []
             if video_ids:
-                videos_resp = youtube.videos().list(
-                    part="snippet,statistics",
-                    id=",".join(video_ids),
-                ).execute() or {}
-                videos_by_id = {
-                    item.get("id"): item
-                    for item in (videos_resp.get("items") or [])
-                    if item.get("id")
-                }
+                videos_by_id = {}
+                for batch_start in range(0, len(video_ids), 50):
+                    batch_ids = video_ids[batch_start:batch_start + 50]
+                    videos_resp = youtube.videos().list(
+                        part="snippet,statistics",
+                        id=",".join(batch_ids),
+                    ).execute() or {}
+                    for item in (videos_resp.get("items") or []):
+                        if item.get("id"):
+                            videos_by_id[item["id"]] = item
                 for position, video_row in enumerate(recent_video_rows, start=1):
                     video_id = str(video_row.get("video_id") or "").strip()
                     if not video_id:
@@ -541,11 +542,7 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
 
     if channel_snapshots:
         db.add_all(channel_snapshots)
-    for (user_id, account_tag), snapshots in latest_video_snapshots.items():
-        db.query(VideoLiveCounterSnapshot).filter(
-            VideoLiveCounterSnapshot.user_id == user_id,
-            VideoLiveCounterSnapshot.account_tag == account_tag,
-        ).delete(synchronize_session=False)
+    for snapshots in latest_video_snapshots.values():
         if snapshots:
             db.add_all(snapshots)
     if channel_snapshots or latest_video_snapshots:
@@ -606,6 +603,61 @@ def _load_recent_video_rows(account_tag: str, limit: int = 3):
             return rs.mappings().all()
     except Exception as e:
         print(f"[WARN] recent video lookup failed for {account_tag}: {e}")
+        return []
+
+
+def _load_tracked_video_rows(
+    account_tag: str,
+    recent_limit: int = 50,
+    popular_limit: int = 50,
+):
+    if not account_tag or (recent_limit <= 0 and popular_limit <= 0):
+        return []
+    try:
+        with analytics_engine.begin() as conn:
+            recent = []
+            if recent_limit > 0:
+                recent = conn.execute(
+                    text(
+                        """
+                        SELECT video_id, title, thumbnail, publish_date
+                        FROM video_overview
+                        WHERE account_tag = :tag
+                          AND video_id IS NOT NULL
+                          AND video_id != ''
+                        ORDER BY publish_date DESC NULLS LAST
+                        LIMIT :limit
+                        """
+                    ),
+                    {"tag": account_tag, "limit": recent_limit},
+                ).mappings().all()
+            popular = []
+            if popular_limit > 0:
+                popular = conn.execute(
+                    text(
+                        """
+                        SELECT video_id, title, thumbnail, publish_date
+                        FROM video_overview
+                        WHERE account_tag = :tag
+                          AND video_id IS NOT NULL
+                          AND video_id != ''
+                        ORDER BY views DESC NULLS LAST
+                        LIMIT :limit
+                        """
+                    ),
+                    {"tag": account_tag, "limit": popular_limit},
+                ).mappings().all()
+        seen: set[str] = set()
+        out = []
+        for row in list(recent) + list(popular):
+            vid = str(row.get("video_id") or "").strip()
+            if not vid or vid in seen:
+                continue
+            seen.add(vid)
+            out.append(dict(row))
+        return out
+    except Exception as e:
+        print(f"[WARN] tracked video lookup failed for {account_tag}: {e}")
         return []
 
 

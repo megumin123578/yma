@@ -17,7 +17,12 @@ from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
 from python_backend.perf_log import add_log
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
-from python_backend.api.auth.models import LiveCounterSnapshot, SAIGON_TZ, UserCredential
+from python_backend.api.auth.models import (
+    LiveCounterSnapshot,
+    SAIGON_TZ,
+    UserCredential,
+    VideoLiveCounterSnapshot,
+)
 from python_backend.module_trafficsource import sanitize_filename
 from python_backend.module_trafficsource import create_token_from_credentials
 from python_backend.module_geography import fetch_geography, load_geography_from_postgres, save_geography_to_postgres
@@ -814,8 +819,10 @@ def _build_realtime_series(
 ):
     now = _now_saigon_naive()
     cutoff = now - window_delta
+    step = _bucket_step(unit)
+    cutoff_bucket = _bucket_floor(cutoff, unit)
 
-    window_rows = (
+    channel_window_rows = (
         db.query(LiveCounterSnapshot)
         .filter(
             LiveCounterSnapshot.account_tag == account_tag,
@@ -824,7 +831,7 @@ def _build_realtime_series(
         .order_by(LiveCounterSnapshot.captured_at.asc(), LiveCounterSnapshot.id.asc())
         .all()
     )
-    baseline_row = (
+    channel_baseline_row = (
         db.query(LiveCounterSnapshot)
         .filter(
             LiveCounterSnapshot.account_tag == account_tag,
@@ -834,30 +841,71 @@ def _build_realtime_series(
         .first()
     )
 
-    sequence = []
-    if baseline_row:
-        sequence.append(baseline_row)
-    sequence.extend(window_rows)
-
-    bucket_views: dict[datetime, int] = {}
     bucket_subs: dict[datetime, int] = {}
-    step = _bucket_step(unit)
-
-    for prev, curr in zip(sequence, sequence[1:]):
-        prev_views = int(prev.view_count or 0)
-        curr_views = int(curr.view_count or 0)
-        prev_subs = int(prev.subscriber_count or 0)
-        curr_subs = int(curr.subscriber_count or 0)
-        delta_views = max(0, curr_views - prev_views)
-        delta_subs = curr_subs - prev_subs
+    sub_sequence = []
+    if channel_baseline_row:
+        sub_sequence.append(channel_baseline_row)
+    sub_sequence.extend(channel_window_rows)
+    for prev, curr in zip(sub_sequence, sub_sequence[1:]):
+        delta_subs = int(curr.subscriber_count or 0) - int(prev.subscriber_count or 0)
         bucket_key = _bucket_floor(curr.captured_at, unit)
-        if bucket_key < _bucket_floor(cutoff, unit):
+        if bucket_key < cutoff_bucket:
             continue
-        bucket_views[bucket_key] = bucket_views.get(bucket_key, 0) + delta_views
         bucket_subs[bucket_key] = bucket_subs.get(bucket_key, 0) + delta_subs
 
+    video_window_rows = (
+        db.query(VideoLiveCounterSnapshot)
+        .filter(
+            VideoLiveCounterSnapshot.account_tag == account_tag,
+            VideoLiveCounterSnapshot.captured_at >= cutoff,
+        )
+        .order_by(
+            VideoLiveCounterSnapshot.video_id.asc(),
+            VideoLiveCounterSnapshot.captured_at.asc(),
+            VideoLiveCounterSnapshot.id.asc(),
+        )
+        .all()
+    )
+    video_baseline_rows = (
+        db.query(VideoLiveCounterSnapshot)
+        .filter(
+            VideoLiveCounterSnapshot.account_tag == account_tag,
+            VideoLiveCounterSnapshot.captured_at < cutoff,
+        )
+        .order_by(
+            VideoLiveCounterSnapshot.video_id.asc(),
+            VideoLiveCounterSnapshot.captured_at.desc(),
+            VideoLiveCounterSnapshot.id.desc(),
+        )
+        .all()
+    )
+    baseline_by_video: dict[str, VideoLiveCounterSnapshot] = {}
+    for r in video_baseline_rows:
+        if r.video_id not in baseline_by_video:
+            baseline_by_video[r.video_id] = r
+
+    sequences_by_video: dict[str, list] = {}
+    for r in video_window_rows:
+        sequences_by_video.setdefault(r.video_id, []).append(r)
+
+    bucket_views: dict[datetime, int] = {}
+    for video_id, window_seq in sequences_by_video.items():
+        seq = []
+        baseline = baseline_by_video.get(video_id)
+        if baseline:
+            seq.append(baseline)
+        seq.extend(window_seq)
+        for prev, curr in zip(seq, seq[1:]):
+            delta = max(0, int(curr.view_count or 0) - int(prev.view_count or 0))
+            if delta == 0:
+                continue
+            bucket_key = _bucket_floor(curr.captured_at, unit)
+            if bucket_key < cutoff_bucket:
+                continue
+            bucket_views[bucket_key] = bucket_views.get(bucket_key, 0) + delta
+
     end_bucket = _bucket_floor(now, unit)
-    start_bucket = _bucket_floor(cutoff, unit) + step
+    start_bucket = cutoff_bucket + step
     rows = []
     cursor = start_bucket
     while cursor <= end_bucket:
@@ -872,7 +920,7 @@ def _build_realtime_series(
 
     total_views = sum(bucket_views.values())
     total_subs = sum(bucket_subs.values())
-    latest = window_rows[-1] if window_rows else baseline_row
+    latest_channel = channel_window_rows[-1] if channel_window_rows else channel_baseline_row
 
     return {
         "unit": unit,
@@ -880,10 +928,12 @@ def _build_realtime_series(
         "totals": {
             "views": total_views,
             "subscribers": total_subs,
-            "currentViewCount": int(latest.view_count or 0) if latest else None,
-            "currentSubscriberCount": int(latest.subscriber_count or 0) if latest else None,
-            "capturedAt": _serialize_saigon_naive(latest.captured_at) if latest else None,
-            "sampleCount": len(window_rows),
+            "currentViewCount": int(latest_channel.view_count or 0) if latest_channel else None,
+            "currentSubscriberCount": int(latest_channel.subscriber_count or 0) if latest_channel else None,
+            "capturedAt": _serialize_saigon_naive(latest_channel.captured_at) if latest_channel else None,
+            "sampleCount": len(channel_window_rows),
+            "videoSampleCount": len(video_window_rows),
+            "trackedVideoCount": len(sequences_by_video),
         },
     }
 
