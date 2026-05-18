@@ -22,11 +22,15 @@ from python_backend.db import engine as analytics_engine
 from python_backend.mail_gmail_api import sync_mail_account
 from python_backend.progress_state import write_progress
 from python_backend.token_store import (
+    TokenCredentialsError,
+    TokenRefreshFailed,
     account_tag_from_token_name,
+    delete_token_credentials,
     list_token_names,
     load_token_credentials as load_stored_token_credentials,
     token_exists,
 )
+from python_backend.api.auth.models import UserHiddenChannel
 
 
 _STOP_EVENT = Event()
@@ -248,8 +252,12 @@ def _load_scheduler_token_credentials(token_name: str):
         return load_stored_token_credentials(token_base)
     except FileNotFoundError:
         raise FileNotFoundError(f"Token file not found: {token_base}")
+    except TokenRefreshFailed:
+        raise
+    except TokenCredentialsError:
+        raise
     except ValueError:
-        raise ValueError(f"Token is not valid: {token_base}")
+        raise TokenCredentialsError(f"Token is not valid: {token_base}")
 
 
 def _cleanup_missing_token_credentials(db) -> int:
@@ -275,6 +283,48 @@ def _cleanup_missing_token_credentials(db) -> int:
     )
     db.commit()
     return len(stale_ids)
+
+
+def _is_youtube_signup_required_error(exc: Exception) -> bool:
+    try:
+        from googleapiclient.errors import HttpError
+    except Exception:
+        return False
+    if not isinstance(exc, HttpError):
+        return False
+    status = getattr(getattr(exc, "resp", None), "status", None)
+    if status != 401:
+        return False
+    text = str(exc).lower()
+    return "youtubesignuprequired" in text or "youtube signup required" in text
+
+
+def _purge_dead_token(db, token_name: str, account_tag: str, reason: str) -> None:
+    base = (token_name or "").strip()
+    tag = (account_tag or "").strip()
+    if not base and not tag:
+        return
+    candidates = {value for value in (base, tag, account_tag_from_token_name(base)) if value}
+    try:
+        if base:
+            delete_token_credentials(base)
+    except Exception as e:
+        print(f"[WARN] purge dead token {base}: delete_token_credentials failed: {e}")
+    if candidates:
+        db.query(UserCredential).filter(
+            UserCredential.token_name.in_(candidates)
+        ).delete(synchronize_session=False)
+        db.query(UserHiddenChannel).filter(
+            UserHiddenChannel.account_tag.in_(candidates)
+        ).delete(synchronize_session=False)
+        db.query(LiveCounterSnapshot).filter(
+            LiveCounterSnapshot.account_tag.in_(candidates)
+        ).delete(synchronize_session=False)
+        db.query(VideoLiveCounterSnapshot).filter(
+            VideoLiveCounterSnapshot.account_tag.in_(candidates)
+        ).delete(synchronize_session=False)
+        db.commit()
+    print(f"[INFO] purged dead token {base or tag}: {reason}")
 
 
 def _cleanup_orphan_live_counter_snapshots(db) -> None:
@@ -456,9 +506,21 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
             processed_accounts += 1
         except Exception as e:
             failed_accounts += 1
-            print(
-                f"[WARN] live counter snapshot failed for {row.account_tag}: {e}"
+            permanent = (
+                isinstance(e, (TokenCredentialsError, TokenRefreshFailed, FileNotFoundError))
+                or _is_youtube_signup_required_error(e)
             )
+            if permanent:
+                try:
+                    _purge_dead_token(db, token_name, row.account_tag, reason=str(e))
+                except Exception as purge_exc:
+                    print(
+                        f"[WARN] purge dead token failed for {row.account_tag}: {purge_exc}"
+                    )
+            else:
+                print(
+                    f"[WARN] live counter snapshot failed for {row.account_tag}: {e}"
+                )
 
     if channel_snapshots:
         db.add_all(channel_snapshots)

@@ -2770,6 +2770,7 @@ const CredentialsDialog = ({
                       {isAdmin && (
                         <Switch
                           size="small"
+                          color="success"
                           checked={!!cronEnabled}
                           disabled={savingCron}
                           onChange={(e) => handleCronToggle(e.target.checked)}
@@ -2930,6 +2931,7 @@ const CredentialsDialog = ({
                       {isAdmin && (
                         <Switch
                           size="small"
+                          color="success"
                           checked={!!liveCounterSetting.enabled}
                           disabled={savingLiveCounter}
                           onChange={(e) => handleLiveCounterToggle(e.target.checked)}
