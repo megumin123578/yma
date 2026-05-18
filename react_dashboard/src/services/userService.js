@@ -133,6 +133,11 @@ export const deleteToken = async (tokenName) => {
   return res.data;
 };
 
+export const importToken = async (payload) => {
+  const res = await api.post("/api/users/tokens/import", payload);
+  return res.data;
+};
+
 export const getTokenProgress = async (tokenName) => {
   const res = await api.get(`/api/users/tokens/${encodeURIComponent(tokenName)}/progress`);
   return res.data;

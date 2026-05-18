@@ -26,6 +26,7 @@ from python_backend.token_store import (
     account_tag_from_token_name,
     delete_token_credentials,
     list_token_names,
+    store_token_credentials_raw,
     token_exists,
 )
 
@@ -800,6 +801,91 @@ def run_token_stage(
         env_extra={"SCHEDULE_RUN_ID": str(run.id), "RUN_STAGE": stage},
     )
     return {"ok": True, "run_id": run.id}
+
+
+class TokenImportOAuth(BaseModel):
+    token_name: str
+    credentials_json: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class TokenImportUserCredential(BaseModel):
+    account_tag: Optional[str] = None
+    token_name: Optional[str] = None
+    project_name: Optional[str] = None
+    selected_channel_id: Optional[str] = None
+    selected_channel_title: Optional[str] = None
+    selected_channel_avatar: Optional[str] = None
+
+
+class TokenImportPayload(BaseModel):
+    oauth_tokens: TokenImportOAuth
+    user_credential: Optional[TokenImportUserCredential] = None
+
+
+@router.post("/tokens/import")
+def import_token(
+    payload: TokenImportPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("manage_structure")),
+):
+    ot = payload.oauth_tokens
+    safe_name = _require_valid_token_name(ot.token_name)
+    try:
+        normalized = store_token_credentials_raw(
+            safe_name,
+            ot.credentials_json,
+            created_at=ot.created_at,
+            updated_at=ot.updated_at,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    uc = payload.user_credential
+    if uc:
+        account_tag = (uc.account_tag or account_tag_from_token_name(normalized)).strip()
+        if not account_tag:
+            raise HTTPException(status_code=400, detail="Missing account_tag")
+        bound_token = (uc.token_name or normalized).strip() or normalized
+        now = datetime.utcnow()
+        row = (
+            db.query(UserCredential)
+            .filter(
+                UserCredential.user_id == current_user.id,
+                UserCredential.account_tag == account_tag,
+            )
+            .first()
+        )
+        if row:
+            row.token_name = bound_token
+            if uc.project_name is not None:
+                row.project_name = uc.project_name or None
+            if uc.selected_channel_id:
+                row.selected_channel_id = uc.selected_channel_id
+            if uc.selected_channel_title:
+                row.selected_channel_title = uc.selected_channel_title
+            if uc.selected_channel_avatar:
+                row.selected_channel_avatar = uc.selected_channel_avatar
+            row.updated_at = now
+            db.add(row)
+        else:
+            db.add(
+                UserCredential(
+                    user_id=current_user.id,
+                    account_tag=account_tag,
+                    token_name=bound_token,
+                    project_name=uc.project_name or None,
+                    selected_channel_id=uc.selected_channel_id or None,
+                    selected_channel_title=uc.selected_channel_title or None,
+                    selected_channel_avatar=uc.selected_channel_avatar or None,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        db.commit()
+
+    return {"ok": True, "token_name": normalized}
 
 
 @router.delete("/tokens/{token_name}")

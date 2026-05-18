@@ -28,7 +28,7 @@ import { ColorModeContext, tokens } from "../../theme";
 import { UserContext, useHasPermission } from "../../context/UserContext";
 import ProfileDialog from "../../components/dialogs/ProfileDialog";
 import MailMessageDialog from "../../components/MailMessageDialog";
-import { startMailOAuth, uploadCredentials } from "../../services/userService";
+import { startMailOAuth, uploadCredentials, importToken } from "../../services/userService";
 import api from "../../services/api";
 import { formatShortDateTimeInSaigon } from "../../utils/dateTime";
 import { resolveApiAssetUrl } from "../../config";
@@ -78,6 +78,8 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
   const [openProfile, setOpenProfile] = useState(false);
   const [addingChannel, setAddingChannel] = useState(false);
   const [addingMail, setAddingMail] = useState(false);
+  const [importingChannel, setImportingChannel] = useState(false);
+  const importFileInputRef = useRef(null);
   const [addMenuAnchorEl, setAddMenuAnchorEl] = useState(null);
   const [notificationAnchorEl, setNotificationAnchorEl] = useState(null);
   const [notificationItems, setNotificationItems] = useState([]);
@@ -104,7 +106,7 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
   const visibleNotificationItems = notificationItems.slice(0, visibleNotificationCount);
   const hasMoreNotifications = notificationItems.length > visibleNotificationCount;
   const addMenuOpen = Boolean(addMenuAnchorEl);
-  const isAddingAny = addingChannel || addingMail;
+  const isAddingAny = addingChannel || addingMail || importingChannel;
   const addButtonLabel = isAddingAny ? "Adding..." : "+ Add";
   const nextThemeLabel =
     theme.palette.mode === "dark" ? "Switch to light mode" : "Switch to dark mode";
@@ -255,10 +257,49 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
     setAddMenuAnchorEl(null);
   };
 
+  const handleImportChannelClick = () => {
+    if (importingChannel) return;
+    importFileInputRef.current?.click();
+  };
+
+  const handleImportChannelFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setImportingChannel(true);
+    try {
+      const text = await file.text();
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        window.alert("File JSON không hợp lệ");
+        return;
+      }
+      if (!parsed?.oauth_tokens?.token_name || !parsed?.oauth_tokens?.credentials_json) {
+        window.alert("JSON thiếu oauth_tokens.token_name hoặc credentials_json");
+        return;
+      }
+      try {
+        const result = await importToken(parsed);
+        window.alert(`Đã import channel: ${result?.token_name || parsed.oauth_tokens.token_name}`);
+      } catch (err) {
+        const detail = err?.response?.data?.detail || err?.message || "Import failed";
+        window.alert(`Import lỗi: ${detail}`);
+      }
+    } finally {
+      setImportingChannel(false);
+    }
+  };
+
   const handleSelectAddAction = async (type) => {
     handleCloseAddMenu();
     if (type === "gmail") {
       await handleAddGmail();
+      return;
+    }
+    if (type === "import") {
+      handleImportChannelClick();
       return;
     }
     await handleAddChannel();
@@ -781,7 +822,30 @@ const Topbar = ({ onToggleSidebar, desktopSidebarMode = "expanded", isMobile = f
             secondaryTypographyProps={{ sx: { mt: 0.2 } }}
           />
         </MenuItem>
+        <MenuItem
+          onClick={() => handleSelectAddAction("import")}
+          disabled={isAddingAny}
+          sx={buildAddMenuItemSx(addChannelAccent)}
+        >
+          <ListItemIcon sx={buildAddMenuIconSx(addChannelAccent)}>
+            <SmartDisplayRoundedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary={importingChannel ? "Importing..." : "Import Channel (JSON)"}
+            secondary="Upload exported channel credentials"
+            primaryTypographyProps={{ fontWeight: 700 }}
+            secondaryTypographyProps={{ sx: { mt: 0.2 } }}
+          />
+        </MenuItem>
       </Menu>
+
+      <input
+        ref={importFileInputRef}
+        type="file"
+        accept="application/json,.json"
+        hidden
+        onChange={handleImportChannelFile}
+      />
 
       <MailMessageDialog
         open={Boolean(selectedMessageId)}

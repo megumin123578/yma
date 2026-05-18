@@ -102,6 +102,40 @@ def store_token_credentials(token_name: str, creds) -> None:
         conn.close()
 
 
+def store_token_credentials_raw(
+    token_name: str,
+    credentials_json: str,
+    created_at: Optional[str] = None,
+    updated_at: Optional[str] = None,
+) -> str:
+    normalized = normalize_token_name(token_name)
+    if not normalized:
+        raise ValueError("Missing token name")
+    if not credentials_json or not str(credentials_json).strip():
+        raise ValueError("Missing credentials_json")
+    try:
+        json.loads(credentials_json)
+    except Exception as exc:
+        raise ValueError(f"credentials_json is not valid JSON: {exc}") from exc
+    now = datetime.utcnow().isoformat()
+    conn = _connect_auth_db()
+    try:
+        conn.execute(
+            """
+            INSERT INTO oauth_tokens (token_name, credentials_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(token_name) DO UPDATE SET
+                credentials_json = excluded.credentials_json,
+                updated_at = excluded.updated_at
+            """,
+            (normalized, credentials_json, created_at or now, updated_at or now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return normalized
+
+
 def rename_token_credentials(old_token_name: str, new_token_name: str) -> None:
     old_name = normalize_token_name(old_token_name)
     new_name = normalize_token_name(new_token_name)
