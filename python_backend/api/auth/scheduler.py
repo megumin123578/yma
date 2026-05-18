@@ -6,7 +6,7 @@ from datetime import datetime, time as dtime, timedelta, timezone
 from typing import Optional
 from threading import Event, Thread
 
-from sqlalchemy import or_, text
+from sqlalchemy import or_, text, func, tuple_
 
 from python_backend.api.auth.database import SessionLocal
 from python_backend.api.auth.models import (
@@ -400,20 +400,53 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
         return
 
     print(f"[INFO] live counter snapshot started: accounts={len(rows)}")
+
+    row_data = [
+        {
+            "user_id": r.user_id,
+            "account_tag": r.account_tag,
+            "token_name": r.token_name,
+            "selected_channel_id": r.selected_channel_id,
+            "selected_channel_title": r.selected_channel_title,
+        }
+        for r in rows
+    ]
+
+    pairs = list({(d["user_id"], d["account_tag"]) for d in row_data})
+    latest_view_counts: dict[tuple, int] = {}
+    if pairs:
+        max_rows = (
+            db.query(
+                LiveCounterSnapshot.user_id,
+                LiveCounterSnapshot.account_tag,
+                func.max(LiveCounterSnapshot.view_count),
+            )
+            .filter(
+                tuple_(LiveCounterSnapshot.user_id, LiveCounterSnapshot.account_tag).in_(pairs)
+            )
+            .group_by(LiveCounterSnapshot.user_id, LiveCounterSnapshot.account_tag)
+            .all()
+        )
+        for uid, tag, mv in max_rows:
+            latest_view_counts[(uid, tag)] = int(mv or 0)
+
+    db.rollback()
+
     channel_snapshots = []
     latest_video_snapshots = {}
+    pending_purges: list[tuple[str, str, str]] = []
     processed_accounts = 0
     failed_accounts = 0
-    for row in rows:
-        token_name = os.path.basename(row.token_name or "").strip()
+    for data in row_data:
+        token_name = os.path.basename(data["token_name"] or "").strip()
         if not token_name:
             continue
-        if not (row.selected_channel_id or "").strip():
+        if not (data["selected_channel_id"] or "").strip():
             continue
         try:
             creds = _load_scheduler_token_credentials(token_name)
             youtube = build("youtube", "v3", credentials=creds)
-            query = {"part": "snippet,statistics", "id": row.selected_channel_id}
+            query = {"part": "snippet,statistics", "id": data["selected_channel_id"]}
             resp = youtube.channels().list(**query).execute() or {}
             items = resp.get("items") or []
             if not items:
@@ -421,37 +454,26 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
                 continue
             channel_snippet = items[0].get("snippet", {}) or {}
             stats = (items[0].get("statistics") or {})
-            channel_id = row.selected_channel_id or items[0].get("id") or None
+            channel_id = data["selected_channel_id"] or items[0].get("id") or None
             channel_name = (
                 channel_snippet.get("title")
-                or row.selected_channel_title
-                or row.account_tag
+                or data["selected_channel_title"]
+                or data["account_tag"]
             )
             current_view_count = int(stats.get("viewCount", 0) or 0)
-            latest_channel_snapshot = (
-                db.query(LiveCounterSnapshot)
-                .filter(
-                    LiveCounterSnapshot.user_id == row.user_id,
-                    LiveCounterSnapshot.account_tag == row.account_tag,
-                )
-                .order_by(LiveCounterSnapshot.captured_at.desc(), LiveCounterSnapshot.id.desc())
-                .first()
-            )
-            if latest_channel_snapshot and latest_channel_snapshot.view_count is not None:
-                current_view_count = max(
-                    current_view_count,
-                    int(latest_channel_snapshot.view_count or 0),
-                )
+            prev = latest_view_counts.get((data["user_id"], data["account_tag"]))
+            if prev is not None:
+                current_view_count = max(current_view_count, prev)
             channel_snapshot = LiveCounterSnapshot(
-                user_id=row.user_id,
-                account_tag=row.account_tag,
+                user_id=data["user_id"],
+                account_tag=data["account_tag"],
                 channel_id=channel_id,
                 subscriber_count=int(stats.get("subscriberCount", 0) or 0),
                 view_count=current_view_count,
                 video_count=int(stats.get("videoCount", 0) or 0),
                 captured_at=now,
             )
-            recent_video_rows = _load_recent_video_rows(row.account_tag)
+            recent_video_rows = _load_recent_video_rows(data["account_tag"])
             video_ids = [
                 str(video_row.get("video_id") or "").strip()
                 for video_row in recent_video_rows
@@ -481,8 +503,8 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
                     )
                     account_video_snapshots.append(
                         VideoLiveCounterSnapshot(
-                            user_id=row.user_id,
-                            account_tag=row.account_tag,
+                            user_id=data["user_id"],
+                            account_tag=data["account_tag"],
                             channel_id=channel_id,
                             channel_name=channel_name,
                             video_id=video_id,
@@ -502,7 +524,7 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
                             )
                         )
             channel_snapshots.append(channel_snapshot)
-            latest_video_snapshots[(row.user_id, row.account_tag)] = account_video_snapshots
+            latest_video_snapshots[(data["user_id"], data["account_tag"])] = account_video_snapshots
             processed_accounts += 1
         except Exception as e:
             failed_accounts += 1
@@ -511,15 +533,10 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
                 or _is_youtube_signup_required_error(e)
             )
             if permanent:
-                try:
-                    _purge_dead_token(db, token_name, row.account_tag, reason=str(e))
-                except Exception as purge_exc:
-                    print(
-                        f"[WARN] purge dead token failed for {row.account_tag}: {purge_exc}"
-                    )
+                pending_purges.append((token_name, data["account_tag"], str(e)))
             else:
                 print(
-                    f"[WARN] live counter snapshot failed for {row.account_tag}: {e}"
+                    f"[WARN] live counter snapshot failed for {data['account_tag']}: {e}"
                 )
 
     if channel_snapshots:
@@ -533,6 +550,14 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
             db.add_all(snapshots)
     if channel_snapshots or latest_video_snapshots:
         db.commit()
+
+    for token_name, account_tag, reason in pending_purges:
+        try:
+            _purge_dead_token(db, token_name, account_tag, reason=reason)
+        except Exception as purge_exc:
+            print(
+                f"[WARN] purge dead token failed for {account_tag}: {purge_exc}"
+            )
 
     retention_days = int(_live_counter_settings().get("retention_days") or 0)
     if retention_days > 0:
