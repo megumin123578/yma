@@ -15,6 +15,7 @@ from python_backend.api.auth.models import (
     UserCredential,
     UserSchedule,
     UserScheduleRun,
+    VideoLiveCounterSnapshot,
 )
 from sqlalchemy import func
 from python_backend.api.auth.permissions import require_permission
@@ -614,6 +615,43 @@ def list_latest_live_counter_snapshots(
             return None
         return int(curr or 0) - int(prev_value or 0)
 
+    def _video_view_delta(tag, latest_snap, prev_snap):
+        if prev_snap is None or latest_snap is None:
+            return None
+        if latest_snap.captured_at is None or prev_snap.captured_at is None:
+            return None
+        video_rows = (
+            db.query(VideoLiveCounterSnapshot.video_id,
+                     VideoLiveCounterSnapshot.view_count,
+                     VideoLiveCounterSnapshot.captured_at)
+            .filter(
+                VideoLiveCounterSnapshot.account_tag == tag,
+                VideoLiveCounterSnapshot.captured_at.in_(
+                    [latest_snap.captured_at, prev_snap.captured_at]
+                ),
+            )
+            .all()
+        )
+        latest_by_vid: dict[str, int] = {}
+        prev_by_vid: dict[str, int] = {}
+        for vid, vc, cap in video_rows:
+            if not vid:
+                continue
+            value = int(vc or 0)
+            if cap == latest_snap.captured_at:
+                latest_by_vid[vid] = value
+            elif cap == prev_snap.captured_at:
+                prev_by_vid[vid] = value
+        if not latest_by_vid or not prev_by_vid:
+            return _diff(latest_snap.view_count, prev_snap.view_count)
+        total = 0
+        for vid, latest_val in latest_by_vid.items():
+            prev_val = prev_by_vid.get(vid)
+            if prev_val is None:
+                continue
+            total += max(0, latest_val - prev_val)
+        return total
+
     return {
         "items": [
             {
@@ -624,7 +662,7 @@ def list_latest_live_counter_snapshots(
                 "video_count": int(latest.video_count or 0),
                 "captured_at": latest.captured_at.isoformat() if latest.captured_at else None,
                 "diff": {
-                    "view_count": _diff(latest.view_count, prev.view_count if prev else None),
+                    "view_count": _video_view_delta(tag, latest, prev),
                     "subscriber_count": _diff(
                         latest.subscriber_count, prev.subscriber_count if prev else None
                     ),
