@@ -122,7 +122,33 @@ def list_tokens(
             }
         )
     files.sort(key=lambda x: x["name"])
-    return {"tokens": files}
+
+    project_names: set[str] = {
+        (f.get("project_name") or "").strip()
+        for f in files
+        if (f.get("project_name") or "").strip()
+    }
+    if is_admin:
+        for item in _list_token_projects(db):
+            name = (item.get("project_name") or "").strip()
+            if name:
+                project_names.add(name)
+    else:
+        own_empty = (
+            db.query(UserCredentialProject.project_name)
+            .filter(UserCredentialProject.user_id == current_user.id)
+            .all()
+        )
+        for row in own_empty:
+            name = (row.project_name or "").strip()
+            if name:
+                project_names.add(name)
+    projects = [
+        {"project_name": n}
+        for n in sorted(project_names, key=lambda x: x.lower())
+    ]
+
+    return {"tokens": files, "projects": projects}
 
 
 @router.get("/tokens/progress")

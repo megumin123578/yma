@@ -77,10 +77,13 @@ const getSubmenuLayerSx = (rect, width, zIndex) => {
 };
 
 let tokenInventoryCache = null;
+let tokenProjectsCache = null;
 let tokenInventoryPromise = null;
 
 const loadTokenInventory = async () => {
-  if (tokenInventoryCache) return tokenInventoryCache;
+  if (tokenInventoryCache) {
+    return { tokens: tokenInventoryCache, projects: tokenProjectsCache || [] };
+  }
   if (tokenInventoryPromise) return tokenInventoryPromise;
 
   tokenInventoryPromise = listTokens()
@@ -102,11 +105,16 @@ const loadTokenInventory = async () => {
           };
         })
         .filter(Boolean);
-      return tokenInventoryCache;
+      const projectsRaw = Array.isArray(data?.projects) ? data.projects : [];
+      tokenProjectsCache = projectsRaw
+        .map((item) => normalizeHierarchyName(item?.project_name))
+        .filter(Boolean);
+      return { tokens: tokenInventoryCache, projects: tokenProjectsCache };
     })
     .catch(() => {
       tokenInventoryCache = [];
-      return tokenInventoryCache;
+      tokenProjectsCache = [];
+      return { tokens: tokenInventoryCache, projects: tokenProjectsCache };
     })
     .finally(() => {
       tokenInventoryPromise = null;
@@ -143,6 +151,7 @@ const ChannelSwitcher = ({
   const [open, setOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [tokenInventory, setTokenInventory] = useState([]);
+  const [knownProjects, setKnownProjects] = useState([]);
   const [visibilityReady, setVisibilityReady] = useState(false);
   const [pendingValues, setPendingValues] = useState({});
   const [stickyHiddenValues, setStickyHiddenValues] = useState([]);
@@ -168,9 +177,10 @@ const ChannelSwitcher = ({
 
   useEffect(() => {
     let active = true;
-    loadTokenInventory().then((items) => {
+    loadTokenInventory().then(({ tokens, projects }) => {
       if (!active) return;
-      setTokenInventory(items);
+      setTokenInventory(tokens);
+      setKnownProjects(projects);
       setVisibilityReady(true);
     });
     return () => {
@@ -196,10 +206,12 @@ const ChannelSwitcher = ({
     let active = true;
     const reloadInventory = () => {
       tokenInventoryCache = null;
+      tokenProjectsCache = null;
       tokenInventoryPromise = null;
-      loadTokenInventory().then((items) => {
+      loadTokenInventory().then(({ tokens, projects }) => {
         if (!active) return;
-        setTokenInventory(items);
+        setTokenInventory(tokens);
+        setKnownProjects(projects);
         setVisibilityReady(true);
       });
     };
@@ -285,12 +297,7 @@ const ChannelSwitcher = ({
     const projectsMap = new Map();
     const ungroupedChannels = [];
 
-    groupedOptions.forEach((option) => {
-      const projectName = normalizeHierarchyName(option.project_name);
-      if (!projectName) {
-        ungroupedChannels.push(option);
-        return;
-      }
+    const ensureProject = (projectName) => {
       let projectEntry = projectsMap.get(projectName);
       if (!projectEntry) {
         projectEntry = {
@@ -302,7 +309,22 @@ const ChannelSwitcher = ({
         };
         projectsMap.set(projectName, projectEntry);
       }
-      projectEntry.items.push(option);
+      return projectEntry;
+    };
+
+    knownProjects.forEach((projectName) => {
+      const normalized = normalizeHierarchyName(projectName);
+      if (!normalized) return;
+      ensureProject(normalized);
+    });
+
+    groupedOptions.forEach((option) => {
+      const projectName = normalizeHierarchyName(option.project_name);
+      if (!projectName) {
+        ungroupedChannels.push(option);
+        return;
+      }
+      ensureProject(projectName).items.push(option);
     });
 
     const projects = Array.from(projectsMap.values())
@@ -317,7 +339,7 @@ const ChannelSwitcher = ({
       ungroupedChannels: sortOptionsByVisibility(ungroupedChannels),
       hasHierarchy: projects.length > 0,
     };
-  }, [groupedOptions]);
+  }, [groupedOptions, knownProjects]);
 
   const topLevelHierarchyEntries = hierarchyMenu.projects;
 
@@ -1035,9 +1057,24 @@ const ChannelSwitcher = ({
       {open && showHierarchyMenu && activeProjectEntry && activeProjectRect ? (
         <Box sx={getSubmenuLayerSx(activeProjectRect, 340, theme.zIndex.modal + 2)}>
           {renderFlyoutPanel(
-            (activeProjectEntry.items || []).map((option) =>
-              renderMenuLeaf(option, { showPath: false })
-            ),
+            (activeProjectEntry.items || []).length
+              ? (activeProjectEntry.items || []).map((option) =>
+                  renderMenuLeaf(option, { showPath: false })
+                )
+              : (
+                  <Box
+                    sx={{
+                      px: 1.25,
+                      py: 1.5,
+                      textAlign: "center",
+                      color: "text.secondary",
+                      fontSize: 13,
+                      fontWeight: 600,
+                    }}
+                  >
+                    No channels in this project
+                  </Box>
+                ),
             340,
             { pt: 0.15, pb: 0.75, px: 0.75 }
           )}

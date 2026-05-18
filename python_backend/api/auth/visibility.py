@@ -30,13 +30,6 @@ def get_allowed_account_tags(db: Session, user: Optional[User]) -> Optional[Set[
         out.add(sanitize_filename(tag))
 
     allowed: Set[str] = set()
-    own_rows = (
-        db.query(UserCredential.account_tag)
-        .filter(UserCredential.user_id == user.id)
-        .all()
-    )
-    for row in own_rows:
-        add_tag(allowed, row[0])
 
     grants = (
         db.query(UserChannelAccess.scope_type, UserChannelAccess.scope_value)
