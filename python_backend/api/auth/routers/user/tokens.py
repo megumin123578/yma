@@ -533,6 +533,14 @@ def refresh_token_avatar(
         q = q.filter(UserCredential.user_id == current_user.id)
     owned = q.first()
     if not owned:
+        if is_admin and token_exists(safe_name):
+            return {
+                "ok": True,
+                "orphan": True,
+                "selected_channel_id": None,
+                "selected_channel_title": None,
+                "selected_channel_avatar": None,
+            }
         raise HTTPException(status_code=404, detail="Token not found")
 
     creds = _load_token_credentials(safe_name)
@@ -774,15 +782,16 @@ def delete_token(
 ):
     safe_name = _require_valid_token_name(token_name)
 
-    row = (
-        db.query(UserCredential)
-        .filter(
-            UserCredential.token_name == token_name,
-        )
+    has_credential_row = (
+        db.query(UserCredential.id)
+        .filter(UserCredential.token_name == token_name)
         .first()
+        is not None
     )
-    if not row:
+    has_stored_token = token_exists(safe_name)
+    if not has_credential_row and not has_stored_token:
         raise HTTPException(status_code=404, detail="Token not found")
+
     base_name = account_tag_from_token_name(safe_name)
     delete_token_credentials(safe_name)
     db.query(UserHiddenChannel).filter(
