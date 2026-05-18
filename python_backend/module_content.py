@@ -295,7 +295,8 @@ def _stop_requested() -> bool:
     if not run_id:
         return False
     try:
-        conn = sqlite3.connect(_auth_db_path())
+        conn = sqlite3.connect(_auth_db_path(), timeout=30)
+        conn.execute("PRAGMA busy_timeout = 30000")
         cur = conn.cursor()
         cur.execute(
             "SELECT status FROM user_schedule_runs WHERE id = ?",

@@ -43,6 +43,8 @@ def account_tag_from_token_name(token_name: str) -> str:
 def _connect_auth_db() -> sqlite3.Connection:
     conn = sqlite3.connect(get_auth_db_path(), timeout=30)
     conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
     return conn
 
 
