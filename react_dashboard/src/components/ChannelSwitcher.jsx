@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Autocomplete,
   Avatar,
@@ -58,11 +58,17 @@ const getSubmenuLayerSx = (rect, width, zIndex) => {
     typeof window !== "undefined" ? window.innerWidth : rect.right + width + SUBMENU_VIEWPORT_PADDING;
   const viewportHeight =
     typeof window !== "undefined" ? window.innerHeight : rect.bottom + 360 + SUBMENU_VIEWPORT_PADDING;
-  const maxLeft = Math.max(SUBMENU_VIEWPORT_PADDING, viewportWidth - width - SUBMENU_VIEWPORT_PADDING);
-  const left = Math.max(
-    SUBMENU_VIEWPORT_PADDING,
-    Math.min(rect.right + SUBMENU_GAP, maxLeft)
-  );
+  const fitsRight = rect.right + SUBMENU_GAP + width + SUBMENU_VIEWPORT_PADDING <= viewportWidth;
+  const fitsLeft = rect.left - SUBMENU_GAP - width >= SUBMENU_VIEWPORT_PADDING;
+  let left;
+  if (fitsRight) {
+    left = rect.right + SUBMENU_GAP;
+  } else if (fitsLeft) {
+    left = rect.left - SUBMENU_GAP - width;
+  } else {
+    const maxLeft = Math.max(SUBMENU_VIEWPORT_PADDING, viewportWidth - width - SUBMENU_VIEWPORT_PADDING);
+    left = Math.max(SUBMENU_VIEWPORT_PADDING, maxLeft);
+  }
   const maxTop = Math.max(SUBMENU_VIEWPORT_PADDING, viewportHeight - 360 - SUBMENU_VIEWPORT_PADDING);
   const top = Math.max(
     SUBMENU_VIEWPORT_PADDING,
@@ -158,6 +164,8 @@ const ChannelSwitcher = ({
   const [hoveredProjectKey, setHoveredProjectKey] = useState("");
   const [hoveredProjectRect, setHoveredProjectRect] = useState(null);
   const listboxRef = useRef(null);
+  const hierarchyMenuRef = useRef(null);
+  const hierarchyScrollTopRef = useRef(0);
   const restoreScrollTopRef = useRef(null);
   const restoreFramesRef = useRef(0);
   const restoreTimeoutRef = useRef(null);
@@ -667,12 +675,54 @@ const ChannelSwitcher = ({
     </Box>
   );
 
+  useEffect(() => {
+    if (!open) hierarchyScrollTopRef.current = 0;
+  }, [open]);
+
+  const setHierarchyMenuNode = useCallback((node) => {
+    const prev = hierarchyMenuRef.current;
+    if (prev && prev !== node) {
+      const prevHandler = prev.__wheelHandler;
+      if (prevHandler) {
+        prev.removeEventListener("wheel", prevHandler);
+        delete prev.__wheelHandler;
+      }
+    }
+    hierarchyMenuRef.current = node;
+    if (!node) return;
+    if (node.__wheelHandler) return;
+    const handler = (event) => {
+      if (node.scrollHeight <= node.clientHeight) return;
+      let delta = event.deltaY;
+      if (event.deltaMode === 1) delta *= 16;
+      else if (event.deltaMode === 2) delta *= node.clientHeight;
+      node.scrollTop += delta;
+      hierarchyScrollTopRef.current = node.scrollTop;
+      event.preventDefault();
+    };
+    node.__wheelHandler = handler;
+    node.addEventListener("wheel", handler, { passive: false });
+    if (node.scrollTop !== hierarchyScrollTopRef.current) {
+      node.scrollTop = hierarchyScrollTopRef.current;
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!showHierarchyMenu) return;
+    const container = hierarchyMenuRef.current;
+    if (container && container.scrollTop !== hierarchyScrollTopRef.current) {
+      container.scrollTop = hierarchyScrollTopRef.current;
+    }
+  });
+
   const renderHierarchyMenu = () => (
     <Box
+      ref={setHierarchyMenuNode}
       sx={{
         py: 0.75,
         maxHeight: 360,
         overflowY: "auto",
+        overscrollBehavior: "contain",
       }}
     >
       {topLevelHierarchyEntries.map((entry) => {

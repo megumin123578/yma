@@ -4,6 +4,7 @@ import { useTheme } from "@mui/material/styles";
 import Header from "../../components/Header";
 import ContentAnalytics from "../../components/content/ContentContainer";
 import api from "../../services/api";
+import { listTokens } from "../../services/userService";
 import {
   getSharedFilterControlSx,
   getSharedSelectMenuProps,
@@ -18,6 +19,7 @@ const AllChannelsScene = () => {
   const filterControlSx = getSharedFilterControlSx(theme);
   const selectMenuProps = getSharedSelectMenuProps(theme);
   const [channels, setChannels] = useState([]);
+  const [allProjects, setAllProjects] = useState([]);
   const [project, setProject] = useState(() => {
     try {
       return window.localStorage.getItem(STORAGE_KEY) || ALL_PROJECTS_VALUE;
@@ -44,8 +46,28 @@ const AllChannelsScene = () => {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    listTokens()
+      .then((data) => {
+        if (!active) return;
+        const items = Array.isArray(data?.projects) ? data.projects : [];
+        const names = items
+          .map((item) => String(item?.project_name || "").trim())
+          .filter(Boolean);
+        setAllProjects(names);
+      })
+      .catch(() => {
+        if (!active) return;
+        setAllProjects([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const projectOptions = useMemo(() => {
-    const names = new Set();
+    const names = new Set(allProjects);
     channels.forEach((c) => {
       const name = String(c?.project_name || "").trim();
       if (name) names.add(name);
@@ -53,7 +75,7 @@ const AllChannelsScene = () => {
     return Array.from(names).sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base", numeric: true })
     );
-  }, [channels]);
+  }, [allProjects, channels]);
 
   const allowedChannelIds = useMemo(() => {
     if (project === ALL_PROJECTS_VALUE) return null;
