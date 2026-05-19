@@ -45,6 +45,7 @@ export const ADMIN_ACTIONS = [
   { value: "manage_roles", label: "Manage roles", description: "Create roles, assign permissions" },
   { value: "manage_mail", label: "Manage mail", description: "Add/sync/delete Gmail accounts" },
   { value: "manage_structure", label: "Manage structure", description: "Projects, channels, schedules" },
+  { value: "view_all_channels", label: "View all channels", description: "Bypass project-based visibility; see every channel" },
 ];
 
 export const SCOPE_TYPES = [

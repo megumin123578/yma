@@ -4,6 +4,7 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from python_backend.api.auth.models import User, UserChannelAccess, UserCredential, UserHiddenChannel
+from python_backend.api.auth.permissions import user_has_permission
 from python_backend.module_trafficsource import sanitize_filename
 
 
@@ -20,6 +21,8 @@ def get_allowed_account_tags(db: Session, user: Optional[User]) -> Optional[Set[
     if not user:
         return set()
     if bool(getattr(user, "is_admin", False)):
+        return None
+    if user_has_permission(db, user, "view_all_channels"):
         return None
 
     def add_tag(out: Set[str], value: str) -> None:

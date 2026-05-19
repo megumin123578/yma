@@ -49,6 +49,7 @@ ADMIN_ACTIONS: Set[str] = {
     "manage_roles",
     "manage_mail",
     "manage_structure",
+    "view_all_channels",
 }
 
 ALL_ACTIONS: Set[str] = PAGE_ACTIONS | DATA_ACTIONS | ADMIN_ACTIONS
