@@ -1319,12 +1319,6 @@ const ContentAnalytics = ({
             label: "Channels",
             value: formatNumber(allChannelTableRows.length),
           },
-          {
-            label: "Videos",
-            value: formatNumber(
-              allChannelTableRows.reduce((sum, row) => sum + n(row.videoCount), 0)
-            ),
-          },
         ]
       : [
           {
