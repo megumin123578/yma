@@ -7,6 +7,7 @@ import api from "../../services/api";
 import { COUNTRY_FALLBACK } from "../../data/countryMapping";
 import { useGeoFeatures } from "../../utils/useGeoFeatures";
 import { getChannelRevenueMap } from "../Module";
+import { sendLiveCounterHeartbeat } from "../../services/userService";
 import {
     getStoredSharedChannelId,
     listenSharedChannelId,
@@ -429,6 +430,21 @@ const DashboardContainer = () => {
     useEffect(() => {
         if (!selectedChannel) return;
         setStoredSharedChannelId(selectedChannel, "overview.selectedChannelId");
+    }, [selectedChannel]);
+
+    useEffect(() => {
+        if (!selectedChannel) return undefined;
+        let cancelled = false;
+        const ping = () => {
+            if (cancelled) return;
+            sendLiveCounterHeartbeat(selectedChannel).catch(() => {});
+        };
+        ping();
+        const id = window.setInterval(ping, 30_000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(id);
+        };
     }, [selectedChannel]);
 
     useEffect(() => {

@@ -272,6 +272,14 @@ export const getGoogleApiQuota = async () => {
   return res.data;
 };
 
+export const sendLiveCounterHeartbeat = async (accountTag) => {
+  if (!accountTag) return null;
+  const res = await api.post("/api/users/live_counter/heartbeat", {
+    account_tag: accountTag,
+  });
+  return res.data;
+};
+
 export const getCronScheduleSetting = async () => {
   const res = await api.get("/api/users/app_settings/cron_schedule");
   return res.data;

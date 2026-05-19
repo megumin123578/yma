@@ -23,6 +23,7 @@ from python_backend.progress_state import write_progress
 from python_backend.sse_utils import sse_response
 from python_backend.token_store import account_tag_from_token_name, list_token_names, token_exists
 from python_backend.google_api_quota import get_quota_state
+from python_backend.api.auth.scheduler import mark_channel_active
 
 from .common import (
     router,
@@ -567,6 +568,22 @@ def update_live_counter_setting(
         row.updated_at = datetime.utcnow()
     db.commit()
     return _load_live_counter_setting(db)
+
+
+class LiveCounterHeartbeat(BaseModel):
+    account_tag: str
+
+
+@router.post("/live_counter/heartbeat")
+def live_counter_heartbeat(
+    payload: LiveCounterHeartbeat,
+    current_user: User = Depends(get_current_user_optional),
+):
+    tag = (payload.account_tag or "").strip()
+    if not tag:
+        raise HTTPException(status_code=400, detail="Missing account_tag")
+    mark_channel_active(tag)
+    return {"ok": True}
 
 
 @router.get("/app_settings/google_api_quota")

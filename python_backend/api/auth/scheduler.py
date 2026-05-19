@@ -4,7 +4,8 @@ import subprocess
 import sys
 from datetime import datetime, time as dtime, timedelta, timezone
 from typing import Optional
-from threading import Event, Thread
+import time
+from threading import Event, Lock, Thread
 
 from sqlalchemy import or_, text, func, tuple_
 
@@ -80,6 +81,32 @@ _MAIL_AUTO_SYNC_FETCH_LIMIT = _env_int(
 )
 _LAST_LIVE_COUNTER_SNAPSHOT_AT = None
 _LAST_TOKEN_PROGRESS_CLEANUP_AT = None
+_ACTIVE_CHANNELS_LOCK = Lock()
+_ACTIVE_CHANNELS: dict[str, float] = {}
+_LAST_CAPTURE_AT: dict[str, datetime] = {}
+ACTIVE_CHANNEL_TIMEOUT_SEC = 90
+IDLE_CHANNEL_INTERVAL_SEC = 3600
+
+
+def mark_channel_active(account_tag: str) -> None:
+    if not account_tag:
+        return
+    tag = str(account_tag).strip()
+    if not tag:
+        return
+    with _ACTIVE_CHANNELS_LOCK:
+        _ACTIVE_CHANNELS[tag] = time.time()
+
+
+def _get_active_channels() -> set[str]:
+    now_ts = time.time()
+    cutoff = now_ts - ACTIVE_CHANNEL_TIMEOUT_SEC
+    with _ACTIVE_CHANNELS_LOCK:
+        expired = [t for t, ts in _ACTIVE_CHANNELS.items() if ts < cutoff]
+        for t in expired:
+            del _ACTIVE_CHANNELS[t]
+        return set(_ACTIVE_CHANNELS.keys())
+
 SAIGON_TZ = timezone(timedelta(hours=7))
 def _now_saigon_naive() -> datetime:
     return datetime.now(SAIGON_TZ).replace(tzinfo=None)
@@ -170,21 +197,27 @@ def _should_run(schedule: UserSchedule, now_saigon: datetime) -> bool:
 
 
 def _should_capture_live_counters(now: datetime) -> bool:
-    global _LAST_LIVE_COUNTER_SNAPSHOT_AT
     settings = _live_counter_settings()
     if not settings.get("enabled"):
         return False
-    interval = int(settings.get("interval_seconds") or 0)
-    if interval <= 0:
-        return False
-    if _LAST_LIVE_COUNTER_SNAPSHOT_AT is None:
-        _LAST_LIVE_COUNTER_SNAPSHOT_AT = now
-        return True
-    elapsed = (now - _LAST_LIVE_COUNTER_SNAPSHOT_AT).total_seconds()
-    if elapsed < interval:
-        return False
-    _LAST_LIVE_COUNTER_SNAPSHOT_AT = now
     return True
+
+
+def _channels_due_for_capture(now: datetime, account_tags: list[str]) -> list[str]:
+    settings = _live_counter_settings()
+    if not settings.get("enabled"):
+        return []
+    user_interval = int(settings.get("interval_seconds") or 0)
+    if user_interval <= 0:
+        user_interval = ACTIVE_CHANNEL_TIMEOUT_SEC
+    active = _get_active_channels()
+    due = []
+    for tag in account_tags:
+        last = _LAST_CAPTURE_AT.get(tag)
+        threshold = user_interval if tag in active else IDLE_CHANNEL_INTERVAL_SEC
+        if last is None or (now - last).total_seconds() >= threshold:
+            due.append(tag)
+    return due
 
 
 def _should_cleanup_token_progress(now: datetime) -> bool:
@@ -396,10 +429,19 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
 
     rows = _resolve_live_counter_credentials(db)
     if not rows:
-        print("[INFO] live counter snapshot skipped: no eligible accounts")
         return
 
-    print(f"[INFO] live counter snapshot started: accounts={len(rows)}")
+    due_tags = set(_channels_due_for_capture(now, [r.account_tag for r in rows]))
+    rows = [r for r in rows if r.account_tag in due_tags]
+    if not rows:
+        return
+
+    active_set = _get_active_channels()
+    active_due = sum(1 for r in rows if r.account_tag in active_set)
+    print(
+        f"[INFO] live counter snapshot started: accounts={len(rows)} "
+        f"(active={active_due}, idle_hourly={len(rows) - active_due})"
+    )
 
     row_data = [
         {
@@ -534,6 +576,7 @@ def _capture_live_counter_snapshots(db, now: datetime) -> None:
                         )
             channel_snapshots.append(channel_snapshot)
             latest_video_snapshots[(data["user_id"], data["account_tag"])] = account_video_snapshots
+            _LAST_CAPTURE_AT[data["account_tag"]] = now
             processed_accounts += 1
         except Exception as e:
             failed_accounts += 1
