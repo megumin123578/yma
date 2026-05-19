@@ -1417,8 +1417,17 @@ const ContentAnalytics = ({
             },
           ];
 
-    return [...leadingCards, ...trailingCards];
-  }, [allChannelTableRows, contentType, deferredRows.length, showAllMode, totals]);
+    const revenueCard = showAllMode
+      ? [
+          {
+            label: "Revenue",
+            value: totalRevenue == null ? "-" : formatCurrencyValue(totalRevenue),
+          },
+        ]
+      : [];
+
+    return [...leadingCards, ...trailingCards, ...revenueCard];
+  }, [allChannelTableRows, contentType, deferredRows.length, showAllMode, totalRevenue, totals]);
 
 
 
