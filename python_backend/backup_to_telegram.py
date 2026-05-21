@@ -145,9 +145,9 @@ def main() -> int:
                 bot_token,
                 chat_id,
                 (
-                    f"OK. {len(parts)} parts, {size_mb:.1f} MB total.\n"
-                    f"Restore: copy /b *.part* {dump_path.name} "
-                    f"then pg_restore -d <db> {dump_path.name}"
+                    f"OK. {len(parts)} phần, tổng {size_mb:.1f} MB.\n"
+                    f"Khôi phục: copy /b *.part* {dump_path.name} "
+                    f"sau đó pg_restore -d <db> {dump_path.name}"
                 ),
             )
 

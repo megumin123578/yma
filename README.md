@@ -58,3 +58,6 @@ pip install google-auth google-auth-oauthlib google-auth-httplib2
 pip install google-api-python-client
 pip install python-multipart
 ```
+
+createdb -h localhost -U postgres analytics_restore
+pg_restore -h localhost -U postgres -d analytics_restore --no-owner --no-privileges analytics_20260521_063001.dump
