@@ -20,6 +20,7 @@ from python_backend.api.auth.models import (
     UserScheduleRun,
     VideoLiveCounterSnapshot,
 )
+from python_backend.api.auth.scheduler import _now_saigon_naive
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
 from python_backend.progress_state import write_progress
 from python_backend.token_store import (
@@ -438,7 +439,7 @@ def run_all_tokens(
         token_names=json.dumps(token_names),
         run_type=run_type,
         status="queued",
-        started_at=datetime.utcnow(),
+        started_at=_now_saigon_naive(),
         processed=0,
         total=len(token_names),
         message=run_message,
@@ -657,7 +658,7 @@ def run_token(
         token_names=json.dumps([safe_name]),
         run_type="manual_single",
         status="queued",
-        started_at=datetime.utcnow(),
+        started_at=_now_saigon_naive(),
         processed=0,
         total=7,
         message="Queued manual refresh",
@@ -737,7 +738,7 @@ def run_selected_tokens(
         token_names=json.dumps(token_names),
         run_type="manual_selected",
         status="queued",
-        started_at=datetime.utcnow(),
+        started_at=_now_saigon_naive(),
         processed=0,
         total=len(token_names),
         message=f"Queued manual refresh for {len(token_names)} selected token(s)",
@@ -788,7 +789,7 @@ def run_token_stage(
         token_names=json.dumps([safe_name]),
         run_type=f"manual_stage:{stage}",
         status="queued",
-        started_at=datetime.utcnow(),
+        started_at=_now_saigon_naive(),
         processed=0,
         total=1,
         message=f"Queued manual {stage}",

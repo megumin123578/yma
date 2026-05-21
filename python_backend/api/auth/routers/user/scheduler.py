@@ -24,7 +24,7 @@ from python_backend.progress_state import write_progress
 from python_backend.sse_utils import sse_response
 from python_backend.token_store import account_tag_from_token_name, list_token_names, token_exists
 from python_backend.google_api_quota import get_quota_state
-from python_backend.api.auth.scheduler import mark_channel_active
+from python_backend.api.auth.scheduler import _now_saigon_naive, mark_channel_active
 
 from .common import (
     router,
@@ -205,7 +205,7 @@ def stop_schedule_run(
         return {"ok": True, "status": row.status}
     row.status = "stopped"
     row.message = "Stopped by admin"
-    row.finished_at = datetime.utcnow()
+    row.finished_at = _now_saigon_naive()
     db.add(row)
     db.commit()
     return {"ok": True, "status": row.status}
@@ -259,7 +259,7 @@ def resume_schedule_run(
             token_names=json.dumps(valid_token_names),
             run_type="manual_all",
             status="queued",
-            started_at=datetime.utcnow(),
+            started_at=_now_saigon_naive(),
             processed=0,
             total=len(valid_token_names),
             message=message,
@@ -281,7 +281,7 @@ def resume_schedule_run(
             token_names=json.dumps(valid_token_names),
             run_type=f"manual_all_stage:{stage}",
             status="queued",
-            started_at=datetime.utcnow(),
+            started_at=_now_saigon_naive(),
             processed=0,
             total=len(valid_token_names),
             message=message,
@@ -301,7 +301,7 @@ def resume_schedule_run(
             token_names=json.dumps(valid_token_names),
             run_type="manual_selected",
             status="queued",
-            started_at=datetime.utcnow(),
+            started_at=_now_saigon_naive(),
             processed=0,
             total=len(valid_token_names),
             message=message,
@@ -324,7 +324,7 @@ def resume_schedule_run(
             token_names=json.dumps([token_name]),
             run_type=f"manual_stage:{stage}",
             status="queued",
-            started_at=datetime.utcnow(),
+            started_at=_now_saigon_naive(),
             processed=0,
             total=1,
             message=message,
@@ -342,7 +342,7 @@ def resume_schedule_run(
             token_names=json.dumps([token_name]),
             run_type="manual_single" if run_type in {"manual_single", "scheduled", ""} else (row.run_type or "manual_single"),
             status="queued",
-            started_at=datetime.utcnow(),
+            started_at=_now_saigon_naive(),
             processed=0,
             total=7,
             message=message,

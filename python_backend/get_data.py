@@ -5,7 +5,7 @@ import sqlite3
 import sys
 import tempfile
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 try:
@@ -241,7 +241,11 @@ def _update_schedule_run(status: str, processed=None, total=None, message: str =
 
             finished_at = None
             if next_status in final_statuses:
-                finished_at = datetime.now().isoformat(sep=" ")
+                finished_at = (
+                    datetime.now(timezone(timedelta(hours=7)))
+                    .replace(tzinfo=None)
+                    .isoformat(sep=" ")
+                )
             cur.execute(
                 """
                 UPDATE user_schedule_runs

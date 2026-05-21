@@ -881,7 +881,7 @@ def _run_loop():
                     token_names=json.dumps(token_names),
                     run_type="scheduled",
                     status="queued",
-                    started_at=now_utc,
+                    started_at=now_saigon,
                     processed=0,
                     total=len(token_names),
                     message="Queued by scheduler",
