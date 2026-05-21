@@ -78,6 +78,9 @@ import {
   getGoogleApiQuota,
   getCronScheduleSetting,
   updateCronScheduleSetting,
+  getBackupSetting,
+  updateBackupSetting,
+  runBackupNow,
 } from "../../services/userService";
 import { subscribeSSE } from "../../services/sse";
 import { UserContext, useHasPermission } from "../../context/UserContext";
@@ -235,6 +238,15 @@ const CredentialsDialog = ({
   const [apiQuota, setApiQuota] = useState(null);
   const [cronEnabled, setCronEnabled] = useState(true);
   const [savingCron, setSavingCron] = useState(false);
+  const [scheduleSubTab, setScheduleSubTab] = useState("cron");
+  const [backupSetting, setBackupSetting] = useState({
+    enabled: false,
+    time_of_day: "02:00",
+  });
+  const [backupDraftTime, setBackupDraftTime] = useState("02:00");
+  const [savingBackup, setSavingBackup] = useState(false);
+  const [backupError, setBackupError] = useState("");
+  const [runningBackup, setRunningBackup] = useState(false);
   const shimmerSx = {
     position: "relative",
     overflow: "hidden",
@@ -568,6 +580,75 @@ const CredentialsDialog = ({
     }
   }, [isAdmin]);
 
+  const loadBackupSetting = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      setBackupError("");
+      const data = await getBackupSetting();
+      const next = {
+        enabled: !!data?.enabled,
+        time_of_day: data?.time_of_day || "02:00",
+      };
+      setBackupSetting(next);
+      setBackupDraftTime(next.time_of_day);
+    } catch (err) {
+      setBackupError(err?.response?.data?.detail || "Failed to load backup setting.");
+    }
+  }, [isAdmin]);
+
+  const handleBackupToggle = async (enabled) => {
+    setBackupSetting((prev) => ({ ...prev, enabled }));
+    try {
+      setSavingBackup(true);
+      setBackupError("");
+      const data = await updateBackupSetting({ enabled });
+      setBackupSetting({
+        enabled: !!data?.enabled,
+        time_of_day: data?.time_of_day || "02:00",
+      });
+      setBackupDraftTime(data?.time_of_day || "02:00");
+    } catch (err) {
+      setBackupSetting((prev) => ({ ...prev, enabled: !enabled }));
+      setBackupError(err?.response?.data?.detail || "Failed to update backup setting.");
+    } finally {
+      setSavingBackup(false);
+    }
+  };
+
+  const handleRunBackupNow = async () => {
+    try {
+      setRunningBackup(true);
+      setBackupError("");
+      const data = await runBackupNow();
+      setStatus({
+        type: "success",
+        message: data?.message || "Backup started in background.",
+      });
+    } catch (err) {
+      setBackupError(err?.response?.data?.detail || "Failed to start backup.");
+    } finally {
+      setRunningBackup(false);
+    }
+  };
+
+  const saveBackupTime = useCallback(async (timeOfDay) => {
+    if (!timeOfDay) return;
+    try {
+      setSavingBackup(true);
+      setBackupError("");
+      const data = await updateBackupSetting({ time_of_day: timeOfDay });
+      setBackupSetting({
+        enabled: !!data?.enabled,
+        time_of_day: data?.time_of_day || "02:00",
+      });
+      setBackupDraftTime(data?.time_of_day || "02:00");
+    } catch (err) {
+      setBackupError(err?.response?.data?.detail || "Failed to update backup time.");
+    } finally {
+      setSavingBackup(false);
+    }
+  }, []);
+
   const handleCronToggle = async (enabled) => {
     setCronEnabled(enabled);
     try {
@@ -697,6 +778,7 @@ const CredentialsDialog = ({
         loadSchedules();
         loadLiveCounterSetting();
         loadCronEnabled();
+        loadBackupSetting();
         loadProjectUserMap();
       } else {
         setTokenProjects([]);
@@ -706,7 +788,7 @@ const CredentialsDialog = ({
         setRunsError("");
       }
     }
-  }, [open, loadSchedules, loadLiveCounterSetting, loadCronEnabled, loadTokenProjects, loadTokens, loadProjectUserMap, defaultTokenView, isAdmin, forceTab]);
+  }, [open, loadSchedules, loadLiveCounterSetting, loadCronEnabled, loadBackupSetting, loadTokenProjects, loadTokens, loadProjectUserMap, defaultTokenView, isAdmin, forceTab]);
 
   useEffect(() => {
     if (!forceTab) return;
@@ -738,8 +820,9 @@ const CredentialsDialog = ({
       loadLiveCounterSetting();
       loadLiveCounterSnapshots();
       loadCronEnabled();
+      loadBackupSetting();
     }
-  }, [activeTab, isAdmin, loadSchedules, loadLiveCounterSetting, loadLiveCounterSnapshots, loadCronEnabled]);
+  }, [activeTab, isAdmin, loadSchedules, loadLiveCounterSetting, loadLiveCounterSnapshots, loadCronEnabled, loadBackupSetting]);
 
   useEffect(() => {
     if (!isAdmin || activeTab !== "schedule") return undefined;
@@ -2760,13 +2843,57 @@ const CredentialsDialog = ({
                     </Box>
                   </Box>
                 ) : activeTab === "schedule" ? (
-                  <Box
-                    sx={{
-                      display: "grid",
-                      gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
-                      gap: 2,
-                    }}
-                  >
+                  <Box display="flex" flexDirection="column" gap={2}>
+                    <Tabs
+                      value={scheduleSubTab}
+                      onChange={(_, next) => setScheduleSubTab(next)}
+                      variant="scrollable"
+                      scrollButtons="auto"
+                      allowScrollButtonsMobile
+                      textColor="inherit"
+                      indicatorColor="primary"
+                      sx={{
+                        p: 0.5,
+                        borderRadius: "14px",
+                        bgcolor: isDark ? alpha("#0f172a", 0.4) : alpha("#f1f5f9", 0.7),
+                        backdropFilter: "blur(10px)",
+                        border: `1px solid ${isDark ? alpha("#94a3b8", 0.1) : alpha("#cbd5e1", 0.3)}`,
+                        minHeight: 0,
+                        "& .MuiTabs-flexContainer": { gap: 0.75 },
+                        "& .MuiTabs-indicator": {
+                          height: "100%",
+                          borderRadius: "10px",
+                          backgroundColor: accent,
+                          boxShadow: isDark
+                            ? `0 4px 12px ${alpha(accent, 0.4)}`
+                            : `0 4px 10px ${alpha(accent, 0.25)}`,
+                          zIndex: 0,
+                          transition: "all 300ms cubic-bezier(0.4, 0, 0.2, 1) !important",
+                        },
+                        "& .MuiTab-root": {
+                          minHeight: 36,
+                          textTransform: "none",
+                          fontWeight: 700,
+                          fontSize: "0.8rem",
+                          borderRadius: "10px",
+                          px: 2,
+                          color: isDark ? alpha("#f8fafc", 0.6) : alpha("#475569", 0.8),
+                          zIndex: 1,
+                          transition: "all 0.2s ease",
+                          "&:hover": {
+                            color: isDark ? "#ffffff" : "#0f172a",
+                            bgcolor: alpha(isDark ? "#ffffff" : "#94a3b8", 0.05),
+                          },
+                        },
+                        "& .Mui-selected": { color: "#ffffff !important" },
+                      }}
+                    >
+                      <Tab value="cron" label="Cron schedule" />
+                      {isAdmin && <Tab value="backup" label="DB backup" />}
+                      <Tab value="realtime" label="Realtime" />
+                    </Tabs>
+
+                    {scheduleSubTab === "cron" && (
                   <Box
                     sx={{
                       bgcolor: panel,
@@ -2882,8 +3009,6 @@ const CredentialsDialog = ({
                             Save Schedule
                           </Button>
 
-                          <Divider />
-
                           {schedules.length > 0 && (
                             <Box display="flex" flexDirection="column" gap={1}>
                               {schedules.map((s) => (
@@ -2927,7 +3052,119 @@ const CredentialsDialog = ({
                       )}
                     </Box>
                   </Box>
+                    )}
 
+                    {scheduleSubTab === "backup" && isAdmin && (
+                    <Box
+                      sx={{
+                        bgcolor: panel,
+                        border: `1px solid ${border}`,
+                        borderRadius: 2,
+                        p: 2,
+                      }}
+                    >
+                      <Box
+                        display="flex"
+                        alignItems="center"
+                        justifyContent="space-between"
+                        gap={1}
+                      >
+                        <Typography variant="subtitle2" fontWeight={700} sx={{ color: accent, letterSpacing: 0.3 }}>
+                          Database backup → Telegram
+                        </Typography>
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={handleRunBackupNow}
+                            disabled={runningBackup || savingBackup}
+                            sx={shimmerSx}
+                          >
+                            {runningBackup ? "Running…" : "Run now"}
+                          </Button>
+                          <Switch
+                            size="small"
+                            color="success"
+                            checked={!!backupSetting.enabled}
+                            disabled={savingBackup}
+                            onChange={(e) => handleBackupToggle(e.target.checked)}
+                          />
+                        </Box>
+                      </Box>
+                      <Box display="flex" flexDirection="column" gap={2} mt={1}>
+                        {backupError && (
+                          <Typography variant="body2" color={theme.palette.error.main}>
+                            {cleanError(backupError)}
+                          </Typography>
+                        )}
+                        <LocalizationProvider dateAdapter={AdapterDayjs}>
+                          <TimePicker
+                            label="Time"
+                            value={
+                              backupDraftTime
+                                ? dayjs(`2000-01-01T${backupDraftTime}`)
+                                : null
+                            }
+                            onChange={(value) => {
+                              if (!value || !value.isValid?.()) return;
+                              const formatted = value.format("HH:mm");
+                              setBackupDraftTime(formatted);
+                              saveBackupTime(formatted);
+                            }}
+                            ampm={false}
+                            minutesStep={5}
+                            disabled={savingBackup}
+                            localeText={{ cancelButtonLabel: "X" }}
+                            slotProps={{
+                              textField: { size: "small" },
+                              popper: {
+                                sx: {
+                                  "& .MuiPaper-root": {
+                                    bgcolor: isDark ? "rgba(16,22,32,0.96)" : "#ffffff",
+                                    border: `1px solid ${border}`,
+                                    borderRadius: 2,
+                                    boxShadow: isDark
+                                      ? "0 18px 40px rgba(0,0,0,0.6)"
+                                      : "0 16px 32px rgba(15,23,42,0.15)",
+                                  },
+                                  "& .MuiPickersLayout-root": {
+                                    color: isDark ? "#e5e7eb" : "#111827",
+                                  },
+                                  "& .MuiMultiSectionDigitalClock-root": {
+                                    justifyContent: "space-between",
+                                    gap: 1,
+                                    p: 1,
+                                  },
+                                  "& .MuiMultiSectionDigitalClock-section": {
+                                    flex: 1,
+                                    minWidth: 120,
+                                    borderRadius: 1,
+                                    background: isDark ? "rgba(255,255,255,0.04)" : "rgba(15,23,42,0.03)",
+                                  },
+                                  "& .MuiDigitalClock-item": {
+                                    color: isDark ? "#cbd5f5" : "#1f2937",
+                                    borderRadius: 1,
+                                  },
+                                  "& .MuiDigitalClock-item.Mui-selected": {
+                                    bgcolor: isDark ? "rgba(125,224,210,0.25)" : "rgba(25,118,210,0.15)",
+                                    color: isDark ? "#eafff9" : "#0b1f3b",
+                                  },
+                                  "& .MuiPickersToolbar-root": {
+                                    color: isDark ? "#e5e7eb" : "#111827",
+                                  },
+                                  "& .MuiDialogActions-root button": {
+                                    color: isDark ? "#ffffff" : "#111827",
+                                  },
+                                },
+                              },
+                            }}
+                          />
+                        </LocalizationProvider>
+                      </Box>
+                    </Box>
+                    )}
+
+                    {scheduleSubTab === "realtime" && (
                   <Box
                     sx={{
                       bgcolor: panel,
@@ -3083,6 +3320,7 @@ const CredentialsDialog = ({
                       )}
                     </Box>
                   </Box>
+                    )}
                   </Box>
                 ) : (
                   <Box display="flex" flexDirection="column" gap={1}>

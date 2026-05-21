@@ -81,6 +81,10 @@ _MAIL_AUTO_SYNC_FETCH_LIMIT = _env_int(
 )
 _LAST_LIVE_COUNTER_SNAPSHOT_AT = None
 _LAST_TOKEN_PROGRESS_CLEANUP_AT = None
+_LAST_BACKUP_AT: Optional[datetime] = None
+_BACKUP_STATE_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "backups", "_last_run.txt")
+)
 _ACTIVE_CHANNELS_LOCK = Lock()
 _ACTIVE_CHANNELS: dict[str, float] = {}
 _LAST_CAPTURE_AT: dict[str, datetime] = {}
@@ -218,6 +222,80 @@ def _channels_due_for_capture(now: datetime, account_tags: list[str]) -> list[st
         if last is None or (now - last).total_seconds() >= threshold:
             due.append(tag)
     return due
+
+
+def _backup_setting() -> dict:
+    from python_backend.api.auth.routers.user.scheduler import load_backup_setting
+
+    try:
+        return load_backup_setting()
+    except Exception as e:
+        print(f"[WARN] cannot load backup setting: {e}")
+        return {"enabled": False, "time_of_day": "02:00"}
+
+
+def _backup_enabled() -> bool:
+    return bool(_backup_setting().get("enabled"))
+
+
+def _backup_time_of_day() -> Optional[dtime]:
+    return _parse_time_of_day(str(_backup_setting().get("time_of_day") or "02:00"))
+
+
+def _load_last_backup_at() -> Optional[datetime]:
+    global _LAST_BACKUP_AT
+    if _LAST_BACKUP_AT is not None:
+        return _LAST_BACKUP_AT
+    try:
+        raw = open(_BACKUP_STATE_PATH, "r", encoding="utf-8").read().strip()
+        if raw:
+            _LAST_BACKUP_AT = datetime.fromisoformat(raw)
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"[WARN] cannot read backup state: {e}")
+    return _LAST_BACKUP_AT
+
+
+def _store_last_backup_at(now_saigon: datetime) -> None:
+    global _LAST_BACKUP_AT
+    _LAST_BACKUP_AT = now_saigon
+    try:
+        os.makedirs(os.path.dirname(_BACKUP_STATE_PATH), exist_ok=True)
+        with open(_BACKUP_STATE_PATH, "w", encoding="utf-8") as fh:
+            fh.write(now_saigon.isoformat())
+    except Exception as e:
+        print(f"[WARN] cannot persist backup state: {e}")
+
+
+def _should_run_backup(now_saigon: datetime) -> bool:
+    if not _backup_enabled():
+        return False
+    tod = _backup_time_of_day()
+    if tod is None:
+        return False
+    today_at = datetime.combine(now_saigon.date(), tod)
+    if now_saigon < today_at:
+        return False
+    last = _load_last_backup_at()
+    if last is None:
+        return True
+    return last.date() < now_saigon.date()
+
+
+def kickoff_backup() -> None:
+    repo_root = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..")
+    )
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "python_backend.backup_to_telegram"],
+            cwd=repo_root,
+            env=os.environ.copy(),
+        )
+        print("[INFO] daily backup kicked off")
+    except Exception as e:
+        print(f"[WARN] failed to start backup_to_telegram: {e}")
 
 
 def _should_cleanup_token_progress(now: datetime) -> bool:
@@ -841,6 +919,9 @@ def _run_loop():
                 _capture_live_counter_snapshots(db, now_saigon)
             if _should_cleanup_token_progress(now_saigon):
                 _cleanup_token_progress(db, now_saigon)
+            if _should_run_backup(now_saigon):
+                _store_last_backup_at(now_saigon)
+                kickoff_backup()
         except Exception as e:
             print(f"[WARN] scheduler loop failed: {e}")
         finally:

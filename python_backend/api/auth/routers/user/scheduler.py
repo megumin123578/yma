@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -488,6 +489,106 @@ def update_cron_schedule_setting(
         row.updated_at = datetime.utcnow()
     db.commit()
     return _load_cron_schedule_setting(db)
+
+
+BACKUP_SETTING_KEY = "backup_telegram"
+BACKUP_DEFAULT_TIME = "02:00"
+
+
+def _validate_backup_time_of_day(value: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="time_of_day required")
+    try:
+        h_str, m_str = value.split(":")
+        h, m = int(h_str), int(m_str)
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            raise ValueError
+    except Exception:
+        raise HTTPException(status_code=400, detail="time_of_day must be HH:MM (00:00-23:59)")
+    return f"{h:02d}:{m:02d}"
+
+
+def _load_backup_setting(db: Session) -> dict:
+    row = db.query(AppSetting).filter(AppSetting.key == BACKUP_SETTING_KEY).first()
+    if row and row.value:
+        try:
+            data = json.loads(row.value)
+        except Exception:
+            data = {}
+    else:
+        data = {}
+    return {
+        "enabled": bool(data.get("enabled", False)),
+        "time_of_day": str(data.get("time_of_day") or BACKUP_DEFAULT_TIME),
+        "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
+    }
+
+
+def load_backup_setting() -> dict:
+    db = SessionLocal()
+    try:
+        return _load_backup_setting(db)
+    finally:
+        db.close()
+
+
+class BackupSettingUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    time_of_day: Optional[str] = None
+
+
+@router.get("/app_settings/backup_telegram")
+def get_backup_setting(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not _is_admin_user(current_user):
+        raise HTTPException(status_code=403, detail="Permission Denied")
+    return _load_backup_setting(db)
+
+
+@router.patch("/app_settings/backup_telegram")
+def update_backup_setting(
+    payload: BackupSettingUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("manage_structure")),
+):
+    current = _load_backup_setting(db)
+    if payload.enabled is not None:
+        current["enabled"] = bool(payload.enabled)
+    if payload.time_of_day is not None:
+        current["time_of_day"] = _validate_backup_time_of_day(payload.time_of_day)
+
+    value = json.dumps({
+        "enabled": current["enabled"],
+        "time_of_day": current["time_of_day"],
+    })
+    row = db.query(AppSetting).filter(AppSetting.key == BACKUP_SETTING_KEY).first()
+    if row is None:
+        row = AppSetting(key=BACKUP_SETTING_KEY, value=value, updated_at=datetime.utcnow())
+        db.add(row)
+    else:
+        row.value = value
+        row.updated_at = datetime.utcnow()
+    db.commit()
+    return _load_backup_setting(db)
+
+
+@router.post("/app_settings/backup_telegram/run")
+def run_backup_now(
+    current_user: User = Depends(require_permission("manage_structure")),
+):
+    if not os.getenv("BACKUP_TELEGRAM_BOT_TOKEN", "").strip() or \
+       not os.getenv("BACKUP_TELEGRAM_CHAT_ID", "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Missing BACKUP_TELEGRAM_BOT_TOKEN or BACKUP_TELEGRAM_CHAT_ID in backend env.",
+        )
+    from python_backend.api.auth.scheduler import kickoff_backup
+
+    kickoff_backup()
+    return {"ok": True, "message": "Backup started in background."}
 
 
 def _load_live_counter_setting(db: Session) -> dict:

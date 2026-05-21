@@ -290,6 +290,21 @@ export const updateCronScheduleSetting = async (payload) => {
   return res.data;
 };
 
+export const getBackupSetting = async () => {
+  const res = await api.get("/api/users/app_settings/backup_telegram");
+  return res.data;
+};
+
+export const updateBackupSetting = async (payload) => {
+  const res = await api.patch("/api/users/app_settings/backup_telegram", payload);
+  return res.data;
+};
+
+export const runBackupNow = async () => {
+  const res = await api.post("/api/users/app_settings/backup_telegram/run");
+  return res.data;
+};
+
 export const listScheduleRuns = async (limit = 10) => {
   const res = await api.get("/api/users/schedules/runs", {
     params: { limit },
