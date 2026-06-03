@@ -1767,7 +1767,7 @@ const CredentialsDialog = ({
     }
   };
 
-  const renderTokenControls = (tokenName, displayName, isOwned, isHidden, layout = "list", hideDelete = false) => (
+  const renderTokenControls = (tokenName, displayName, isOwned, isHidden, layout = "list", compact = false) => (
     <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap">
       <Button
         size="small"
@@ -1814,7 +1814,7 @@ const CredentialsDialog = ({
             </IconButton>
           </span>
         </Tooltip>
-      ) : hideDelete ? null : (
+      ) : compact ? null : (
         <Button
           size="small"
           color="error"
@@ -1828,7 +1828,7 @@ const CredentialsDialog = ({
           Delete
         </Button>
       )}
-      {layout !== "card" && (
+      {layout !== "card" && !compact && (
         <Box display="flex" alignItems="center" gap={0.5}>
           <Checkbox
             size="small"
@@ -1873,7 +1873,7 @@ const CredentialsDialog = ({
     );
   };
 
-  const renderTokenItem = (token, layout = "list", titleSuffix = "", trailingControl = null, hideDelete = false) => {
+  const renderTokenItem = (token, layout = "list", titleSuffix = "", trailingControl = null, compact = false) => {
     const tokenName = typeof token === "string" ? token : token.name || "";
     const displayName =
       (typeof token === "object" && token.label) ||
@@ -2238,7 +2238,7 @@ const CredentialsDialog = ({
               )}
             </Box>
             <Box display="flex" alignItems="center" gap={0.5}>
-              {renderTokenControls(tokenName, displayName, isOwned, isHidden, "list", hideDelete)}
+              {renderTokenControls(tokenName, displayName, isOwned, isHidden, "list", compact)}
               {trailingControl}
             </Box>
           </Box>
