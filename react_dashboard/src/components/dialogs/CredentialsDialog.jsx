@@ -96,6 +96,8 @@ import {
   startRun,
   generateAi,
   patchWatchlist,
+  getSchedule,
+  putSchedule,
 } from "../../services/researchService";
 import { UserContext, useHasPermission } from "../../context/UserContext";
 import ManageUserRequests from "../ManageUserRequests";
@@ -195,6 +197,9 @@ const CredentialsDialog = ({
   const [channelFilter, setChannelFilter] = useState("all");
   const [wlMenu, setWlMenu] = useState(null);
   const [wlConfirm, setWlConfirm] = useState(null);
+  const [wlSchedule, setWlSchedule] = useState(null);
+  const [savingWlSchedule, setSavingWlSchedule] = useState(false);
+  const [wlScheduleMsg, setWlScheduleMsg] = useState("");
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(channelSearch.trim().toLowerCase()), 200);
@@ -937,6 +942,14 @@ const CredentialsDialog = ({
       loadBackupSetting();
     }
   }, [activeTab, isAdmin, loadSchedules, loadLiveCounterSetting, loadLiveCounterSnapshots, loadCronEnabled, loadBackupSetting]);
+
+  useEffect(() => {
+    if (activeTab === "schedule" && scheduleSubTab === "watchlist" && !wlSchedule) {
+      getSchedule()
+        .then(setWlSchedule)
+        .catch(() => setWlSchedule({ enabled: false, time: "04:00", aiOnly: false }));
+    }
+  }, [activeTab, scheduleSubTab, wlSchedule]);
 
   useEffect(() => {
     if (!isAdmin || activeTab !== "schedule") return undefined;
@@ -2265,6 +2278,25 @@ const CredentialsDialog = ({
     await patchWatchlist(wl.watchlistId, { paused: !wl.paused });
     reloadWatchlists();
   };
+  const saveWlSchedule = async () => {
+    if (!wlSchedule) return;
+    setSavingWlSchedule(true);
+    setWlScheduleMsg("");
+    try {
+      const updated = await putSchedule({
+        enabled: !!wlSchedule.enabled,
+        time: wlSchedule.time || "04:00",
+        aiOnly: !!wlSchedule.aiOnly,
+        wlIds: null,
+      });
+      setWlSchedule(updated);
+      setWlScheduleMsg("Đã lưu lịch.");
+    } catch (e) {
+      setWlScheduleMsg(e?.response?.data?.detail || e.message);
+    } finally {
+      setSavingWlSchedule(false);
+    }
+  };
   const runWL = async (wl) => {
     try {
       const r = await startRun({ wlIds: [wl.watchlistId] });
@@ -3290,7 +3322,7 @@ const CredentialsDialog = ({
                       }}
                     >
                       <Tab value="cron" label="Cron schedule" />
-                      {isAdmin && <Tab value="backup" label="DB backup" />}
+                      <Tab value="watchlist" label="Watchlist" />
                       <Tab value="realtime" label="Realtime" />
                     </Tabs>
 
@@ -3455,114 +3487,127 @@ const CredentialsDialog = ({
                   </Box>
                     )}
 
-                    {scheduleSubTab === "backup" && isAdmin && (
+                    {scheduleSubTab === "watchlist" && (
+                  <Box
+                    sx={{
+                      bgcolor: panel,
+                      border: `1px solid ${border}`,
+                      borderRadius: 2,
+                      p: 2,
+                    }}
+                  >
                     <Box
-                      sx={{
-                        bgcolor: panel,
-                        border: `1px solid ${border}`,
-                        borderRadius: 2,
-                        p: 2,
-                      }}
+                      display="flex"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      gap={1}
                     >
-                      <Box
-                        display="flex"
-                        alignItems="center"
-                        justifyContent="space-between"
-                        gap={1}
-                      >
-                        <Typography variant="subtitle2" fontWeight={700} sx={{ color: accent, letterSpacing: 0.3 }}>
-                          Database backup → Telegram
+                      <Typography variant="subtitle2" fontWeight={700} sx={{ color: accent, letterSpacing: 0.3 }}>
+                        Watchlist schedule
+                      </Typography>
+                      <Switch
+                        size="small"
+                        color="success"
+                        checked={!!wlSchedule?.enabled}
+                        disabled={!wlSchedule || savingWlSchedule}
+                        onChange={(e) => setWlSchedule((s) => ({ ...s, enabled: e.target.checked }))}
+                      />
+                    </Box>
+                    <Box display="flex" flexDirection="column" gap={2} mt={1}>
+                      {!wlSchedule ? (
+                        <Typography variant="body2" color="text.secondary">
+                          Đang tải…
                         </Typography>
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            onClick={handleRunBackupNow}
-                            disabled={runningBackup || savingBackup}
-                            sx={shimmerSx}
-                          >
-                            {runningBackup ? "Running…" : "Run now"}
-                          </Button>
-                          <Switch
-                            size="small"
-                            color="success"
-                            checked={!!backupSetting.enabled}
-                            disabled={savingBackup}
-                            onChange={(e) => handleBackupToggle(e.target.checked)}
-                          />
-                        </Box>
-                      </Box>
-                      <Box display="flex" flexDirection="column" gap={2} mt={1}>
-                        {backupError && (
-                          <Typography variant="body2" color={theme.palette.error.main}>
-                            {cleanError(backupError)}
-                          </Typography>
-                        )}
-                        <LocalizationProvider dateAdapter={AdapterDayjs}>
-                          <TimePicker
-                            label="Time"
-                            value={
-                              backupDraftTime
-                                ? dayjs(`2000-01-01T${backupDraftTime}`)
-                                : null
-                            }
-                            onChange={(value) => {
-                              if (!value || !value.isValid?.()) return;
-                              const formatted = value.format("HH:mm");
-                              setBackupDraftTime(formatted);
-                              saveBackupTime(formatted);
-                            }}
-                            ampm={false}
-                            minutesStep={5}
-                            disabled={savingBackup}
-                            localeText={{ cancelButtonLabel: "X" }}
-                            slotProps={{
-                              textField: { size: "small" },
-                              popper: {
-                                sx: {
-                                  "& .MuiPaper-root": {
-                                    bgcolor: isDark ? "rgba(16,22,32,0.96)" : "#ffffff",
-                                    border: `1px solid ${border}`,
-                                    borderRadius: 2,
-                                    boxShadow: isDark
-                                      ? "0 18px 40px rgba(0,0,0,0.6)"
-                                      : "0 16px 32px rgba(15,23,42,0.15)",
-                                  },
-                                  "& .MuiPickersLayout-root": {
-                                    color: isDark ? "#e5e7eb" : "#111827",
-                                  },
-                                  "& .MuiMultiSectionDigitalClock-root": {
-                                    justifyContent: "space-between",
-                                    gap: 1,
-                                    p: 1,
-                                  },
-                                  "& .MuiMultiSectionDigitalClock-section": {
-                                    flex: 1,
-                                    minWidth: 120,
-                                    borderRadius: 1,
-                                    background: isDark ? "rgba(255,255,255,0.04)" : "rgba(15,23,42,0.03)",
-                                  },
-                                  "& .MuiDigitalClock-item": {
-                                    color: isDark ? "#cbd5f5" : "#1f2937",
-                                    borderRadius: 1,
-                                  },
-                                  "& .MuiDigitalClock-item.Mui-selected": {
-                                    bgcolor: isDark ? "rgba(125,224,210,0.25)" : "rgba(25,118,210,0.15)",
-                                    color: isDark ? "#eafff9" : "#0b1f3b",
-                                  },
-                                  "& .MuiPickersToolbar-root": {
-                                    color: isDark ? "#e5e7eb" : "#111827",
-                                  },
-                                  "& .MuiDialogActions-root button": {
-                                    color: isDark ? "#ffffff" : "#111827",
+                      ) : (
+                        <>
+                          {wlScheduleMsg && (
+                            <Typography variant="body2" color={theme.palette.success.main}>
+                              {wlScheduleMsg}
+                            </Typography>
+                          )}
+                          <LocalizationProvider dateAdapter={AdapterDayjs}>
+                            <TimePicker
+                              label="Time"
+                              value={
+                                wlSchedule.time
+                                  ? dayjs(`2000-01-01T${wlSchedule.time}`)
+                                  : null
+                              }
+                              onChange={(value) => {
+                                if (!value || !value.isValid?.()) return;
+                                setWlSchedule((s) => ({ ...s, time: value.format("HH:mm") }));
+                              }}
+                              ampm={false}
+                              minutesStep={5}
+                              localeText={{ cancelButtonLabel: "X" }}
+                              slotProps={{
+                                textField: { size: "small" },
+                                popper: {
+                                  sx: {
+                                    "& .MuiPaper-root": {
+                                      bgcolor: isDark ? "rgba(16,22,32,0.96)" : "#ffffff",
+                                      border: `1px solid ${border}`,
+                                      borderRadius: 2,
+                                      boxShadow: isDark
+                                        ? "0 18px 40px rgba(0,0,0,0.6)"
+                                        : "0 16px 32px rgba(15,23,42,0.15)",
+                                    },
+                                    "& .MuiPickersLayout-root": {
+                                      color: isDark ? "#e5e7eb" : "#111827",
+                                    },
+                                    "& .MuiMultiSectionDigitalClock-root": {
+                                      justifyContent: "space-between",
+                                      gap: 1,
+                                      p: 1,
+                                    },
+                                    "& .MuiMultiSectionDigitalClock-section": {
+                                      flex: 1,
+                                      minWidth: 120,
+                                      borderRadius: 1,
+                                      background: isDark ? "rgba(255,255,255,0.04)" : "rgba(15,23,42,0.03)",
+                                    },
+                                    "& .MuiDigitalClock-item": {
+                                      color: isDark ? "#cbd5f5" : "#1f2937",
+                                      borderRadius: 1,
+                                    },
+                                    "& .MuiDigitalClock-item.Mui-selected": {
+                                      bgcolor: isDark ? "rgba(125,224,210,0.25)" : "rgba(25,118,210,0.15)",
+                                      color: isDark ? "#eafff9" : "#0b1f3b",
+                                    },
+                                    "& .MuiPickersToolbar-root": {
+                                      color: isDark ? "#e5e7eb" : "#111827",
+                                    },
+                                    "& .MuiDialogActions-root button": {
+                                      color: isDark ? "#ffffff" : "#111827",
+                                    },
                                   },
                                 },
-                              },
-                            }}
-                          />
-                        </LocalizationProvider>
-                      </Box>
+                              }}
+                            />
+                          </LocalizationProvider>
+
+                          <Box display="flex" alignItems="center" gap={0.5}>
+                            <Switch
+                              size="small"
+                              checked={!!wlSchedule.aiOnly}
+                              onChange={(e) => setWlSchedule((s) => ({ ...s, aiOnly: e.target.checked }))}
+                            />
+                            <Typography variant="body2">AI only (no crawl data)</Typography>
+                          </Box>
+
+                          <Button variant="contained" onClick={saveWlSchedule} disabled={savingWlSchedule} sx={shimmerSx}>
+                            {savingWlSchedule ? "Saving…" : "Save Schedule"}
+                          </Button>
+
+                          {wlSchedule.lastRunDate && (
+                            <Typography variant="caption" color="text.secondary">
+                              Lần chạy gần nhất: {wlSchedule.lastRunDate}
+                            </Typography>
+                          )}
+                        </>
+                      )}
                     </Box>
+                  </Box>
                     )}
 
                     {scheduleSubTab === "realtime" && (

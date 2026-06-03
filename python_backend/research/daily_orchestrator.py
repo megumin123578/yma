@@ -61,16 +61,17 @@ def _pipeline_dir() -> Path:
 #   - BỎ 'trends' (Google Trends 429 IP nhà liên miên).
 #   - BỎ 'research' (search YouTube 20kw/WL — đã trùng với monitor V1 implicit).
 #   - THÊM 'discover' NGAY SAU monitor (tìm đối thủ MỚI ngách).
-# Quy trình mới 6 stage:
+# 2026-06: BỎ 'inside' — Inside kênh chính do cronjob app chính (get_data.py →
+# Postgres) sinh; báo cáo đọc thẳng Postgres qua analytics_inside. Tránh fetch
+# YouTube Analytics API trùng 2 lần / 2 nơi lưu (SQLite + Postgres).
+# Quy trình 5 stage:
 #   1. monitor      — Cào 25 WL × 30 video kênh (V1 6 worker)
 #   2. discover     — Tìm đối thủ mới chưa có trong WL (1 worker tránh 429)
 #   3. socialblade  — Refresh growth 15-30d
-#   4. inside       — YouTube Analytics API kênh chính
-#   5. keyword      — Áp kw_bank harvest keywordtool vào pkl
-#   6. report       — sinh AI (ai_analysis + strategy) → lưu pkl (serve qua API)
+#   4. keyword      — Áp kw_bank harvest keywordtool vào pkl
+#   5. report       — sinh AI (ai_analysis + strategy) → lưu pkl (serve qua API)
 # stage_trends + stage_research vẫn giữ trong code dạng DEPRECATED.
-STAGES = ["monitor", "discover", "socialblade", "inside",
-          "keyword", "report"]
+STAGES = ["monitor", "discover", "socialblade", "keyword", "report"]
 
 
 # ============================================================
@@ -465,76 +466,6 @@ def stage_trends(wid: str, log_fn) -> dict:
         return {"ok": False, "reason": err}
 
 
-def fetch_inside_paused_wls(log_fn=print) -> dict:
-    """Phase 2 (A56, 27/05 user chốt): Fetch Inside CHỈ self_channel cho
-    các WL paused, chạy sau khi Phase 1 (6 WL active full pipeline) xong.
-
-    Mục đích: giữ data view/subs kênh chính paused cập nhật mỗi ngày để
-    user thấy tình hình trong báo cáo tổng hợp (chứ không full daily run
-    tốn quota cho discover/monitor/SB/keyword/report).
-
-    Skip discover/monitor/SB/keyword/report — chỉ fetch Inside Analytics
-    API cho self_channel → ghi analytics.db. Báo cáo tổng hợp `_build_wl_info`
-    có Inside override (A54) tự pick up data fresh.
-    """
-    from . import watchlist as wl_mod, inside_fetch
-    all_wls = wl_mod.list_watchlists()
-    paused = [w for w in all_wls
-              if getattr(w, "paused", False) and w.self_channel]
-    log_fn(f"=== PHASE 2: Inside-only cho {len(paused)} WL paused ===")
-    ok = 0
-    fail = 0
-    for w in paused:
-        sc = w.self_channel
-        log_fn(f"  → {w.name} ({sc.title})")
-        try:
-            r = inside_fetch.fetch_for_channel(
-                sc.channel_id,
-                log_fn=lambda s: log_fn(f"      {s[:100]}"))
-            if r.get("ok"):
-                ok += 1
-                log_fn(f"      OK")
-            else:
-                fail += 1
-                log_fn(f"      FAIL: {r.get('reason', '')[:80]}")
-        except Exception as e:
-            fail += 1
-            log_fn(f"      EXC: {str(e)[:80]}")
-    log_fn(f"=== PHASE 2 DONE: {ok}/{len(paused)} OK, {fail} fail ===")
-    return {"ok": ok, "fail": fail, "total": len(paused)}
-
-
-def stage_inside(wid: str, log_fn) -> dict:
-    """YouTube Analytics API qua OAuth token (self_channel có token)."""
-    try:
-        from . import watchlist as wl_mod
-        w = wl_mod.load_watchlist(wid)
-        if not w or not w.self_channel:
-            return {"ok": False, "reason": "no_self_channel"}
-        # Tìm token tag
-        try:
-            from .analytics_inside import match_account_tag, is_available
-        except Exception as e:
-            return {"ok": False, "reason": f"inside_module_err: {e}"}
-        if not is_available():
-            return {"ok": False, "reason": "inside_db_not_available"}
-        tag = match_account_tag(w.self_channel.title,
-                                 w.self_channel.channel_id)
-        if not tag:
-            log_fn(f"    [Inside] no OAuth token cho {w.self_channel.title}")
-            return {"ok": False, "reason": "no_token"}
-        # Trigger fetch (nếu auto_pipeline.fetch_inside có sẵn)
-        try:
-            from .auto_pipeline import fetch_inside
-            fetch_inside(wid, log_fn)
-            log_fn(f"    [Inside] fetched {tag}")
-            return {"ok": True}
-        except Exception as e:
-            return {"ok": False, "reason": f"fetch_err: {e}"}
-    except Exception as e:
-        return {"ok": False, "reason": str(e)[:200]}
-
-
 async def stage_research(wid: str, log_fn) -> dict:
     """DEPRECATED 24/05 (user feedback lần 2): BỎ stage 'research'
     khỏi STAGES. Lý do: trùng với monitor V1 implicit (đã cào
@@ -642,13 +573,13 @@ def stage_report(wid: str, log_fn, api_key: str = "",
 async def process_one_wl(wid: str, run_id: str, conn,
                           api_key: str, token: str, chat: str,
                           log_fn=print):
-    """7 stage cho 1 WL. Mỗi stage check state — skip nếu done."""
+    """5 stage cho 1 WL. Mỗi stage check state — skip nếu done."""
     from . import watchlist as wl_mod
     w = wl_mod.load_watchlist(wid)
     if not w:
         log_fn(f"❌ WL {wid} không tồn tại — skip")
         return
-    log_fn(f"\n>>> [{w.name[:30]}] BẮT ĐẦU 7 stage <<<")
+    log_fn(f"\n>>> [{w.name[:30]}] BẮT ĐẦU 5 stage <<<")
     t_wl = time.time()
 
     for stage in STAGES:
@@ -667,8 +598,6 @@ async def process_one_wl(wid: str, run_id: str, conn,
                 r = stage_discover(wid, log_fn)
             elif stage == "socialblade":
                 r = stage_socialblade(wid, log_fn)
-            elif stage == "inside":
-                r = stage_inside(wid, log_fn)
             elif stage == "keyword":
                 r = stage_keyword(wid, log_fn)
             elif stage == "report":
@@ -760,7 +689,6 @@ async def _run_streaming_pipeline(wl_ids, run_id, conn, api_key, token, chat,
         for stage_name, stage_fn in [
             ("discover", lambda: stage_discover(wid, log_fn)),
             ("socialblade", lambda: stage_socialblade(wid, log_fn)),
-            ("inside", lambda: stage_inside(wid, log_fn)),
             ("keyword", lambda: stage_keyword(wid, log_fn)),
             ("report", lambda: stage_report(wid, log_fn,
                                             api_key, token, chat)),
@@ -915,16 +843,6 @@ async def run_daily(wl_ids: Optional[list] = None,
         for stage, status, n in cur:
             log_fn(f"  {stage:12s} {status:8s} {n:>3}")
 
-        # A56 (27/05 user chốt): Phase 2 — Inside-only cho WL paused
-        # Chạy SAU khi Phase 1 (active full pipeline) đã xong.
-        # Mục đích: giữ view/subs kênh chính paused fresh trong báo
-        # cáo tổng hợp.
-        if not resume:
-            try:
-                log_fn(f"")
-                await asyncio.to_thread(fetch_inside_paused_wls, log_fn)
-            except Exception as e:
-                log_fn(f"  ! Phase 2 lỗi (skip): {e}")
     finally:
         conn.close()
     return run_id

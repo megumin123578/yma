@@ -945,9 +945,6 @@ def _run_loop():
             if _should_cleanup_token_progress(now_saigon):
                 _cleanup_token_progress(db, now_saigon)
                 _cleanup_pending_credentials(db, now_utc)
-            if _should_run_backup(now_saigon):
-                _store_last_backup_at(now_saigon)
-                kickoff_backup()
         except Exception as e:
             print(f"[WARN] scheduler loop failed: {e}")
         finally:

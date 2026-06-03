@@ -1,127 +1,166 @@
 """
-Analytics Inside — query SQLite cache (từ dump YouTube Studio Analytics).
+Analytics Inside — query PostgreSQL (kho analytics chung của app).
 
-Module ĐƯỢC đóng gói vào exe (từ 22/05 — phần mềm tự chạy cho nhân viên).
-Cache file: <inside_data_dir>/cache/analytics.db — inside_data_dir đọc
-từ config, mặc định D:\\YouTube_Analytics_Inside (máy khác chỉnh lại).
-Bản thân file analytics.db (data) vẫn KHÔNG nằm trong exe.
+Trước đây module này đọc SQLite dump (analytics.db). Từ 2026-06 dữ liệu Inside
+kênh chính do cronjob của app chính sinh ra (`get_data.py` → `module_*` →
+Postgres), nên module chỉ còn ĐỌC từ Postgres qua engine `python_backend.db`.
+Pipeline watchlist KHÔNG còn tự fetch Inside (stage_inside đã bỏ).
 
 Hàm chính:
-- match_account_tag(channel_title) → account_tag tự match theo tên
+- match_account_tag(channel_title, channel_id) → account_tag
 - get_channel_inside(account_tag) → dict tổng hợp tất cả metrics
-- get_retention_curves, get_demographics, get_devices,
-  get_traffic_sources, get_top_countries, get_thumbnail_ctr,
-  get_video_overview_inside, get_revenue_summary
+- get_retention_curves, get_retention_full, get_demographics, get_devices,
+  get_traffic_source_trend, get_top_countries, get_thumbnail_ctr,
+  get_audience_full, get_revenue_summary
 
 Quy tắc bảo mật:
 - Revenue table CHỈ truy cập qua get_revenue_summary() (kèm warning).
 - Báo cáo HTML public KHÔNG nên include revenue.
+
+Degrade an toàn: thiếu Postgres / PG_URL → mọi hàm trả rỗng, không crash.
 """
 from __future__ import annotations
 
-import os
 import re
-import sqlite3
-from pathlib import Path
 from typing import Optional, List, Dict, Any
 
+from sqlalchemy import text
 
-_DEFAULT_INSIDE_DIR = r"D:\YouTube_Analytics_Inside"
+
+# ============================================================
+# Engine — lazy, degrade an toàn nếu không có Postgres
+# ============================================================
+
+_ENGINE = None
+_ENGINE_TRIED = False
+_AVAILABLE: Optional[bool] = None
 
 
-def cache_db() -> Path:
-    """Đường dẫn analytics.db — đọc từ config (inside_data_dir).
-
-    Máy khác chỉ cần chỉnh inside_data_dir trong cấu hình là trỏ đúng.
-    """
-    try:
+def _get_engine():
+    global _ENGINE, _ENGINE_TRIED
+    if not _ENGINE_TRIED:
+        _ENGINE_TRIED = True
         try:
-            from .config import load_config
-        except ImportError:
-            from .config import load_config
-        d = (load_config().get("inside_data_dir") or "").strip()
-        if d:
-            return Path(d) / "cache" / "analytics.db"
-    except Exception:
-        pass
-    return Path(_DEFAULT_INSIDE_DIR) / "cache" / "analytics.db"
+            from python_backend.db import engine
+            _ENGINE = engine
+        except Exception:
+            _ENGINE = None
+    return _ENGINE
 
 
-# Giữ tên cũ cho tương thích ngược (vài chỗ import CACHE_DB)
-CACHE_DB = cache_db()
+def _day_str(v) -> str:
+    """DATE/datetime → 'YYYY-MM-DD' (giữ contract cũ trả chuỗi)."""
+    try:
+        return v.isoformat()[:10]
+    except AttributeError:
+        return str(v) if v is not None else ""
 
 
 def is_available() -> bool:
-    """True nếu cache DB tồn tại."""
-    db = cache_db()
-    return db.exists() and db.stat().st_size > 0
-
-
-def _connect():
-    db = cache_db()
-    if not (db.exists() and db.stat().st_size > 0):
-        return None
-    return sqlite3.connect(str(db))
+    """True nếu Postgres analytics kết nối được."""
+    global _AVAILABLE
+    if _AVAILABLE is not None:
+        return _AVAILABLE
+    eng = _get_engine()
+    if eng is None:
+        _AVAILABLE = False
+        return False
+    try:
+        with eng.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        _AVAILABLE = True
+    except Exception:
+        _AVAILABLE = False
+    return _AVAILABLE
 
 
 def list_account_tags() -> List[Dict[str, Any]]:
-    """Liệt kê tất cả account_tag trong videos table + video count."""
-    conn = _connect()
-    if not conn:
+    """Liệt kê account_tag trong videos table + video count."""
+    eng = _get_engine()
+    if eng is None:
         return []
     try:
-        cur = conn.cursor()
-        cur.execute("SELECT account_tag, COUNT(*) FROM videos "
-                    "GROUP BY account_tag ORDER BY COUNT(*) DESC")
-        return [{"account_tag": t, "video_count": n} for t, n in cur.fetchall()]
+        with eng.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT account_tag, COUNT(*) FROM videos "
+                "GROUP BY account_tag ORDER BY COUNT(*) DESC")).fetchall()
+        return [{"account_tag": t, "video_count": int(n or 0)} for t, n in rows]
+    except Exception:
+        return []
+
+
+def _account_tag_for_channel(channel_id: str) -> Optional[str]:
+    """account_tag canonical từ UserCredential theo channel_id — đúng key mà
+    cronjob get_data.py dùng để ghi mọi bảng analytics."""
+    if not channel_id:
+        return None
+    try:
+        from python_backend.api.auth.database import SessionLocal
+        from python_backend.api.auth.models import UserCredential
+    except Exception:
+        return None
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(UserCredential.account_tag)
+            .filter(UserCredential.selected_channel_id == channel_id)
+            .filter(UserCredential.account_tag.isnot(None))
+            .order_by(UserCredential.updated_at.desc())
+            .first()
+        )
+        return row[0] if row and row[0] else None
+    except Exception:
+        return None
     finally:
-        conn.close()
+        db.close()
 
 
 def match_account_tag(channel_title: str,
-                       channel_id: str = "") -> Optional[str]:
-    """Match channel_title hoặc channel_id với account_tag trong dump.
+                      channel_id: str = "") -> Optional[str]:
+    """Match channel → account_tag trong Postgres.
 
     Strategy:
-    1. Match channel_id qua traffic_source_daily (có cột channel_id).
-    2. Match exact title → tag (case-insensitive).
-    3. Match fuzzy: bỏ space + ký tự đặc biệt.
+    1. UserCredential theo channel_id (canonical, đúng key cronjob ghi).
+    2. traffic_source_daily.channel_id.
+    3. Match title exact → fuzzy trên videos.account_tag.
     """
     if not channel_title and not channel_id:
         return None
-    conn = _connect()
-    if not conn:
+
+    tag = _account_tag_for_channel(channel_id)
+    if tag:
+        return tag
+
+    eng = _get_engine()
+    if eng is None:
         return None
     try:
-        cur = conn.cursor()
-        # 1. Match channel_id qua traffic_source_daily
-        if channel_id:
-            cur.execute(
-                "SELECT DISTINCT account_tag FROM traffic_source_daily "
-                "WHERE channel_id = ? LIMIT 1", (channel_id,))
-            row = cur.fetchone()
-            if row:
-                return row[0]
-        # 2. Match exact title
-        if channel_title:
-            # account_tag thường là title với space → _, special → _
-            tag_guess = re.sub(r"[^A-Za-z0-9]+", "_", channel_title).strip("_")
-            cur.execute(
-                "SELECT account_tag FROM videos "
-                "WHERE account_tag = ? LIMIT 1", (tag_guess,))
-            row = cur.fetchone()
-            if row:
-                return row[0]
-            # Fuzzy: normalize cả 2 bên rồi so
-            title_norm = re.sub(r"[^a-z0-9]", "", channel_title.lower())
-            cur.execute("SELECT DISTINCT account_tag FROM videos")
-            for (tag,) in cur.fetchall():
-                tag_norm = re.sub(r"[^a-z0-9]", "", tag.lower())
-                if tag_norm == title_norm:
-                    return tag
+        with eng.connect() as conn:
+            if channel_id:
+                row = conn.execute(text(
+                    "SELECT account_tag FROM traffic_source_daily "
+                    "WHERE channel_id = :cid LIMIT 1"),
+                    {"cid": channel_id}).fetchone()
+                if row:
+                    return row[0]
+            if channel_title:
+                tag_guess = re.sub(r"[^A-Za-z0-9]+", "_",
+                                   channel_title).strip("_")
+                row = conn.execute(text(
+                    "SELECT account_tag FROM videos "
+                    "WHERE account_tag = :g LIMIT 1"),
+                    {"g": tag_guess}).fetchone()
+                if row:
+                    return row[0]
+                title_norm = re.sub(r"[^a-z0-9]", "", channel_title.lower())
+                rows = conn.execute(text(
+                    "SELECT DISTINCT account_tag FROM videos")).fetchall()
+                for (t,) in rows:
+                    if re.sub(r"[^a-z0-9]", "", (t or "").lower()) == title_norm:
+                        return t
         return None
-    finally:
-        conn.close()
+    except Exception:
+        return None
 
 
 # ============================================================
@@ -129,179 +168,159 @@ def match_account_tag(channel_title: str,
 # ============================================================
 
 def get_channel_inside(account_tag: str,
-                        recent_days: int = 30) -> Dict[str, Any]:
-    """Trả dict tổng hợp tất cả metrics CỦA kênh trong dump.
+                       recent_days: int = 30) -> Dict[str, Any]:
+    """Trả dict tổng hợp tất cả metrics CỦA kênh trong Postgres.
 
     Returns:
         {
           'account_tag', 'video_count',
-          'retention_top': [video retention top 5],
-          'demographics': {gender_age: pct},
+          'demographics': [{gender, age_group, pct}],
           'devices': {device: pct},
-          'traffic_sources_recent': {source: views_pct, source: total},
-          'top_countries': [(country, views_pct)],
-          'top_videos_ctr': [(title, ctr_avg, impressions)],
-          'last_30d_views': int,
-          'last_30d_subs_gained': int,
-          'last_30d_subs_lost': int,
-          'avg_avd_seconds': float,
-          'avg_avp_pct': float,
+          'traffic_sources_recent': [{source, views, pct}],
+          'total_views_recent',
+          'top_countries': [{country, views, pct}],
+          'last_views', 'last_subs_gained', 'last_subs_lost', 'last_subs_net',
+          'avg_avd_seconds', 'avg_thumbnail_ctr',
+          'daily_metrics_15d': [{day, subs_net, views_daily}],
           'has_data': bool,
         }
     """
     out = {"account_tag": account_tag, "has_data": False}
     if not account_tag:
         return out
-    conn = _connect()
-    if not conn:
+    eng = _get_engine()
+    if eng is None:
         return out
     try:
-        cur = conn.cursor()
+        with eng.connect() as conn:
+            # 1. Video count
+            row = conn.execute(text(
+                "SELECT COUNT(*) FROM videos WHERE account_tag = :tag"),
+                {"tag": account_tag}).fetchone()
+            out["video_count"] = int(row[0] or 0) if row else 0
+            if out["video_count"] == 0:
+                return out
+            out["has_data"] = True
 
-        # 1. Video count
-        cur.execute("SELECT COUNT(*) FROM videos WHERE account_tag = ?",
-                    (account_tag,))
-        out["video_count"] = int(cur.fetchone()[0] or 0)
-        if out["video_count"] == 0:
-            return out
+            # 2. Demographics — entry MỚI NHẤT (max end_date)
+            rows = conn.execute(text(
+                "SELECT gender, age_group, viewer_percentage "
+                "FROM audience_demographics "
+                "WHERE account_tag = :tag AND end_date = ("
+                "  SELECT MAX(end_date) FROM audience_demographics "
+                "  WHERE account_tag = :tag) "
+                "ORDER BY viewer_percentage DESC"),
+                {"tag": account_tag}).fetchall()
+            demo = []
+            for g, a, pct in rows:
+                try:
+                    pct_f = float(pct)
+                except Exception:
+                    continue
+                if pct_f > 0:
+                    demo.append({"gender": g, "age_group": a, "pct": pct_f})
+            out["demographics"] = demo[:15]
 
-        out["has_data"] = True
+            # 3. Devices — entry MỚI NHẤT
+            rows = conn.execute(text(
+                "SELECT device_type, viewer_percentage FROM audience_devices "
+                "WHERE account_tag = :tag AND end_date = ("
+                "  SELECT MAX(end_date) FROM audience_devices "
+                "  WHERE account_tag = :tag) "
+                "ORDER BY viewer_percentage DESC"),
+                {"tag": account_tag}).fetchall()
+            dev = {}
+            for d, pct in rows:
+                try:
+                    dev[d] = float(pct)
+                except Exception:
+                    pass
+            out["devices"] = dev
 
-        # 2. Demographics — lấy entry MỚI NHẤT (max end_date) + dedup
-        cur.execute(
-            "SELECT gender, age_group, viewer_percentage "
-            "FROM audience_demographics "
-            "WHERE account_tag = ? AND end_date = ("
-            "  SELECT MAX(end_date) FROM audience_demographics "
-            "  WHERE account_tag = ?) "
-            "ORDER BY (CAST(viewer_percentage AS REAL)) DESC",
-            (account_tag, account_tag))
-        demo = []
-        for g, a, pct in cur.fetchall():
-            try:
-                pct_f = float(pct)
-            except Exception:
-                continue
-            if pct_f > 0:
-                demo.append({"gender": g, "age_group": a, "pct": pct_f})
-        out["demographics"] = demo[:15]
-
-        # 3. Devices — lấy entry MỚI NHẤT
-        cur.execute(
-            "SELECT device_type, viewer_percentage FROM audience_devices "
-            "WHERE account_tag = ? AND end_date = ("
-            "  SELECT MAX(end_date) FROM audience_devices "
-            "  WHERE account_tag = ?) "
-            "ORDER BY (CAST(viewer_percentage AS REAL)) DESC",
-            (account_tag, account_tag))
-        dev = {}
-        for d, pct in cur.fetchall():
-            try:
-                dev[d] = float(pct)
-            except Exception:
-                pass
-        out["devices"] = dev
-
-        # 4. Traffic sources (recent N days)
-        cur.execute(
-            "SELECT source, SUM(CAST(views AS INTEGER)) FROM traffic_source_daily "
-            "WHERE account_tag = ? "
-            "AND day >= date('now', ?) "
-            "GROUP BY source ORDER BY SUM(CAST(views AS INTEGER)) DESC",
-            (account_tag, f"-{recent_days} days"))
-        ts = []
-        total_views = 0
-        for source, views in cur.fetchall():
-            v = int(views or 0)
-            ts.append([source, v])
-            total_views += v
-        if total_views > 0:
-            ts = [{"source": s, "views": v,
-                   "pct": round(100 * v / total_views, 1)}
-                  for s, v in ts]
-        else:
+            # 4. Traffic sources (recent N days)
+            rows = conn.execute(text(
+                "SELECT source, SUM(views) FROM traffic_source_daily "
+                "WHERE account_tag = :tag "
+                "AND day >= CURRENT_DATE - (:days * INTERVAL '1 day') "
+                "GROUP BY source ORDER BY SUM(views) DESC"),
+                {"tag": account_tag, "days": recent_days}).fetchall()
             ts = []
-        out["traffic_sources_recent"] = ts
-        out["total_views_recent"] = total_views
+            total_views = 0
+            for source, views in rows:
+                v = int(views or 0)
+                ts.append([source, v])
+                total_views += v
+            if total_views > 0:
+                ts = [{"source": s, "views": v,
+                       "pct": round(100 * v / total_views, 1)}
+                      for s, v in ts]
+            else:
+                ts = []
+            out["traffic_sources_recent"] = ts
+            out["total_views_recent"] = total_views
 
-        # 5. Top countries — GROUP để dedup nhiều period
-        cur.execute(
-            "SELECT country, SUM(CAST(views AS INTEGER)) FROM geography_country_metrics "
-            "WHERE account_tag = ? AND end_date = ("
-            "  SELECT MAX(end_date) FROM geography_country_metrics "
-            "  WHERE account_tag = ?) "
-            "GROUP BY country ORDER BY SUM(CAST(views AS INTEGER)) DESC LIMIT 10",
-            (account_tag, account_tag))
-        countries = []
-        country_total = 0
-        for c, v in cur.fetchall():
-            vi = int(v or 0)
-            countries.append([c, vi])
-            country_total += vi
-        if country_total > 0:
-            countries = [{"country": c, "views": v,
-                          "pct": round(100 * v / country_total, 1)}
-                         for c, v in countries]
-        else:
+            # 5. Top countries — entry mới nhất, GROUP dedup
+            rows = conn.execute(text(
+                "SELECT country, SUM(views) FROM geography_country_metrics "
+                "WHERE account_tag = :tag AND end_date = ("
+                "  SELECT MAX(end_date) FROM geography_country_metrics "
+                "  WHERE account_tag = :tag) "
+                "GROUP BY country ORDER BY SUM(views) DESC LIMIT 10"),
+                {"tag": account_tag}).fetchall()
             countries = []
-        out["top_countries"] = countries
+            country_total = 0
+            for c, v in rows:
+                vi = int(v or 0)
+                countries.append([c, vi])
+                country_total += vi
+            if country_total > 0:
+                countries = [{"country": c, "views": v,
+                              "pct": round(100 * v / country_total, 1)}
+                             for c, v in countries]
+            else:
+                countries = []
+            out["top_countries"] = countries
 
-        # 6. Channel daily metrics (recent N days)
-        cur.execute(
-            "SELECT SUM(CAST(views AS INTEGER)), "
-            "SUM(CAST(subscribers_gained AS INTEGER)), "
-            "SUM(CAST(subscribers_lost AS INTEGER)) "
-            "FROM channel_daily_metrics "
-            "WHERE account_tag = ? AND day >= date('now', ?)",
-            (account_tag, f"-{recent_days} days"))
-        row = cur.fetchone()
-        out["last_views"] = int(row[0] or 0) if row[0] else 0
-        out["last_subs_gained"] = int(row[1] or 0) if row[1] else 0
-        out["last_subs_lost"] = int(row[2] or 0) if row[2] else 0
-        out["last_subs_net"] = out["last_subs_gained"] - out["last_subs_lost"]
+            # 6. Channel daily metrics (recent N days)
+            row = conn.execute(text(
+                "SELECT SUM(views), SUM(subscribers_gained), "
+                "SUM(subscribers_lost) FROM channel_daily_metrics "
+                "WHERE account_tag = :tag "
+                "AND day >= CURRENT_DATE - (:days * INTERVAL '1 day')"),
+                {"tag": account_tag, "days": recent_days}).fetchone()
+            out["last_views"] = int(row[0] or 0) if row and row[0] else 0
+            out["last_subs_gained"] = int(row[1] or 0) if row and row[1] else 0
+            out["last_subs_lost"] = int(row[2] or 0) if row and row[2] else 0
+            out["last_subs_net"] = out["last_subs_gained"] - out["last_subs_lost"]
 
-        # 7. Video overview AVD/AVP (avg recent published) — chỉ video ≥1K view
-        cur.execute(
-            "SELECT AVG(CAST(average_view_duration_seconds AS REAL)) "
-            "FROM video_overview WHERE account_tag = ? "
-            "AND CAST(views AS INTEGER) > 1000",
-            (account_tag,))
-        avd = cur.fetchone()[0]
-        out["avg_avd_seconds"] = float(avd or 0)
+            # 7. Video overview AVD (avg) — chỉ video > 1K view
+            row = conn.execute(text(
+                "SELECT AVG(average_view_duration_seconds) FROM video_overview "
+                "WHERE account_tag = :tag AND views > 1000"),
+                {"tag": account_tag}).fetchone()
+            out["avg_avd_seconds"] = float(row[0] or 0) if row and row[0] else 0.0
 
-        # 8. Thumbnail CTR — TB cho video có impressions > 100
-        cur.execute(
-            "SELECT AVG(CAST(thumbnail_ctr AS REAL)) "
-            "FROM video_thumbnail_daily WHERE account_tag = ? "
-            "AND CAST(thumbnail_impressions AS INTEGER) > 100",
-            (account_tag,))
-        ctr = cur.fetchone()[0]
-        out["avg_thumbnail_ctr"] = float(ctr or 0)
+            # 8. Thumbnail CTR — TB cho video có impressions > 100
+            row = conn.execute(text(
+                "SELECT AVG(thumbnail_ctr) FROM video_thumbnail_daily "
+                "WHERE account_tag = :tag AND thumbnail_impressions > 100"),
+                {"tag": account_tag}).fetchone()
+            out["avg_thumbnail_ctr"] = float(row[0] or 0) if row and row[0] else 0.0
 
-        # 9. Daily metrics 15 ngày gần nhất (cho bảng "15 ngày SB" tab self)
-        # Inside views = views DELTA mỗi ngày (KHÔNG âm — Analytics chính
-        # thức), thay SB scrape có thể âm khi kênh ẩn video → recount.
-        # Bug A37 (26/05 tối): user catch cột "Xem +/-" có giá trị âm
-        # cho kênh chính Show ASMR vì lấy từ SB daily — fix dùng Inside.
-        cur.execute(
-            "SELECT day, "
-            "  CAST(subscribers_gained AS INTEGER) - "
-            "  CAST(subscribers_lost AS INTEGER) AS subs_net, "
-            "  CAST(views AS INTEGER) AS views_daily "
-            "FROM channel_daily_metrics "
-            "WHERE account_tag = ? "
-            "ORDER BY day DESC LIMIT 15",
-            (account_tag,))
-        rows = cur.fetchall()
-        # Reverse: order ASC theo ngày (cũ → mới) để hiển thị HTML
-        daily = [{"day": r[0], "subs_net": int(r[1] or 0),
-                  "views_daily": max(0, int(r[2] or 0))}  # clamp ≥0
-                 for r in reversed(rows)]
-        out["daily_metrics_15d"] = daily
+            # 9. Daily metrics 15 ngày gần nhất (views DELTA — không âm)
+            rows = conn.execute(text(
+                "SELECT day, subscribers_gained - subscribers_lost AS subs_net, "
+                "views AS views_daily FROM channel_daily_metrics "
+                "WHERE account_tag = :tag ORDER BY day DESC LIMIT 15"),
+                {"tag": account_tag}).fetchall()
+            daily = [{"day": _day_str(r[0]), "subs_net": int(r[1] or 0),
+                      "views_daily": max(0, int(r[2] or 0))}
+                     for r in reversed(rows)]
+            out["daily_metrics_15d"] = daily
 
         return out
-    finally:
-        conn.close()
+    except Exception:
+        return out
 
 
 # ============================================================
@@ -309,110 +328,88 @@ def get_channel_inside(account_tag: str,
 # ============================================================
 
 def get_retention_curves(account_tag: str, top_n: int = 5,
-                          min_views: int = 5000,
-                          order_by: str = "views") -> List[Dict[str, Any]]:
+                         min_views: int = 5000,
+                         order_by: str = "views") -> List[Dict[str, Any]]:
     """Lấy retention curve cho N video.
 
     order_by:
-      - "views" (mặc định): top N có nhiều view nhất
-      - "published": N video MỚI NHẤT theo published_at (user xem video mới
-        nhất có retention sao — chốt 25/05)
-
-    Returns:
-        List of dicts: [
-          {'video_id', 'title', 'views', 'published_at',
-           'curve': [(elapsed_pct, watch_ratio, relative_perf), ...],
-           'avg_retention', 'drop_points': [list of drops > 5%]}
-        ]
+      - "views" (mặc định): top N nhiều view nhất
+      - "published": N video MỚI NHẤT theo published_at (video <48h chưa có
+        retention vẫn trả với curve=[] + retention_pending=True)
     """
-    conn = _connect()
-    if not conn:
+    eng = _get_engine()
+    if eng is None:
         return []
     try:
-        cur = conn.cursor()
-        # 26/05: KHI order_by='published' → LẤY TỪ videos table thay vì JOIN
-        # với audience_retention. Lý do: video MỚI <48h chưa có retention
-        # data trong YouTube Analytics → bị skip, làm "video mới nhất" trong
-        # báo cáo lệch về quá khứ. Bây giờ: lấy N video mới nhất từ videos,
-        # JOIN OUTER với retention (video chưa có retention sẽ trả curve=[]
-        # và đánh dấu "retention đang process").
-        if order_by == "published":
-            cur.execute(
-                "SELECT video_id, title, CAST(views AS INTEGER) as v, published_at "
-                "FROM videos "
-                f"WHERE account_tag = ? AND CAST(views AS INTEGER) >= ? "
-                f"ORDER BY published_at DESC LIMIT ?",
-                (account_tag, min_views, top_n))
-        else:
-            cur.execute(
-                "SELECT DISTINCT ar.video_id, v.title, "
-                "CAST(v.views AS INTEGER) as v, v.published_at "
-                "FROM audience_retention ar "
-                "JOIN videos v ON v.video_id = ar.video_id "
-                f"WHERE ar.account_tag = ? AND CAST(v.views AS INTEGER) >= ? "
-                f"ORDER BY v DESC LIMIT ?",
-                (account_tag, min_views, top_n))
-        videos = cur.fetchall()
-        out = []
-        for vid, title, views, published_at in videos:
-            cur.execute(
-                "SELECT elapsed_video_time_ratio, audience_watch_ratio, "
-                "relative_retention_performance "
-                "FROM audience_retention "
-                "WHERE account_tag = ? AND video_id = ? "
-                "ORDER BY CAST(elapsed_video_time_ratio AS REAL) ASC",
-                (account_tag, vid))
-            pts = cur.fetchall()
-            curve = []
-            for e, w, rp in pts:
-                try:
-                    curve.append([float(e), float(w),
-                                  float(rp) if rp else 0])
-                except Exception:
+        with eng.connect() as conn:
+            if order_by == "published":
+                videos = conn.execute(text(
+                    "SELECT video_id, title, views, published_at FROM videos "
+                    "WHERE account_tag = :tag AND views >= :mv "
+                    "ORDER BY published_at DESC LIMIT :n"),
+                    {"tag": account_tag, "mv": min_views,
+                     "n": top_n}).fetchall()
+            else:
+                videos = conn.execute(text(
+                    "SELECT DISTINCT ar.video_id, v.title, v.views, "
+                    "v.published_at FROM audience_retention ar "
+                    "JOIN videos v ON v.video_id = ar.video_id "
+                    "WHERE ar.account_tag = :tag AND v.views >= :mv "
+                    "ORDER BY v.views DESC LIMIT :n"),
+                    {"tag": account_tag, "mv": min_views,
+                     "n": top_n}).fetchall()
+
+            out = []
+            for vid, title, views, published_at in videos:
+                pts = conn.execute(text(
+                    "SELECT elapsed_video_time_ratio, audience_watch_ratio, "
+                    "relative_retention_performance FROM audience_retention "
+                    "WHERE account_tag = :tag AND video_id = :vid "
+                    "ORDER BY elapsed_video_time_ratio ASC"),
+                    {"tag": account_tag, "vid": vid}).fetchall()
+                curve = []
+                for e, w, rp in pts:
+                    try:
+                        curve.append([float(e), float(w),
+                                      float(rp) if rp else 0])
+                    except Exception:
+                        continue
+                if not curve:
+                    out.append({
+                        "video_id": vid,
+                        "title": title or "",
+                        "views": int(views or 0),
+                        "published_at": _day_str(published_at),
+                        "curve": [],
+                        "avg_retention": 0,
+                        "drop_points": [],
+                        "n_points": 0,
+                        "retention_pending": True,
+                    })
                     continue
-            # 26/05: NO LONGER skip nếu chưa có retention (video mới <48h
-            # chưa có data). Vẫn add vào output với curve=[], avg_retention=0,
-            # drop_points=[] + flag retention_pending=True → tab Inside
-            # Retention sẽ hiển thị "Retention đang process (video mới
-            # <48h, YouTube Analytics chưa generate)" thay vì skip.
-            if not curve:
+                avg_r = sum(c[1] for c in curve) / len(curve)
+                drops = []
+                for i in range(1, len(curve)):
+                    d = curve[i - 1][1] - curve[i][1]
+                    if d > 0.05:
+                        drops.append({
+                            "at_pct": round(curve[i][0] * 100, 1),
+                            "drop_pct": round(d * 100, 1),
+                        })
                 out.append({
                     "video_id": vid,
                     "title": title or "",
                     "views": int(views or 0),
-                    "published_at": published_at or "",
-                    "curve": [],
-                    "avg_retention": 0,
-                    "drop_points": [],
-                    "n_points": 0,
-                    "retention_pending": True,
+                    "published_at": _day_str(published_at),
+                    "curve": curve,
+                    "avg_retention": round(avg_r * 100, 1),
+                    "drop_points": drops[:5],
+                    "n_points": len(curve),
+                    "retention_pending": False,
                 })
-                continue
-            # Avg retention (TB watch_ratio toàn curve)
-            avg_r = sum(c[1] for c in curve) / len(curve)
-            # Drop points: nơi watch_ratio giảm >5% từ điểm trước
-            drops = []
-            for i in range(1, len(curve)):
-                d = curve[i-1][1] - curve[i][1]
-                if d > 0.05:
-                    drops.append({
-                        "at_pct": round(curve[i][0] * 100, 1),
-                        "drop_pct": round(d * 100, 1),
-                    })
-            out.append({
-                "video_id": vid,
-                "title": title or "",
-                "views": int(views or 0),
-                "published_at": published_at or "",
-                "curve": curve,
-                "avg_retention": round(avg_r * 100, 1),
-                "drop_points": drops[:5],
-                "n_points": len(curve),
-                "retention_pending": False,
-            })
-        return out
-    finally:
-        conn.close()
+            return out
+    except Exception:
+        return []
 
 
 # ============================================================
@@ -420,39 +417,35 @@ def get_retention_curves(account_tag: str, top_n: int = 5,
 # ============================================================
 
 def get_thumbnail_ctr_top(account_tag: str, top_n: int = 10,
-                           min_impressions: int = 500) -> List[Dict[str, Any]]:
+                          min_impressions: int = 500) -> List[Dict[str, Any]]:
     """Top N video theo CTR thumbnail TB.
 
-    LƯU Ý: alias 'ctr_avg' (KHÔNG dùng 'ctr') vì videos.ctr cũng có cột —
-    SQLite resolve trùng tên về v.ctr=0.0 → HAVING ctr>0 lọc sạch dữ liệu.
+    alias 'ctr_avg' (KHÔNG dùng 'ctr') vì videos.ctr cũng có cột.
     """
-    conn = _connect()
-    if not conn:
+    eng = _get_engine()
+    if eng is None:
         return []
     try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT vtd.video_id, v.title, "
-            "  SUM(CAST(vtd.thumbnail_impressions AS INTEGER)) as imp, "
-            "  AVG(CAST(vtd.thumbnail_ctr AS REAL)) as ctr_avg "
-            "FROM video_thumbnail_daily vtd "
-            "JOIN videos v ON v.video_id = vtd.video_id "
-            "WHERE vtd.account_tag = ? "
-            "GROUP BY vtd.video_id "
-            "HAVING imp >= ? AND ctr_avg > 0 "
-            "ORDER BY ctr_avg DESC LIMIT ?",
-            (account_tag, min_impressions, top_n))
-        rows = []
-        for vid, title, imp, ctr_avg in cur.fetchall():
-            rows.append({
-                "video_id": vid,
-                "title": title or "",
-                "impressions": int(imp or 0),
-                "ctr": round(float(ctr_avg or 0) * 100, 2),
-            })
-        return rows
-    finally:
-        conn.close()
+        with eng.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT vtd.video_id, v.title, "
+                "  SUM(vtd.thumbnail_impressions) AS imp, "
+                "  AVG(vtd.thumbnail_ctr) AS ctr_avg "
+                "FROM video_thumbnail_daily vtd "
+                "JOIN videos v ON v.video_id = vtd.video_id "
+                "WHERE vtd.account_tag = :tag "
+                "GROUP BY vtd.video_id, v.title "
+                "HAVING SUM(vtd.thumbnail_impressions) >= :mi "
+                "  AND AVG(vtd.thumbnail_ctr) > 0 "
+                "ORDER BY ctr_avg DESC LIMIT :n"),
+                {"tag": account_tag, "mi": min_impressions,
+                 "n": top_n}).fetchall()
+        return [{"video_id": vid, "title": title or "",
+                 "impressions": int(imp or 0),
+                 "ctr": round(float(ctr_avg or 0) * 100, 2)}
+                for vid, title, imp, ctr_avg in rows]
+    except Exception:
+        return []
 
 
 # ============================================================
@@ -460,29 +453,25 @@ def get_thumbnail_ctr_top(account_tag: str, top_n: int = 10,
 # ============================================================
 
 def get_revenue_summary(account_tag: str,
-                         recent_days: int = 30) -> Dict[str, Any]:
-    """Tổng hợp revenue. CHỈ gọi khi cần (vd app desktop, KHÔNG báo cáo public).
+                        recent_days: int = 30) -> Dict[str, Any]:
+    """Tổng hợp revenue. CHỈ gọi khi cần (app desktop, KHÔNG báo cáo public).
 
     Returns:
         {'total_revenue', 'ad_revenue', 'avg_rpm', 'avg_cpm',
          'monetized_playbacks', 'days_with_data'}
     """
-    conn = _connect()
-    if not conn:
+    eng = _get_engine()
+    if eng is None:
         return {}
     try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT SUM(CAST(estimated_revenue AS REAL)), "
-            "       SUM(CAST(ad_revenue AS REAL)), "
-            "       AVG(CAST(rpm AS REAL)), "
-            "       AVG(CAST(cpm AS REAL)), "
-            "       SUM(CAST(monetized_playbacks AS INTEGER)), "
-            "       COUNT(*) "
-            "FROM revenue_daily "
-            "WHERE account_tag = ? AND day >= date('now', ?)",
-            (account_tag, f"-{recent_days} days"))
-        row = cur.fetchone()
+        with eng.connect() as conn:
+            row = conn.execute(text(
+                "SELECT SUM(estimated_revenue), SUM(ad_revenue), "
+                "AVG(rpm), AVG(cpm), SUM(monetized_playbacks), COUNT(*) "
+                "FROM revenue_daily "
+                "WHERE account_tag = :tag "
+                "AND day >= CURRENT_DATE - (:days * INTERVAL '1 day')"),
+                {"tag": account_tag, "days": recent_days}).fetchone()
         if not row or row[0] is None:
             return {}
         return {
@@ -493,8 +482,8 @@ def get_revenue_summary(account_tag: str,
             "monetized_playbacks": int(row[4] or 0),
             "days_with_data": int(row[5] or 0),
         }
-    finally:
-        conn.close()
+    except Exception:
+        return {}
 
 
 # ============================================================
@@ -504,23 +493,13 @@ def get_revenue_summary(account_tag: str,
 def assess_traffic_source(traffic_sources: list) -> Dict[str, Any]:
     """Đánh giá phân bố traffic source so với benchmark.
 
-    Benchmark cho kênh khỏe:
-    - YT_SEARCH: 10-25% (tốt nếu cao = đang ranking)
-    - SUGGESTED: 30-50% (tốt — algorithm đẩy)
-    - BROWSE: 15-30% (sub loyalty + home feed)
-    - SHORTS: tùy ngách
-    - EXTERNAL: 5-15% (collab + social)
-    - END_SCREEN: 2-8% (session boost)
-
     Returns: {'health': 'good'|'warn'|'bad', 'issues': [list str]}
     """
     if not traffic_sources:
         return {"health": "warn", "issues": ["Không có data traffic source"]}
-    # Convert list → dict source: pct
     ts = {item["source"]: item["pct"] for item in traffic_sources}
     issues = []
 
-    # Search check
     search = ts.get("YT_SEARCH", 0)
     if search < 5:
         issues.append(f"YT_SEARCH chỉ {search}% — keyword/title yếu, "
@@ -529,31 +508,26 @@ def assess_traffic_source(traffic_sources: list) -> Dict[str, Any]:
         issues.append(f"YT_SEARCH {search}% quá cao — kênh phụ thuộc "
                       "search, suggested/browse yếu.")
 
-    # Suggested check
     suggested = ts.get("RELATED_VIDEO", 0) + ts.get("SUGGESTED", 0)
     if suggested < 15:
         issues.append(f"Suggested chỉ {suggested}% — algorithm không đẩy. "
                       "Cần tăng CTR/AVD để được đề xuất.")
 
-    # Browse (home feed)
     browse = ts.get("YT_CHANNEL", 0) + ts.get("BROWSE", 0)
     if browse < 5:
         issues.append(f"Browse {browse}% — kênh ít sub loyalty / "
                       "thiếu subscribers active.")
 
-    # External
     external = ts.get("EXT_URL", 0) + ts.get("EXTERNAL", 0)
     if external > 30:
         issues.append(f"External {external}% quá cao — kênh phụ thuộc "
                       "traffic ngoài YouTube, organic yếu.")
 
-    # End screen
     end = ts.get("END_SCREEN", 0)
     if end < 1:
         issues.append("END_SCREEN <1% — chưa tận dụng End Screen "
                       "(thiếu link sang video tiếp).")
 
-    # Shorts (nếu có)
     shorts = ts.get("SHORTS", 0)
     if shorts > 0 and shorts < 5:
         issues.append(f"Shorts traffic {shorts}% — nên đẩy mạnh Shorts "
@@ -571,95 +545,70 @@ def assess_traffic_source(traffic_sources: list) -> Dict[str, Any]:
 # ============================================================
 
 def get_traffic_source_trend(account_tag: str,
-                              periods: list = (7, 30, 90)) -> Dict[str, Any]:
-    """Trends traffic source — so sánh 7d / 30d / 90d.
-
-    Returns:
-        {
-          'periods': [7, 30, 90],
-          'sources': {source: [views_7d, views_30d, views_90d]},
-          'pct_change': {source: 7d_vs_30d_pct_change}
-        }
-    """
-    conn = _connect()
-    if not conn:
+                             periods: list = (7, 30, 90)) -> Dict[str, Any]:
+    """Trends traffic source — so sánh 7d / 30d / 90d (velocity views/ngày)."""
+    eng = _get_engine()
+    if eng is None:
         return {}
     try:
-        cur = conn.cursor()
         result = {"periods": list(periods), "sources_data": {}}
-        for p in periods:
-            cur.execute(
-                "SELECT source, SUM(CAST(views AS INTEGER)) "
-                "FROM traffic_source_daily "
-                "WHERE account_tag = ? AND day >= date('now', ?) "
-                "GROUP BY source",
-                (account_tag, f"-{p} days"))
-            for src, views in cur.fetchall():
-                v = int(views or 0)
-                if src not in result["sources_data"]:
-                    result["sources_data"][src] = {}
-                result["sources_data"][src][f"{p}d"] = v
-        # Tính velocity (views/ngày) cho mỗi period
+        with eng.connect() as conn:
+            for p in periods:
+                rows = conn.execute(text(
+                    "SELECT source, SUM(views) FROM traffic_source_daily "
+                    "WHERE account_tag = :tag "
+                    "AND day >= CURRENT_DATE - (:p * INTERVAL '1 day') "
+                    "GROUP BY source"),
+                    {"tag": account_tag, "p": p}).fetchall()
+                for src, views in rows:
+                    v = int(views or 0)
+                    if src not in result["sources_data"]:
+                        result["sources_data"][src] = {}
+                    result["sources_data"][src][f"{p}d"] = v
         result["velocity"] = {}
         for src, vals in result["sources_data"].items():
             result["velocity"][src] = {
                 f"{p}d": (vals.get(f"{p}d", 0) / p) for p in periods
             }
-        # Trend: so sánh velocity 7d vs 30d (recent vs baseline)
         result["trend"] = {}
         for src, vels in result["velocity"].items():
             v7 = vels.get("7d", 0)
             v30 = vels.get("30d", 0)
-            if v30 > 0:
-                pct = round(100 * (v7 - v30) / v30, 1)
-            else:
-                pct = 0
-            result["trend"][src] = pct  # >0 = recent đang tăng, <0 = giảm
+            result["trend"][src] = round(100 * (v7 - v30) / v30, 1) if v30 > 0 else 0
         return result
-    finally:
-        conn.close()
+    except Exception:
+        return {}
 
 
 def get_top_videos_per_source(account_tag: str,
-                               top_n_videos: int = 5,
-                               top_n_sources: int = 6,
-                               days: int = 30) -> Dict[str, list]:
-    """Top N video theo mỗi traffic source — biết video nào ăn từ
-    Search, Suggested, Browse...
-
-    Returns:
-        {source: [{video_id, title, views_from_source}, ...]}
-    """
-    conn = _connect()
-    if not conn:
+                              top_n_videos: int = 5,
+                              top_n_sources: int = 6,
+                              days: int = 30) -> Dict[str, list]:
+    """Top sources với total views (traffic_source_daily không có video_id)."""
+    eng = _get_engine()
+    if eng is None:
         return {}
     try:
-        cur = conn.cursor()
-        # Top sources
-        cur.execute(
-            "SELECT source FROM traffic_source_daily "
-            "WHERE account_tag = ? AND day >= date('now', ?) "
-            "GROUP BY source ORDER BY SUM(CAST(views AS INTEGER)) DESC "
-            "LIMIT ?",
-            (account_tag, f"-{days} days", top_n_sources))
-        sources = [r[0] for r in cur.fetchall()]
-        result = {}
-        # Lấy video count per source — KHÔNG có cột video_id trong
-        # traffic_source_daily, fallback: top video kênh overall
-        # (data này không phân tích được per-video traffic source).
-        # → trả về: top sources với total views.
-        for src in sources:
-            cur.execute(
-                "SELECT SUM(CAST(views AS INTEGER)) "
-                "FROM traffic_source_daily "
-                "WHERE account_tag = ? AND source = ? "
-                "AND day >= date('now', ?)",
-                (account_tag, src, f"-{days} days"))
-            row = cur.fetchone()
-            result[src] = int(row[0] or 0) if row else 0
+        with eng.connect() as conn:
+            sources = [r[0] for r in conn.execute(text(
+                "SELECT source FROM traffic_source_daily "
+                "WHERE account_tag = :tag "
+                "AND day >= CURRENT_DATE - (:days * INTERVAL '1 day') "
+                "GROUP BY source ORDER BY SUM(views) DESC LIMIT :n"),
+                {"tag": account_tag, "days": days,
+                 "n": top_n_sources}).fetchall()]
+            result = {}
+            for src in sources:
+                row = conn.execute(text(
+                    "SELECT SUM(views) FROM traffic_source_daily "
+                    "WHERE account_tag = :tag AND source = :src "
+                    "AND day >= CURRENT_DATE - (:days * INTERVAL '1 day')"),
+                    {"tag": account_tag, "src": src,
+                     "days": days}).fetchone()
+                result[src] = int(row[0] or 0) if row and row[0] else 0
         return result
-    finally:
-        conn.close()
+    except Exception:
+        return {}
 
 
 # ============================================================
@@ -667,94 +616,69 @@ def get_top_videos_per_source(account_tag: str,
 # ============================================================
 
 def get_retention_full(account_tag: str, top_n: int = 5,
-                        min_views: int = 50,
-                        order_by: str = "published") -> List[Dict[str, Any]]:
-    """Lấy retention curve FULL cho N video, kèm phân tích segment + AI text.
-
-    Chốt 25/05 sáng tối: 5 video MỚI NHẤT (giảm từ 10), thêm:
-    - Full info từ bảng videos: likes, comments, ctr, impressions, duration
-    - AI rule-based phân tích cho mỗi video (weakest segment + action gợi ý)
-    - min_views thấp (50) để bắt cả video mới chưa kịp lên view nhiều.
-    """
+                       min_views: int = 50,
+                       order_by: str = "published") -> List[Dict[str, Any]]:
+    """Retention curve FULL cho N video + meta (like/cmt/ctr) + segment + AI."""
     curves = get_retention_curves(account_tag, top_n=top_n,
                                    min_views=min_views, order_by=order_by)
-    # Lấy thêm meta info từ bảng videos
     if not curves:
         return curves
-    conn = _connect()
-    if not conn:
+    eng = _get_engine()
+    vids = [c["video_id"] for c in curves]
+    if eng is None or not vids:
         for c in curves:
             c["segments"] = _compute_retention_segments(c.get("curve") or [])
             c["ai_analysis"] = _video_retention_ai(c)
         return curves
     try:
-        vids = tuple(c["video_id"] for c in curves)
-        if not vids:
-            return curves
-        qs = ",".join(["?"] * len(vids))
-        # 1. Meta từ bảng videos (like, cmt, duration)
-        rows = conn.execute(
-            f"SELECT video_id, likes, comments, duration "
-            f"FROM videos WHERE account_tag = ? "
-            f"AND video_id IN ({qs})",
-            (account_tag,) + vids).fetchall()
-        meta = {r[0]: {"likes": r[1], "comments": r[2],
-                       "duration": r[3]} for r in rows}
-        # 2. CTR + Impressions từ bảng video_thumbnail_daily (per ngày).
-        #    AGGREGATE: sum impressions, avg CTR weighted by impressions.
-        #    Chỉ tính NGÀY ≥ published_at — bỏ data pre-publish (private
-        #    upload test) gây hiểu nhầm (vd Railway 24/05 có 85 imp từ
-        #    ngày 21-22/05 do user upload sớm rồi mới public ngày 24/05).
-        try:
-            ctr_rows = conn.execute(
-                f"SELECT vtd.video_id, "
-                f"  SUM(CAST(vtd.thumbnail_impressions AS INTEGER)) as imp, "
-                f"  SUM(CAST(vtd.thumbnail_impressions AS INTEGER) * "
-                f"      CAST(vtd.thumbnail_ctr AS REAL)) /"
-                f"  NULLIF(SUM(CAST(vtd.thumbnail_impressions AS INTEGER)),0) "
-                f"      as ctr_w "
-                f"FROM video_thumbnail_daily vtd "
-                f"JOIN videos v ON v.video_id = vtd.video_id "
-                f"  AND v.account_tag = vtd.account_tag "
-                f"WHERE vtd.account_tag = ? AND vtd.video_id IN ({qs}) "
-                f"  AND vtd.day >= SUBSTR(v.published_at, 1, 10) "
-                f"GROUP BY vtd.video_id",
-                (account_tag,) + vids).fetchall()
-            for vid, imp, ctr_w in ctr_rows:
-                imp_val = int(imp or 0)
-                ctr_val = float(ctr_w or 0)
-                # Nếu < 100 impressions sau filter → coi như chưa đủ data
-                # (video mới, Reporting API chưa generate xong)
-                if imp_val < 100:
-                    imp_val = None
-                    ctr_val = None
-                if vid in meta:
-                    meta[vid]["impressions"] = imp_val
-                    meta[vid]["ctr"] = ctr_val
-                else:
-                    meta[vid] = {"impressions": imp_val, "ctr": ctr_val}
-        except Exception as e:
-            pass  # thumbnail_daily có thể chưa có data
+        with eng.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT video_id, likes, comments, duration FROM videos "
+                "WHERE account_tag = :tag AND video_id = ANY(:vids)"),
+                {"tag": account_tag, "vids": vids}).fetchall()
+            meta = {r[0]: {"likes": r[1], "comments": r[2],
+                           "duration": r[3]} for r in rows}
+            try:
+                ctr_rows = conn.execute(text(
+                    "SELECT vtd.video_id, "
+                    "  SUM(vtd.thumbnail_impressions) AS imp, "
+                    "  SUM(vtd.thumbnail_impressions * vtd.thumbnail_ctr) "
+                    "  / NULLIF(SUM(vtd.thumbnail_impressions), 0) AS ctr_w "
+                    "FROM video_thumbnail_daily vtd "
+                    "JOIN videos v ON v.video_id = vtd.video_id "
+                    "  AND v.account_tag = vtd.account_tag "
+                    "WHERE vtd.account_tag = :tag "
+                    "  AND vtd.video_id = ANY(:vids) "
+                    "  AND vtd.day >= v.published_at "
+                    "GROUP BY vtd.video_id"),
+                    {"tag": account_tag, "vids": vids}).fetchall()
+                for vid, imp, ctr_w in ctr_rows:
+                    imp_val = int(imp or 0)
+                    ctr_val = float(ctr_w or 0)
+                    if imp_val < 100:
+                        imp_val = None
+                        ctr_val = None
+                    if vid in meta:
+                        meta[vid]["impressions"] = imp_val
+                        meta[vid]["ctr"] = ctr_val
+                    else:
+                        meta[vid] = {"impressions": imp_val, "ctr": ctr_val}
+            except Exception:
+                pass
         for c in curves:
             c.update(meta.get(c["video_id"], {}))
             c["segments"] = _compute_retention_segments(c.get("curve") or [])
             c["ai_analysis"] = _video_retention_ai(c)
         return curves
-    finally:
-        conn.close()
+    except Exception:
+        for c in curves:
+            c["segments"] = _compute_retention_segments(c.get("curve") or [])
+            c["ai_analysis"] = _video_retention_ai(c)
+        return curves
 
 
 def _video_retention_ai(video: Dict[str, Any]) -> str:
-    """Sinh AI text rule-based cho 1 video: chẩn đoán retention + action.
-
-    Phân tích:
-    - Avg retention vs mốc 40%/25%
-    - Weakest segment (hook/early/mid)
-    - Drop points lớn (>10%)
-    - CTR vs TB ngành 8-10%
-    - Engagement (likes+comments)/views vs 1-3%
-    """
-    # 26/05: video mới <48h chưa có retention data → trả message PENDING
+    """Sinh AI text rule-based cho 1 video: chẩn đoán retention + action."""
     if video.get("retention_pending"):
         return ("⏳ Retention curve đang được YouTube Analytics process "
                 "(video mới <48h). Data đầy đủ sẽ có trong daily run kế "
@@ -767,7 +691,6 @@ def _video_retention_ai(video: Dict[str, Any]) -> str:
     ctr = video.get("ctr", 0) or 0
     drops = video.get("drop_points") or []
     parts = []
-    # 1. Overall verdict
     if avg >= 50:
         parts.append("✅ Retention XUẤT SẮC (TB ≥50%) — giữ format hiện tại.")
     elif avg >= 40:
@@ -778,7 +701,6 @@ def _video_retention_ai(video: Dict[str, Any]) -> str:
     else:
         parts.append(f"🔴 Retention KÉM {avg}% — viewer bỏ sớm, audit "
                      "URGENT.")
-    # 2. Weakest segment
     weak = segs.get("weakest_segment", "")
     weak_map = {
         "hook": "Hook 0-10% YẾU — quay lại intro 10s đầu (test hook động "
@@ -788,7 +710,6 @@ def _video_retention_ai(video: Dict[str, Any]) -> str:
     }
     if weak in weak_map:
         parts.append(f"📉 {weak_map[weak]}")
-    # 3. CTR
     if ctr > 0:
         ctr_pct = ctr * 100 if ctr < 1 else ctr
         if ctr_pct >= 10:
@@ -799,18 +720,16 @@ def _video_retention_ai(video: Dict[str, Any]) -> str:
         else:
             parts.append(f"🔴 CTR {ctr_pct:.1f}% KÉM — thumbnail KHÔNG "
                          "attract, revamp ngay.")
-    # 4. Engagement
     if views > 100:
-        eng = (likes + comments) * 100 / views
-        if eng >= 3:
-            parts.append(f"✅ Engagement {eng:.1f}% TỐT (≥3%).")
-        elif eng >= 1:
-            parts.append(f"⚠️ Engagement {eng:.1f}% TB — thêm CTA cuối "
+        eng_rate = (likes + comments) * 100 / views
+        if eng_rate >= 3:
+            parts.append(f"✅ Engagement {eng_rate:.1f}% TỐT (≥3%).")
+        elif eng_rate >= 1:
+            parts.append(f"⚠️ Engagement {eng_rate:.1f}% TB — thêm CTA cuối "
                          "video (Comment / Like).")
         else:
-            parts.append(f"🔴 Engagement {eng:.1f}% RẤT THẤP — viewer "
+            parts.append(f"🔴 Engagement {eng_rate:.1f}% RẤT THẤP — viewer "
                          "không tương tác.")
-    # 5. Drop point lớn
     big_drops = [d for d in drops if (d.get("drop_pct") or 0) >= 10]
     if big_drops:
         d = big_drops[0]
@@ -820,15 +739,7 @@ def _video_retention_ai(video: Dict[str, Any]) -> str:
 
 
 def _compute_retention_segments(curve: list) -> Dict[str, Any]:
-    """Phân tích retention curve theo 4 segments:
-    - 0-10% (hook): nếu drop nhiều ở đây = hook yếu
-    - 10-50% (early): drop = pacing chậm
-    - 50-90% (mid-late): drop = mất hứng
-    - 90-100% (outro): bình thường drop vì CTA kéo dài
-
-    Returns: {hook_retention, early_retention, mid_retention,
-              outro_retention, hook_drop, weakest_segment}
-    """
+    """Phân tích retention curve theo 4 segments (hook/early/mid/outro)."""
     if not curve:
         return {}
     segs = {"hook": [], "early": [], "mid": [], "outro": []}
@@ -844,12 +755,9 @@ def _compute_retention_segments(curve: list) -> Dict[str, Any]:
     out = {}
     for k, vals in segs.items():
         out[f"{k}_retention"] = (round(100 * sum(vals) / len(vals), 1)
-                                  if vals else 0)
-    # Hook drop: 100% - retention at 10%
+                                 if vals else 0)
     out["hook_drop"] = round(100 - out["hook_retention"], 1)
-    # Weakest segment (TB thấp nhất, exclude outro)
-    seg_score = {k: out[f"{k}_retention"]
-                 for k in ["hook", "early", "mid"]}
+    seg_score = {k: out[f"{k}_retention"] for k in ["hook", "early", "mid"]}
     out["weakest_segment"] = min(seg_score, key=seg_score.get)
     return out
 
@@ -859,62 +767,55 @@ def _compute_retention_segments(curve: list) -> Dict[str, Any]:
 # ============================================================
 
 def get_thumbnail_ctr_worst(account_tag: str, top_n: int = 10,
-                              min_impressions: int = 500) -> List[Dict[str, Any]]:
-    """Worst N video theo CTR thumbnail (CẦN SỬA THUMBNAIL).
-
-    LƯU Ý: alias 'ctr_avg' (KHÔNG dùng 'ctr') vì videos.ctr cũng có cột.
-    """
-    conn = _connect()
-    if not conn:
+                            min_impressions: int = 500) -> List[Dict[str, Any]]:
+    """Worst N video theo CTR thumbnail (CẦN SỬA THUMBNAIL)."""
+    eng = _get_engine()
+    if eng is None:
         return []
     try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT vtd.video_id, v.title, "
-            "  SUM(CAST(vtd.thumbnail_impressions AS INTEGER)) as imp, "
-            "  AVG(CAST(vtd.thumbnail_ctr AS REAL)) as ctr_avg "
-            "FROM video_thumbnail_daily vtd "
-            "JOIN videos v ON v.video_id = vtd.video_id "
-            "WHERE vtd.account_tag = ? "
-            "GROUP BY vtd.video_id "
-            "HAVING imp >= ? AND ctr_avg > 0 "
-            "ORDER BY ctr_avg ASC LIMIT ?",
-            (account_tag, min_impressions, top_n))
+        with eng.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT vtd.video_id, v.title, "
+                "  SUM(vtd.thumbnail_impressions) AS imp, "
+                "  AVG(vtd.thumbnail_ctr) AS ctr_avg "
+                "FROM video_thumbnail_daily vtd "
+                "JOIN videos v ON v.video_id = vtd.video_id "
+                "WHERE vtd.account_tag = :tag "
+                "GROUP BY vtd.video_id, v.title "
+                "HAVING SUM(vtd.thumbnail_impressions) >= :mi "
+                "  AND AVG(vtd.thumbnail_ctr) > 0 "
+                "ORDER BY ctr_avg ASC LIMIT :n"),
+                {"tag": account_tag, "mi": min_impressions,
+                 "n": top_n}).fetchall()
         return [{"video_id": vid, "title": title or "",
                  "impressions": int(imp or 0),
                  "ctr": round(float(ctr_avg or 0) * 100, 2)}
-                for vid, title, imp, ctr_avg in cur.fetchall()]
-    finally:
-        conn.close()
+                for vid, title, imp, ctr_avg in rows]
+    except Exception:
+        return []
 
 
 def get_ctr_correlation(account_tag: str) -> Dict[str, Any]:
-    """Phân tích CTR vs views — có tương quan không?
-
-    LƯU Ý: alias 'ctr_avg' (KHÔNG dùng 'ctr') vì videos.ctr cũng có cột.
-    """
-    conn = _connect()
-    if not conn:
+    """Phân tích CTR vs views — có tương quan không?"""
+    eng = _get_engine()
+    if eng is None:
         return {}
     try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT v.video_id, "
-            "  CAST(v.views AS INTEGER) as views_int, "
-            "  AVG(CAST(vtd.thumbnail_ctr AS REAL)) as ctr_avg "
-            "FROM videos v "
-            "JOIN video_thumbnail_daily vtd ON vtd.video_id = v.video_id "
-            "WHERE vtd.account_tag = ? "
-            "GROUP BY v.video_id "
-            "HAVING SUM(CAST(vtd.thumbnail_impressions AS INTEGER)) >= 500 "
-            "AND views_int > 0 AND ctr_avg > 0",
-            (account_tag,))
-        rows = cur.fetchall()
+        with eng.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT v.video_id, v.views AS views_int, "
+                "  AVG(vtd.thumbnail_ctr) AS ctr_avg "
+                "FROM videos v "
+                "JOIN video_thumbnail_daily vtd ON vtd.video_id = v.video_id "
+                "WHERE vtd.account_tag = :tag "
+                "GROUP BY v.video_id, v.views "
+                "HAVING SUM(vtd.thumbnail_impressions) >= 500 "
+                "  AND v.views > 0 AND AVG(vtd.thumbnail_ctr) > 0"),
+                {"tag": account_tag}).fetchall()
         if len(rows) < 3:
             return {}
-        # Tính TB CTR theo bin view
-        high_view = sorted(rows, key=lambda x: -x[1])[:max(5, len(rows)//4)]
-        low_view = sorted(rows, key=lambda x: x[1])[:max(5, len(rows)//4)]
+        high_view = sorted(rows, key=lambda x: -x[1])[:max(5, len(rows) // 4)]
+        low_view = sorted(rows, key=lambda x: x[1])[:max(5, len(rows) // 4)]
         avg_ctr_high = sum(r[2] for r in high_view) / len(high_view) * 100
         avg_ctr_low = sum(r[2] for r in low_view) / len(low_view) * 100
         total_avg = sum(r[2] for r in rows) / len(rows) * 100
@@ -925,8 +826,8 @@ def get_ctr_correlation(account_tag: str) -> Dict[str, Any]:
             "avg_ctr_low_view_videos": round(avg_ctr_low, 2),
             "ctr_lift": round(avg_ctr_high - avg_ctr_low, 2),
         }
-    finally:
-        conn.close()
+    except Exception:
+        return {}
 
 
 # ============================================================
@@ -935,61 +836,52 @@ def get_ctr_correlation(account_tag: str) -> Dict[str, Any]:
 
 def get_audience_full(account_tag: str) -> Dict[str, Any]:
     """Audience profile đầy đủ + insight."""
-    conn = _connect()
-    if not conn:
+    eng = _get_engine()
+    if eng is None:
         return {}
     try:
-        cur = conn.cursor()
-        # Demographics — entry mới nhất
-        cur.execute(
-            "SELECT gender, age_group, CAST(viewer_percentage AS REAL) "
-            "FROM audience_demographics "
-            "WHERE account_tag = ? AND end_date = ("
-            "  SELECT MAX(end_date) FROM audience_demographics "
-            "  WHERE account_tag = ?) "
-            "ORDER BY CAST(viewer_percentage AS REAL) DESC",
-            (account_tag, account_tag))
-        demo = []
-        for g, a, p in cur.fetchall():
-            if p and p > 0:
-                demo.append({"gender": g, "age_group": a, "pct": p})
+        with eng.connect() as conn:
+            rows = conn.execute(text(
+                "SELECT gender, age_group, viewer_percentage "
+                "FROM audience_demographics "
+                "WHERE account_tag = :tag AND end_date = ("
+                "  SELECT MAX(end_date) FROM audience_demographics "
+                "  WHERE account_tag = :tag) "
+                "ORDER BY viewer_percentage DESC"),
+                {"tag": account_tag}).fetchall()
+            demo = []
+            for g, a, p in rows:
+                if p and p > 0:
+                    demo.append({"gender": g, "age_group": a, "pct": float(p)})
 
-        # Devices
-        cur.execute(
-            "SELECT device_type, CAST(viewer_percentage AS REAL) "
-            "FROM audience_devices "
-            "WHERE account_tag = ? AND end_date = ("
-            "  SELECT MAX(end_date) FROM audience_devices "
-            "  WHERE account_tag = ?)",
-            (account_tag, account_tag))
-        devices = {d: p for d, p in cur.fetchall() if p}
+            rows = conn.execute(text(
+                "SELECT device_type, viewer_percentage FROM audience_devices "
+                "WHERE account_tag = :tag AND end_date = ("
+                "  SELECT MAX(end_date) FROM audience_devices "
+                "  WHERE account_tag = :tag)"),
+                {"tag": account_tag}).fetchall()
+            devices = {d: float(p) for d, p in rows if p}
 
-        # Countries — total period
-        cur.execute(
-            "SELECT country, SUM(CAST(views AS INTEGER)) "
-            "FROM geography_country_metrics "
-            "WHERE account_tag = ? AND end_date = ("
-            "  SELECT MAX(end_date) FROM geography_country_metrics "
-            "  WHERE account_tag = ?) "
-            "GROUP BY country ORDER BY SUM(CAST(views AS INTEGER)) DESC "
-            "LIMIT 15",
-            (account_tag, account_tag))
-        countries = []
-        total_v = 0
-        for c, v in cur.fetchall():
-            vi = int(v or 0)
-            countries.append([c, vi])
-            total_v += vi
-        if total_v > 0:
-            countries = [{"country": c, "views": v,
-                          "pct": round(100 * v / total_v, 1)}
-                         for c, v in countries]
+            rows = conn.execute(text(
+                "SELECT country, SUM(views) FROM geography_country_metrics "
+                "WHERE account_tag = :tag AND end_date = ("
+                "  SELECT MAX(end_date) FROM geography_country_metrics "
+                "  WHERE account_tag = :tag) "
+                "GROUP BY country ORDER BY SUM(views) DESC LIMIT 15"),
+                {"tag": account_tag}).fetchall()
+            countries = []
+            total_v = 0
+            for c, v in rows:
+                vi = int(v or 0)
+                countries.append([c, vi])
+                total_v += vi
+            if total_v > 0:
+                countries = [{"country": c, "views": v,
+                              "pct": round(100 * v / total_v, 1)}
+                             for c, v in countries]
 
-        # Insight
         insights = []
-        # Top gender + age
         if demo:
-            top_d = demo[0]
             by_age = {}
             for d in demo:
                 by_age[d["age_group"]] = by_age.get(d["age_group"], 0) + d["pct"]
@@ -1002,16 +894,14 @@ def get_audience_full(account_tag: str) -> Dict[str, Any]:
                 f"Audience chính: {top_gender[0]} {top_gender[1]:.0f}% + "
                 f"độ tuổi {top_age[0]} {top_age[1]:.0f}%."
             )
-        # Mobile heavy
         if devices.get("MOBILE", 0) > 90:
             insights.append(
                 f"MOBILE {devices['MOBILE']:.0f}% — thumbnail/text phải "
                 "tối ưu cho màn nhỏ, mặt to, contrast cao.")
-        elif devices.get("MOBILE", 0) < 50:
+        elif devices.get("MOBILE", 0) < 50 and devices:
             insights.append(
                 "Mobile <50% — audience xem trên desktop/TV nhiều, "
                 "có thể làm video dài hơn.")
-        # Geo concentration
         if countries:
             top3_pct = sum(c["pct"] for c in countries[:3])
             if top3_pct > 70:
@@ -1024,7 +914,6 @@ def get_audience_full(account_tag: str) -> Dict[str, Any]:
                 insights.append(
                     f"Audience phân tán {len(countries)}+ quốc gia — "
                     "khó target ads, cần multi-language caption.")
-            # CPM-high countries
             high_cpm = {"US", "GB", "AU", "CA", "DE", "FR", "JP", "KR"}
             cpm_pct = sum(c["pct"] for c in countries if c["country"] in high_cpm)
             if cpm_pct > 30:
@@ -1042,8 +931,8 @@ def get_audience_full(account_tag: str) -> Dict[str, Any]:
             "countries": countries,
             "insights": insights,
         }
-    finally:
-        conn.close()
+    except Exception:
+        return {}
 
 
 # ============================================================
@@ -1051,12 +940,11 @@ def get_audience_full(account_tag: str) -> Dict[str, Any]:
 # ============================================================
 
 def assess_demographics(demographics: list,
-                         persona_age_range: tuple = None) -> Dict[str, Any]:
+                        persona_age_range: tuple = None) -> Dict[str, Any]:
     """Đánh giá demographics. Trả {'health', 'top_age_group', 'top_gender',
     'note'}."""
     if not demographics:
         return {"health": "warn", "note": "Không có data demographics"}
-    # Group theo age
     by_age = {}
     by_gender = {}
     for d in demographics:

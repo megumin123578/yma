@@ -88,13 +88,25 @@ const ResearchScene = ({ view = "report" }) => {
   return (
     <Box m="20px">
       <Header
-        title={view === "config" ? "Manage run" : "Nghiên cứu ngách"}
+        title={
+          view === "config"
+            ? "Manage run"
+            : view === "seo"
+            ? "Báo cáo SEO"
+            : "Nghiên cứu ngách"
+        }
         subtitle={
           view === "config"
             ? "Daily run, quản lý watchlist, cấu hình và lịch chạy"
+            : view === "seo"
+            ? "Xuất báo cáo riêng cho SEO"
             : "Báo cáo watchlist (đối thủ, từ khoá, ngách)"
         }
       />
+
+      {view === "seo" && (
+        <EmptyState text="Trang báo cáo SEO — đang xây dựng." />
+      )}
 
       {view === "config" && (
         <>

@@ -24,6 +24,7 @@ import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import WebhookIcon from "@mui/icons-material/Webhook";
 import QueryStatsIcon from "@mui/icons-material/QueryStats";
 import TravelExploreOutlinedIcon from "@mui/icons-material/TravelExploreOutlined";
+import ManageSearchOutlinedIcon from "@mui/icons-material/ManageSearchOutlined";
 import AutoModeIcon from "@mui/icons-material/AutoMode";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
@@ -114,7 +115,7 @@ const Sidebar = ({
     "/revenue",
   ]);
   const defaultOpenStatistics = inGroup(["/channel_compare", "/rivals"]);
-  const defaultOpenResearch = inGroup(["/research", "/research/config"]);
+  const defaultOpenResearch = inGroup(["/research", "/research/config", "/research/seo"]);
   const defaultOpenAutomation = inGroup([
     "/smmstore",
     "/smmstore_analytics",
@@ -582,6 +583,14 @@ const Sidebar = ({
                     to="/research/config"
                     icon={<SettingsOutlinedIcon />}
                     isActive={pathname === "/research/config"}
+                    onClick={closeOnMobile}
+                    isCompact={isDesktopCompact}
+                  />
+                  <Item
+                    title="Seo"
+                    to="/research/seo"
+                    icon={<ManageSearchOutlinedIcon />}
+                    isActive={pathname === "/research/seo"}
                     onClick={closeOnMobile}
                     isCompact={isDesktopCompact}
                   />
