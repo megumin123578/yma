@@ -97,7 +97,8 @@ const ConfigPage = () => {
       <CredentialsDialog
         open
         inline
-        defaultTokenView="card"
+        defaultTokenView="list"
+        hideViewToggle
         forceTab={forceTab}
       />
     </Box>

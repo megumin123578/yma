@@ -1,4 +1,36 @@
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+
+
+def ensure_database_exists(db_engine: Engine) -> None:
+    """Create the target Postgres database if it does not exist yet.
+
+    The app engine points at the target DB, which fails to connect when the DB
+    is missing. We connect to the default ``postgres`` maintenance database and
+    issue ``CREATE DATABASE`` (requires AUTOCOMMIT — it can't run in a tx).
+    """
+    url = db_engine.url
+    db_name = url.database
+    if not db_name or db_name == "postgres":
+        return
+
+    admin_engine = create_engine(
+        url.set(database="postgres"),
+        isolation_level="AUTOCOMMIT",
+        future=True,
+    )
+    try:
+        with admin_engine.connect() as conn:
+            exists = conn.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :name"),
+                {"name": db_name},
+            ).scalar()
+            if not exists:
+                # db_name comes from our own PG_URL config; quote defensively.
+                conn.exec_driver_sql(f'CREATE DATABASE "{db_name}"')
+                print(f"[INFO] Created Postgres database: {db_name}")
+    finally:
+        admin_engine.dispose()
 
 
 def ensure_revenue_table_pg(db_engine: Engine) -> None:
@@ -49,6 +81,7 @@ def ensure_video_overview_table_pg(db_engine: Engine) -> None:
         )
 
 def ensure_postgres_state(db_engine: Engine) -> None:
+    ensure_database_exists(db_engine)
     ensure_video_overview_table_pg(db_engine)
     ensure_revenue_table_pg(db_engine)
     ensure_channel_daily_table_pg(db_engine)

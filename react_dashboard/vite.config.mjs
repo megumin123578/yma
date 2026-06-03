@@ -98,7 +98,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host,
       port,
-      allowedHosts: ["app.tuanfmcaa.site"],
+      allowedHosts: ["app.tuanfmcaa.site", "fmc.tuanfmcaa.site"],
       proxy: {
         "/api": {
           target: proxyTarget,

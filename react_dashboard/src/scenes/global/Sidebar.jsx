@@ -23,6 +23,7 @@ import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import MailOutlineRoundedIcon from "@mui/icons-material/MailOutlineRounded";
 import WebhookIcon from "@mui/icons-material/Webhook";
 import QueryStatsIcon from "@mui/icons-material/QueryStats";
+import TravelExploreOutlinedIcon from "@mui/icons-material/TravelExploreOutlined";
 import AutoModeIcon from "@mui/icons-material/AutoMode";
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import AccountTreeOutlinedIcon from "@mui/icons-material/AccountTreeOutlined";
@@ -113,6 +114,7 @@ const Sidebar = ({
     "/revenue",
   ]);
   const defaultOpenStatistics = inGroup(["/channel_compare", "/rivals"]);
+  const defaultOpenResearch = inGroup(["/research", "/research/config"]);
   const defaultOpenAutomation = inGroup([
     "/smmstore",
     "/smmstore_analytics",
@@ -138,6 +140,7 @@ const Sidebar = ({
   const canSmmstore = true;
   const canMail = true;
   const canRivals = true;
+  const canResearch = true;
   const canConfig = true;
   const canManageStructure = true;
   const canManageRoles = true;
@@ -555,6 +558,33 @@ const Sidebar = ({
                       isCompact={isDesktopCompact}
                     />
                   )}
+                </SubMenu>
+              )}
+
+              {canResearch && (
+                <SubMenu
+                  label={<Typography sx={subMenuTitleSx}>Report</Typography>}
+                  icon={<TravelExploreOutlinedIcon />}
+                  active={defaultOpenResearch}
+                  defaultOpen={defaultOpenResearch}
+                  title={isDesktopCompact ? "Report" : undefined}
+                >
+                  <Item
+                    title="View"
+                    to="/research"
+                    icon={<BarChartOutlinedIcon />}
+                    isActive={pathname === "/research"}
+                    onClick={closeOnMobile}
+                    isCompact={isDesktopCompact}
+                  />
+                  <Item
+                    title="Manage run"
+                    to="/research/config"
+                    icon={<SettingsOutlinedIcon />}
+                    isActive={pathname === "/research/config"}
+                    onClick={closeOnMobile}
+                    isCompact={isDesktopCompact}
+                  />
                 </SubMenu>
               )}
 

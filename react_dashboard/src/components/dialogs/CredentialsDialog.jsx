@@ -10,6 +10,7 @@ import {
   Menu,
   MenuItem,
   Box,
+  Collapse,
   Typography,
   Divider,
   Fade,
@@ -46,6 +47,10 @@ import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
 import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
+import PauseCircleOutlineIcon from "@mui/icons-material/PauseCircleOutline";
+import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
+import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import {
   listTokens,
   deleteToken,
@@ -83,6 +88,14 @@ import {
   runBackupNow,
 } from "../../services/userService";
 import { subscribeSSE } from "../../services/sse";
+import {
+  getUnifiedChannels,
+  createWatchlist,
+  patchWatchlist,
+  removeChannel,
+  startRun,
+  generateAi,
+} from "../../services/researchService";
 import { UserContext, useHasPermission } from "../../context/UserContext";
 import ManageUserRequests from "../ManageUserRequests";
 
@@ -103,6 +116,16 @@ const RUN_STAGE_LABELS = {
   subscribers: "Subscribers",
   queued: "Queued",
   running: "Running",
+};
+
+const fmtCompact = (n) => {
+  if (n === null || n === undefined) return "—";
+  const x = Number(n);
+  if (!isFinite(x)) return "—";
+  if (x >= 1e9) return (x / 1e9).toFixed(1).replace(/\.0$/, "") + "B";
+  if (x >= 1e6) return (x / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+  if (x >= 1e3) return (x / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(x);
 };
 
 const RUN_MENU_OPTIONS = [
@@ -143,6 +166,7 @@ const CredentialsDialog = ({
   onClose,
   inline = false,
   defaultTokenView = "list",
+  hideViewToggle = false,
   onDataChanged,
   forceTab = "",
 }) => {
@@ -163,6 +187,19 @@ const CredentialsDialog = ({
   const [oauthState, setOauthState] = useState("");
   const [tokens, setTokens] = useState([]);
   const [loadingTokens, setLoadingTokens] = useState(false);
+  const [watchlists, setWatchlists] = useState([]);
+  const [expandedChannels, setExpandedChannels] = useState(() => new Set());
+
+  const reloadWatchlists = useCallback(() => {
+    getUnifiedChannels()
+      .then(setWatchlists)
+      .catch(() => setWatchlists([]));
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    reloadWatchlists();
+  }, [open, reloadWatchlists]);
   const [runningAll, setRunningAll] = useState(false);
   const [, setTokenSyncing] = useState(false);
   const [tokenProgress, setTokenProgress] = useState({});
@@ -380,6 +417,46 @@ const CredentialsDialog = ({
       items,
     }));
   }, [tokens]);
+
+  // map account_tag -> token (để row watchlist tái dùng renderTokenItem của kênh đã OAuth)
+  const tokenByTag = useMemo(() => {
+    const m = {};
+    (tokens || []).forEach((t) => {
+      const n = typeof t === "string" ? t : t?.name || "";
+      if (n) m[n.replace(/\.json$/i, "")] = t;
+    });
+    return m;
+  }, [tokens]);
+
+  // Gom watchlist theo project (project lấy từ token kênh chính; chưa OAuth -> "No project")
+  const watchlistHierarchy = useMemo(() => {
+    const projects = new Map();
+    (watchlists || []).forEach((wl) => {
+      const tok = wl.accountTag ? tokenByTag[wl.accountTag] : null;
+      const projectName =
+        (tok && typeof tok === "object" ? tok.project_name : "") || "";
+      const key = projectName || "No project";
+      if (!projects.has(key)) projects.set(key, []);
+      projects.get(key).push(wl);
+    });
+    const arr = Array.from(projects.entries()).map(([projectName, items]) => ({
+      projectName,
+      items,
+    }));
+    // Nhóm "No project" (gồm kênh chưa OAuth) xuống CUỐI; các project khác giữ thứ tự.
+    arr.sort((a, b) => (a.projectName === "No project" ? 1 : 0) - (b.projectName === "No project" ? 1 : 0));
+    // Trong "No project": kênh đã OAuth trước, kênh chưa OAuth xuống cuối.
+    const noProj = arr.find((g) => g.projectName === "No project");
+    if (noProj) {
+      noProj.items.sort((x, y) => {
+        const xo = x.accountTag ? 0 : 1;
+        const yo = y.accountTag ? 0 : 1;
+        if (xo !== yo) return xo - yo;
+        return (x.watchlistName || "").localeCompare(y.watchlistName || "");
+      });
+    }
+    return arr;
+  }, [watchlists, tokenByTag]);
 
   const isProgressFromToday = useCallback((updatedAt) => {
     const value = String(updatedAt || "").trim();
@@ -2115,16 +2192,6 @@ const CredentialsDialog = ({
                   View only
                 </Typography>
               )}
-              {!!projectName && (
-                <Chip
-                  size="small"
-                  label={`Project: ${projectName}`}
-                  sx={{
-                    bgcolor: isDark ? "rgba(125,224,210,0.12)" : "rgba(25,118,210,0.08)",
-                    color: isDark ? "#d7fff7" : "rgba(15,23,42,0.82)",
-                  }}
-                />
-              )}
             </Box>
             {renderTokenControls(tokenName, displayName, isOwned, isHidden, "list")}
           </Box>
@@ -2134,6 +2201,174 @@ const CredentialsDialog = ({
     );
   };
 
+  // ===== Gộp danh sách: mỗi kênh expand ra kênh phụ (watchlist) =====
+  const toggleChannelExpand = (tokenName) => {
+    setExpandedChannels((prev) => {
+      const next = new Set(prev);
+      if (next.has(tokenName)) next.delete(tokenName);
+      else next.add(tokenName);
+      return next;
+    });
+  };
+
+  // ===== Watchlist-level handlers (gộp từ WatchlistManager) =====
+  const wlNotify = (msg, type = "success") => setStatus({ type, message: msg });
+
+  const handleCreateWL = async () => {
+    const name = window.prompt("Tên watchlist mới:");
+    if (!name || !name.trim()) return;
+    try {
+      await createWatchlist(name.trim());
+      reloadWatchlists();
+    } catch (e) {
+      wlNotify(e?.response?.data?.detail || e.message, "error");
+    }
+  };
+  const handleTogglePauseWL = async (wl) => {
+    await patchWatchlist(wl.watchlistId, { paused: !wl.paused });
+    reloadWatchlists();
+  };
+  const handleRunWL = async (wl) => {
+    if (!window.confirm(`Chạy thu thập (Chrome) cho "${wl.watchlistName}"? Có thể mất nhiều phút.`)) return;
+    try {
+      const r = await startRun({ wlIds: [wl.watchlistId] });
+      wlNotify(`Đang chạy "${wl.watchlistName}" (${r.runId}) — theo dõi ở Report → Manage run.`);
+    } catch (e) {
+      wlNotify(e?.response?.data?.detail || e.message, "error");
+    }
+  };
+  const handleGenAiWL = async (wl) => {
+    try {
+      const r = await generateAi(wl.watchlistId);
+      wlNotify(`Đang sinh AI cho "${wl.watchlistName}" (${r.runId}).`);
+    } catch (e) {
+      wlNotify(e?.response?.data?.detail || e.message, "error");
+    }
+  };
+  const handleRemoveCompetitor = async (wid, cid, title) => {
+    if (!window.confirm(`Gỡ kênh "${title}" khỏi watchlist?`)) return;
+    await removeChannel(wid, cid);
+    reloadWatchlists();
+  };
+
+  // ===== 1 row = 1 watchlist (kênh chính) — OAuth thì tái dùng renderTokenItem,
+  // chưa OAuth thì row đơn giản; expand ra kênh phụ; hàng action cấp WL =====
+  const renderWatchlistRow = (wl) => {
+    const wid = wl.watchlistId;
+    const tag = wl.accountTag;
+    const token = tag ? tokenByTag[tag] : null;
+    const expanded = expandedChannels.has(wid);
+    const selfTitle = (wl.self && wl.self.title) || wl.watchlistName;
+    const competitors = wl.competitors || [];
+    return (
+      <Box
+        key={wid}
+        sx={{ border: `1px solid ${border}`, borderRadius: 2, p: 1, bgcolor: isDark ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.5)" }}
+      >
+        <Box
+          onClick={(e) => {
+            if (runSelectedMode) return;
+            if (
+              e.target.closest(
+                'button, a, input, label, [role="button"], .MuiCheckbox-root, .MuiSwitch-root, .MuiChip-root, .MuiIconButton-root'
+              )
+            )
+              return;
+            toggleChannelExpand(wid);
+          }}
+          title="Bấm để xem kênh phụ"
+          sx={{
+            cursor: "pointer",
+            borderRadius: 1,
+            transition: "background-color 0.15s",
+            "&:hover": { bgcolor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)" },
+          }}
+        >
+          {token ? (
+            renderTokenItem(token, "list")
+          ) : (
+            <Box display="flex" alignItems="center" gap={1} sx={{ py: 0.75, px: 0.75 }}>
+              <Avatar src={wl.self?.avatar || undefined} sx={{ width: 30, height: 30, fontSize: 13 }}>
+                {(selfTitle || "?").charAt(0).toUpperCase()}
+              </Avatar>
+              <Box flexGrow={1} minWidth={0}>
+                <Typography variant="body2" fontWeight={600} noWrap title={selfTitle}>
+                  {selfTitle}
+                </Typography>
+                {wl.self && wl.self.subs != null && (
+                  <Typography variant="caption" color="text.secondary" noWrap>
+                    {fmtCompact(wl.self.subs)} subs · {fmtCompact(wl.self.totalViews)} views · {fmtCompact(wl.self.totalVideos)} videos
+                  </Typography>
+                )}
+              </Box>
+              <Chip size="small" color="error" variant="outlined" label="⚠ chưa OAuth" />
+            </Box>
+          )}
+        </Box>
+
+        {/* Hàng action cấp watchlist (luôn hiển thị) */}
+        <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap" sx={{ pl: 0.75, pt: 0.5 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+            {competitors.length} kênh phụ
+          </Typography>
+          {wl.paused && <Chip size="small" label="paused" sx={{ height: 18 }} />}
+          <Button size="small" color="error" startIcon={<PlayArrowIcon />} onClick={() => handleRunWL(wl)}>
+            Run WL
+          </Button>
+          <Button size="small" startIcon={<AutoAwesomeRoundedIcon />} onClick={() => handleGenAiWL(wl)}>
+            Sinh AI
+          </Button>
+          <Button
+            size="small"
+            startIcon={wl.paused ? <PlayCircleOutlineIcon /> : <PauseCircleOutlineIcon />}
+            onClick={() => handleTogglePauseWL(wl)}
+          >
+            {wl.paused ? "Bật" : "Tạm dừng"}
+          </Button>
+        </Box>
+
+        <Collapse in={expanded} unmountOnExit>
+          <Box sx={{ pl: 1.5, pr: 1, py: 1 }}>
+            <Box display="flex" flexDirection="column" gap={0.25}>
+              {competitors.map((c) => (
+                <Box key={c.channelId} display="flex" alignItems="center" gap={0.75} sx={{ opacity: c.archived ? 0.5 : 1 }}>
+                  <Avatar src={c.avatar || undefined} sx={{ width: 26, height: 26, fontSize: 12 }}>
+                    {(c.title || "?").charAt(0).toUpperCase()}
+                  </Avatar>
+                  <Box flexGrow={1} minWidth={0}>
+                    <Typography variant="body2" noWrap title={c.title}>
+                      {c.url ? (
+                        <a href={c.url} target="_blank" rel="noopener noreferrer" style={{ color: "inherit" }}>
+                          {c.title}
+                        </a>
+                      ) : (
+                        c.title
+                      )}
+                    </Typography>
+                    {c.subs != null && (
+                      <Typography variant="caption" color="text.secondary" noWrap>
+                        {fmtCompact(c.subs)} subs · {fmtCompact(c.totalViews)} views · {fmtCompact(c.totalVideos)} videos
+                      </Typography>
+                    )}
+                  </Box>
+                  {c.autoAdded && <Chip size="small" variant="outlined" label="auto" sx={{ height: 18 }} />}
+                  {c.archived && <Chip size="small" label="archived" sx={{ height: 18 }} />}
+                  <Tooltip title="Gỡ kênh khỏi watchlist">
+                    <IconButton size="small" color="error" onClick={() => handleRemoveCompetitor(wid, c.channelId, c.title)}>
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              ))}
+              {competitors.length === 0 && (
+                <Typography variant="caption" color="text.secondary">Chưa có kênh phụ.</Typography>
+              )}
+            </Box>
+          </Box>
+        </Collapse>
+      </Box>
+    );
+  };
 
   const Shell = inline ? Box : Dialog;
   const shellProps = inline
@@ -2354,6 +2589,7 @@ const CredentialsDialog = ({
                         </span>
                       </Tooltip>
                     </Box>
+                    {!hideViewToggle && (
                     <Tooltip
                       title={
                         tokenView === "card"
@@ -2395,28 +2631,29 @@ const CredentialsDialog = ({
                         </Typography>
                       </Box>
                     </Tooltip>
+                    )}
                   </Box>
 
-                  {tokens.length === 0 ? (
-                    <Typography variant="body2" color="text.secondary">
-                      {loadingTokens ? "Loading tokens..." : "No tokens found."}
-                    </Typography>
-                  ) : (
-                    <Box display="flex" flexDirection="column" gap={2}>
-                      {tokenHierarchy.map((project) => (
-                        <Box
-                          key={project.projectName}
-                          sx={{
-                            border: `1px solid ${border}`,
-                            borderRadius: 2,
-                            p: 1.5,
-                            bgcolor: isDark ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.55)",
-                          }}
-                        >
-                          <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>
-                            {project.projectName}
-                          </Typography>
-                          {tokenView === "card" ? (
+                  {tokenView === "card" ? (
+                    tokens.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        {loadingTokens ? "Loading tokens..." : "No tokens found."}
+                      </Typography>
+                    ) : (
+                      <Box display="flex" flexDirection="column" gap={2}>
+                        {tokenHierarchy.map((project) => (
+                          <Box
+                            key={project.projectName}
+                            sx={{
+                              border: `1px solid ${border}`,
+                              borderRadius: 2,
+                              p: 1.5,
+                              bgcolor: isDark ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.55)",
+                            }}
+                          >
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>
+                              {project.projectName}
+                            </Typography>
                             <Box
                               display="grid"
                               gap={1.5}
@@ -2432,13 +2669,72 @@ const CredentialsDialog = ({
                             >
                               {project.items.map((token) => renderTokenItem(token, "card"))}
                             </Box>
-                          ) : (
+                          </Box>
+                        ))}
+                      </Box>
+                    )
+                  ) : (
+                    // LIST view = 1 danh sách thống nhất theo watchlist (kênh chính + kênh phụ),
+                    // gồm CẢ kênh chưa OAuth. Giữ mọi action OAuth cho kênh đã kết nối.
+                    <Box display="flex" flexDirection="column" gap={1.25}>
+                      <Box display="flex" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                          Kênh chính + kênh phụ ({watchlists.length})
+                        </Typography>
+                        <Button size="small" variant="outlined" startIcon={<AddRoundedIcon />} onClick={handleCreateWL}>
+                          Tạo watchlist
+                        </Button>
+                      </Box>
+                      {watchlists.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          {loadingTokens ? "Đang tải..." : "Chưa có watchlist."}
+                        </Typography>
+                      ) : (
+                        watchlistHierarchy.map((project) => (
+                          <Box
+                            key={project.projectName}
+                            sx={{
+                              border: `1px solid ${border}`,
+                              borderRadius: 2,
+                              p: 1.5,
+                              bgcolor: isDark ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.55)",
+                            }}
+                          >
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1 }}>
+                              {project.projectName}
+                            </Typography>
                             <Box display="flex" flexDirection="column" gap={1}>
-                              {project.items.map((token) => renderTokenItem(token, "list"))}
+                              {project.items.map(renderWatchlistRow)}
                             </Box>
-                          )}
-                        </Box>
-                      ))}
+                          </Box>
+                        ))
+                      )}
+                      {(() => {
+                        // Token OAuth không thuộc watchlist nào (phòng trường hợp hiếm) → vẫn hiện
+                        const covered = new Set(
+                          watchlists.map((w) => w.accountTag).filter(Boolean)
+                        );
+                        const orphans = (tokens || []).filter((t) => {
+                          const n = typeof t === "string" ? t : t?.name || "";
+                          return n && !covered.has(n.replace(/\.json$/i, ""));
+                        });
+                        if (!orphans.length) return null;
+                        return (
+                          <>
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary", mt: 1 }}>
+                              Kênh khác (không thuộc watchlist)
+                            </Typography>
+                            {orphans.map((t) => (
+                              <Box
+                                key={typeof t === "string" ? t : t.name}
+                                sx={{ border: `1px solid ${border}`, borderRadius: 2, p: 1 }}
+                              >
+                                {renderTokenItem(t, "list")}
+                              </Box>
+                            ))}
+                          </>
+                        );
+                      })()}
                     </Box>
                   )}
               </>

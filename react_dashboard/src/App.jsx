@@ -39,6 +39,7 @@ const GeographyScene = lazy(() => import("./scenes/geography"));
 const SmmstoreAnalyticsScene = lazy(() => import("./scenes/smmstore_analytics"));
 const AudienceAnalyticsScene = lazy(() => import("./scenes/audience_analytics"));
 const ReachAnalyticsScene = lazy(() => import("./scenes/reach_analytics"));
+const ResearchScene = lazy(() => import("./scenes/research"));
 const RevenueAnalyticsScene = lazy(() => import("./scenes/revenue"));
 const MailMonitorScene = lazy(() => import("./scenes/mail_monitor"));
 const ConfigPage = lazy(() => import("./scenes/config"));
@@ -196,6 +197,22 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
             <PermissionRoute action="page.revenue">
               <RevenueAnalyticsScene />
             </PermissionRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/research"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <ResearchScene view="report" />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/research/config"
+        element={
+          <ProtectedRoute user={user} loading={loading}>
+            <ResearchScene view="config" />
           </ProtectedRoute>
         }
       />

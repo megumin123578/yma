@@ -48,6 +48,9 @@ python_backend/progress/
 python_backend/quota_state.db
 /helper
 .claude/
+# Bundle YT (project desktop FMC riêng + repo git lồng + secret: API key cứng,
+# firebase config, OAuth tokens, 679MB state). KHÔNG commit — chỉ dùng runtime.
+python_backend/YT/
 
 # ---- Logs ----
 *.log

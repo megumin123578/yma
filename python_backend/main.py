@@ -64,6 +64,7 @@ from python_backend.routes.geography import router as geo_router
 from python_backend.routes.mail import router as mail_router
 from python_backend.routes.overview import router as overview_router
 from python_backend.routes.reach import router as reach_router
+from python_backend.routes.research import router as research_router
 from python_backend.routes.revenue import router as revenue_router
 from python_backend.routes.smmstore import router as smmstore_router
 from python_backend.routes.traffic_timeseries import router as ts_router
@@ -102,10 +103,20 @@ async def lifespan(_: FastAPI):
         start_scheduler()
     prewarm_content_cache()
     try:
+        from python_backend.routes.research import start_research_scheduler
+        start_research_scheduler()
+    except Exception as e:  # noqa: BLE001
+        print(f"[main] research scheduler start loi: {e}")
+    try:
         yield
     finally:
         if should_start_scheduler:
             stop_scheduler()
+        try:
+            from python_backend.routes.research import stop_research_scheduler
+            stop_research_scheduler()
+        except Exception:
+            pass
 
 
 app = FastAPI(
@@ -138,6 +149,7 @@ app.include_router(channel_compare_router)
 app.include_router(youtube_router)
 app.include_router(audience_router)
 app.include_router(reach_router)
+app.include_router(research_router)
 app.include_router(revenue_router)
 app.include_router(auth.router)
 app.include_router(user.router, prefix="/api")

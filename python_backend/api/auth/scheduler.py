@@ -852,6 +852,31 @@ def _parse_published_at(value):
     return None
 
 
+_PENDING_CRED_TTL_SEC = _env_int("PENDING_CRED_TTL_SEC", 3600, minimum=300)
+
+
+def _cleanup_pending_credentials(db, now_utc):
+    """Dọn UserCredential 'pending_*' mồ côi (OAuth bỏ dở): không chọn kênh +
+    quá hạn TTL. Tránh tích rác mỗi lần bấm + Add mà không hoàn tất."""
+    cutoff = now_utc - timedelta(seconds=_PENDING_CRED_TTL_SEC)
+    try:
+        n = (
+            db.query(UserCredential)
+            .filter(
+                UserCredential.account_tag.like("pending\\_%", escape="\\"),
+                UserCredential.selected_channel_id.is_(None),
+                UserCredential.created_at < cutoff,
+            )
+            .delete(synchronize_session=False)
+        )
+        if n:
+            db.commit()
+            print(f"[scheduler] cleanup {n} pending credential mồ côi (>{_PENDING_CRED_TTL_SEC}s)")
+    except Exception as e:
+        db.rollback()
+        print(f"[WARN] cleanup pending credentials failed: {e}")
+
+
 def _run_loop():
     from python_backend.routes.smmstore import process_due_smmstore_orders
 
@@ -919,6 +944,7 @@ def _run_loop():
                 _capture_live_counter_snapshots(db, now_saigon)
             if _should_cleanup_token_progress(now_saigon):
                 _cleanup_token_progress(db, now_saigon)
+                _cleanup_pending_credentials(db, now_utc)
             if _should_run_backup(now_saigon):
                 _store_last_backup_at(now_saigon)
                 kickoff_backup()
