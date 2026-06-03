@@ -111,17 +111,11 @@ def _view_7d_for_wl(wid: str) -> float:
         pass  # silent fallback to SB
 
     # ---- FALLBACK: SB pkl (logic gốc) ----
-    idx = persistence._load_index()
-    recs = sorted(
-        [e for e in idx if e.get("channel_id") == cid
-         and e.get("type") == "channel"],
-        key=lambda e: e["id"], reverse=True)
+    recs = persistence.records_for_channel(cid)
     if not recs:
         return 0.0
-    try:
-        with open(recs[0]["pkl_path"], "rb") as f:
-            data = _pickle.load(f)
-    except Exception:
+    data = persistence.load_result(recs[0]["id"])
+    if data is None:
         return 0.0
     return _compute_view_7d_avg(data.get("socialblade") or {})
 

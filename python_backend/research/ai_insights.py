@@ -1057,6 +1057,134 @@ def analyze_watchlist_strategy(
                        model=model or MODEL, max_tokens=4000)
 
 
+# ============================================================
+# Báo cáo SEO thực chiến — cấu trúc theo quy trình 9 bước
+# (1.1→3.3), bám dữ liệu watchlist, mỗi bước có việc làm cụ thể.
+# ============================================================
+
+_SEO_LANG_RULE = (
+    "QUY TẮC NGÔN NGỮ (BẮT BUỘC): Viết HOÀN TOÀN bằng tiếng Việt, giọng "
+    "rõ ràng, dễ hiểu, thực chiến. Hạn chế thuật ngữ; nếu buộc dùng "
+    "(CTR, retention, AVD, pillar...) thì mở ngoặc giải thích 1 câu ngắn. "
+    "Giữ nguyên gốc: tên kênh, tiêu đề video, từ khoá."
+)
+
+
+def build_seo_report_prompt(watchlist, channels_data: list) -> str:
+    """Prompt báo cáo SEO thực chiến — 9 bước theo quy trình chuẩn.
+
+    Mỗi bước có 3 phần: (a) Hiện trạng bám số liệu thật; (b) Vì sao quan
+    trọng (1 câu ngắn); (c) Việc làm ngay (gạch đầu dòng cụ thể).
+    """
+    user_ch = next((c for c in channels_data if c.get("is_self")), None)
+    competitors = [c for c in channels_data if not c.get("is_self")]
+    competitors.sort(key=lambda c: c.get("subscriber_count", 0), reverse=True)
+
+    lines = []
+    lines.append(
+        "Bạn là CHUYÊN GIA SEO YouTube, viết BÁO CÁO SEO thực chiến cho "
+        "kênh. Mục tiêu: đọc xong BIẾT CHÍNH XÁC PHẢI LÀM GÌ để kênh SEO "
+        "tốt lên — cụ thể, làm theo được ngay, không nói chung chung.")
+    lines.append("")
+    lines.append(_SEO_LANG_RULE)
+    lines.append("")
+    lines.append(f"# DỮ LIỆU WATCHLIST: {watchlist.name}")
+    if getattr(watchlist, "description", ""):
+        lines.append(f"Mô tả: {watchlist.description}")
+    lines.append("")
+
+    if user_ch:
+        lines.append(f"## ★ KÊNH CỦA BẠN: {user_ch['title']}")
+        lines.append(f"- Người đăng ký: {user_ch.get('subscriber_count', 0):,}")
+        if user_ch.get("avg_views_per_video"):
+            lines.append(f"- Trung bình lượt xem/video: "
+                         f"{user_ch['avg_views_per_video']:,}")
+        if user_ch.get("top1_views"):
+            lines.append(f"- Video cao nhất: {user_ch['top1_views']:,} lượt xem")
+        if user_ch.get("like_view_ratio"):
+            lines.append(f"- Tỷ lệ thích/xem: {user_ch['like_view_ratio']:.2f}%")
+        if user_ch.get("videos_per_day"):
+            lines.append(f"- Tần suất đăng: {user_ch['videos_per_day']:.2f} "
+                         "video/ngày")
+        if user_ch.get("research_keywords"):
+            lines.append(f"- Từ khoá kênh: "
+                         f"{', '.join(user_ch['research_keywords'][:15])}")
+        lines.append("### Top video của bạn:")
+        for i, v in enumerate(user_ch.get("top_videos_by_vph", [])[:8], 1):
+            lines.append(f"  {i}. {v['view_count']:,} lượt xem — "
+                         f"\"{v['title'][:70]}\"")
+        lines.append("")
+    else:
+        lines.append("## ⚠ Watchlist chưa đánh dấu KÊNH CỦA BẠN (kênh chính). "
+                     "Hãy nhắc người dùng đánh dấu 1 kênh là 'kênh của tôi'.")
+        lines.append("")
+
+    lines.append(f"## ĐỐI THỦ ({len(competitors)} kênh):")
+    for i, c in enumerate(competitors[:8], 1):
+        lines.append(f"### {i}. {c['title']} — {c.get('subscriber_count', 0):,} "
+                     "người đăng ký")
+        if c.get("avg_views_per_video"):
+            lines.append(f"  - TB lượt xem/video: {c['avg_views_per_video']:,}")
+        if c.get("research_keywords"):
+            lines.append(f"  - Từ khoá: {', '.join(c['research_keywords'][:8])}")
+        for v in c.get("top_videos_by_vph", [])[:3]:
+            lines.append(f"  - Video hot: {v['view_count']:,} lượt xem — "
+                         f"\"{v['title'][:70]}\"")
+    lines.append("")
+
+    lines.append(_SEO_FRAMEWORK)
+
+    lines.append("# YÊU CẦU: viết BÁO CÁO SEO theo ĐÚNG 9 BƯỚC dưới đây. "
+                 "MỖI BƯỚC gồm 3 phần ghi rõ:")
+    lines.append("- **(a) Hiện trạng** — 1-3 câu bám số liệu thật ở trên. "
+                 "Nếu thiếu dữ liệu thì ghi \"chưa có dữ liệu — cần thu thập "
+                 "thêm\".")
+    lines.append("- **(b) Vì sao quan trọng** — 1 câu ngắn, dễ hiểu.")
+    lines.append("- **(c) Việc làm ngay** — 2-4 gạch đầu dòng CỰC CỤ THỂ, "
+                 "làm theo được ngay (ví dụ mẫu title/hook nếu hợp).")
+    lines.append("")
+    steps = [
+        ("1.1 — Phân tích thị trường & đối thủ",
+         "Ngách chính, đối thủ mạnh/yếu, khoảng trống cơ hội kênh bạn nên chiếm."),
+        ("1.2 — Phân tích từ khoá",
+         "Từ khoá nên nhắm (ý định tìm kiếm rõ, đủ lượt tìm, ít cạnh tranh)."),
+        ("1.3 — Phân tích xu hướng",
+         "Chủ đề/format đang lên trong ngách; nên bắt trend nào, tránh gì."),
+        ("2.1 — Xây dựng thương hiệu kênh",
+         "Tên/handle, avatar/banner, mô tả kênh chứa từ khoá, tông giọng."),
+        ("2.2 — Cấu trúc nội dung kênh",
+         "Trụ cột nội dung (pillar), series, playlist theo ý định người xem."),
+        ("2.3 — On-Video SEO",
+         "Tiêu đề ≤70 ký tự có từ khoá, mô tả 2-3 dòng đầu, hashtag/tag, "
+         "timestamp, thumbnail, hook 10s."),
+        ("3.1 — Theo dõi & đo lường",
+         "Chỉ số cần theo dõi (CTR, AVD, retention, like/xem) và mốc tốt."),
+        ("3.2 — Tương tác cộng đồng",
+         "Trả lời bình luận, bài community, livestream để tăng quay lại."),
+        ("3.3 — Duy trì & phát triển",
+         "Lịch đăng đều, làm lại video cũ yếu (refresh), kế hoạch 30-90 ngày."),
+    ]
+    for title, hint in steps:
+        lines.append(f"## Bước {title}")
+        lines.append(hint)
+        lines.append("")
+    lines.append("## ✅ TÓM TẮT — 5 VIỆC LÀM TUẦN NÀY")
+    lines.append("Liệt kê đúng 5 việc ưu tiên cao nhất rút ra từ 9 bước trên, "
+                 "theo thứ tự, mỗi việc 1 dòng, làm được ngay trong tuần.")
+    lines.append("")
+    lines.append("Trả lời TRỰC TIẾP bằng markdown. BẮT ĐẦU NGAY bằng "
+                 "\"## Bước 1.1\". TUYỆT ĐỐI KHÔNG viết câu dẫn nhập / khẩu "
+                 "hiệu / tiêu đề tổng — vào thẳng nội dung từng bước.")
+    return "\n".join(lines)
+
+
+def analyze_seo_report(watchlist, channels_data: list,
+                       api_key: str = "", model: Optional[str] = None) -> str:
+    """Sinh báo cáo SEO thực chiến bằng Claude CLI (Opus). Trả markdown."""
+    prompt = build_seo_report_prompt(watchlist, channels_data)
+    return call_claude(api_key, prompt, model=model or MODEL, max_tokens=5000)
+
+
 def collect_watchlist_data_previous(watchlist) -> Optional[list]:
     """
     Lấy data của watchlist tại lần monitor TRƯỚC lần gần nhất (để diff).

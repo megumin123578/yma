@@ -448,6 +448,21 @@ def get_thumbnail_ctr_top(account_tag: str, top_n: int = 10,
         return []
 
 
+def last_thumbnail_day(account_tag: str) -> str:
+    """Ngày data thumbnail mới nhất (YYYY-MM-DD), '' nếu chưa có."""
+    eng = _get_engine()
+    if eng is None or not account_tag:
+        return ""
+    try:
+        with eng.connect() as conn:
+            row = conn.execute(text(
+                "SELECT MAX(day) FROM video_thumbnail_daily "
+                "WHERE account_tag = :tag"), {"tag": account_tag}).fetchone()
+        return _day_str(row[0]) if row and row[0] else ""
+    except Exception:
+        return ""
+
+
 # ============================================================
 # 4. REVENUE — Sensitive, chỉ trả khi gọi rõ ràng
 # ============================================================

@@ -34,21 +34,15 @@ def _video_tags_set(video) -> set:
     return s
 
 
-def _wl_top_tags(wl, idx, top_n: int = 30) -> set:
+def _wl_top_tags(wl, top_n: int = 30) -> set:
     """Tổng hợp top tags từ tất cả channel trong WL."""
-    import pickle
+    from . import persistence
     counter = Counter()
     for c in wl.channels:
-        recs = sorted(
-            [e for e in idx if e.get("channel_id") == c.channel_id
-             and e.get("type") == "channel"],
-            key=lambda e: e["id"], reverse=True,
-        )[:1]
+        recs = persistence.records_for_channel(c.channel_id)[:1]
         for r in recs:
-            try:
-                with open(r["pkl_path"], "rb") as f:
-                    d = pickle.load(f)
-            except Exception:
+            d = persistence.load_result(r["id"])
+            if d is None:
                 continue
             for v in (d.get("videos") or []):
                 counter.update(_video_tags_set(v))
@@ -71,8 +65,7 @@ def build_wl_graph(log_fn: Callable[[str], None] = print) -> dict:
         wl_top_tags: {wl_id: set_of_tags},
     }
     """
-    from . import watchlist as wl_mod, persistence
-    idx = persistence._load_index()
+    from . import watchlist as wl_mod
 
     wls = wl_mod.list_watchlists()
     log_fn(f"  🔗 Build graph cho {len(wls)} WL...")
@@ -80,7 +73,7 @@ def build_wl_graph(log_fn: Callable[[str], None] = print) -> dict:
     wl_tags_map = {}
     wl_comps_map = {}
     for w in wls:
-        wl_tags_map[w.id] = _wl_top_tags(w, idx, top_n=50)
+        wl_tags_map[w.id] = _wl_top_tags(w, top_n=50)
         wl_comps_map[w.id] = _wl_competitors(w)
 
     edges = []
@@ -120,26 +113,18 @@ def detect_viral_cluster(wl_id: str, viral_ratio: float = 3.0,
 
     Returns list dict {cluster_tag, n_viral_videos, sample_videos, avg_vpd}
     """
-    import pickle
     from . import watchlist as wl_mod, persistence
     w = wl_mod.load_watchlist(wl_id)
     if not w:
         return []
-    idx = persistence._load_index()
 
     # Collect all videos trong WL
     all_vids = []
     for c in w.channels:
-        recs = sorted(
-            [e for e in idx if e.get("channel_id") == c.channel_id
-             and e.get("type") == "channel"],
-            key=lambda e: e["id"], reverse=True,
-        )[:1]
+        recs = persistence.records_for_channel(c.channel_id)[:1]
         for r in recs:
-            try:
-                with open(r["pkl_path"], "rb") as f:
-                    d = pickle.load(f)
-            except Exception:
+            d = persistence.load_result(r["id"])
+            if d is None:
                 continue
             for v in (d.get("videos") or []):
                 vc = getattr(v, "view_count", 0) or 0

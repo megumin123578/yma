@@ -20,6 +20,8 @@ import RunPanel from "../../components/research/RunPanel";
 import ConfigPanel from "../../components/research/ConfigPanel";
 import SchedulePanel from "../../components/research/SchedulePanel";
 import { TABS, TAB_GROUPS } from "../../components/research/reportTabs";
+import SeoReport from "../../components/research/SeoReport";
+import useSeoReport from "../../components/research/useSeoReport";
 import { EmptyState } from "../../components/research/primitives";
 import { generateAi, getReport, listWatchlists } from "../../services/researchService";
 
@@ -38,6 +40,8 @@ const ResearchScene = ({ view = "report" }) => {
     () => Object.fromEntries(watchlists.map((w) => [w.id, w.name])),
     [watchlists]
   );
+
+  const seo = useSeoReport(wid, view === "seo");
 
   // load watchlists
   useEffect(() => {
@@ -99,14 +103,10 @@ const ResearchScene = ({ view = "report" }) => {
           view === "config"
             ? "Daily run, quản lý watchlist, cấu hình và lịch chạy"
             : view === "seo"
-            ? "Xuất báo cáo riêng cho SEO"
+            ? "Báo cáo SEO theo watchlist (đối thủ, từ khoá, on-video, theo dõi)"
             : "Báo cáo watchlist (đối thủ, từ khoá, ngách)"
         }
       />
-
-      {view === "seo" && (
-        <EmptyState text="Trang báo cáo SEO — đang xây dựng." />
-      )}
 
       {view === "config" && (
         <>
@@ -116,7 +116,7 @@ const ResearchScene = ({ view = "report" }) => {
         </>
       )}
 
-      {view === "report" && (
+      {(view === "report" || view === "seo") && (
         <>
       <Box display="flex" alignItems="center" gap={1.5} mb={2} flexWrap="wrap">
         <FormControl size="small" sx={{ minWidth: 280 }}>
@@ -135,44 +135,73 @@ const ResearchScene = ({ view = "report" }) => {
             ))}
           </Select>
         </FormControl>
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<RefreshRoundedIcon />}
-          onClick={() => loadReport(wid, true)}
-          disabled={loading || !wid}
-        >
-          Tải lại
-        </Button>
-        <Button
-          size="small"
-          variant="outlined"
-          color="secondary"
-          startIcon={<AutoAwesomeRoundedIcon />}
-          onClick={async () => {
-            if (!wid) return;
-            setAiMsg("");
-            try {
-              const r = await generateAi(wid);
-              setAiMsg(`Đang sinh AI (${r.runId})… bấm Tải lại khi xong.`);
-            } catch (e) {
-              setAiMsg(e?.response?.data?.detail || e.message);
-            }
-          }}
-          disabled={!wid}
-        >
-          Sinh AI
-        </Button>
-        {report?.date && (
-          <Typography variant="caption" color="text.secondary">
-            Cập nhật: {report.date}
-          </Typography>
+        {view === "report" && (
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<RefreshRoundedIcon />}
+            onClick={() => loadReport(wid, true)}
+            disabled={loading || !wid}
+          >
+            Tải lại
+          </Button>
+        )}
+        {view === "seo" && seo.items.length > 0 && (
+          <FormControl size="small" sx={{ minWidth: 170 }}>
+            <Select
+              value={seo.selId}
+              onChange={(e) => seo.select(e.target.value)}
+              renderValue={(val) => {
+                const it = seo.items.find((i) => i.id === val);
+                return `🗓 ${it?.date || ""}`;
+              }}
+            >
+              {seo.items.map((it) => (
+                <MenuItem key={it.id} value={it.id}>
+                  {it.date}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        )}
+        {view === "seo" && (
+          <Button
+            size="small"
+            variant="outlined"
+            color="secondary"
+            startIcon={<AutoAwesomeRoundedIcon />}
+            onClick={seo.generate}
+            disabled={!wid || seo.generating}
+          >
+            {seo.generating ? "Đang sinh…" : "Sinh báo cáo SEO"}
+          </Button>
+        )}
+        {view === "report" && (
+          <Button
+            size="small"
+            variant="outlined"
+            color="secondary"
+            startIcon={<AutoAwesomeRoundedIcon />}
+            onClick={async () => {
+              if (!wid) return;
+              setAiMsg("");
+              try {
+                const r = await generateAi(wid);
+                setAiMsg(`Đang sinh AI (${r.runId})… bấm Tải lại khi xong.`);
+              } catch (e) {
+                setAiMsg(e?.response?.data?.detail || e.message);
+              }
+            }}
+            disabled={!wid}
+          >
+            Sinh AI
+          </Button>
         )}
         {loading && <CircularProgress size={18} />}
         {error && (
           <Chip size="small" color="error" variant="outlined" label={error} />
         )}
-        {aiMsg && (
+        {view === "report" && aiMsg && (
           <Typography variant="caption" color="text.secondary">
             {aiMsg}
           </Typography>
@@ -183,7 +212,9 @@ const ResearchScene = ({ view = "report" }) => {
         <EmptyState text={error ? `Lỗi: ${error}` : "Chọn một watchlist để xem báo cáo."} />
       )}
 
-      {report && (
+      {report && view === "seo" && <SeoReport report={report} seo={seo} />}
+
+      {report && view === "report" && (
         <>
           <Tabs
             value={groupKey}

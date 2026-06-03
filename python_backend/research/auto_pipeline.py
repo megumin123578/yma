@@ -14,8 +14,6 @@ Gọi sau khi đã giám sát + phát hiện đối thủ xong. Các bước:
 Báo cáo serve JSON on-demand qua API (html_report.build_data → React);
 khâu AI dùng Claude Code CLI.
 """
-import pickle
-
 # Lệch SEO (điểm) coi là "số liệu đã đổi" -> phải sinh AI mới, không chép.
 SEO_DRIFT_MAX = 7
 
@@ -40,21 +38,7 @@ def _has_ai(res):
 
 def _channel_records(persistence, channel_id):
     """Các bản ghi nghiên cứu 'channel' của 1 kênh — mới nhất trước."""
-    return sorted(
-        [e for e in persistence._load_index()
-         if e.get("channel_id") == channel_id
-         and e.get("type") == "channel"],
-        key=lambda e: e["id"], reverse=True)
-
-
-def _load_pkl(path):
-    with open(path, "rb") as f:
-        return pickle.load(f)
-
-
-def _save_pkl(path, res):
-    with open(path, "wb") as f:
-        pickle.dump(res, f, protocol=pickle.HIGHEST_PROTOCOL)
+    return persistence.records_for_channel(channel_id)
 
 
 def carry_forward_ai(wid, log_fn=None):
@@ -76,9 +60,8 @@ def carry_forward_ai(wid, log_fn=None):
         if not recs:
             continue
         new_e = recs[0]
-        try:
-            new_res = _load_pkl(new_e["pkl_path"])
-        except Exception:
+        new_res = persistence.load_result(new_e["id"])
+        if new_res is None:
             continue
         if _has_ai(new_res):
             continue
@@ -87,9 +70,8 @@ def carry_forward_ai(wid, log_fn=None):
         prev_ai = ""
         prev_res = None
         for old_e in recs[1:]:
-            try:
-                old_res = _load_pkl(old_e["pkl_path"])
-            except Exception:
+            old_res = persistence.load_result(old_e["id"])
+            if old_res is None:
                 continue
             if _has_ai(old_res):
                 prev_res = old_res
@@ -119,12 +101,9 @@ def carry_forward_ai(wid, log_fn=None):
                 "previous_ai": prev_ai,
             })
             continue
-        try:
-            new_res["ai_analysis"] = prev_res["ai_analysis"]
-            _save_pkl(new_e["pkl_path"], new_res)
+        if persistence.update_result_field(
+                new_e["id"], "ai_analysis", prev_res["ai_analysis"]):
             carried += 1
-        except Exception:
-            pass
     _log(log_fn, f"Chuyển AI kỳ trước: {carried} kênh; "
                  f"{len(need_fresh)} kênh cần sinh AI mới.")
     return need_fresh
@@ -186,7 +165,9 @@ def generate_missing_ai(need_fresh, api_key, model, log_fn=None):
         new_e = recs[0]
 
         def _gen():
-            res = _load_pkl(new_e["pkl_path"])
+            res = persistence.load_result(new_e["id"])
+            if res is None:
+                raise RuntimeError("snapshot không còn")
             # Kênh chính cần token nhiều hơn (6 mục chi tiết), đối
             # thủ chỉ 3 mục ngắn.
             mt = 3500 if is_self_ch else 1800
@@ -197,8 +178,8 @@ def generate_missing_ai(need_fresh, api_key, model, log_fn=None):
                 max_tokens=mt)
             if not text or not text.strip():
                 raise RuntimeError("AI trả về rỗng")
-            res["ai_analysis"] = text.strip()
-            _save_pkl(new_e["pkl_path"], res)
+            persistence.update_result_field(new_e["id"], "ai_analysis",
+                                            text.strip())
             return text
 
         result_text = _retry(

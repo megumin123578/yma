@@ -16,7 +16,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -75,6 +75,10 @@ _procs_lock = Lock()
 _REPORT_TTL = 300  # giây
 _report_cache: dict[str, tuple[float, dict]] = {}
 _cache_lock = Lock()
+
+# Báo cáo SEO (Claude CLI) đang sinh nền: tập wid để chống bấm trùng.
+_seo_gen_lock = Lock()
+_seo_generating: set[str] = set()
 
 
 def _connected_channel_map() -> dict:
@@ -436,6 +440,49 @@ def start_run(req: RunRequest, current_user=Depends(get_current_user_optional)):
 def generate_ai(wid: str, current_user=Depends(get_current_user_optional)):
     """Sinh (lại) AI cho 1 watchlist (không monitor). Trả run_id để track."""
     return start_run(RunRequest(wlIds=[wid], aiOnly=True), current_user)
+
+
+@router.get("/report/{wid}/seo")
+def get_seo_report(
+    wid: str,
+    id: str = "",
+    current_user=Depends(get_current_user_optional),
+):
+    """Báo cáo SEO (Claude CLI) của 1 watchlist.
+
+    Trả {items, selected, generating}:
+    - items: list metadata các báo cáo (cho dropdown chọn ngày), mới nhất trước.
+    - selected: báo cáo đầy đủ (kèm content) theo `id`; rỗng → bản mới nhất.
+    """
+    from python_backend.research import seo_report
+    items = seo_report.list_reports(wid)
+    selected = seo_report.get_report(wid, id) if items else None
+    with _seo_gen_lock:
+        generating = wid in _seo_generating
+    return {"items": items, "selected": selected, "generating": generating}
+
+
+@router.post("/report/{wid}/seo")
+def generate_seo_report(wid: str, current_user=Depends(get_current_user_optional)):
+    """Sinh báo cáo SEO mới (nền) cho 1 watchlist. Trả ngay {status}."""
+    with _seo_gen_lock:
+        if wid in _seo_generating:
+            return {"status": "generating"}
+        _seo_generating.add(wid)
+
+    def _worker():
+        try:
+            from python_backend.research import seo_report
+            seo_report.generate(wid, log_fn=lambda m: add_log(f"[seo] {m}"))
+        except Exception as e:  # noqa: BLE001
+            add_log(f"[seo] generate loi wid={wid}: {e}")
+        finally:
+            with _seo_gen_lock:
+                _seo_generating.discard(wid)
+
+    Thread(target=_worker, daemon=True).start()
+    add_log(f"[H] research/seo generate wid={wid}")
+    return {"status": "started"}
 
 
 @router.get("/run/{run_id}")

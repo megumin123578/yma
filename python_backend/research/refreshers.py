@@ -21,12 +21,18 @@ import time
 # ============================================================
 
 def _get_latest_channel_pkl(channel_id, persistence):
-    """Trả đường dẫn pkl mới nhất của 1 kênh, hoặc None."""
+    """Trả đường dẫn pkl mới nhất của 1 kênh, hoặc None (path trends cũ)."""
     idx = persistence._load_index()
     recs = sorted([e for e in idx if e.get("channel_id") == channel_id
                    and e.get("type") == "channel"],
                   key=lambda e: e["id"], reverse=True)
     return recs[0]["pkl_path"] if recs else None
+
+
+def _get_latest_channel_record(channel_id, persistence):
+    """Trả job_id snapshot mới nhất của 1 kênh, hoặc None."""
+    recs = persistence.records_for_channel(channel_id)
+    return recs[0]["id"] if recs else None
 
 
 def _channels_missing_sb(wl, persistence):
@@ -37,35 +43,28 @@ def _channels_missing_sb(wl, persistence):
     for c in wl.channels:
         if not c.channel_id or not c.channel_id.startswith("UC"):
             continue
-        pkl_path = _get_latest_channel_pkl(c.channel_id, persistence)
-        if not pkl_path or not os.path.exists(pkl_path):
+        jid = _get_latest_channel_record(c.channel_id, persistence)
+        if not jid:
             continue
-        try:
-            with open(pkl_path, "rb") as f:
-                r = pickle.load(f)
-        except Exception:
+        r = persistence.load_result(jid)
+        if r is None:
             continue
         sb = r.get("socialblade")
         # 21/05 fix: cũng coi là "missing" nếu sb dict có daily_stats rỗng
         # (xảy ra khi cào lần đầu monitor_batch chưa enrich SB → sb được
         # tạo placeholder {error: "", daily_stats: []} → trước đây bị skip).
         if sb is None:
-            out.append((c.channel_id, c.title, pkl_path))
+            out.append((c.channel_id, c.title, jid))
         elif isinstance(sb, dict) and sb.get("error"):
-            out.append((c.channel_id, c.title, pkl_path))
+            out.append((c.channel_id, c.title, jid))
         elif isinstance(sb, dict) and not (sb.get("daily_stats") or []):
-            out.append((c.channel_id, c.title, pkl_path))
+            out.append((c.channel_id, c.title, jid))
     return out
 
 
-def _fill_sb_in_pkl(pkl_path, sb_data):
-    """Ghi sb_data vào res['socialblade']. Dùng pkl_io.safe_update để tránh
-    race condition khi pipeline parallel."""
-    from .pkl_io import safe_update
-
-    def _patch(data):
-        data["socialblade"] = sb_data
-    return safe_update(pkl_path, _patch)
+def _fill_sb(job_id, sb_data, persistence):
+    """Ghi sb_data vào snapshot['socialblade'] (atomic + khoá qua persistence)."""
+    return persistence.update_result_field(job_id, "socialblade", sb_data)
 
 
 def refresh_socialblade_for_watchlist(wid, delay_sec=3.0, log_fn=print,
@@ -102,10 +101,10 @@ def refresh_socialblade_for_watchlist(wid, delay_sec=3.0, log_fn=print,
                 continue
             if self_cid and c.channel_id == self_cid:
                 continue  # skip self → Inside-first
-            pkl_path = _get_latest_channel_pkl(c.channel_id, persistence)
-            if not pkl_path or not os.path.exists(pkl_path):
+            jid = _get_latest_channel_record(c.channel_id, persistence)
+            if not jid:
                 continue
-            missing.append((c.channel_id, c.title, pkl_path))
+            missing.append((c.channel_id, c.title, jid))
         log_fn(f"  FORCE: fetch lại tất cả {len(missing)} kênh đối thủ "
                f"(bỏ cache, skip self)")
         # Clear cache file để bắt buộc fetch web
@@ -136,10 +135,10 @@ def refresh_socialblade_for_watchlist(wid, delay_sec=3.0, log_fn=print,
     EARLY_STOP = 8
     early_stopped = False
 
-    for i, (cid, ctitle, pkl_path) in enumerate(missing, 1):
+    for i, (cid, ctitle, jid) in enumerate(missing, 1):
         cached = sb_mod._load_cache(cid)
         if cached:
-            _fill_sb_in_pkl(pkl_path, cached)
+            _fill_sb(jid, cached, persistence)
             n_cache += 1
             consecutive_errors = 0
             log_fn(f"  ({i}/{len(missing)}) [CACHE] {ctitle}")
@@ -150,7 +149,7 @@ def refresh_socialblade_for_watchlist(wid, delay_sec=3.0, log_fn=print,
         if err:
             n_error += 1
             consecutive_errors += 1
-            _fill_sb_in_pkl(pkl_path, sb_data)
+            _fill_sb(jid, sb_data, persistence)
             log_fn(f"  ({i}/{len(missing)}) [ERR{consecutive_errors}] "
                    f"{ctitle}: {err[:60]}")
             if consecutive_errors >= EARLY_STOP:
@@ -161,7 +160,7 @@ def refresh_socialblade_for_watchlist(wid, delay_sec=3.0, log_fn=print,
         else:
             n_fetched += 1
             consecutive_errors = 0
-            _fill_sb_in_pkl(pkl_path, sb_data)
+            _fill_sb(jid, sb_data, persistence)
             days = (sb_data.get("summary") or {}).get("total_days", 0)
             log_fn(f"  ({i}/{len(missing)}) [OK] {ctitle}: {days} days")
 

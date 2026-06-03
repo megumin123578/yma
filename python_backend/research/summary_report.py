@@ -41,25 +41,22 @@ def _pack_wl(wid: str) -> dict:
     #  trong khi thực tế đang tăng 600K/ngày trong tuần qua.)
     prev_view_map = {}  # video_id → (prev_views, prev_scrape_time)
     if sc and sc.channel_id:
-        recs = sorted(
-            [e for e in persistence._load_index()
-             if e.get("channel_id") == sc.channel_id
-             and e.get("type") == "channel"],
-            key=lambda e: e["id"], reverse=True)
+        recs = persistence.records_for_channel(sc.channel_id)
         if len(recs) >= 2:
             try:
-                prev_path = recs[1]["pkl_path"]
-                if os.path.exists(prev_path):
-                    prev_time = os.path.getmtime(prev_path)
-                    with open(prev_path, "rb") as f:
-                        prev_res = pickle.load(f)
-                    for pv in (prev_res.get("videos") or []):
-                        vid = getattr(pv, "video_id", "") or ""
-                        if vid:
-                            prev_view_map[vid] = (
-                                int(getattr(pv, "view_count", 0) or 0),
-                                prev_time,
-                            )
+                prev = recs[1]
+                prev_res = persistence.load_result(prev["id"])
+                # prev_scrape_time = ngày snapshot kỳ trước (entry date) thay
+                # cho mtime file — chính xác hơn (mtime đổi khi SB/AI ghi lại).
+                from datetime import datetime as _dt
+                prev_time = _dt.fromisoformat(prev.get("date", "")).timestamp()
+                for pv in (prev_res.get("videos") or []):
+                    vid = getattr(pv, "video_id", "") or ""
+                    if vid:
+                        prev_view_map[vid] = (
+                            int(getattr(pv, "view_count", 0) or 0),
+                            prev_time,
+                        )
             except Exception:
                 pass
 

@@ -765,14 +765,8 @@ def build_data(wid: str) -> dict:
                     # Lấy ngày data thumbnail cuối — hiển thị cho user biết
                     last_thumb_day = ""
                     try:
-                        from .analytics_inside import _connect as _cn
-                        _conn = _cn()
-                        if _conn:
-                            _r = _conn.execute(
-                                "SELECT MAX(day) FROM video_thumbnail_daily "
-                                "WHERE account_tag = ?", (tag,)).fetchone()
-                            last_thumb_day = (_r[0] or "")[:10] if _r else ""
-                            _conn.close()
+                        from .analytics_inside import last_thumbnail_day
+                        last_thumb_day = last_thumbnail_day(tag)
                     except Exception:
                         pass
                     data["inside"] = {

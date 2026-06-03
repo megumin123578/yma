@@ -35,6 +35,20 @@ export const generateAi = async (wid) => {
   return data;
 };
 
+// Báo cáo SEO (Claude CLI). Trả {items, selected, generating}.
+export const getSeoReports = async (wid, id = "") => {
+  const { data } = await api.get(`/api/research/report/${wid}/seo`, {
+    params: id ? { id } : undefined,
+  });
+  return data;
+};
+
+// Sinh báo cáo SEO mới (nền). Trả {status}.
+export const generateSeoReport = async (wid) => {
+  const { data } = await api.post(`/api/research/report/${wid}/seo`);
+  return data;
+};
+
 // ----- Quản lý watchlist + kênh (Settings/Channel) -----
 export const createWatchlist = async (name, description = "") => {
   const { data } = await api.post("/api/research/watchlists", { name, description });

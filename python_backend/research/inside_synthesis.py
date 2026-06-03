@@ -920,118 +920,111 @@ def inside_period_delta(account_tag: str,
       "alerts": [list]
     }
     """
-    from .analytics_inside import _connect
-    conn = _connect()
-    if not conn:
+    from sqlalchemy import text
+    from .analytics_inside import _get_engine
+    eng = _get_engine()
+    if eng is None:
         return {}
     try:
-        cur = conn.cursor()
+        with eng.connect() as conn:
+            def _period(d_offset_start, d_offset_end):
+                # Views + subs từ channel_daily_metrics (đã có account_tag)
+                row = conn.execute(text(
+                    "SELECT SUM(views), SUM(subscribers_gained), "
+                    "SUM(subscribers_lost) FROM channel_daily_metrics "
+                    "WHERE account_tag = :tag "
+                    "AND day >= CURRENT_DATE - (:e * INTERVAL '1 day') "
+                    "AND day <  CURRENT_DATE - (:s * INTERVAL '1 day')"),
+                    {"tag": account_tag, "e": d_offset_end,
+                     "s": d_offset_start}).fetchone()
+                views = int(row[0] or 0) if row and row[0] else 0
+                gained = int(row[1] or 0) if row and row[1] else 0
+                lost = int(row[2] or 0) if row and row[2] else 0
+                # AVD weighted = SUM(views*avd)/SUM(views) — qua JOIN videos
+                r2 = conn.execute(text(
+                    "SELECT SUM(vds.views) AS v, "
+                    "SUM(vds.views * vds.average_view_duration) AS wsum "
+                    "FROM video_daily_stats vds "
+                    "JOIN videos v ON v.video_id = vds.video_id "
+                    "WHERE v.account_tag = :tag "
+                    "AND vds.day >= CURRENT_DATE - (:e * INTERVAL '1 day') "
+                    "AND vds.day <  CURRENT_DATE - (:s * INTERVAL '1 day')"),
+                    {"tag": account_tag, "e": d_offset_end,
+                     "s": d_offset_start}).fetchone()
+                vsum = int(r2[0] or 0) if r2 and r2[0] else 0
+                wsum = float(r2[1] or 0) if r2 and r2[1] else 0
+                avd = wsum / vsum if vsum > 0 else 0
+                # CTR thumbnail
+                r3 = conn.execute(text(
+                    "SELECT AVG(thumbnail_ctr) FROM video_thumbnail_daily "
+                    "WHERE account_tag = :tag "
+                    "AND day >= CURRENT_DATE - (:e * INTERVAL '1 day') "
+                    "AND day <  CURRENT_DATE - (:s * INTERVAL '1 day')"),
+                    {"tag": account_tag, "e": d_offset_end,
+                     "s": d_offset_start}).fetchone()
+                ctr = (r3[0] if r3 and r3[0] else 0) or 0
+                return {
+                    "views": views,
+                    "subs_gained": gained,
+                    "subs_lost": lost,
+                    "subs_net": gained - lost,
+                    "avd": round(avd, 1),
+                    "ctr": round(ctr * 100, 2),
+                }
 
-        def _period(d_offset_start, d_offset_end):
-            # Views + subs từ channel_daily_metrics (đã có account_tag)
-            cur.execute(
-                "SELECT "
-                "  SUM(CAST(views AS INTEGER)), "
-                "  SUM(CAST(subscribers_gained AS INTEGER)), "
-                "  SUM(CAST(subscribers_lost AS INTEGER)) "
-                "FROM channel_daily_metrics "
-                "WHERE account_tag = ? "
-                "AND day >= date('now', ?) AND day < date('now', ?)",
-                (account_tag,
-                 f"-{d_offset_end} days",
-                 f"-{d_offset_start} days"))
-            row = cur.fetchone()
-            views = int(row[0] or 0)
-            gained = int(row[1] or 0)
-            lost = int(row[2] or 0)
-            # AVD weighted = SUM(views*avd)/SUM(views) — qua JOIN videos
-            cur.execute(
-                "SELECT SUM(CAST(vds.views AS INTEGER)) as v, "
-                "  SUM(CAST(vds.views AS INTEGER) * "
-                "      CAST(vds.average_view_duration AS REAL)) as wsum "
-                "FROM video_daily_stats vds "
-                "JOIN videos v ON v.video_id = vds.video_id "
-                "WHERE v.account_tag = ? "
-                "AND vds.day >= date('now', ?) AND vds.day < date('now', ?)",
-                (account_tag,
-                 f"-{d_offset_end} days",
-                 f"-{d_offset_start} days"))
-            r2 = cur.fetchone()
-            vsum = int(r2[0] or 0) if r2 else 0
-            wsum = float(r2[1] or 0) if r2 else 0
-            avd = wsum / vsum if vsum > 0 else 0
-            # CTR thumbnail
-            cur.execute(
-                "SELECT AVG(CAST(thumbnail_ctr AS REAL)) "
-                "FROM video_thumbnail_daily "
-                "WHERE account_tag = ? "
-                "AND day >= date('now', ?) AND day < date('now', ?)",
-                (account_tag,
-                 f"-{d_offset_end} days",
-                 f"-{d_offset_start} days"))
-            ctr = (cur.fetchone() or [0])[0] or 0
-            return {
-                "views": views,
-                "subs_gained": gained,
-                "subs_lost": lost,
-                "subs_net": gained - lost,
-                "avd": round(avd, 1),
-                "ctr": round(ctr * 100, 2),
-            }
+            current = _period(0, days_now)
+            previous = _period(offset, offset + days_prev)
+    except Exception:
+        return {}
 
-        current = _period(0, days_now)
-        previous = _period(offset, offset + days_prev)
+    def _pct_delta(a, b):
+        if b <= 0:
+            return None
+        return round(100 * (a - b) / b, 1)
 
-        def _pct_delta(a, b):
-            if b <= 0:
-                return None
-            return round(100 * (a - b) / b, 1)
+    delta = {
+        "views_pct": _pct_delta(current["views"], previous["views"]),
+        "subs_net_delta": current["subs_net"] - previous["subs_net"],
+        "avd_pct": _pct_delta(current["avd"], previous["avd"]),
+        "ctr_pct": _pct_delta(current["ctr"], previous["ctr"]),
+    }
 
-        delta = {
-            "views_pct": _pct_delta(current["views"], previous["views"]),
-            "subs_net_delta": current["subs_net"] - previous["subs_net"],
-            "avd_pct": _pct_delta(current["avd"], previous["avd"]),
-            "ctr_pct": _pct_delta(current["ctr"], previous["ctr"]),
-        }
+    # Alerts
+    alerts = []
+    if delta["views_pct"] is not None and delta["views_pct"] < -20:
+        alerts.append({
+            "level": "bad",
+            "msg": (f"Views giảm {delta['views_pct']:.0f}% so chu kỳ "
+                    f"trước — check video mới gần nhất.")})
+    if delta["ctr_pct"] is not None and delta["ctr_pct"] < -15:
+        alerts.append({
+            "level": "warn",
+            "msg": (f"CTR giảm {delta['ctr_pct']:.0f}% — thumbnail "
+                    f"mới không hiệu quả.")})
+    if delta["avd_pct"] is not None and delta["avd_pct"] < -10:
+        alerts.append({
+            "level": "warn",
+            "msg": (f"AVD giảm {delta['avd_pct']:.0f}% — pacing/hook "
+                    f"video mới yếu hơn.")})
+    if delta["subs_net_delta"] < -20:
+        alerts.append({
+            "level": "bad",
+            "msg": (f"Subs NET sụt {delta['subs_net_delta']} so chu kỳ "
+                    f"trước — content có thể chệch pillar.")})
+    if (current["subs_net"] < 0 and previous["subs_net"] > 0):
+        alerts.append({
+            "level": "bad",
+            "msg": "Subs NET CHUYỂN TỪ DƯƠNG → ÂM. Audit ngay."})
 
-        # Alerts
-        alerts = []
-        if delta["views_pct"] is not None and delta["views_pct"] < -20:
-            alerts.append({
-                "level": "bad",
-                "msg": (f"Views giảm {delta['views_pct']:.0f}% so chu kỳ "
-                        f"trước — check video mới gần nhất.")})
-        if delta["ctr_pct"] is not None and delta["ctr_pct"] < -15:
-            alerts.append({
-                "level": "warn",
-                "msg": (f"CTR giảm {delta['ctr_pct']:.0f}% — thumbnail "
-                        f"mới không hiệu quả.")})
-        if delta["avd_pct"] is not None and delta["avd_pct"] < -10:
-            alerts.append({
-                "level": "warn",
-                "msg": (f"AVD giảm {delta['avd_pct']:.0f}% — pacing/hook "
-                        f"video mới yếu hơn.")})
-        if delta["subs_net_delta"] < -20:
-            alerts.append({
-                "level": "bad",
-                "msg": (f"Subs NET sụt {delta['subs_net_delta']} so chu kỳ "
-                        f"trước — content có thể chệch pillar.")})
-        if (current["subs_net"] < 0 and previous["subs_net"] > 0):
-            alerts.append({
-                "level": "bad",
-                "msg": "Subs NET CHUYỂN TỪ DƯƠNG → ÂM. Audit ngay."})
-
-        return {
-            "current": current,
-            "previous": previous,
-            "delta": delta,
-            "alerts": alerts,
-            "period_now_days": days_now,
-            "period_prev_days": days_prev,
-            "offset_days": offset,
-        }
-    finally:
-        conn.close()
+    return {
+        "current": current,
+        "previous": previous,
+        "delta": delta,
+        "alerts": alerts,
+        "period_now_days": days_now,
+        "period_prev_days": days_prev,
+        "offset_days": offset,
+    }
 
 
 # ============================================================

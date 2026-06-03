@@ -84,20 +84,12 @@ def find_rescue_candidates(
         log_fn(f"  ⚠ WL {wl_id} không có self_channel")
         return []
 
-    idx = persistence._load_index()
-
     # Load self videos
-    self_recs = sorted(
-        [e for e in idx if e.get("channel_id") == w.self_channel.channel_id
-         and e.get("type") == "channel"],
-        key=lambda e: e["id"], reverse=True,
-    )
+    self_recs = persistence.records_for_channel(w.self_channel.channel_id)
     if not self_recs:
         return []
-    try:
-        with open(self_recs[0]["pkl_path"], "rb") as f:
-            self_pkl = pickle.load(f)
-    except Exception:
+    self_pkl = persistence.load_result(self_recs[0]["id"])
+    if self_pkl is None:
         return []
     self_videos = self_pkl.get("videos") or []
     if not self_videos:
@@ -123,17 +115,11 @@ def find_rescue_candidates(
     for c in w.channels:
         if c.channel_id == w.self_channel.channel_id:
             continue
-        recs = sorted(
-            [e for e in idx if e.get("channel_id") == c.channel_id
-             and e.get("type") == "channel"],
-            key=lambda e: e["id"], reverse=True,
-        )
+        recs = persistence.records_for_channel(c.channel_id)
         if not recs:
             continue
-        try:
-            with open(recs[0]["pkl_path"], "rb") as f:
-                comp_pkl = pickle.load(f)
-        except Exception:
+        comp_pkl = persistence.load_result(recs[0]["id"])
+        if comp_pkl is None:
             continue
         comp_vids = comp_pkl.get("videos") or []
         comp_vpds = [_video_vpd(v) for v in comp_vids]

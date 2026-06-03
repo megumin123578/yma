@@ -100,7 +100,6 @@ def collect_training_data(wl_ids: Optional[list] = None,
     if wl_ids is None:
         wl_ids = [w.id for w in wl_mod.list_watchlists()]
 
-    idx = persistence._load_index()
     X_rows = []
     y_rows = []
     n_pkl = 0
@@ -114,16 +113,10 @@ def collect_training_data(wl_ids: Optional[list] = None,
         for c in [w.self_channel] + list(w.channels):
             if not c:
                 continue
-            recs = sorted(
-                [e for e in idx if e.get("channel_id") == c.channel_id
-                 and e.get("type") == "channel"],
-                key=lambda e: e["id"], reverse=True,
-            )[:3]  # Lấy 3 pkl gần nhất / channel
+            recs = persistence.records_for_channel(c.channel_id)[:3]
             for r in recs:
-                try:
-                    with open(r["pkl_path"], "rb") as f:
-                        d = pickle.load(f)
-                except Exception:
+                d = persistence.load_result(r["id"])
+                if d is None:
                     n_skip += 1
                     continue
                 n_pkl += 1

@@ -208,7 +208,6 @@ def _trim_wl_to_top10(wid: str, log_fn) -> dict:
         return {"kept": 0, "archived": 0}
 
     self_cid = wl.self_channel.channel_id if wl.self_channel else None
-    idx = persistence._load_index()
 
     # Chỉ xét active channels (đã archived → kệ)
     active = [c for c in wl.channels if not c.archived]
@@ -218,17 +217,12 @@ def _trim_wl_to_top10(wid: str, log_fn) -> dict:
         if not c.channel_id or not c.channel_id.startswith("UC"):
             scored.append((c, 0.0, "no_cid"))
             continue
-        recs = sorted(
-            [e for e in idx if e.get("channel_id") == c.channel_id
-             and e.get("type") == "channel"],
-            key=lambda e: e["id"], reverse=True)
+        recs = persistence.records_for_channel(c.channel_id)
         if not recs:
             scored.append((c, 0.0, "no_pkl"))
             continue
-        try:
-            with open(recs[0]["pkl_path"], "rb") as f:
-                ch_pkl = _pickle.load(f)
-        except Exception:
+        ch_pkl = persistence.load_result(recs[0]["id"])
+        if ch_pkl is None:
             scored.append((c, 0.0, "pkl_err"))
             continue
         sb = ch_pkl.get("socialblade") or {}
@@ -322,7 +316,6 @@ def _add_channels_to_wl(wid: str, channel_ids: list, log_fn=print) -> int:
         return 0
 
     existing = {c.channel_id for c in wl.channels}
-    idx = persistence._load_index()
     added = 0
     now = _dt.now().isoformat(timespec="seconds")
 
@@ -332,17 +325,11 @@ def _add_channels_to_wl(wid: str, channel_ids: list, log_fn=print) -> int:
         # Tìm title từ pkl gần nhất (anchor đã cào kênh này)
         title = cid
         url = f"https://www.youtube.com/channel/{cid}"
-        recs = sorted(
-            [e for e in idx if e.get("channel_id") == cid
-             and e.get("type") == "channel"],
-            key=lambda e: e["id"], reverse=True)
+        recs = persistence.records_for_channel(cid)
         if recs:
-            try:
-                with open(recs[0]["pkl_path"], "rb") as f:
-                    d = _pickle.load(f)
+            d = persistence.load_result(recs[0]["id"])
+            if d:
                 title = d.get("channel_title", cid)
-            except Exception:
-                pass
 
         new_ch = WatchedChannel(
             channel_id=cid, title=title, url=url,
@@ -560,7 +547,12 @@ def stage_report(wid: str, log_fn, api_key: str = "",
                                 log_fn=lambda s: log_fn(f"      {s[:120]}"))
         generate_strategy(wid, cfg_api, model,
                           log_fn=lambda s: log_fn(f"      {s[:120]}"))
-        log_fn(f"    [ai] OK — sinh AI {n}/{len(need)} kênh + strategy WL")
+        try:
+            from . import seo_report
+            seo_report.generate(wid, log_fn=lambda s: log_fn(f"      {s[:120]}"))
+        except Exception as e:
+            log_fn(f"      ! Báo cáo SEO lỗi (skip): {str(e)[:120]}")
+        log_fn(f"    [ai] OK — sinh AI {n}/{len(need)} kênh + strategy + SEO")
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "reason": str(e)[:200]}

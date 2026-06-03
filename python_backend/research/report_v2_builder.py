@@ -84,24 +84,16 @@ def collect_data(wid: str, log_fn=print) -> dict:
     # Self pkl (kênh chính)
     if w.self_channel and w.self_channel.channel_id:
         cid = w.self_channel.channel_id
-        idx = persistence._load_index()
-        recs = sorted(
-            [e for e in idx if e.get("channel_id") == cid
-             and e.get("type") == "channel"],
-            key=lambda e: e["id"], reverse=True)
+        recs = persistence.records_for_channel(cid)
         if recs:
-            try:
-                with open(recs[0]["pkl_path"], "rb") as f:
-                    out["self_pkl"] = pickle.load(f)
-            except Exception as e:
-                log_fn(f"  ! Lỗi đọc self pkl: {e}")
+            r = persistence.load_result(recs[0]["id"])
+            if r is not None:
+                out["self_pkl"] = r
             # Pkl kỳ trước (record thứ 2)
             if len(recs) > 1:
-                try:
-                    with open(recs[1]["pkl_path"], "rb") as f:
-                        out["self_pkl_prev"] = pickle.load(f)
-                except Exception:
-                    pass
+                rp = persistence.load_result(recs[1]["id"])
+                if rp is not None:
+                    out["self_pkl_prev"] = rp
 
     # Competitor pkls (trong WL, không tính self)
     self_cid = w.self_channel.channel_id if w.self_channel else None
@@ -110,17 +102,11 @@ def collect_data(wid: str, log_fn=print) -> dict:
             continue
         if c.channel_id == self_cid:
             continue
-        idx = persistence._load_index()
-        recs = sorted(
-            [e for e in idx if e.get("channel_id") == c.channel_id
-             and e.get("type") == "channel"],
-            key=lambda e: e["id"], reverse=True)
+        recs = persistence.records_for_channel(c.channel_id)
         if recs:
-            try:
-                with open(recs[0]["pkl_path"], "rb") as f:
-                    out["competitor_pkls"].append(pickle.load(f))
-            except Exception:
-                pass
+            cp = persistence.load_result(recs[0]["id"])
+            if cp is not None:
+                out["competitor_pkls"].append(cp)
 
     # Inside (YouTube Analytics)
     if w.self_channel:
