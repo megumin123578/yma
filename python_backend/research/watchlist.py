@@ -80,8 +80,7 @@ class Watchlist:
     created_at: str = ""
     last_monitored: str = ""       # ISO timestamp lần monitor gần nhất
     # Multi-tenant (chốt 23/05): mỗi WL thuộc 1 team / business unit.
-    # Default "default" = team chính. Firebase phân quyền theo team_id.
-    # Để mở rộng đa team trong tương lai mà không break WL cũ.
+    # Default "default" = team chính. Để mở rộng đa team sau, không break WL cũ.
     team_id: str = "default"
     analyses: list = field(default_factory=list)
     # analyses: list of dict {id, analyzed_at, analyzed_by, content}

@@ -11,9 +11,8 @@ Gọi sau khi đã giám sát + phát hiện đối thủ xong. Các bước:
                               thủ mới, đối thủ SEO lệch nhiều)
   4b. generate_strategy    — sinh chiến lược AI cho cả danh sách
 
-Khâu báo cáo cũ (build_and_send_report/run_after_monitor → HTML/Firebase/
-Telegram/PDF) đã bỏ. Báo cáo nay serve JSON on-demand qua API
-(html_report.build_data → React); khâu AI dùng Claude Code CLI.
+Báo cáo serve JSON on-demand qua API (html_report.build_data → React);
+khâu AI dùng Claude Code CLI.
 """
 import pickle
 

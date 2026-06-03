@@ -1,7 +1,7 @@
 # routes/research.py
 """API nghiên cứu ngách (gộp pipeline YT vào yt_manage_app, 2026-06).
 
-Phase 2: phục vụ báo cáo watchlist dưới dạng JSON (thay HTML/Firebase).
+Phase 2: phục vụ báo cáo watchlist dưới dạng JSON.
   GET /api/research/watchlists       -> danh sách watchlist
   GET /api/research/report/{wid}     -> build_data(wid) JSON (payload 22 tab)
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""CLI Phase 1 — dump báo cáo 1 watchlist ra JSON (thay HTML/Firebase).
+"""CLI Phase 1 — dump báo cáo 1 watchlist ra JSON.
 
 Chạy:  python -m python_backend.research.build_report_json <wid> [out.json]
 Đọc data đã thu thập sẵn trong ~/.youtube_research/ → build_data() → JSON.

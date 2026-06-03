@@ -13,7 +13,7 @@ Stages (mỗi WL):
   4. inside     — YouTube Analytics API (self_channel có OAuth token)
   5. research   — search YouTube top 20 kw → recent/top_by_keyword
   6. keyword    — enrich kw_bank (volume + competition từ harvest tối)
-  7. report     — AI Opus + build HTML 22 tab + validate + send Firebase
+  7. report     — sinh AI (ai_analysis + strategy) → lưu pkl
 
 State DB: ~/.youtube_research/orchestrator.sqlite (table wl_stage_state)
 Resume: chạy lại với cùng run_id → skip stage status='done'.
@@ -67,7 +67,7 @@ def _pipeline_dir() -> Path:
 #   3. socialblade  — Refresh growth 15-30d
 #   4. inside       — YouTube Analytics API kênh chính
 #   5. keyword      — Áp kw_bank harvest keywordtool vào pkl
-#   6. report       — AI Opus + build HTML + send Firebase
+#   6. report       — sinh AI (ai_analysis + strategy) → lưu pkl (serve qua API)
 # stage_trends + stage_research vẫn giữ trong code dạng DEPRECATED.
 STAGES = ["monitor", "discover", "socialblade", "inside",
           "keyword", "report"]
@@ -593,9 +593,8 @@ def stage_report(wid: str, log_fn, api_key: str = "",
                  token: str = "", chat: str = "") -> dict:
     """Khâu AI (gộp yt_manage_app 2026-06, Phase 5).
 
-    Kiến trúc cũ: build HTML 22 tab + gửi Firebase/Telegram.
-    Kiến trúc mới: báo cáo serve ON-DEMAND qua API (build_data → JSON → React),
-    KHÔNG còn HTML/Firebase/Telegram/PDF. Stage này chỉ còn nhiệm vụ SINH AI:
+    Báo cáo serve ON-DEMAND qua API (build_data → JSON → React). Stage này
+    chỉ còn nhiệm vụ SINH AI:
     - ai_analysis từng kênh (self 6 mục + đối thủ 3 mục) → lưu pkl.
     - strategy cho WL → wl.save_analysis.
     build_data đọc lại (self.ai / strategy) → tab "Kênh chính"/"Đối thủ"/

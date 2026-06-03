@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
-"""core/local_uploader.py — Lưu báo cáo VÀO MÁY (thay Firebase).
+"""core/local_uploader.py — Lưu báo cáo VÀO MÁY.
 
-Cùng API với firebase_uploader.py (upload_report, sync_watchlists,
-count_reports, is_configured) để swap dễ. Khác biệt:
+API: upload_report, sync_watchlists, count_reports, is_configured.
   - Storage: copy HTML vào <local_data_dir>/reports/<date>/<wl_id>.html
   - DB metadata: SQLite <local_data_dir>/data.db (bảng reports + watchlists)
 
 local_data_dir trỏ về <output_dir>/local_serve/ nếu config trống.
-Daily run gọi song song với firebase_uploader → web mới đọc qua FastAPI.
 """
 from __future__ import annotations
 
@@ -125,7 +123,6 @@ def upload_report(wl_id: str, wl_name: str, channel_title: str,
                   display_time: str = "") -> dict:
     """Lưu 1 báo cáo HTML vào máy + ghi metadata SQLite.
 
-    Cùng signature với firebase_uploader.upload_report (+ 2 field tuỳ chọn).
     Trả {ok, reason, url, doc_id, storage_path}. KHÔNG raise.
     """
     def _log(m):
@@ -200,7 +197,7 @@ def _compute_wl_order() -> dict:
     2 WL cùng cụm nếu chia sẻ >=2 kênh đối thủ (và >=20% so với WL ít
     đối thủ hơn) — gom liên thông bằng union-find. WL cùng cụm được gán
     số thứ tự liền nhau → website xếp gần nhau. Cụm sắp theo tên WL nhỏ
-    nhất (a-z); trong cụm sắp theo tên. (Dời từ firebase_uploader.)
+    nhất (a-z); trong cụm sắp theo tên.
     """
     from . import watchlist as wl_mod
     wls = []
@@ -267,8 +264,7 @@ def sync_watchlists(log_fn=None) -> dict:
         except ImportError:
             from . import watchlist as wl_mod
 
-        # Tính thứ tự cụm (gom WL chung đối thủ). Logic dời từ
-        # firebase_uploader sang module này sau khi bỏ Firebase.
+        # Tính thứ tự cụm (gom WL chung đối thủ).
         order = {}
         try:
             order = _compute_wl_order()

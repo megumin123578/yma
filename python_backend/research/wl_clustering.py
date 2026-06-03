@@ -10,7 +10,7 @@ Tiết kiệm thời gian discover gấp 2-3 lần (vd cụm 4 WL cùng ngách
 Slime/Sand chỉ chạy 1 lần thay 4 lần).
 
 Logic gom cụm: 2 WL cùng cụm nếu chia sẻ ≥2 đối thủ chung + ≥20% so WL
-ít đối thủ hơn (union-find). Reuse từ `firebase_uploader._compute_wl_order`.
+ít đối thủ hơn (union-find).
 """
 from __future__ import annotations
 

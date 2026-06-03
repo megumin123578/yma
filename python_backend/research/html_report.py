@@ -320,8 +320,8 @@ def build_data(wid: str) -> dict:
     """Ráp toàn bộ dữ liệu báo cáo 22 tab cho 1 watchlist thành dict thuần.
 
     Tách khỏi render HTML (chốt 2026-06, gộp vào yt_manage_app): pipeline
-    trả JSON này qua FastAPI → React render native. KHÔNG còn sinh HTML/
-    Firebase/PDF. Mỗi key trong dict map 1 tab (xem inventory s0-s22).
+    trả JSON này qua FastAPI → React render native. Mỗi key trong dict map
+    1 tab (xem inventory s0-s22).
     """
     from . import watchlist as wl, persistence
     w = wl.load_watchlist(wid)

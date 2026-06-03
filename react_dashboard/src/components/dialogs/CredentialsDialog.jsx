@@ -21,6 +21,8 @@ import {
   Switch,
   TextField,
   Chip,
+  InputAdornment,
+  ListItemIcon,
   Table,
   TableBody,
   TableCell,
@@ -47,10 +49,10 @@ import CheckIcon from "@mui/icons-material/Check";
 import CloseIcon from "@mui/icons-material/Close";
 import CheckBoxOutlineBlankIcon from "@mui/icons-material/CheckBoxOutlineBlank";
 import CheckBoxIcon from "@mui/icons-material/CheckBox";
-import PauseCircleOutlineIcon from "@mui/icons-material/PauseCircleOutline";
-import PlayCircleOutlineIcon from "@mui/icons-material/PlayCircleOutline";
-import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import SearchRoundedIcon from "@mui/icons-material/SearchRounded";
+import SubscriptionsRoundedIcon from "@mui/icons-material/SubscriptionsRounded";
 import {
   listTokens,
   deleteToken,
@@ -90,11 +92,10 @@ import {
 import { subscribeSSE } from "../../services/sse";
 import {
   getUnifiedChannels,
-  createWatchlist,
-  patchWatchlist,
   removeChannel,
   startRun,
   generateAi,
+  patchWatchlist,
 } from "../../services/researchService";
 import { UserContext, useHasPermission } from "../../context/UserContext";
 import ManageUserRequests from "../ManageUserRequests";
@@ -189,6 +190,16 @@ const CredentialsDialog = ({
   const [loadingTokens, setLoadingTokens] = useState(false);
   const [watchlists, setWatchlists] = useState([]);
   const [expandedChannels, setExpandedChannels] = useState(() => new Set());
+  const [channelSearch, setChannelSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [channelFilter, setChannelFilter] = useState("all");
+  const [wlMenu, setWlMenu] = useState(null);
+  const [wlConfirm, setWlConfirm] = useState(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(channelSearch.trim().toLowerCase()), 200);
+    return () => clearTimeout(t);
+  }, [channelSearch]);
 
   const reloadWatchlists = useCallback(() => {
     getUnifiedChannels()
@@ -457,6 +468,32 @@ const CredentialsDialog = ({
     }
     return arr;
   }, [watchlists, tokenByTag]);
+
+  const matchesWlFilter = useCallback((wl) => {
+    const connected = !!(wl.accountTag && tokenByTag[wl.accountTag]);
+    if (channelFilter === "oauth" && !connected) return false;
+    if (channelFilter === "no_oauth" && connected) return false;
+    if (channelFilter === "paused" && !wl.paused) return false;
+    if (!debouncedSearch) return true;
+    const hay = [wl.watchlistName, wl.self?.title, ...(wl.competitors || []).map((c) => c.title)]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return hay.includes(debouncedSearch);
+  }, [channelFilter, debouncedSearch, tokenByTag]);
+
+  const filteredWatchlistHierarchy = useMemo(
+    () =>
+      watchlistHierarchy
+        .map((p) => ({ ...p, items: p.items.filter(matchesWlFilter) }))
+        .filter((p) => p.items.length > 0),
+    [watchlistHierarchy, matchesWlFilter]
+  );
+
+  const filteredWlCount = useMemo(
+    () => filteredWatchlistHierarchy.reduce((n, p) => n + p.items.length, 0),
+    [filteredWatchlistHierarchy]
+  );
 
   const isProgressFromToday = useCallback((updatedAt) => {
     const value = String(updatedAt || "").trim();
@@ -1730,7 +1767,7 @@ const CredentialsDialog = ({
     }
   };
 
-  const renderTokenControls = (tokenName, displayName, isOwned, isHidden, layout = "list") => (
+  const renderTokenControls = (tokenName, displayName, isOwned, isHidden, layout = "list", hideDelete = false) => (
     <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap">
       <Button
         size="small"
@@ -1777,7 +1814,7 @@ const CredentialsDialog = ({
             </IconButton>
           </span>
         </Tooltip>
-      ) : (
+      ) : hideDelete ? null : (
         <Button
           size="small"
           color="error"
@@ -1836,7 +1873,7 @@ const CredentialsDialog = ({
     );
   };
 
-  const renderTokenItem = (token, layout = "list") => {
+  const renderTokenItem = (token, layout = "list", titleSuffix = "", trailingControl = null, hideDelete = false) => {
     const tokenName = typeof token === "string" ? token : token.name || "";
     const displayName =
       (typeof token === "object" && token.label) ||
@@ -2186,14 +2223,24 @@ const CredentialsDialog = ({
               >
                 {displayName.slice(0, 1).toUpperCase()}
               </Avatar>
-              <Typography variant="body2">{displayName}</Typography>
+              <Typography variant="body2">
+                {displayName}
+                {titleSuffix ? (
+                  <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                    {titleSuffix}
+                  </Typography>
+                ) : null}
+              </Typography>
               {!isOwned && (
                 <Typography variant="caption" color="text.secondary">
                   View only
                 </Typography>
               )}
             </Box>
-            {renderTokenControls(tokenName, displayName, isOwned, isHidden, "list")}
+            <Box display="flex" alignItems="center" gap={0.5}>
+              {renderTokenControls(tokenName, displayName, isOwned, isHidden, "list", hideDelete)}
+              {trailingControl}
+            </Box>
           </Box>
           {renderTokenProgress(tokenName)}
         </Box>
@@ -2214,22 +2261,11 @@ const CredentialsDialog = ({
   // ===== Watchlist-level handlers (gộp từ WatchlistManager) =====
   const wlNotify = (msg, type = "success") => setStatus({ type, message: msg });
 
-  const handleCreateWL = async () => {
-    const name = window.prompt("Tên watchlist mới:");
-    if (!name || !name.trim()) return;
-    try {
-      await createWatchlist(name.trim());
-      reloadWatchlists();
-    } catch (e) {
-      wlNotify(e?.response?.data?.detail || e.message, "error");
-    }
-  };
-  const handleTogglePauseWL = async (wl) => {
+  const handleToggleWlRun = async (wl) => {
     await patchWatchlist(wl.watchlistId, { paused: !wl.paused });
     reloadWatchlists();
   };
-  const handleRunWL = async (wl) => {
-    if (!window.confirm(`Chạy thu thập (Chrome) cho "${wl.watchlistName}"? Có thể mất nhiều phút.`)) return;
+  const runWL = async (wl) => {
     try {
       const r = await startRun({ wlIds: [wl.watchlistId] });
       wlNotify(`Đang chạy "${wl.watchlistName}" (${r.runId}) — theo dõi ở Report → Manage run.`);
@@ -2237,6 +2273,14 @@ const CredentialsDialog = ({
       wlNotify(e?.response?.data?.detail || e.message, "error");
     }
   };
+  const handleRunWL = (wl) =>
+    setWlConfirm({
+      title: "Chạy thu thập",
+      message: `Chạy thu thập (Chrome) cho "${wl.watchlistName}"? Có thể mất nhiều phút.`,
+      confirmLabel: "Chạy",
+      color: "error",
+      onConfirm: () => runWL(wl),
+    });
   const handleGenAiWL = async (wl) => {
     try {
       const r = await generateAi(wl.watchlistId);
@@ -2245,11 +2289,17 @@ const CredentialsDialog = ({
       wlNotify(e?.response?.data?.detail || e.message, "error");
     }
   };
-  const handleRemoveCompetitor = async (wid, cid, title) => {
-    if (!window.confirm(`Gỡ kênh "${title}" khỏi watchlist?`)) return;
-    await removeChannel(wid, cid);
-    reloadWatchlists();
-  };
+  const handleRemoveCompetitor = (wid, cid, title) =>
+    setWlConfirm({
+      title: "Gỡ kênh",
+      message: `Gỡ kênh "${title}" khỏi watchlist?`,
+      confirmLabel: "Gỡ",
+      color: "error",
+      onConfirm: async () => {
+        await removeChannel(wid, cid);
+        reloadWatchlists();
+      },
+    });
 
   // ===== 1 row = 1 watchlist (kênh chính) — OAuth thì tái dùng renderTokenItem,
   // chưa OAuth thì row đơn giản; expand ra kênh phụ; hàng action cấp WL =====
@@ -2260,6 +2310,30 @@ const CredentialsDialog = ({
     const expanded = expandedChannels.has(wid);
     const selfTitle = (wl.self && wl.self.title) || wl.watchlistName;
     const competitors = wl.competitors || [];
+    const wlActions = (
+      <Box display="flex" alignItems="center" gap={0.5}>
+        <Tooltip title={wl.paused ? "WL đang tắt — bật để chạy" : "WL đang bật chạy — bỏ chọn để tắt"}>
+          <Checkbox
+            size="small"
+            checked={!wl.paused}
+            onChange={() => handleToggleWlRun(wl)}
+            onClick={(e) => e.stopPropagation()}
+            sx={{ p: 0.25 }}
+          />
+        </Tooltip>
+        <Tooltip title="Hành động">
+          <IconButton
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              setWlMenu({ anchorEl: e.currentTarget, wl });
+            }}
+          >
+            <MoreVertIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Box>
+    );
     return (
       <Box
         key={wid}
@@ -2285,7 +2359,7 @@ const CredentialsDialog = ({
           }}
         >
           {token ? (
-            renderTokenItem(token, "list")
+            renderTokenItem(token, "list", `(${competitors.length} kênh phụ)`, wlActions, true)
           ) : (
             <Box display="flex" alignItems="center" gap={1} sx={{ py: 0.75, px: 0.75 }}>
               <Avatar src={wl.self?.avatar || undefined} sx={{ width: 30, height: 30, fontSize: 13 }}>
@@ -2294,6 +2368,9 @@ const CredentialsDialog = ({
               <Box flexGrow={1} minWidth={0}>
                 <Typography variant="body2" fontWeight={600} noWrap title={selfTitle}>
                   {selfTitle}
+                  <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                    ({competitors.length} kênh phụ)
+                  </Typography>
                 </Typography>
                 {wl.self && wl.self.subs != null && (
                   <Typography variant="caption" color="text.secondary" noWrap>
@@ -2302,29 +2379,9 @@ const CredentialsDialog = ({
                 )}
               </Box>
               <Chip size="small" color="error" variant="outlined" label="⚠ chưa OAuth" />
+              {wlActions}
             </Box>
           )}
-        </Box>
-
-        {/* Hàng action cấp watchlist (luôn hiển thị) */}
-        <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap" sx={{ pl: 0.75, pt: 0.5 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
-            {competitors.length} kênh phụ
-          </Typography>
-          {wl.paused && <Chip size="small" label="paused" sx={{ height: 18 }} />}
-          <Button size="small" color="error" startIcon={<PlayArrowIcon />} onClick={() => handleRunWL(wl)}>
-            Run WL
-          </Button>
-          <Button size="small" startIcon={<AutoAwesomeRoundedIcon />} onClick={() => handleGenAiWL(wl)}>
-            Sinh AI
-          </Button>
-          <Button
-            size="small"
-            startIcon={wl.paused ? <PlayCircleOutlineIcon /> : <PauseCircleOutlineIcon />}
-            onClick={() => handleTogglePauseWL(wl)}
-          >
-            {wl.paused ? "Bật" : "Tạm dừng"}
-          </Button>
         </Box>
 
         <Collapse in={expanded} unmountOnExit>
@@ -2589,6 +2646,19 @@ const CredentialsDialog = ({
                         </span>
                       </Tooltip>
                     </Box>
+                    <Box display="flex" alignItems="center" gap={1.5}>
+                    {tokenView === "list" && (
+                      <Tooltip title={`${filteredWlCount}/${watchlists.length} watchlist`}>
+                        <Box display="flex" alignItems="center" gap={0.5} sx={{ color: "text.secondary" }}>
+                          <SubscriptionsRoundedIcon fontSize="small" />
+                          <Typography variant="subtitle2" sx={{ fontWeight: 800 }} noWrap>
+                            {filteredWlCount === watchlists.length
+                              ? watchlists.length
+                              : `${filteredWlCount}/${watchlists.length}`}
+                          </Typography>
+                        </Box>
+                      </Tooltip>
+                    )}
                     {!hideViewToggle && (
                     <Tooltip
                       title={
@@ -2632,6 +2702,7 @@ const CredentialsDialog = ({
                       </Box>
                     </Tooltip>
                     )}
+                    </Box>
                   </Box>
 
                   {tokenView === "card" ? (
@@ -2677,20 +2748,54 @@ const CredentialsDialog = ({
                     // LIST view = 1 danh sách thống nhất theo watchlist (kênh chính + kênh phụ),
                     // gồm CẢ kênh chưa OAuth. Giữ mọi action OAuth cho kênh đã kết nối.
                     <Box display="flex" flexDirection="column" gap={1.25}>
-                      <Box display="flex" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1}>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                          Kênh chính + kênh phụ ({watchlists.length})
-                        </Typography>
-                        <Button size="small" variant="outlined" startIcon={<AddRoundedIcon />} onClick={handleCreateWL}>
-                          Tạo watchlist
-                        </Button>
+                      <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                        <TextField
+                          size="small"
+                          placeholder="Tìm kênh chính / kênh phụ…"
+                          value={channelSearch}
+                          onChange={(e) => setChannelSearch(e.target.value)}
+                          InputProps={{
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <SearchRoundedIcon fontSize="small" />
+                              </InputAdornment>
+                            ),
+                            endAdornment: channelSearch ? (
+                              <InputAdornment position="end">
+                                <IconButton size="small" onClick={() => setChannelSearch("")}>
+                                  <CloseIcon fontSize="small" />
+                                </IconButton>
+                              </InputAdornment>
+                            ) : null,
+                          }}
+                          sx={{ flexGrow: 1, minWidth: 200, maxWidth: 360 }}
+                        />
+                        {[
+                          { value: "all", label: "Tất cả" },
+                          { value: "oauth", label: "Đã OAuth" },
+                          { value: "no_oauth", label: "⚠ Chưa OAuth" },
+                          { value: "paused", label: "Tạm dừng" },
+                        ].map((f) => (
+                          <Chip
+                            key={f.value}
+                            size="small"
+                            label={f.label}
+                            variant={channelFilter === f.value ? "filled" : "outlined"}
+                            color={channelFilter === f.value ? "primary" : "default"}
+                            onClick={() => setChannelFilter(f.value)}
+                          />
+                        ))}
                       </Box>
                       {watchlists.length === 0 ? (
                         <Typography variant="body2" color="text.secondary">
                           {loadingTokens ? "Đang tải..." : "Chưa có watchlist."}
                         </Typography>
+                      ) : filteredWatchlistHierarchy.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">
+                          Không có kênh khớp tìm kiếm / bộ lọc.
+                        </Typography>
                       ) : (
-                        watchlistHierarchy.map((project) => (
+                        filteredWatchlistHierarchy.map((project) => (
                           <Box
                             key={project.projectName}
                             sx={{
@@ -3888,6 +3993,93 @@ const CredentialsDialog = ({
           </Button>
           <Button color="error" variant="contained" onClick={handleConfirmDelete} sx={shimmerSx}>
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Menu
+        anchorEl={wlMenu?.anchorEl}
+        open={Boolean(wlMenu)}
+        onClose={() => setWlMenu(null)}
+      >
+        <MenuItem
+          onClick={() => {
+            const wl = wlMenu.wl;
+            setWlMenu(null);
+            handleRunWL(wl);
+          }}
+        >
+          <ListItemIcon>
+            <PlayArrowIcon fontSize="small" color="error" />
+          </ListItemIcon>
+          Run WL
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            const wl = wlMenu.wl;
+            setWlMenu(null);
+            handleGenAiWL(wl);
+          }}
+        >
+          <ListItemIcon>
+            <AutoAwesomeRoundedIcon fontSize="small" />
+          </ListItemIcon>
+          AI generate
+        </MenuItem>
+        {wlMenu?.wl?.accountTag && tokenByTag[wlMenu.wl.accountTag] && (
+          <>
+            <Divider />
+            <MenuItem
+              onClick={() => {
+                const wl = wlMenu.wl;
+                const tok = wl.accountTag ? tokenByTag[wl.accountTag] : null;
+                const name = tok ? (typeof tok === "string" ? tok : tok.name) : "";
+                setWlMenu(null);
+                if (name) requestDeleteToken(name);
+              }}
+              sx={{ color: "error.main" }}
+            >
+              <ListItemIcon>
+                <DeleteOutlineIcon fontSize="small" color="error" />
+              </ListItemIcon>
+              Delete
+            </MenuItem>
+          </>
+        )}
+      </Menu>
+      <Dialog
+        open={Boolean(wlConfirm)}
+        onClose={() => setWlConfirm(null)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: {
+            bgcolor: isDark ? "rgba(15, 23, 42, 0.95)" : "background.paper",
+            color: isDark ? "#e9edf2" : "inherit",
+          },
+        }}
+      >
+        <DialogTitle>{wlConfirm?.title}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">{wlConfirm?.message}</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setWlConfirm(null)}
+            sx={{ ...shimmerSx, color: isDark ? "#e2e8f0" : "text.secondary" }}
+          >
+            Hủy
+          </Button>
+          <Button
+            color={wlConfirm?.color || "primary"}
+            variant="contained"
+            onClick={async () => {
+              const fn = wlConfirm?.onConfirm;
+              setWlConfirm(null);
+              if (fn) await fn();
+            }}
+            sx={shimmerSx}
+          >
+            {wlConfirm?.confirmLabel || "OK"}
           </Button>
         </DialogActions>
       </Dialog>
