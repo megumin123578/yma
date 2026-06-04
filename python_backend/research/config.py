@@ -63,10 +63,6 @@ DEFAULTS = {
     # ----- Local server -----
     "local_data_dir": "",
     "report_web_url": "https://api.tuanfmcaa.site",  # KHÔNG có / ở cuối
-    # ----- Monitor backend -----
-    "monitor_backend": "v1",  # v1 Chrome | cloak IPv6 (cần IPv6 Tool)
-    "cloak_max_workers": 25,
-    "cloak_browsers_json": r"D:\tạo IPv6\browsers.json",
     # ----- YouTube Data API v3 (xoay tua .env: YOUTUBE_API_KEY1/2/3) -----
     "youtube_data_api_key": "",
 }

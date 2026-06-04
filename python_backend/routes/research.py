@@ -533,7 +533,6 @@ _CONFIG_FIELDS = [
     ("auto_discover_competitors", False), ("auto_discover_threshold", False),
     ("auto_discover_max", False),
     ("keywordtool_api_key", True),
-    ("monitor_backend", False),
 ]
 _SECRET_KEYS = {k for k, secret in _CONFIG_FIELDS if secret}
 

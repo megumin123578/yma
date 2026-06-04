@@ -20,7 +20,6 @@ import { getConfig, putConfig } from "../../services/researchService";
 const FIELDS = [
   { key: "chrome_mode", label: "Chrome mode", type: "select", options: ["headless", "show", "minimized"] },
   { key: "parallel_workers", label: "Số worker song song", type: "number" },
-  { key: "monitor_backend", label: "Monitor backend", type: "select", options: ["v1", "v2"] },
   { key: "auto_discover_competitors", label: "Tự discover đối thủ", type: "switch" },
   { key: "auto_discover_threshold", label: "Ngưỡng discover (%)", type: "number" },
   { key: "auto_discover_max", label: "Số đối thủ tối đa/lần", type: "number" },
