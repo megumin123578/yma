@@ -100,6 +100,7 @@ import {
   putSchedule,
 } from "../../services/researchService";
 import RunPanel from "../research/RunPanel";
+import KeywordToolPanel from "../research/KeywordToolPanel";
 import ConfigPanel from "../research/ConfigPanel";
 import { UserContext, useHasPermission } from "../../context/UserContext";
 import ManageUserRequests from "../ManageUserRequests";
@@ -452,6 +453,14 @@ const CredentialsDialog = ({
     () =>
       Object.fromEntries(
         (watchlists || []).map((w) => [w.watchlistId, w.watchlistName])
+      ),
+    [watchlists]
+  );
+
+  const wlAvatarById = useMemo(
+    () =>
+      Object.fromEntries(
+        (watchlists || []).map((w) => [w.watchlistId, w.self?.avatar || ""])
       ),
     [watchlists]
   );
@@ -3501,6 +3510,14 @@ const CredentialsDialog = ({
                     )}
 
                     {scheduleSubTab === "watchlist" && (
+                  <Box
+                    sx={{
+                      display: "grid",
+                      gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+                      gap: 2,
+                      alignItems: "start",
+                    }}
+                  >
                   <Box display="flex" flexDirection="column" gap={2}>
                   <Box
                     sx={{
@@ -3544,7 +3561,7 @@ const CredentialsDialog = ({
                           )}
                           <LocalizationProvider dateAdapter={AdapterDayjs}>
                             <TimePicker
-                              label="Run time (server time)"
+                              label="Run time"
                               disabled={savingWlSchedule}
                               value={
                                 wlSchedule.time
@@ -3607,13 +3624,13 @@ const CredentialsDialog = ({
                           <Box display="flex" alignItems="center" gap={0.5}>
                             <Switch
                               size="small"
-                              checked={!!wlSchedule.aiOnly}
+                              checked={!wlSchedule.aiOnly}
                               disabled={savingWlSchedule}
-                              onChange={(e) => setWlSchedule((s) => ({ ...s, aiOnly: e.target.checked }))}
+                              onChange={(e) => setWlSchedule((s) => ({ ...s, aiOnly: !e.target.checked }))}
                             />
-                            <Tooltip title="Only regenerate the AI report from existing data, without crawling new data (much faster)">
+                            <Tooltip title="On: crawl new data, then generate AI. Off: only regenerate AI from existing data (much faster).">
                               <Typography variant="body2" sx={{ borderBottom: "1px dotted", cursor: "help" }}>
-                                AI only (no crawl data)
+                                Crawl data
                               </Typography>
                             </Tooltip>
                           </Box>
@@ -3625,8 +3642,12 @@ const CredentialsDialog = ({
                       )}
                     </Box>
                   </Box>
-                  <RunPanel wlNameById={wlNameById} />
+                  <KeywordToolPanel />
+                  </Box>
+                  <Box display="flex" flexDirection="column" gap={2}>
+                  <RunPanel wlNameById={wlNameById} wlAvatarById={wlAvatarById} />
                   <ConfigPanel />
+                  </Box>
                   </Box>
                     )}
 

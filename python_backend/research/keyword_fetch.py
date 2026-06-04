@@ -126,9 +126,11 @@ def harvest_seed(seed: str) -> int:
     return n
 
 
-def harvest_pending(max_calls: int = 50, log=None) -> dict:
+def harvest_pending(max_calls: int = 50, log=None, on_progress=None) -> dict:
     """Thu hoạch các seed 'pending' (ưu tiên cao trước), tối đa max_calls
-    lượt. Dừng nhẹ nhàng khi hết quota / lỗi. Trả {done, keywords, ...}."""
+    lượt. Dừng nhẹ nhàng khi hết quota / lỗi. Trả {done, keywords, ...}.
+
+    on_progress(done, total, keywords): gọi sau mỗi seed để báo tiến độ."""
     try:
         from . import keyword_bank
     except ImportError:
@@ -153,6 +155,8 @@ def harvest_pending(max_calls: int = 50, log=None) -> dict:
     _log(f"Thu hoạch {len(seeds)} seed (giới hạn {max_calls} lượt)...")
     done = 0
     total_kw = 0
+    last_err = ""
+    stopped = False
     for i, s in enumerate(seeds, 1):
         seed = s["seed"]
         try:
@@ -162,14 +166,21 @@ def harvest_pending(max_calls: int = 50, log=None) -> dict:
             _log(f"  [{i}/{len(seeds)}] {seed}: +{n} từ khoá")
         except Exception as e:
             emsg = str(e)
+            last_err = emsg
             _log(f"  [{i}/{len(seeds)}] {seed}: LỖI — {emsg}")
             low = emsg.lower()
             # hết quota / rate limit → DỪNG (seed còn lại giữ pending)
             if any(k in low for k in ("quota", "limit", "429",
                                       "exceed", "rate")):
                 _log("  → Hết quota/giới hạn — DỪNG, để dành seed còn lại.")
+                stopped = True
                 break
             keyword_bank.mark_seed(keyword_bank.norm(seed), "error", 0)
+        if on_progress:
+            try:
+                on_progress(done, len(seeds), total_kw)
+            except Exception:
+                pass
         if i < len(seeds):
             time.sleep(THROTTLE_SEC)
 
@@ -177,7 +188,8 @@ def harvest_pending(max_calls: int = 50, log=None) -> dict:
     _log(f"XONG đợt: {done} seed, +{total_kw} từ khoá. "
          f"Kho: {st['seeds_done']}/{st['seeds_total']} seed, "
          f"{st['keywords_total']} từ khoá.")
-    return {"ok": True, "done": done, "keywords": total_kw, "stats": st}
+    return {"ok": True, "done": done, "keywords": total_kw, "stats": st,
+            "stopped": stopped, "error": last_err[:200]}
 
 
 def main(argv=None):

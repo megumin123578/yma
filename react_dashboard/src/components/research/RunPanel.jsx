@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Autocomplete,
+  Avatar,
   Box,
   Button,
   Chip,
@@ -76,7 +77,7 @@ const CountChips = ({ counts }) => {
   );
 };
 
-const RunPanel = ({ wlNameById = {} }) => {
+const RunPanel = ({ wlNameById = {}, wlAvatarById = {} }) => {
   const theme = useTheme();
   const [runId, setRunId] = useState(null);
   const [progress, setProgress] = useState(null);
@@ -88,7 +89,11 @@ const RunPanel = ({ wlNameById = {} }) => {
   const unsubRef = useRef(null);
   const startTsRef = useRef(null);
 
-  const wlList = Object.entries(wlNameById).map(([id, name]) => ({ id, label: name }));
+  const wlList = Object.entries(wlNameById).map(([id, name]) => ({
+    id,
+    label: name,
+    avatar: wlAvatarById[id] || "",
+  }));
   const selectedOption = wlList.find((o) => o.id === selectedWid) || null;
   const alive = !!progress?.alive;
 
@@ -188,7 +193,6 @@ const RunPanel = ({ wlNameById = {} }) => {
     <Box
       sx={{
         p: 1.5,
-        mb: 2,
         border: `1px solid ${theme.palette.divider}`,
         borderRadius: 2,
         bgcolor: theme.palette.background.paper,
@@ -197,7 +201,7 @@ const RunPanel = ({ wlNameById = {} }) => {
       {/* Header: tiêu đề + trạng thái run hiện tại */}
       <Box display="flex" alignItems="center" gap={1} mb={1.25} flexWrap="wrap">
         <Typography variant="subtitle2" fontWeight={700}>
-          manual run
+          Manual run
         </Typography>
         <Box flexGrow={1} />
         {connLost && (
@@ -271,10 +275,43 @@ const RunPanel = ({ wlNameById = {} }) => {
               isOptionEqualToValue={(o, v) => o.id === v.id}
               disabled={busy}
               noOptionsText="No watchlists"
-              renderInput={(params) => <TextField {...params} label="Select watchlist" placeholder="Type to search…" />}
+              renderOption={(props, option) => {
+                const { key, ...rest } = props;
+                return (
+                  <Box component="li" key={key} {...rest} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Avatar src={option.avatar || undefined} sx={{ width: 22, height: 22, fontSize: 11 }}>
+                      {(option.label || "?").charAt(0).toUpperCase()}
+                    </Avatar>
+                    <Typography variant="body2" noWrap>
+                      {option.label}
+                    </Typography>
+                  </Box>
+                );
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Select watchlist"
+                  placeholder="Type to search…"
+                  InputProps={{
+                    ...params.InputProps,
+                    startAdornment: selectedOption ? (
+                      <Avatar
+                        src={selectedOption.avatar || undefined}
+                        sx={{ width: 20, height: 20, fontSize: 10, ml: 0.5 }}
+                      >
+                        {(selectedOption.label || "?").charAt(0).toUpperCase()}
+                      </Avatar>
+                    ) : (
+                      params.InputProps.startAdornment
+                    ),
+                  }}
+                />
+              )}
             />
             <Button
               variant="outlined"
+              size="small"
               color="error"
               startIcon={<PlayArrowRoundedIcon />}
               onClick={handleRunOne}

@@ -42,6 +42,11 @@ def _youtube_api_key() -> str:
     return keys[0] if keys else ""
 
 
+def _keywordtool_api_key() -> str:
+    """Key Keywordtool từ .env (KEYWORDTOOL_API_KEY)."""
+    return (os.getenv("KEYWORDTOOL_API_KEY", "") or "").strip()
+
+
 DEFAULTS = {
     # ----- Thông số chạy -----
     "days": 7,
@@ -60,6 +65,7 @@ DEFAULTS = {
     "auto_discover_threshold": 35,  # % trùng ngách tối thiểu
     "auto_discover_max": 5,
     "keywordtool_api_key": "",
+    "run_keywordtool": False,  # bật → runall harvest Keywordtool trước
     # ----- Local server -----
     "local_data_dir": "",
     "report_web_url": "https://api.tuanfmcaa.site",  # KHÔNG có / ở cuối
@@ -87,6 +93,9 @@ def load_config() -> dict:
     env_key = _youtube_api_key()
     if env_key:
         out["youtube_data_api_key"] = env_key
+    env_kt = _keywordtool_api_key()
+    if env_kt:
+        out["keywordtool_api_key"] = env_kt
     return out
 
 
@@ -94,6 +103,7 @@ def save_config(cfg: dict) -> None:
     p = config_path()
     clean = {k: cfg.get(k, v) for k, v in DEFAULTS.items()}
     clean["youtube_data_api_key"] = ""  # luôn lấy từ .env, không lưu ra file
+    clean["keywordtool_api_key"] = ""   # luôn lấy từ .env, không lưu ra file
     with open(p, "w", encoding="utf-8") as f:
         json.dump(clean, f, ensure_ascii=False, indent=2)
 

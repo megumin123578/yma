@@ -88,6 +88,18 @@ export const getUnifiedChannels = async () => {
   return data?.items || [];
 };
 
+// Harvest Keywordtool thủ công (nền). Trả {status}.
+export const runKeywordtool = async () => {
+  const { data } = await api.post("/api/research/keywordtool/harvest");
+  return data;
+};
+
+// Trạng thái harvest Keywordtool. Trả {running, last}.
+export const getKeywordtoolStatus = async () => {
+  const { data } = await api.get("/api/research/keywordtool/harvest");
+  return data;
+};
+
 export const getSchedule = async () => {
   const { data } = await api.get("/api/research/schedule");
   return data;

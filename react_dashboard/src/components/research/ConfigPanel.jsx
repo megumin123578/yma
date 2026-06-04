@@ -23,7 +23,6 @@ const FIELDS = [
   { key: "auto_discover_competitors", label: "Auto-discover competitors", type: "switch" },
   { key: "auto_discover_threshold", label: "Discover threshold (%)", type: "number" },
   { key: "auto_discover_max", label: "Max competitors per run", type: "number" },
-  { key: "keywordtool_api_key", label: "Keywordtool API key", type: "password" },
 ];
 
 const ConfigPanel = () => {
@@ -79,7 +78,7 @@ const ConfigPanel = () => {
   if (loading || !cfg) return <CircularProgress size={20} sx={{ m: 2 }} />;
 
   return (
-    <Paper elevation={0} sx={{ p: 2, mt: 3, border: `1px solid ${theme.palette.divider}`, borderRadius: 2 }}>
+    <Paper elevation={0} sx={{ p: 2, border: `1px solid ${theme.palette.divider}`, borderRadius: 2 }}>
       <Box display="flex" alignItems="center" justifyContent="space-between" mb={1.5} flexWrap="wrap" gap={1}>
         <Typography variant="h6" fontWeight={700}>Research config</Typography>
         <FormControlLabel

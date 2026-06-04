@@ -533,6 +533,50 @@ def active_runs(current_user=Depends(get_current_user_optional)):
     return {"runs": runs}
 
 
+# ----- Keywordtool harvest thủ công (nền, 1 lượt) -----
+_kw_harvest = {"running": False, "last": None, "progress": None}
+_kw_harvest_lock = Lock()
+
+
+@router.post("/keywordtool/harvest")
+def keywordtool_harvest(current_user=Depends(get_current_user_optional)):
+    """Harvest seed pending qua API keywordtool (nền). Trả ngay {status}."""
+    with _kw_harvest_lock:
+        if _kw_harvest["running"]:
+            return {"status": "running"}
+        _kw_harvest["running"] = True
+        _kw_harvest["progress"] = {"done": 0, "total": 0, "keywords": 0}
+
+    def _worker():
+        def _prog(done, total, kw):
+            _kw_harvest["progress"] = {"done": done, "total": total, "keywords": kw}
+
+        def _logfn(m):
+            add_log(f"[keywordtool] {m}")
+            print(f"[keywordtool] {m}", flush=True)
+
+        try:
+            from python_backend.research import keyword_fetch
+            _kw_harvest["last"] = keyword_fetch.harvest_pending(
+                50, _logfn, on_progress=_prog)
+        except Exception as e:  # noqa: BLE001
+            _kw_harvest["last"] = {"ok": False, "reason": str(e)[:200]}
+            add_log(f"[keywordtool] harvest loi: {e}")
+        finally:
+            with _kw_harvest_lock:
+                _kw_harvest["running"] = False
+
+    Thread(target=_worker, daemon=True).start()
+    add_log("[H] research/keywordtool harvest start")
+    return {"status": "started"}
+
+
+@router.get("/keywordtool/harvest")
+def keywordtool_harvest_status(current_user=Depends(get_current_user_optional)):
+    return {"running": _kw_harvest["running"], "last": _kw_harvest["last"],
+            "progress": _kw_harvest.get("progress")}
+
+
 # ============================================================
 # Phase 6 — Cấu hình (config) + Lịch (scheduler)
 # ============================================================
@@ -541,7 +585,7 @@ _CONFIG_FIELDS = [
     ("chrome_mode", False), ("parallel_workers", False),
     ("auto_discover_competitors", False), ("auto_discover_threshold", False),
     ("auto_discover_max", False),
-    ("keywordtool_api_key", True),
+    ("run_keywordtool", False),
 ]
 _SECRET_KEYS = {k for k, secret in _CONFIG_FIELDS if secret}
 

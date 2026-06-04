@@ -792,6 +792,21 @@ async def run_daily(wl_ids: Optional[list] = None,
         log_fn(f"  ⚠ Cluster compute err (skip): {e}")
         anchor_map = {}
 
+    # Tùy chọn: harvest Keywordtool TRƯỚC runall (config run_keywordtool).
+    try:
+        from .config import load_config as _lc
+        if _lc().get("run_keywordtool"):
+            import asyncio as _aio
+            from . import keyword_fetch
+            log_fn("  [keywordtool] Harvest seed pending trước runall...")
+            res = await _aio.to_thread(
+                keyword_fetch.harvest_pending, 50,
+                lambda m: log_fn(f"    {m}"))
+            log_fn(f"  [keywordtool] Xong: {res.get('done', 0)} seed, "
+                   f"+{res.get('keywords', 0)} từ khoá.")
+    except Exception as e:
+        log_fn(f"  [keywordtool] LỖI (skip): {str(e)[:160]}")
+
     t0 = time.time()
     conn = _init_db()
     try:
