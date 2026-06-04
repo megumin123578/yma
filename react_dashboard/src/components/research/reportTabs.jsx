@@ -25,6 +25,12 @@ const prettyKey = (k) =>
 // "2026-06-03" -> "03/06/2026"; rỗng -> "—"
 const dmy = (s) => String(s || "").split("-").reverse().join("/") || "—";
 
+// số có dấu +/- (cho delta tăng/giảm)
+const sg = (v) => {
+  const n = Number(v) || 0;
+  return (n > 0 ? "+" : "") + num(n);
+};
+
 // dict scalar fields -> StatGrid
 const autoStats = (obj, only = null, exclude = []) => {
   if (!obj || typeof obj !== "object") return [];
@@ -258,6 +264,74 @@ const ChannelBlock = ({ ch, defaultOpen = false }) => {
         <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.25 }}>
           ⏰ {ch.posting}
         </Typography>
+      )}
+      {delta.has && (
+        <Box mt={2}>
+          <Typography variant="subtitle2" fontWeight={700} mb={0.5}>
+            Thay đổi so với kỳ trước{delta.prev ? ` (${delta.prev})` : ""}
+          </Typography>
+          <Typography variant="body2" sx={{ lineHeight: 1.6 }}>
+            Người đăng ký: <b>{sg(delta.sub_d)}</b> ({sg(delta.sub_pct)}%)
+            {delta.vc_d ? (
+              <>
+                {" "}· Số video kênh: <b>{sg(delta.vc_d)}</b>
+              </>
+            ) : null}
+            {delta.ch_up ? (
+              <>
+                {" "}· Kênh vừa đăng <b>{num(delta.ch_up)}</b> video mới
+              </>
+            ) : null}
+            {delta.new_vid != null ? <> · Video mới trong ngành: {num(delta.new_vid)}</> : null}
+          </Typography>
+          {Array.isArray(delta.new_kw) && delta.new_kw.length > 0 && (
+            <Typography variant="body2" sx={{ mt: 0.5 }}>
+              <b>Từ khoá mới của ngành:</b> {delta.new_kw.join(", ")}
+            </Typography>
+          )}
+          {Array.isArray(delta.trend_kw) && delta.trend_kw.length > 0 && (
+            <Box mt={0.75}>
+              <Typography variant="body2" component="span" sx={{ mr: 0.5 }}>
+                <b>Từ khoá đang nóng lên:</b>
+              </Typography>
+              {delta.trend_kw.map((t, i) => (
+                <Pill key={i} label={`${t.kw} (${sg(t.pct)}%)`} color="warning" />
+              ))}
+            </Box>
+          )}
+        </Box>
+      )}
+      {sb.days > 0 && (
+        <Box mt={2}>
+          <Typography variant="subtitle2" fontWeight={700} mb={0.5}>
+            {sb.source === "inside_api" ? "Inside YouTube Analytics" : "Social Blade"} — {sb.days} ngày gần nhất
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            Người đăng ký: <b>{sg(sb.subs_g)}</b> (TB {sg(sb.avg_sub)}/ngày) · Lượt xem:{" "}
+            <b>{sg(sb.views_g)}</b> (TB {sg(sb.avg_view)}/ngày)
+          </Typography>
+          {Array.isArray(sb.daily) && sb.daily.length > 0 && (
+            <DataTable
+              limit={null}
+              rows={sb.daily}
+              columns={
+                sb.source === "inside_api"
+                  ? [
+                      { key: "d", label: "Ngày" },
+                      { key: "sc", label: "ĐK +/-", align: "right", render: (r) => sg(r.sc) },
+                      { key: "vc", label: "Xem +/-", align: "right", render: (r) => sg(r.vc) },
+                    ]
+                  : [
+                      { key: "d", label: "Ngày" },
+                      { key: "s", label: "Người ĐK", align: "right", render: (r) => num(r.s) },
+                      { key: "sc", label: "ĐK +/-", align: "right", render: (r) => sg(r.sc) },
+                      { key: "v", label: "Tổng xem", align: "right", render: (r) => num(r.v) },
+                      { key: "vc", label: "Xem +/-", align: "right", render: (r) => sg(r.vc) },
+                    ]
+              }
+            />
+          )}
+        </Box>
       )}
       {Array.isArray(ch.all_v) && ch.all_v.length > 0 && (
         <Box mt={2}>
@@ -502,20 +576,77 @@ export const TABS = [
         <>
           <SectionCard title={s.niche_name || "Synthesis"} subtitle={s.niche_key}>
             {Array.isArray(s.findings) && s.findings.length > 0 ? (
-              <Box component="ul" sx={{ pl: 2, m: 0 }}>
-                {s.findings.map((f, i) => (
-                  <li key={i}>
-                    <Typography variant="body2">{typeof f === "string" ? f : JSON.stringify(f)}</Typography>
-                  </li>
-                ))}
-              </Box>
+              s.findings.map((f, i) => {
+                if (typeof f === "string")
+                  return (
+                    <Typography key={i} variant="body2" sx={{ mb: 1, lineHeight: 1.6 }}>
+                      {f}
+                    </Typography>
+                  );
+                const c = SEV_SCORE_COLOR[f.severity] || "text.secondary";
+                return (
+                  <Box key={i} sx={{ borderLeft: "3px solid", borderColor: c, pl: 1.5, py: 0.5, mb: 1.5 }}>
+                    <Typography variant="subtitle2" fontWeight={700} sx={{ color: c }}>
+                      {f.finding}
+                    </Typography>
+                    {f.diagnosis && (
+                      <Typography variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
+                        <b>Chẩn đoán:</b> {f.diagnosis}
+                      </Typography>
+                    )}
+                    {f.action && (
+                      <Typography variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
+                        <b>Hành động:</b> {f.action}
+                      </Typography>
+                    )}
+                  </Box>
+                );
+              })
             ) : (
               <EmptyState />
             )}
           </SectionCard>
-          {s.traffic_playbook && (
+          {Array.isArray(s.traffic_playbook) && s.traffic_playbook.length > 0 && (
             <SectionCard title="Traffic Playbook">
-              <TextBlock text={typeof s.traffic_playbook === "string" ? s.traffic_playbook : JSON.stringify(s.traffic_playbook, null, 2)} />
+              <DataTable
+                limit={null}
+                rows={s.traffic_playbook}
+                columns={[
+                  { key: "name", label: "Nguồn", render: (r) => r.name || r.source || "—" },
+                  { key: "share_pct", label: "Tỷ lệ", align: "right", render: (r) => (r.share_pct != null ? `${r.share_pct}%` : "—") },
+                  { key: "views", label: "Views", align: "right", render: (r) => num(r.views) },
+                  { key: "benchmark", label: "Benchmark", align: "center", render: (r) => r.benchmark || "—" },
+                  {
+                    key: "status",
+                    label: "Trạng thái",
+                    align: "center",
+                    render: (r) => {
+                      const st = String(r.status || "");
+                      const col =
+                        st === "HIGH" ? "warning" : st === "LOW" ? "error" : st === "OK" || st === "GOOD" ? "success" : "default";
+                      return st ? <Pill label={st} color={col} /> : "—";
+                    },
+                  },
+                  {
+                    key: "actions",
+                    label: "Hành động",
+                    render: (r) =>
+                      Array.isArray(r.actions) && r.actions.length > 0 ? (
+                        <Box component="ul" sx={{ pl: 2, m: 0 }}>
+                          {r.actions.map((a, i) => (
+                            <li key={i}>
+                              <Typography variant="body2" sx={{ lineHeight: 1.5 }}>
+                                {a}
+                              </Typography>
+                            </li>
+                          ))}
+                        </Box>
+                      ) : (
+                        "—"
+                      ),
+                  },
+                ]}
+              />
             </SectionCard>
           )}
         </>
