@@ -10,7 +10,7 @@ Lịch lưu ~/.youtube_research/web_schedule.json:
 """
 import json
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -40,6 +40,35 @@ def save_schedule(d: dict) -> dict:
     SCHED_FILE.write_text(json.dumps(cur, ensure_ascii=False, indent=2),
                           encoding="utf-8")
     return cur
+
+
+def status() -> dict:
+    """Lịch + thông tin suy ra cho UI: giờ máy chủ, lần chạy gần/kế tiếp."""
+    s = load_schedule()
+    now = datetime.now()
+    out = dict(s)
+    out["serverTime"] = now.strftime("%H:%M")
+    out["serverDate"] = now.strftime("%Y-%m-%d")
+    try:
+        off = now.astimezone().utcoffset()
+        mins = int(off.total_seconds() // 60) if off else 0
+        sign = "+" if mins >= 0 else "-"
+        out["tz"] = f"UTC{sign}{abs(mins) // 60:02d}:{abs(mins) % 60:02d}"
+    except Exception:
+        out["tz"] = ""
+    out["lastRun"] = s.get("lastRunDate") or ""
+    nxt = ""
+    if s.get("enabled") and s.get("time"):
+        try:
+            hh, mm = (int(x) for x in str(s["time"]).split(":"))
+            cand = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+            if cand <= now or s.get("lastRunDate") == now.strftime("%Y-%m-%d"):
+                cand += timedelta(days=1)
+            nxt = cand.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            nxt = ""
+    out["nextRun"] = nxt
+    return out
 
 
 def _loop(spawn_fn: Callable):

@@ -24,6 +24,12 @@ export const getRun = async (runId) => {
   return data;
 };
 
+// Các run còn sống (để re-attach khi mở lại panel). Trả mảng progress.
+export const getActiveRuns = async () => {
+  const { data } = await api.get("/api/research/runs/active");
+  return data?.runs || [];
+};
+
 export const stopRun = async (runId) => {
   const { data } = await api.post(`/api/research/run/${runId}/stop`);
   return data;

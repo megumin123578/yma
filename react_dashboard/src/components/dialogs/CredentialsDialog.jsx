@@ -202,6 +202,7 @@ const CredentialsDialog = ({
   const [wlSchedule, setWlSchedule] = useState(null);
   const [savingWlSchedule, setSavingWlSchedule] = useState(false);
   const [wlScheduleMsg, setWlScheduleMsg] = useState("");
+  const [wlScheduleErr, setWlScheduleErr] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(channelSearch.trim().toLowerCase()), 200);
@@ -2292,6 +2293,7 @@ const CredentialsDialog = ({
     if (!wlSchedule) return;
     setSavingWlSchedule(true);
     setWlScheduleMsg("");
+    setWlScheduleErr(false);
     try {
       const updated = await putSchedule({
         enabled: !!wlSchedule.enabled,
@@ -2300,8 +2302,9 @@ const CredentialsDialog = ({
         wlIds: null,
       });
       setWlSchedule(updated);
-      setWlScheduleMsg("Đã lưu lịch.");
+      setWlScheduleMsg("Schedule saved.");
     } catch (e) {
+      setWlScheduleErr(true);
       setWlScheduleMsg(e?.response?.data?.detail || e.message);
     } finally {
       setSavingWlSchedule(false);
@@ -3527,18 +3530,22 @@ const CredentialsDialog = ({
                     <Box display="flex" flexDirection="column" gap={2} mt={1}>
                       {!wlSchedule ? (
                         <Typography variant="body2" color="text.secondary">
-                          Đang tải…
+                          Loading…
                         </Typography>
                       ) : (
                         <>
                           {wlScheduleMsg && (
-                            <Typography variant="body2" color={theme.palette.success.main}>
+                            <Typography
+                              variant="body2"
+                              color={wlScheduleErr ? theme.palette.error.main : theme.palette.success.main}
+                            >
                               {wlScheduleMsg}
                             </Typography>
                           )}
                           <LocalizationProvider dateAdapter={AdapterDayjs}>
                             <TimePicker
-                              label="Time"
+                              label="Run time (server time)"
+                              disabled={savingWlSchedule}
                               value={
                                 wlSchedule.time
                                   ? dayjs(`2000-01-01T${wlSchedule.time}`)
@@ -3601,9 +3608,14 @@ const CredentialsDialog = ({
                             <Switch
                               size="small"
                               checked={!!wlSchedule.aiOnly}
+                              disabled={savingWlSchedule}
                               onChange={(e) => setWlSchedule((s) => ({ ...s, aiOnly: e.target.checked }))}
                             />
-                            <Typography variant="body2">AI only (no crawl data)</Typography>
+                            <Tooltip title="Only regenerate the AI report from existing data, without crawling new data (much faster)">
+                              <Typography variant="body2" sx={{ borderBottom: "1px dotted", cursor: "help" }}>
+                                AI only (no crawl data)
+                              </Typography>
+                            </Tooltip>
                           </Box>
 
                           <Button variant="contained" onClick={saveWlSchedule} disabled={savingWlSchedule} sx={shimmerSx}>

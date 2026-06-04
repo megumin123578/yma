@@ -524,6 +524,15 @@ def stop_run(run_id: str, current_user=Depends(get_current_user_optional)):
     return {"runId": run_id, "stopped": True}
 
 
+@router.get("/runs/active")
+def active_runs(current_user=Depends(get_current_user_optional)):
+    """Run còn sống trong phiên process này (để UI re-attach sau khi mở lại)."""
+    with _procs_lock:
+        ids = list(_procs.keys())
+    runs = [_read_progress(rid) for rid in ids if _proc_alive(rid)]
+    return {"runs": runs}
+
+
 # ============================================================
 # Phase 6 — Cấu hình (config) + Lịch (scheduler)
 # ============================================================
@@ -578,7 +587,7 @@ def put_config(req: ConfigPatch, current_user=Depends(get_current_user_optional)
 @router.get("/schedule")
 def get_schedule(current_user=Depends(get_current_user_optional)):
     from python_backend.research import web_scheduler
-    return web_scheduler.load_schedule()
+    return web_scheduler.status()
 
 
 class SchedulePatch(BaseModel):
@@ -601,7 +610,8 @@ def put_schedule(req: SchedulePatch, current_user=Depends(get_current_user_optio
         d["wlIds"] = req.wlIds or None
     if req.aiOnly is not None:
         d["aiOnly"] = bool(req.aiOnly)
-    return web_scheduler.save_schedule(d)
+    web_scheduler.save_schedule(d)
+    return web_scheduler.status()
 
 
 def start_research_scheduler():

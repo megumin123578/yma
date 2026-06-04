@@ -19,10 +19,10 @@ import { getConfig, putConfig } from "../../services/researchService";
 // type: text | password | number | switch | select(options)
 const FIELDS = [
   { key: "chrome_mode", label: "Chrome mode", type: "select", options: ["headless", "show", "minimized"] },
-  { key: "parallel_workers", label: "Số worker song song", type: "number" },
-  { key: "auto_discover_competitors", label: "Tự discover đối thủ", type: "switch" },
-  { key: "auto_discover_threshold", label: "Ngưỡng discover (%)", type: "number" },
-  { key: "auto_discover_max", label: "Số đối thủ tối đa/lần", type: "number" },
+  { key: "parallel_workers", label: "Parallel workers", type: "number" },
+  { key: "auto_discover_competitors", label: "Auto-discover competitors", type: "switch" },
+  { key: "auto_discover_threshold", label: "Discover threshold (%)", type: "number" },
+  { key: "auto_discover_max", label: "Max competitors per run", type: "number" },
   { key: "keywordtool_api_key", label: "Keywordtool API key", type: "password" },
 ];
 
@@ -68,7 +68,7 @@ const ConfigPanel = () => {
       });
       const updated = await putConfig(values);
       setCfg(updated);
-      setMsg("Đã lưu cấu hình.");
+      setMsg("Config saved.");
     } catch (e) {
       setMsg(e?.response?.data?.detail || e.message);
     } finally {
@@ -81,20 +81,20 @@ const ConfigPanel = () => {
   return (
     <Paper elevation={0} sx={{ p: 2, mt: 3, border: `1px solid ${theme.palette.divider}`, borderRadius: 2 }}>
       <Box display="flex" alignItems="center" justifyContent="space-between" mb={1.5} flexWrap="wrap" gap={1}>
-        <Typography variant="h6" fontWeight={700}>Cấu hình nghiên cứu</Typography>
-        <Button
-          size="small"
-          variant="contained"
-          startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveRoundedIcon />}
-          onClick={handleSave}
-          disabled={saving}
-        >
-          Lưu
-        </Button>
+        <Typography variant="h6" fontWeight={700}>Research config</Typography>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={!!form.auto_discover_competitors}
+              onChange={(e) => setVal("auto_discover_competitors", e.target.checked)}
+            />
+          }
+          label="Discover competitors"
+        />
       </Box>
       {msg && <Chip size="small" label={msg} sx={{ mb: 1.5 }} />}
       <Box sx={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 2 }}>
-        {FIELDS.map((fld) => {
+        {FIELDS.filter((fld) => fld.key !== "auto_discover_competitors").map((fld) => {
           if (fld.type === "switch") {
             return (
               <FormControlLabel
@@ -115,7 +115,7 @@ const ConfigPanel = () => {
                 onChange={(e) => setVal(fld.key, e.target.value)}
               >
                 {fld.options.map((o) => (
-                  <MenuItem key={o} value={o}>{o === "" ? "(tắt)" : o}</MenuItem>
+                  <MenuItem key={o} value={o}>{o === "" ? "(off)" : o}</MenuItem>
                 ))}
               </TextField>
             );
@@ -128,12 +128,23 @@ const ConfigPanel = () => {
               type={isPw ? "password" : fld.type === "number" ? "number" : "text"}
               label={fld.label}
               value={form[fld.key] ?? ""}
-              placeholder={isPw && cfg[`${fld.key}_set`] ? "•••••• (đã đặt — để trống nếu giữ nguyên)" : ""}
+              placeholder={isPw && cfg[`${fld.key}_set`] ? "•••••• (set — leave blank to keep)" : ""}
               InputLabelProps={isPw ? { shrink: true } : undefined}
               onChange={(e) => setVal(fld.key, e.target.value)}
             />
           );
         })}
+      </Box>
+      <Box display="flex" justifyContent="flex-end" mt={2}>
+        <Button
+          size="small"
+          variant="contained"
+          startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveRoundedIcon />}
+          onClick={handleSave}
+          disabled={saving}
+        >
+          Save
+        </Button>
       </Box>
     </Paper>
   );
