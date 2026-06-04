@@ -312,31 +312,34 @@ def remove_channel(wid: str, cid: str, current_user=Depends(get_current_user_opt
 def get_report(
     wid: str,
     refresh: bool = False,
+    date: str = "",
     current_user=Depends(get_current_user_optional),
 ):
-    """Báo cáo 22 tab của 1 watchlist (JSON). `refresh=true` bỏ qua cache."""
+    """Báo cáo 22 tab của 1 watchlist (JSON). `refresh=true` bỏ qua cache.
+    `date=YYYY-MM-DD` xem báo cáo theo snapshot ngày đó (rỗng → mới nhất)."""
     now = time.monotonic()
+    cache_key = f"{wid}|{date}"
     if not refresh:
         with _cache_lock:
-            hit = _report_cache.get(wid)
+            hit = _report_cache.get(cache_key)
             if hit and (now - hit[0]) < _REPORT_TTL:
-                add_log(f"[H] research/report cache-hit wid={wid}")
+                add_log(f"[H] research/report cache-hit wid={wid} date={date}")
                 return hit[1]
 
     from python_backend.research.html_report import build_data
 
     t0 = time.perf_counter()
     try:
-        data = build_data(wid)
+        data = build_data(wid, as_of_day=date)
     except Exception as e:  # noqa: BLE001
         print(f"[research] build_data loi wid={wid}: {e}")
         raise HTTPException(status_code=500, detail=f"build_data failed: {e}")
     if not data:
         raise HTTPException(status_code=404, detail="Watchlist not found or no data")
 
-    add_log(f"[H] research/report build wid={wid}: {(time.perf_counter() - t0) * 1000:.1f}ms")
+    add_log(f"[H] research/report build wid={wid} date={date}: {(time.perf_counter() - t0) * 1000:.1f}ms")
     with _cache_lock:
-        _report_cache[wid] = (now, data)
+        _report_cache[cache_key] = (now, data)
     return data
 
 
@@ -353,7 +356,9 @@ def _invalidate_report_cache(wl_ids):
     with _cache_lock:
         if wl_ids:
             for w in wl_ids:
-                _report_cache.pop(w, None)
+                for k in [k for k in _report_cache
+                          if k == w or k.startswith(f"{w}|")]:
+                    _report_cache.pop(k, None)
         else:
             _report_cache.clear()
 

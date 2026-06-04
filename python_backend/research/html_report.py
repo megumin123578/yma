@@ -316,12 +316,15 @@ def _pack(res, wc, inside_ci=None):
     }
 
 
-def build_data(wid: str) -> dict:
+def build_data(wid: str, as_of_day: str = "") -> dict:
     """Ráp toàn bộ dữ liệu báo cáo 22 tab cho 1 watchlist thành dict thuần.
 
     Tách khỏi render HTML (chốt 2026-06, gộp vào yt_manage_app): pipeline
     trả JSON này qua FastAPI → React render native. Mỗi key trong dict map
     1 tab (xem inventory s0-s22).
+
+    as_of_day (YYYY-MM-DD) rỗng → snapshot mới nhất; có giá trị → dựng báo
+    cáo theo snapshot ≤ ngày đó của từng kênh (xem lịch sử theo ngày).
     """
     from . import watchlist as wl, persistence
     w = wl.load_watchlist(wid)
@@ -329,7 +332,10 @@ def build_data(wid: str) -> dict:
         print(f"Khong tim thay watchlist {wid}")
         return ""
     self_ch = w.self_channel
-    self_res = (persistence.find_previous_for_channel(self_ch.channel_id)
+    self_days = (persistence.snapshot_days_for_channel(self_ch.channel_id)
+                 if self_ch else [])
+    sel_day = as_of_day or (self_days[0] if self_days else "")
+    self_res = (persistence.find_for_channel_as_of(self_ch.channel_id, sel_day)
                 if self_ch else None)
 
     # Quy trình mới 26/05: fetch Inside channel_summary TRƯỚC khi _pack self —
@@ -350,13 +356,15 @@ def build_data(wid: str) -> dict:
     data = {
         "wl": w.name,
         "date": datetime.now().strftime("%d/%m/%Y %H:%M"),
+        "available_dates": self_days,
+        "selected_date": sel_day,
         "self": _pack(self_res, self_ch, inside_ci=self_inside_ci),
         "competitors": [], "keywords": [], "niche": {}, "niche_top": {},
         "continuity": {}, "events": [], "sb_compare": [],
         "new_comp": [], "strategy": "",
     }
     for c in w.competitor_channels:
-        res = persistence.find_previous_for_channel(c.channel_id)
+        res = persistence.find_for_channel_as_of(c.channel_id, sel_day)
         data["competitors"].append(_pack(res, c))  # competitor giữ SB
 
     data["keywords"] = data["self"].get("kw", [])
@@ -716,12 +724,12 @@ def build_data(wid: str) -> dict:
         if self_res:
             # Load competitor results để keyword alignment
             comp_results = []
-            from .persistence import find_previous_for_channel
+            from .persistence import find_for_channel_as_of
             for c in w.active_channels:  # 24/05: bỏ archived
                 if c.is_self:
                     continue
                 try:
-                    cr = find_previous_for_channel(c.channel_id)
+                    cr = find_for_channel_as_of(c.channel_id, sel_day)
                     if cr:
                         comp_results.append(cr)
                 except Exception:

@@ -13,7 +13,6 @@ import {
   Typography,
   useTheme,
 } from "@mui/material";
-import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import Header from "../../components/Header";
 import { TABS, TAB_GROUPS } from "../../components/research/reportTabs";
@@ -21,9 +20,20 @@ import SeoReport from "../../components/research/SeoReport";
 import useSeoReport from "../../components/research/useSeoReport";
 import { EmptyState } from "../../components/research/primitives";
 import { generateAi, getReport, listWatchlists } from "../../services/researchService";
+import {
+  getSharedFilterControlSx,
+  getSharedSelectMenuProps,
+} from "../../components/filterStyles";
+
+const fmtDate = (s) => {
+  const [y, m, d] = String(s || "").split("-");
+  return y && m && d ? `${d}/${m}/${y}` : String(s || "");
+};
 
 const ResearchScene = ({ view = "report" }) => {
   const theme = useTheme();
+  const filterControlSx = getSharedFilterControlSx(theme, { flex: "0 0 auto" });
+  const selectMenuProps = getSharedSelectMenuProps(theme);
   const [watchlists, setWatchlists] = useState([]);
   const [wid, setWid] = useState("");
   const [report, setReport] = useState(null);
@@ -51,11 +61,11 @@ const ResearchScene = ({ view = "report" }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadReport = (id, refresh = false) => {
+  const loadReport = (id, refresh = false, date = "") => {
     if (!id) return;
     setLoading(true);
     setError("");
-    getReport(id, { refresh })
+    getReport(id, { refresh, date })
       .then((d) => setReport(d))
       .catch((e) => {
         setReport(null);
@@ -95,13 +105,14 @@ const ResearchScene = ({ view = "report" }) => {
       {(view === "report" || view === "seo") && (
         <>
       <Box display="flex" alignItems="center" gap={1.5} mb={2} flexWrap="wrap">
-        <FormControl size="small" sx={{ minWidth: 280 }}>
+        <FormControl size="small" sx={{ ...filterControlSx, minWidth: { xs: "100%", sm: 240 } }}>
           <InputLabel id="wl-label">Watchlist</InputLabel>
           <Select
             labelId="wl-label"
             label="Watchlist"
             value={wid}
             onChange={(e) => setWid(e.target.value)}
+            MenuProps={selectMenuProps}
           >
             {watchlists.map((w) => (
               <MenuItem key={w.id} value={w.id}>
@@ -111,22 +122,29 @@ const ResearchScene = ({ view = "report" }) => {
             ))}
           </Select>
         </FormControl>
-        {view === "report" && (
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<RefreshRoundedIcon />}
-            onClick={() => loadReport(wid, true)}
-            disabled={loading || !wid}
-          >
-            Tải lại
-          </Button>
+        {view === "report" && report?.available_dates?.length > 0 && (
+          <FormControl size="small" sx={{ ...filterControlSx, minWidth: { xs: "100%", sm: 175 } }}>
+            <Select
+              value={report.selected_date || ""}
+              onChange={(e) => loadReport(wid, false, e.target.value)}
+              disabled={loading}
+              MenuProps={selectMenuProps}
+              renderValue={(val) => `🗓 ${fmtDate(val)}`}
+            >
+              {report.available_dates.map((d) => (
+                <MenuItem key={d} value={d}>
+                  {fmtDate(d)}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         )}
         {view === "seo" && seo.items.length > 0 && (
-          <FormControl size="small" sx={{ minWidth: 170 }}>
+          <FormControl size="small" sx={{ ...filterControlSx, minWidth: { xs: "100%", sm: 185 } }}>
             <Select
               value={seo.selId}
               onChange={(e) => seo.select(e.target.value)}
+              MenuProps={selectMenuProps}
               renderValue={(val) => {
                 const it = seo.items.find((i) => i.id === val);
                 return `🗓 ${it?.date || ""}`;
@@ -163,7 +181,7 @@ const ResearchScene = ({ view = "report" }) => {
               setAiMsg("");
               try {
                 const r = await generateAi(wid);
-                setAiMsg(`Đang sinh AI (${r.runId})… bấm Tải lại khi xong.`);
+                setAiMsg(`Đang sinh AI (${r.runId})… tải lại trang khi xong để xem.`);
               } catch (e) {
                 setAiMsg(e?.response?.data?.detail || e.message);
               }

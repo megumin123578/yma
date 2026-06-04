@@ -7,9 +7,12 @@ export const listWatchlists = async () => {
   return data?.items || [];
 };
 
-export const getReport = async (wid, { refresh = false } = {}) => {
+export const getReport = async (wid, { refresh = false, date = "" } = {}) => {
+  const params = {};
+  if (refresh) params.refresh = true;
+  if (date) params.date = date;
   const { data } = await api.get(`/api/research/report/${wid}`, {
-    params: refresh ? { refresh: true } : undefined,
+    params: Object.keys(params).length ? params : undefined,
   });
   return data;
 };

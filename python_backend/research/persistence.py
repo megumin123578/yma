@@ -137,6 +137,32 @@ def find_previous_for_channel(channel_id: str,
     return None
 
 
+def snapshot_days_for_channel(channel_id: str) -> list:
+    """List ngày (YYYY-MM-DD) có snapshot của kênh, mới nhất trước, dedup."""
+    seen, out = set(), []
+    for e in records_for_channel(channel_id):
+        d = (e.get("date") or "")[:10]
+        if d and d not in seen:
+            seen.add(d)
+            out.append(d)
+    return out
+
+
+def find_for_channel_as_of(channel_id: str,
+                           as_of_day: str = "") -> Optional[dict]:
+    """Snapshot mới nhất của kênh có ngày ≤ as_of_day (YYYY-MM-DD).
+    as_of_day rỗng → bản mới nhất."""
+    if not channel_id:
+        return None
+    recs = records_for_channel(channel_id)
+    if not as_of_day:
+        return load_result(recs[0]["id"]) if recs else None
+    for e in recs:  # mới nhất trước
+        if (e.get("date") or "")[:10] <= as_of_day:
+            return load_result(e["id"])
+    return None
+
+
 def find_previous_for_keywords(keywords: list, exclude_id: str = "",
                                min_overlap: float = 0.6) -> Optional[dict]:
     """Result trước với danh sách từ khoá tương tự (≥ overlap %)."""
