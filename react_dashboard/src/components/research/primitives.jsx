@@ -115,16 +115,25 @@ export const StatGrid = ({ stats = [] }) => {
 };
 
 // columns: [{key, label, align?, render?(row)}]
-export const DataTable = ({ columns = [], rows = [], maxHeight = 520, size = "small" }) => {
+export const DataTable = ({ columns = [], rows = [], size = "small", limit = 10 }) => {
   const theme = useTheme();
   if (!rows?.length) return <EmptyState />;
+  const shown = limit ? rows.slice(0, limit) : rows;
   return (
     <TableContainer
       component={Paper}
       elevation={0}
-      sx={{ maxHeight, border: `1px solid ${theme.palette.divider}`, borderRadius: 2 }}
+      sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: 2 }}
     >
-      <Table stickyHeader size={size}>
+      <Table
+        stickyHeader
+        size={size}
+        sx={{
+          "& tbody tr:nth-of-type(odd)": {
+            bgcolor: theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(15,23,42,0.025)",
+          },
+        }}
+      >
         <TableHead>
           <TableRow>
             {columns.map((c) => (
@@ -139,7 +148,7 @@ export const DataTable = ({ columns = [], rows = [], maxHeight = 520, size = "sm
           </TableRow>
         </TableHead>
         <TableBody>
-          {rows.map((row, ri) => (
+          {shown.map((row, ri) => (
             <TableRow key={ri} hover>
               {columns.map((c) => (
                 <TableCell key={c.key} align={c.align || "left"}>
@@ -184,6 +193,20 @@ const SEV_COLOR = {
 export const SevChip = ({ sev }) => (
   <Chip size="small" label={sev || "info"} color={SEV_COLOR[sev] || "default"} variant="outlined" />
 );
+
+const PRIO_COLOR = {
+  high: "error",
+  med: "warning",
+  medium: "warning",
+  low: "default",
+  good: "success",
+};
+
+export const PrioChip = ({ value }) => {
+  if (value === null || value === undefined || value === "") return "—";
+  const key = String(value).toLowerCase();
+  return <Chip size="small" label={String(value).toUpperCase()} color={PRIO_COLOR[key] || "default"} />;
+};
 
 export const Pill = ({ label, color = "default" }) => (
   <Chip size="small" label={label} color={color} sx={{ mr: 0.5, mb: 0.5 }} />

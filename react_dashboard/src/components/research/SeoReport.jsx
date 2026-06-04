@@ -100,7 +100,6 @@ const SeoReport = ({ report, seo, reportLoading }) => {
               { key: "avg_sub", label: "Subs/ngày", align: "right", render: (r) => num(r.avg_sub) },
             ]}
             rows={sb}
-            maxHeight={420}
           />
         ) : (
           <EmptyState text="Chưa có dữ liệu đối thủ." />
@@ -120,7 +119,6 @@ const SeoReport = ({ report, seo, reportLoading }) => {
               { key: "competitor_top_video_title", label: "Video top đối thủ" },
             ]}
             rows={gaps}
-            maxHeight={420}
           />
         </SectionCard>
       )}
@@ -135,7 +133,6 @@ const SeoReport = ({ report, seo, reportLoading }) => {
               { key: "rc", label: "Kết quả YT", align: "right", render: (r) => num(r.rc) },
             ]}
             rows={kwRows}
-            maxHeight={480}
           />
         ) : (
           <EmptyState text="Chưa có từ khoá enrich." />
@@ -191,7 +188,6 @@ const SeoReport = ({ report, seo, reportLoading }) => {
               { key: "eng", label: "Eng %", align: "right", render: (r) => (r.eng != null ? `${r.eng}%` : "—") },
             ]}
             rows={selfVideos}
-            maxHeight={480}
           />
         ) : (
           <EmptyState text="Chưa có video kênh chính." />

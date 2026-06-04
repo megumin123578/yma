@@ -5,6 +5,7 @@ import {
   DataTable,
   EmptyState,
   Pill,
+  PrioChip,
   SectionCard,
   SevChip,
   StatGrid,
@@ -21,28 +22,173 @@ const prettyKey = (k) =>
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
 // dict scalar fields -> StatGrid
-const autoStats = (obj, only = null) => {
+const autoStats = (obj, only = null, exclude = []) => {
   if (!obj || typeof obj !== "object") return [];
-  const keys = only || Object.keys(obj);
+  const keys = (only || Object.keys(obj)).filter((k) => !exclude.includes(k));
   return keys
     .filter((k) => isScalar(obj[k]))
     .map((k) => ({ label: prettyKey(k), value: obj[k] }));
 };
 
 // array of objects -> DataTable (auto columns từ scalar keys của row đầu)
-const AutoTable = ({ rows, maxHeight }) => {
+const PRIO_KEYS = new Set(["priority", "severity", "sev"]);
+
+const AutoTable = ({ rows, limit }) => {
   if (!Array.isArray(rows) || !rows.length) return <EmptyState />;
   const first = rows.find((r) => r && typeof r === "object") || {};
   const cols = Object.keys(first)
     .filter((k) => isScalar(first[k]))
-    .map((k) => ({
-      key: k,
-      label: prettyKey(k),
-      align: typeof first[k] === "number" ? "right" : "left",
-    }));
+    .map((k) =>
+      PRIO_KEYS.has(k)
+        ? { key: k, label: prettyKey(k), align: "center", render: (r) => <PrioChip value={r[k]} /> }
+        : { key: k, label: prettyKey(k), align: typeof first[k] === "number" ? "right" : "left" }
+    );
   if (!cols.length) return <EmptyState />;
-  return <DataTable columns={cols} rows={rows} maxHeight={maxHeight} />;
+  return <DataTable columns={cols} rows={rows} limit={limit} />;
 };
+
+// C. Audit video kênh chính — mỗi video chấm 19 tiêu chí, hiện top 3 lỗi.
+const SEV_SCORE_COLOR = { good: "success.main", warn: "warning.main", bad: "error.main" };
+
+const VideoAuditCard = ({ rows }) => {
+  const n = rows.length;
+  const avg = Math.round(rows.reduce((s, v) => s + (v.score || 0), 0) / n);
+  const goodN = rows.filter((v) => v.severity === "good").length;
+  const warnN = rows.filter((v) => v.severity === "warn").length;
+  const badN = rows.filter((v) => v.severity === "bad").length;
+  const cols = [
+    {
+      key: "score",
+      label: "Score",
+      align: "right",
+      render: (r) => (
+        <Box component="span" sx={{ fontWeight: 700, color: SEV_SCORE_COLOR[r.severity] || "text.primary" }}>
+          {r.score}
+        </Box>
+      ),
+    },
+    { key: "title", label: "Tiêu đề" },
+    { key: "days_old", label: "Ngày", align: "right", render: (r) => `${(r.days_old || 0).toFixed(1)}d` },
+    { key: "duration_seconds", label: "Độ dài", align: "right", render: (r) => `${Math.floor((r.duration_seconds || 0) / 60)}m` },
+    { key: "view_count", label: "Views", align: "right", render: (r) => num(r.view_count) },
+    {
+      key: "fail_items",
+      label: "Lỗi cần sửa (top 3)",
+      render: (r) => {
+        const top3 = [...(r.fail_items || [])].sort((a, b) => (b.weight || 0) - (a.weight || 0)).slice(0, 3);
+        if (!top3.length) return <Typography variant="body2" color="text.secondary">(không có lỗi)</Typography>;
+        return (
+          <Box>
+            {top3.map((f, i) => (
+              <Typography key={i} variant="body2" sx={{ display: "block", lineHeight: 1.6, mb: 0.5 }}>
+                <b>×</b> {f.label}: <i>{f.detail}</i>
+              </Typography>
+            ))}
+          </Box>
+        );
+      },
+    },
+  ];
+  return (
+    <SectionCard
+      title="Audit 10 video gần nhất (19 tiêu chí mỗi video)"
+      action={
+        <Box
+          component="span"
+          sx={{
+            fontWeight: 700,
+            whiteSpace: "nowrap",
+            color: avg >= 70 ? "success.main" : avg >= 50 ? "warning.main" : "error.main",
+          }}
+        >
+          Điểm TB {avg}/100
+        </Box>
+      }
+      subtitle={
+        <>
+          <Box component="span" sx={{ color: "success.main", fontWeight: 600 }}>● TỐT {goodN}</Box>
+          {"  ·  "}
+          <Box component="span" sx={{ color: "warning.main", fontWeight: 600 }}>● CẦN CẢI THIỆN {warnN}</Box>
+          {"  ·  "}
+          <Box component="span" sx={{ color: "error.main", fontWeight: 600 }}>● YẾU {badN}</Box>
+        </>
+      }
+    >
+      <DataTable columns={cols} rows={rows} limit={null} />
+    </SectionCard>
+  );
+};
+
+// A. Audit cấp kênh — bảng tiêu chí pass/fail + điểm tổng.
+const ChannelAuditCard = ({ hc }) => {
+  const rows = [
+    ...(hc.fail_items || []).map((x) => ({ ...x, ok: false })),
+    ...(hc.pass_items || []).map((x) => ({ ...x, ok: true })),
+  ];
+  const cols = [
+    { key: "ok", label: "Trạng thái", align: "center", render: (r) => (r.ok ? "✅" : "❌") },
+    { key: "label", label: "Tiêu chí" },
+    { key: "detail", label: "Chi tiết" },
+    { key: "weight", label: "Trọng số", align: "right" },
+  ];
+  return (
+    <SectionCard
+      title="Audit cấp kênh"
+      action={
+        <Box
+          component="span"
+          sx={{ fontWeight: 700, whiteSpace: "nowrap", color: SEV_SCORE_COLOR[hc.severity] || "text.primary" }}
+        >
+          {hc.score}/100 · {hc.severity_label} ({hc.passed_count}/{hc.total_checks} pass)
+        </Box>
+      }
+    >
+      {rows.length > 0 ? (
+        <DataTable columns={cols} rows={rows} limit={null} />
+      ) : (
+        <StatGrid stats={autoStats(hc)} />
+      )}
+    </SectionCard>
+  );
+};
+
+// keywordtool/YT-search cells: Bid Ads (KT) %, Volume (KT), Cạnh tranh SEO YT.
+// Tra cứu d.kw_enrich theo keyword (lowercase). Dùng cho các bảng từ khoá phụ.
+const ktInfo = (kwEnrich, kw) => (kwEnrich || {})[(kw || "").trim().toLowerCase()] || null;
+const ktCols = (kwEnrich) => [
+  {
+    key: "_bid",
+    label: "Bid Ads (KT)",
+    align: "right",
+    render: (r) => {
+      const e = ktInfo(kwEnrich, r.kw);
+      if (!e || e.comp == null) return "—";
+      const c = e.comp < 0.33 ? "success" : e.comp < 0.66 ? "warning" : "error";
+      return <Pill label={`${Math.round(e.comp * 100)}%`} color={c} />;
+    },
+  },
+  {
+    key: "_vol",
+    label: "Volume (KT)",
+    align: "right",
+    render: (r) => {
+      const e = ktInfo(kwEnrich, r.kw);
+      return e && e.vol != null ? num(e.vol) : "—";
+    },
+  },
+  {
+    key: "_seo",
+    label: "Cạnh tranh SEO YT",
+    align: "center",
+    render: (r) => {
+      const e = ktInfo(kwEnrich, r.kw);
+      if (!e || !(e.rc > 0)) return "—";
+      const lv = e.rc < 100000 ? "success" : e.rc < 1000000 ? "warning" : "error";
+      const lbl = lv === "success" ? "Thấp" : lv === "warning" ? "Trung" : "Cao";
+      return <Pill label={`${lbl} (${num(e.rc)})`} color={lv} />;
+    },
+  },
+];
 
 const videoCols = [
   {
@@ -114,7 +260,7 @@ const ChannelBlock = ({ ch, defaultOpen = false }) => {
           <Typography variant="subtitle2" fontWeight={700} mb={1}>
             Video ({ch.all_v.length})
           </Typography>
-          <DataTable columns={videoCols} rows={ch.all_v} maxHeight={360} />
+          <DataTable columns={videoCols} rows={ch.all_v} />
         </Box>
       )}
       {Array.isArray(ch.top_tags) && ch.top_tags.length > 0 && (
@@ -160,26 +306,95 @@ export const TABS = [
     group: "A",
     label: "🩺 Health Check",
     render: (d) => {
+      const hk = d.health_keywords || {};
+      const hasKw = Object.keys(hk).length > 0;
       const hasAny =
         (d.health || []).length ||
         Object.keys(d.health_channel || {}).length ||
-        (d.health_actions || []).length;
+        (d.health_actions || []).length ||
+        hasKw;
       if (!hasAny) return <EmptyState />;
       return (
         <>
           {Object.keys(d.health_channel || {}).length > 0 && (
-            <SectionCard title="Sức khoẻ kênh">
-              <StatGrid stats={autoStats(d.health_channel)} />
+            <ChannelAuditCard hc={d.health_channel} />
+          )}
+          {hasKw && (
+            <SectionCard
+              title="Chiến lược từ khoá — Đồng bộ kênh vs ngách"
+              action={
+                hk.theme_consistency != null ? (
+                  <Box
+                    component="span"
+                    sx={{
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                      color:
+                        hk.theme_consistency >= 70
+                          ? "success.main"
+                          : hk.theme_consistency >= 50
+                          ? "warning.main"
+                          : "error.main",
+                    }}
+                  >
+                    Theme consistency {hk.theme_consistency}% (mục tiêu ≥70%)
+                  </Box>
+                ) : null
+              }
+            >
+              {Array.isArray(hk.self_keywords) && hk.self_keywords.length > 0 && (
+                <Box mb={2}>
+                  <Typography variant="subtitle2" fontWeight={700} mb={1}>Top từ khoá kênh</Typography>
+                  <DataTable
+                    columns={[
+                      { key: "kw", label: "Từ khoá" },
+                      { key: "score", label: "SEO Score", align: "right", render: (r) => (r.score != null ? r.score.toFixed(1) : "—") },
+                      { key: "in_about", label: "Trong About?", align: "center", render: (r) => (r.in_about ? "✅" : "❌") },
+                      { key: "in_video_pct", label: "% Video dùng", align: "right", render: (r) => `${Math.round(r.in_video_pct || 0)}%` },
+                      ...ktCols(d.kw_enrich),
+                    ]}
+                    rows={hk.self_keywords}
+                  />
+                </Box>
+              )}
+              {Array.isArray(hk.niche_keywords) && hk.niche_keywords.length > 0 && (
+                <Box mb={2}>
+                  <Typography variant="subtitle2" fontWeight={700} mb={1}>Top từ khoá ngách (từ đối thủ)</Typography>
+                  <DataTable
+                    columns={[
+                      { key: "kw", label: "Từ khoá ngách" },
+                      { key: "freq_in_niche", label: "Số đối thủ dùng", align: "right" },
+                      { key: "in_self", label: "Kênh dùng?", align: "center", render: (r) => (r.in_self ? "✅" : "❌") },
+                      ...ktCols(d.kw_enrich),
+                    ]}
+                    rows={hk.niche_keywords}
+                  />
+                </Box>
+              )}
+              {Array.isArray(hk.gaps) && hk.gaps.length > 0 && (
+                <Box mb={2}>
+                  <Typography variant="subtitle2" fontWeight={700} mb={1}>🎯 GAP — keyword ngách mạnh kênh chưa dùng</Typography>
+                  <Box>{hk.gaps.map((g, i) => <Pill key={i} label={g} color="warning" />)}</Box>
+                </Box>
+              )}
+              {Array.isArray(hk.overused) && hk.overused.length > 0 && (
+                <Box mb={2}>
+                  <Typography variant="subtitle2" fontWeight={700} mb={1}>⚠ Keyword kênh không khớp ngách</Typography>
+                  <Box>{hk.overused.map((o, i) => <Pill key={i} label={o} />)}</Box>
+                </Box>
+              )}
+              {Array.isArray(hk.actions) && hk.actions.length > 0 && (
+                <Box>
+                  <Typography variant="subtitle2" fontWeight={700} mb={1}>Hành động từ phân tích từ khoá</Typography>
+                  <AutoTable rows={hk.actions} limit={null} />
+                </Box>
+              )}
             </SectionCard>
           )}
-          {(d.health || []).length > 0 && (
-            <SectionCard title="Tiêu chí video">
-              <AutoTable rows={d.health} />
-            </SectionCard>
-          )}
+          {(d.health || []).length > 0 && <VideoAuditCard rows={d.health} />}
           {(d.health_actions || []).length > 0 && (
             <SectionCard title="Hành động đề xuất">
-              <AutoTable rows={d.health_actions} />
+              <AutoTable rows={d.health_actions} limit={null} />
             </SectionCard>
           )}
         </>
@@ -235,8 +450,8 @@ export const TABS = [
       return (
         <>
           {ins.channel_summary && (
-            <SectionCard title="Tóm tắt kênh (Studio)" subtitle={ins.account_tag ? `Tag: ${ins.account_tag}` : ""}>
-              <StatGrid stats={autoStats(ins.channel_summary)} />
+            <SectionCard title="Tóm tắt kênh (Studio)">
+              <StatGrid stats={autoStats(ins.channel_summary, null, ["account_tag", "has_data"])} />
             </SectionCard>
           )}
           {Array.isArray(ins.retention_top) && ins.retention_top.length > 0 && (
@@ -445,7 +660,7 @@ export const TABS = [
       if (!rows.length) return <EmptyState text="Kênh chính chưa có video thu thập." />;
       return (
         <SectionCard title="Video kênh chính">
-          <DataTable columns={videoCols} rows={rows} maxHeight={560} />
+          <DataTable columns={videoCols} rows={rows} />
         </SectionCard>
       );
     },
@@ -458,7 +673,7 @@ export const TABS = [
       if (!d.outliers?.length) return <EmptyState text="Không có video đột biến trong kỳ." />;
       return (
         <SectionCard title={`Video đột biến (${d.outliers.length})`} subtitle="Vượt ≥3 lần view trung vị, đăng ≤7 ngày">
-          <DataTable columns={videoCols} rows={d.outliers} maxHeight={560} />
+          <DataTable columns={videoCols} rows={d.outliers} />
         </SectionCard>
       );
     },
@@ -494,7 +709,7 @@ export const TABS = [
       ];
       return (
         <SectionCard title={`Từ khoá ngách (${rows.length})`}>
-          <DataTable columns={cols} rows={rows} maxHeight={560} />
+          <DataTable columns={cols} rows={rows} />
         </SectionCard>
       );
     },
@@ -527,7 +742,7 @@ export const TABS = [
     render: (d) => {
       const kb = d.kw_bank;
       if (!kb) return <EmptyState text="Kênh chưa harvest keywordtool." />;
-      if (Array.isArray(kb)) return <AutoTable rows={kb} maxHeight={560} />;
+      if (Array.isArray(kb)) return <AutoTable rows={kb} />;
       return <StatGrid stats={autoStats(kb)} />;
     },
   },
@@ -620,7 +835,7 @@ export const TABS = [
       ];
       return (
         <SectionCard title={`Khoảng trống nội dung (${rows.length})`} subtitle="Từ khoá đối thủ ăn mà kênh chính chưa khai thác">
-          <DataTable columns={cols} rows={rows} maxHeight={560} />
+          <DataTable columns={cols} rows={rows} />
         </SectionCard>
       );
     },
@@ -643,7 +858,7 @@ export const TABS = [
       ];
       return (
         <SectionCard title={`Bản đồ cụm chủ đề ngách (${rows.length})`}>
-          <DataTable columns={cols} rows={rows} maxHeight={560} />
+          <DataTable columns={cols} rows={rows} />
         </SectionCard>
       );
     },
@@ -666,7 +881,6 @@ export const TABS = [
                   { key: "title", label: "Sự kiện" },
                 ]}
                 rows={rows}
-                maxHeight={420}
               />
             </SectionCard>
           ) : (
@@ -693,7 +907,6 @@ export const TABS = [
                   { key: "vcount", label: "Video", align: "right", render: (r) => num(r.vcount) },
                 ]}
                 rows={newc}
-                maxHeight={360}
               />
             </SectionCard>
           )}

@@ -161,10 +161,12 @@ def _channel_meta_map(channel_ids) -> dict:
         return {c: cache[c] for c in ids if c in cache}
 
 
-def _watchlist_summary(w, connected=None) -> dict:
+def _watchlist_summary(w, connected=None, meta=None) -> dict:
     connected = connected if connected is not None else {}
+    meta = meta if meta is not None else {}
     self_ch = w.self_channel
     self_tag = connected.get(self_ch.channel_id) if self_ch else None
+    avatar = (meta.get(self_ch.channel_id, {}) or {}).get("avatar", "") if self_ch else ""
     return {
         "id": w.id,
         "name": w.name,
@@ -172,11 +174,13 @@ def _watchlist_summary(w, connected=None) -> dict:
         "teamId": getattr(w, "team_id", "default"),
         "paused": bool(getattr(w, "paused", False)),
         "pausedReason": getattr(w, "paused_reason", ""),
+        "avatar": avatar,
         "selfChannel": {
             "channelId": self_ch.channel_id,
             "title": self_ch.title,
             "connected": bool(self_tag),
             "accountTag": self_tag or "",
+            "avatar": avatar,
         } if self_ch else None,
         "competitorCount": len(w.competitor_channels),
     }
@@ -188,8 +192,11 @@ def list_watchlists(current_user=Depends(get_current_user_optional)):
     from python_backend.research import watchlist as wlmod
 
     t0 = time.perf_counter()
+    wls = wlmod.list_watchlists()
     connected = _connected_channel_map()
-    items = [_watchlist_summary(w, connected) for w in wlmod.list_watchlists()]
+    self_ids = [w.self_channel.channel_id for w in wls if w.self_channel]
+    meta = _channel_meta_map(self_ids)
+    items = [_watchlist_summary(w, connected, meta) for w in wls]
     add_log(f"[H] research/watchlists: {(time.perf_counter() - t0) * 1000:.1f}ms n={len(items)}")
     return {"items": items}
 

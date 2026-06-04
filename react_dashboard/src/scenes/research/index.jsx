@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Avatar,
   Box,
   Button,
   Chip,
@@ -90,6 +91,8 @@ const ResearchScene = ({ view = "report" }) => {
   }, [groupKey, report]);
 
   const activeTab = TABS.find((t) => t.id === tabId);
+  // dark mode: primary.main trùng background → dùng secondary cho phần chọn
+  const selColor = theme.palette.mode === "dark" ? "secondary" : "primary";
 
   return (
     <Box m="20px">
@@ -113,11 +116,31 @@ const ResearchScene = ({ view = "report" }) => {
             value={wid}
             onChange={(e) => setWid(e.target.value)}
             MenuProps={selectMenuProps}
+            renderValue={(val) => {
+              const w = watchlists.find((x) => x.id === val);
+              if (!w) return "";
+              return (
+                <Box display="flex" alignItems="center" gap={1} sx={{ minWidth: 0 }}>
+                  <Avatar src={w.avatar || ""} sx={{ width: 22, height: 22 }}>
+                    {(w.name || "?")[0]}
+                  </Avatar>
+                  <Typography variant="body2" noWrap>
+                    {w.name}
+                    {w.paused ? "  (paused)" : ""}
+                  </Typography>
+                </Box>
+              );
+            }}
           >
             {watchlists.map((w) => (
               <MenuItem key={w.id} value={w.id}>
-                {w.name}
-                {w.paused ? "  (paused)" : ""}
+                <Avatar src={w.avatar || ""} sx={{ width: 24, height: 24, mr: 1 }}>
+                  {(w.name || "?")[0]}
+                </Avatar>
+                <Typography variant="body2" noWrap>
+                  {w.name}
+                  {w.paused ? "  (paused)" : ""}
+                </Typography>
               </MenuItem>
             ))}
           </Select>
@@ -215,6 +238,8 @@ const ResearchScene = ({ view = "report" }) => {
             onChange={(_, v) => setGroupKey(v)}
             variant="scrollable"
             scrollButtons="auto"
+            textColor={selColor}
+            indicatorColor={selColor}
             sx={{ borderBottom: `1px solid ${theme.palette.divider}`, mb: 1.5 }}
           >
             {TAB_GROUPS.map((g) => (
@@ -227,7 +252,7 @@ const ResearchScene = ({ view = "report" }) => {
               <Chip
                 key={t.id}
                 label={t.label}
-                color={t.id === tabId ? "primary" : "default"}
+                color={t.id === tabId ? selColor : "default"}
                 variant={t.id === tabId ? "filled" : "outlined"}
                 onClick={() => setTabId(t.id)}
                 sx={{ cursor: "pointer" }}
