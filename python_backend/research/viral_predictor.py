@@ -93,7 +93,6 @@ def collect_training_data(wl_ids: Optional[list] = None,
         y: shape (n_samples,) = log10(views_per_day + 1)
     """
     import numpy as np
-    import pickle
     from . import persistence, watchlist as wl_mod
     from statistics import median
 

@@ -190,7 +190,6 @@ def _trim_wl_to_top10(wid: str, log_fn) -> dict:
     Trả dict {kept, archived, removed_titles}.
     """
     from . import watchlist as wl_mod, persistence
-    import pickle as _pickle
     from datetime import datetime as _dt
 
     wl = wl_mod.load_watchlist(wid)
@@ -299,7 +298,6 @@ def _add_channels_to_wl(wid: str, channel_ids: list, log_fn=print) -> int:
     from . import watchlist as wl_mod, persistence
     from .watchlist import WatchedChannel
     from datetime import datetime as _dt
-    import pickle as _pickle
 
     wl = wl_mod.load_watchlist(wid)
     if not wl:

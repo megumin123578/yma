@@ -24,7 +24,6 @@ _ROOT = Path(__file__).resolve().parent.parent
 
 def _pack_wl(wid: str) -> dict:
     """Đóng gói dữ liệu 1 WL cho summary."""
-    import pickle
     import time as _t
     from . import watchlist as wl_mod, persistence
     w = wl_mod.load_watchlist(wid)

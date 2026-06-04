@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Refresh Social Blade + Google Trends cho các pkl đã save.
+"""Refresh Social Blade + Google Trends cho snapshot mới nhất mỗi kênh (PG).
 
 Đây là CORE library — đóng gói được vào file .exe nhân viên. Các tool CLI
 trong tools/ chỉ là thin wrapper gọi 2 hàm chính ở đây:
@@ -7,27 +7,16 @@ trong tools/ chỉ là thin wrapper gọi 2 hàm chính ở đây:
   - refresh_trends_for_watchlist(wid, delay_sec=4.0)
 
 Cả 2 hàm đều idempotent — skip kênh/keyword đã có data. Cache 6h (SB) +
-24h (Trends) built-in trong core/socialblade.py + core/trends.py.
+24h (Trends) built-in trong socialblade.py + trends.py.
 """
 from __future__ import annotations
 
-import os
-import pickle
 import time
 
 
 # ============================================================
 # Social Blade
 # ============================================================
-
-def _get_latest_channel_pkl(channel_id, persistence):
-    """Trả đường dẫn pkl mới nhất của 1 kênh, hoặc None (path trends cũ)."""
-    idx = persistence._load_index()
-    recs = sorted([e for e in idx if e.get("channel_id") == channel_id
-                   and e.get("type") == "channel"],
-                  key=lambda e: e["id"], reverse=True)
-    return recs[0]["pkl_path"] if recs else None
-
 
 def _get_latest_channel_record(channel_id, persistence):
     """Trả job_id snapshot mới nhất của 1 kênh, hoặc None."""
@@ -36,7 +25,7 @@ def _get_latest_channel_record(channel_id, persistence):
 
 
 def _channels_missing_sb(wl, persistence):
-    """Trả list (channel_id, title, pkl_path) cho các kênh có pkl mới nhất
+    """Trả list (channel_id, title, job_id) cho các kênh có snapshot mới nhất
     nhưng SocialBlade đang None hoặc có error. Bỏ qua kênh có channel_id
     placeholder (@handle - chưa monitor lần đầu)."""
     out = []
@@ -94,7 +83,7 @@ def refresh_socialblade_for_watchlist(wid, delay_sec=3.0, log_fn=print,
                 if wl.self_channel else None)
 
     if force:
-        # Build list tất cả channel có pkl mới nhất (bypass missing check)
+        # Build list tất cả channel có snapshot mới nhất (bypass missing check)
         missing = []
         for c in wl.channels:
             if not c.channel_id or not c.channel_id.startswith("UC"):
@@ -179,17 +168,15 @@ def refresh_socialblade_for_watchlist(wid, delay_sec=3.0, log_fn=print,
 # ============================================================
 
 def _channels_missing_trend(wl, persistence):
-    """Trả list (channel_id, title, pkl_path, set(missing_keywords)) cho
-    các kênh có pkl mới nhất nhưng trend cho 1 số keyword đang None/error."""
+    """Trả list (channel_id, title, job_id, set(missing_keywords)) cho
+    các kênh có snapshot mới nhất nhưng trend 1 số keyword đang None/error."""
     out = []
     for c in wl.channels:
-        pkl_path = _get_latest_channel_pkl(c.channel_id, persistence)
-        if not pkl_path or not os.path.exists(pkl_path):
+        jid = _get_latest_channel_record(c.channel_id, persistence)
+        if not jid:
             continue
-        try:
-            with open(pkl_path, "rb") as f:
-                r = pickle.load(f)
-        except Exception:
+        r = persistence.load_result(jid)
+        if r is None:
             continue
         per = (r.get("tag_metrics") or {}).get("per_keyword") or {}
         missing = set()
@@ -200,14 +187,12 @@ def _channels_missing_trend(wl, persistence):
             elif isinstance(tr, dict) and tr.get("error"):
                 missing.add(kw)
         if missing:
-            out.append((c.channel_id, c.title, pkl_path, missing))
+            out.append((c.channel_id, c.title, jid, missing))
     return out
 
 
-def _fill_trend_in_pkl(pkl_path, trend_map):
-    """Ghi trend vào per_keyword[kw]['trend']. Trả số keyword đã fill."""
-    from .pkl_io import safe_update
-
+def _fill_trend(job_id, trend_map, persistence):
+    """Ghi trend vào per_keyword[kw]['trend'] của snapshot. Trả số kw đã fill."""
     counter = {"n": 0}
 
     def _patch(data):
@@ -220,7 +205,7 @@ def _fill_trend_in_pkl(pkl_path, trend_map):
         tm["per_keyword"] = per
         data["tag_metrics"] = tm
 
-    if safe_update(pkl_path, _patch):
+    if persistence.mutate_result(job_id, _patch):
         return counter["n"]
     return 0
 
@@ -294,28 +279,25 @@ def refresh_trends_for_watchlist(wid, delay_sec=5.0, log_fn=print,
     if force:
         # Lấy TẤT CẢ channel + keywords (không filter missing)
         from . import trends as trends_mod
-        import pickle as _pickle
         all_channels = []
         for c in wl.channels:
             if not c.channel_id or not c.channel_id.startswith("UC"):
                 continue
-            pkl_path = _get_latest_channel_pkl(c.channel_id, persistence)
-            if not pkl_path or not os.path.exists(pkl_path):
+            jid = _get_latest_channel_record(c.channel_id, persistence)
+            if not jid:
                 continue
-            try:
-                with open(pkl_path, "rb") as f:
-                    r = _pickle.load(f)
-                kws = set()
-                for kw_obj in (r.get("keywords") or [])[:15]:
-                    kw_text = (kw_obj.keyword
-                               if hasattr(kw_obj, "keyword")
-                               else str(kw_obj))
-                    if kw_text:
-                        kws.add(kw_text)
-                if kws:
-                    all_channels.append((c.channel_id, c.title, pkl_path, kws))
-            except Exception:
+            r = persistence.load_result(jid)
+            if r is None:
                 continue
+            kws = set()
+            for kw_obj in (r.get("keywords") or [])[:15]:
+                kw_text = (kw_obj.keyword
+                           if hasattr(kw_obj, "keyword")
+                           else str(kw_obj))
+                if kw_text:
+                    kws.add(kw_text)
+            if kws:
+                all_channels.append((c.channel_id, c.title, jid, kws))
         missing_per_channel = all_channels
         # Clear trend cache để force fetch
         all_kw_clear = set()
@@ -415,11 +397,11 @@ def refresh_trends_for_watchlist(wid, delay_sec=5.0, log_fn=print,
         if i < len(all_kw_list):
             time.sleep(delay_sec)
 
-    # Ghi vào pkl mỗi kênh
+    # Ghi vào snapshot (PG) mỗi kênh
     n_filled_total = 0
-    for cid, ctitle, pkl_path, kws in missing_per_channel:
+    for cid, ctitle, jid, kws in missing_per_channel:
         sub_map = {kw: trend_map[kw] for kw in kws if kw in trend_map}
-        n = _fill_trend_in_pkl(pkl_path, sub_map)
+        n = _fill_trend(jid, sub_map, persistence)
         n_filled_total += n
         log_fn(f"    Ghi {n}/{len(kws)} trend -> {ctitle}")
 

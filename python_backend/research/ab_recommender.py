@@ -76,7 +76,6 @@ def find_rescue_candidates(
     Returns: list dict {self_video, competitor_video, matching_tags,
         lift_potential, suggested_new_title}
     """
-    import pickle
     from . import persistence, watchlist as wl_mod
 
     w = wl_mod.load_watchlist(wl_id)

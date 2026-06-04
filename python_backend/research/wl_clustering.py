@@ -81,7 +81,6 @@ def _view_7d_for_wl(wid: str) -> float:
     """
     from . import watchlist as wl_mod, persistence
     from .daily_orchestrator import _compute_view_7d_avg
-    import pickle as _pickle
 
     wl = wl_mod.load_watchlist(wid)
     if not wl or not wl.self_channel:
