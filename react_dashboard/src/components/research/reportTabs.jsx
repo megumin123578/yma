@@ -12,6 +12,7 @@ import {
   TextBlock,
   num,
 } from "./primitives";
+import Markdown from "./Markdown";
 
 // ---------- helpers ----------
 const isScalar = (v) => v === null || ["string", "number", "boolean"].includes(typeof v);
@@ -20,6 +21,9 @@ const prettyKey = (k) =>
   String(k)
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
+
+// "2026-06-03" -> "03/06/2026"; rỗng -> "—"
+const dmy = (s) => String(s || "").split("-").reverse().join("/") || "—";
 
 // dict scalar fields -> StatGrid
 const autoStats = (obj, only = null, exclude = []) => {
@@ -33,7 +37,7 @@ const autoStats = (obj, only = null, exclude = []) => {
 // array of objects -> DataTable (auto columns từ scalar keys của row đầu)
 const PRIO_KEYS = new Set(["priority", "severity", "sev"]);
 
-const AutoTable = ({ rows, limit }) => {
+const AutoTable = ({ rows, limit = null }) => {
   if (!Array.isArray(rows) || !rows.length) return <EmptyState />;
   const first = rows.find((r) => r && typeof r === "object") || {};
   const cols = Object.keys(first)
@@ -414,8 +418,32 @@ export const TABS = [
             <StatGrid stats={autoStats(f, ["ideas_total", "ideas_done", "ideas_pending", "success_rate", "avg_perf_ratio"])} />
           </SectionCard>
           {Array.isArray(f.detail) && f.detail.length > 0 && (
-            <SectionCard title="Chi tiết">
-              <AutoTable rows={f.detail} />
+            <SectionCard title="Chi tiết ý tưởng">
+              <DataTable
+                limit={null}
+                rows={f.detail}
+                columns={[
+                  { key: "idea", label: "Ý tưởng" },
+                  { key: "date", label: "Ngày đề xuất", align: "right", render: (r) => dmy(r.date) },
+                  { key: "status", label: "Trạng thái", align: "center", render: (r) => (r.status === "done" ? "✅" : "⏳") },
+                  { key: "video", label: "Video đã đăng", render: (r) => r.video || "—" },
+                  { key: "video_pub", label: "Ngày đăng", align: "right", render: (r) => (r.video_pub ? dmy(r.video_pub) : "—") },
+                  { key: "views", label: "View", align: "right", render: (r) => (r.views != null ? num(r.views) : "—") },
+                  {
+                    key: "ratio",
+                    label: "Hiệu suất",
+                    align: "right",
+                    render: (r) =>
+                      r.ratio != null ? (
+                        <Box component="span" sx={{ fontWeight: 700, color: r.ratio >= 1 ? "success.main" : "warning.main" }}>
+                          {r.ratio}×
+                        </Box>
+                      ) : (
+                        "—"
+                      ),
+                  },
+                ]}
+              />
             </SectionCard>
           )}
         </>
@@ -428,7 +456,7 @@ export const TABS = [
     label: "Chiến lược AI",
     render: (d) => (
       <SectionCard title="Cập nhật chiến lược ngách" subtitle={d.niche_detected ? `Ngách: ${d.niche_detected}` : ""}>
-        <TextBlock text={d.strategy} />
+        <Markdown text={d.strategy} />
       </SectionCard>
     ),
   },
