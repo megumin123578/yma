@@ -44,19 +44,9 @@ _ROOT = Path(__file__).resolve().parent.parent
 STATE_DB = Path.home() / ".youtube_research" / "orchestrator.sqlite"
 
 
-def _pipeline_dir() -> Path:
-    """Thư mục chứa tools/ + core/ Playwright cho 2 stage subprocess
-    (monitor_batch, discover). Gộp yt_manage_app 2026-06: 2 tool này dùng
-    ProcessPoolExecutor + Chrome, KHÔNG port vào package research/ (rủi ro).
-    Thay vào đó spawn trong project YT gốc (đã chạy được, ghi cùng
-    ~/.youtube_research/ mà build_data đọc). Cấu hình qua env
-    RESEARCH_PIPELINE_DIR; mặc định = python_backend/YT/project cạnh repo.
-    """
-    env = os.getenv("RESEARCH_PIPELINE_DIR", "").strip()
-    if env:
-        return Path(env)
-    # python_backend/research/ -> python_backend/ -> python_backend/YT/project
-    return _ROOT / "YT" / "project"
+# 2026-06: crawl tools (monitor_batch, discover) đã port vào package
+# python_backend/research — spawn qua `-m` từ repo root, KHÔNG còn trỏ YT/project.
+_REPO_ROOT = _ROOT.parent  # python_backend -> repo root
 # 24/05 (user feedback lần 2): refactor quy trình:
 #   - BỎ 'trends' (Google Trends 429 IP nhà liên miên).
 #   - BỎ 'research' (search YouTube 20kw/WL — đã trùng với monitor V1 implicit).
@@ -153,9 +143,9 @@ async def stage_monitor(wid: str, log_fn) -> dict:
     log_fn(f"    [monitor] V1 — Chrome IP máy, 6 worker...")
     try:
         proc = subprocess.run(
-            [sys.executable, "-X", "utf8",
-             "tools/monitor_batch.py", wid, "--workers", "6"],
-            cwd=str(_pipeline_dir()), capture_output=True, timeout=3600)
+            [sys.executable, "-X", "utf8", "-m",
+             "python_backend.research.monitor_batch", wid, "--workers", "6"],
+            cwd=str(_REPO_ROOT), capture_output=True, timeout=3600)
         ok = proc.returncode == 0
         log_fn(f"    [monitor] V1 {'OK' if ok else 'FAIL'} (rc={proc.returncode})")
         return {"ok": ok, "via": "v1_6w"}
@@ -371,8 +361,9 @@ def stage_discover(wid: str, log_fn) -> dict:
         before = _get_wl_channel_ids(wid)
         try:
             proc = subprocess.run(
-                [sys.executable, "-X", "utf8", "tools/discover.py", wid],
-                cwd=str(_pipeline_dir()), capture_output=True, timeout=3600)
+                [sys.executable, "-X", "utf8", "-m",
+                 "python_backend.research.discover", wid],
+                cwd=str(_REPO_ROOT), capture_output=True, timeout=3600)
             ok_dis = proc.returncode == 0
             out = proc.stdout.decode("utf-8", errors="ignore")
             if "KET NAP" in out:
@@ -656,11 +647,11 @@ async def _run_streaming_pipeline(wl_ids, run_id, conn, api_key, token, chat,
            f"{sum(len(s) for s in wl_remaining.values())} channel tasks ===")
 
     # Spawn monitor_batch subprocess (background, capture stdout streaming)
-    cmd = [sys.executable, "-X", "utf8", "tools/monitor_batch.py",
-           "--workers", "6"] + wl_ids
+    cmd = [sys.executable, "-X", "utf8", "-m",
+           "python_backend.research.monitor_batch", "--workers", "6"] + wl_ids
     log_fn(f"Spawning monitor_batch dedup 6 worker...")
     proc = await _asyncio.create_subprocess_exec(
-        *cmd, cwd=str(_pipeline_dir()),
+        *cmd, cwd=str(_REPO_ROOT),
         stdout=_asyncio.subprocess.PIPE,
         stderr=_asyncio.subprocess.STDOUT)
 

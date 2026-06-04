@@ -60,14 +60,9 @@ DEFAULTS = {
     "auto_discover_threshold": 35,  # % trùng ngách tối thiểu
     "auto_discover_max": 5,
     "keywordtool_api_key": "",
-    # ----- Local server / Inside / proxy -----
+    # ----- Local server -----
     "local_data_dir": "",
     "report_web_url": "https://api.tuanfmcaa.site",  # KHÔNG có / ở cuối
-    "inside_data_dir": r"D:\YouTube_Analytics_Inside",
-    "inside_auto_fetch": True,
-    "mkvn_proxy_csv_path": (
-        r"C:\Users\admin\Downloads\Uyquyen  SHOP PROXY MKVN (1).csv"
-    ),
     # ----- Monitor backend -----
     "monitor_backend": "v1",  # v1 Chrome | cloak IPv6 (cần IPv6 Tool)
     "cloak_max_workers": 25,
@@ -75,11 +70,6 @@ DEFAULTS = {
     # ----- YouTube Data API v3 (xoay tua .env: YOUTUBE_API_KEY1/2/3) -----
     "youtube_data_api_key": "",
 }
-
-
-def get_proxy_csv_path() -> str:
-    cfg = load_config()
-    return (cfg.get("mkvn_proxy_csv_path") or "").strip()
 
 
 def load_config() -> dict:

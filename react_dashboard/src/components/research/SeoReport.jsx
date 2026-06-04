@@ -13,7 +13,7 @@ const PhaseTitle = ({ children }) => (
 
 const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-const SeoReport = ({ report, seo }) => {
+const SeoReport = ({ report, seo, reportLoading }) => {
   const theme = useTheme();
   const d = report || {};
   const self = d.self || {};
@@ -60,6 +60,21 @@ const SeoReport = ({ report, seo }) => {
 
       <PhaseTitle>Số liệu tham chiếu</PhaseTitle>
 
+      {!report ? (
+        <SectionCard>
+          {reportLoading ? (
+            <Box display="flex" alignItems="center" gap={1}>
+              <CircularProgress size={16} />
+              <Typography variant="caption" color="text.secondary">
+                Đang tải số liệu tham chiếu…
+              </Typography>
+            </Box>
+          ) : (
+            <EmptyState text="Chọn watchlist để xem số liệu." />
+          )}
+        </SectionCard>
+      ) : (
+        <>
       <SectionCard
         title="Tổng quan SEO"
         subtitle={`Watchlist: ${d.wl || ""}${d.date ? ` • ${d.date}` : ""}`}
@@ -182,6 +197,8 @@ const SeoReport = ({ report, seo }) => {
           <EmptyState text="Chưa có video kênh chính." />
         )}
       </SectionCard>
+        </>
+      )}
     </Box>
   );
 };

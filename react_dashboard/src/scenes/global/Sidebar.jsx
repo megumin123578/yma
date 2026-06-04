@@ -579,14 +579,6 @@ const Sidebar = ({
                     isCompact={isDesktopCompact}
                   />
                   <Item
-                    title="Manage run"
-                    to="/research/config"
-                    icon={<SettingsOutlinedIcon />}
-                    isActive={pathname === "/research/config"}
-                    onClick={closeOnMobile}
-                    isCompact={isDesktopCompact}
-                  />
-                  <Item
                     title="Seo"
                     to="/research/seo"
                     icon={<ManageSearchOutlinedIcon />}

@@ -529,11 +529,10 @@ def stop_run(run_id: str, current_user=Depends(get_current_user_optional)):
 # ============================================================
 # Field cho phép sửa qua web. secret=True → ẩn giá trị, chỉ trả cờ *_set.
 _CONFIG_FIELDS = [
-    ("inside_data_dir", False), ("inside_auto_fetch", False),
     ("chrome_mode", False), ("parallel_workers", False),
     ("auto_discover_competitors", False), ("auto_discover_threshold", False),
     ("auto_discover_max", False),
-    ("keywordtool_api_key", True), ("mkvn_proxy_csv_path", False),
+    ("keywordtool_api_key", True),
     ("monitor_backend", False),
 ]
 _SECRET_KEYS = {k for k, secret in _CONFIG_FIELDS if secret}

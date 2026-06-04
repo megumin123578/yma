@@ -209,14 +209,6 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         }
       />
       <Route
-        path="/research/config"
-        element={
-          <ProtectedRoute user={user} loading={loading}>
-            <ResearchScene view="config" />
-          </ProtectedRoute>
-        }
-      />
-      <Route
         path="/research/seo"
         element={
           <ProtectedRoute user={user} loading={loading}>

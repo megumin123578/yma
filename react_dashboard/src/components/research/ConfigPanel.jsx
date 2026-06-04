@@ -18,8 +18,6 @@ import { getConfig, putConfig } from "../../services/researchService";
 
 // type: text | password | number | switch | select(options)
 const FIELDS = [
-  { key: "inside_data_dir", label: "Thư mục Inside (Analytics)", type: "text" },
-  { key: "inside_auto_fetch", label: "Tự fetch Inside", type: "switch" },
   { key: "chrome_mode", label: "Chrome mode", type: "select", options: ["headless", "show", "minimized"] },
   { key: "parallel_workers", label: "Số worker song song", type: "number" },
   { key: "monitor_backend", label: "Monitor backend", type: "select", options: ["v1", "v2"] },
@@ -27,7 +25,6 @@ const FIELDS = [
   { key: "auto_discover_threshold", label: "Ngưỡng discover (%)", type: "number" },
   { key: "auto_discover_max", label: "Số đối thủ tối đa/lần", type: "number" },
   { key: "keywordtool_api_key", label: "Keywordtool API key", type: "password" },
-  { key: "mkvn_proxy_csv_path", label: "Đường dẫn proxy CSV (MKVN)", type: "text" },
 ];
 
 const ConfigPanel = () => {

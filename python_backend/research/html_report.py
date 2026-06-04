@@ -2497,9 +2497,7 @@ document.getElementById('s12').innerHTML=hh;
 // ========================================
 const IN=D.inside||{};
 const noData='<h2>📊 Inside Analytics</h2><p class="muted">Chưa có dữ liệu '+
-  'Inside cho kênh này. Đặt file dump vào folder '+
-  '<code>D:\\YouTube_Analytics_Inside\\dumps_new\\</code> và chạy '+
-  '<code>python tools/import_analytics_dump.py</code>.</p>';
+  'Inside cho kênh này (data Inside đến từ Postgres).</p>';
 
 // === s13: Inside Summary (KPI grid + overview) ===
 let s13h='<h2>📊 Inside: Tóm tắt 30 ngày</h2>';

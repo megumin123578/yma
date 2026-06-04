@@ -16,9 +16,6 @@ import {
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import Header from "../../components/Header";
-import RunPanel from "../../components/research/RunPanel";
-import ConfigPanel from "../../components/research/ConfigPanel";
-import SchedulePanel from "../../components/research/SchedulePanel";
 import { TABS, TAB_GROUPS } from "../../components/research/reportTabs";
 import SeoReport from "../../components/research/SeoReport";
 import useSeoReport from "../../components/research/useSeoReport";
@@ -35,11 +32,6 @@ const ResearchScene = ({ view = "report" }) => {
   const [groupKey, setGroupKey] = useState("A");
   const [tabId, setTabId] = useState(null);
   const [aiMsg, setAiMsg] = useState("");
-
-  const wlNameById = useMemo(
-    () => Object.fromEntries(watchlists.map((w) => [w.id, w.name])),
-    [watchlists]
-  );
 
   const seo = useSeoReport(wid, view === "seo");
 
@@ -92,29 +84,13 @@ const ResearchScene = ({ view = "report" }) => {
   return (
     <Box m="20px">
       <Header
-        title={
-          view === "config"
-            ? "Manage run"
-            : view === "seo"
-            ? "Báo cáo SEO"
-            : "Nghiên cứu ngách"
-        }
+        title={view === "seo" ? "Báo cáo SEO" : "Nghiên cứu ngách"}
         subtitle={
-          view === "config"
-            ? "Daily run, quản lý watchlist, cấu hình và lịch chạy"
-            : view === "seo"
+          view === "seo"
             ? "Báo cáo SEO theo watchlist (đối thủ, từ khoá, on-video, theo dõi)"
             : "Báo cáo watchlist (đối thủ, từ khoá, ngách)"
         }
       />
-
-      {view === "config" && (
-        <>
-          <RunPanel wlNameById={wlNameById} />
-          <ConfigPanel />
-          <SchedulePanel />
-        </>
-      )}
 
       {(view === "report" || view === "seo") && (
         <>
@@ -208,11 +184,11 @@ const ResearchScene = ({ view = "report" }) => {
         )}
       </Box>
 
-      {!report && !loading && (
+      {view === "report" && !report && !loading && (
         <EmptyState text={error ? `Lỗi: ${error}` : "Chọn một watchlist để xem báo cáo."} />
       )}
 
-      {report && view === "seo" && <SeoReport report={report} seo={seo} />}
+      {view === "seo" && <SeoReport report={report} seo={seo} reportLoading={loading} />}
 
       {report && view === "report" && (
         <>

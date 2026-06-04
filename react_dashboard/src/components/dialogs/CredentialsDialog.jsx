@@ -99,6 +99,8 @@ import {
   getSchedule,
   putSchedule,
 } from "../../services/researchService";
+import RunPanel from "../research/RunPanel";
+import ConfigPanel from "../research/ConfigPanel";
 import { UserContext, useHasPermission } from "../../context/UserContext";
 import ManageUserRequests from "../ManageUserRequests";
 
@@ -445,6 +447,14 @@ const CredentialsDialog = ({
   }, [tokens]);
 
   // Gom watchlist theo project (project lấy từ token kênh chính; chưa OAuth -> "No project")
+  const wlNameById = useMemo(
+    () =>
+      Object.fromEntries(
+        (watchlists || []).map((w) => [w.watchlistId, w.watchlistName])
+      ),
+    [watchlists]
+  );
+
   const watchlistHierarchy = useMemo(() => {
     const projects = new Map();
     (watchlists || []).forEach((wl) => {
@@ -3488,6 +3498,7 @@ const CredentialsDialog = ({
                     )}
 
                     {scheduleSubTab === "watchlist" && (
+                  <Box display="flex" flexDirection="column" gap={2}>
                   <Box
                     sx={{
                       bgcolor: panel,
@@ -3598,15 +3609,12 @@ const CredentialsDialog = ({
                           <Button variant="contained" onClick={saveWlSchedule} disabled={savingWlSchedule} sx={shimmerSx}>
                             {savingWlSchedule ? "Saving…" : "Save Schedule"}
                           </Button>
-
-                          {wlSchedule.lastRunDate && (
-                            <Typography variant="caption" color="text.secondary">
-                              Lần chạy gần nhất: {wlSchedule.lastRunDate}
-                            </Typography>
-                          )}
                         </>
                       )}
                     </Box>
+                  </Box>
+                  <RunPanel wlNameById={wlNameById} />
+                  <ConfigPanel />
                   </Box>
                     )}
 
