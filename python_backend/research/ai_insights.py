@@ -334,16 +334,23 @@ def build_prompt(result: dict, previous_ai: str = "",
 
 
 # Backend AI mặc định = Claude Code CLI (gói subscription, KHÔNG cần API
-# key). K9: khâu báo cáo chỉ dùng Opus.
-CLI_MODEL = "opus"
+# key). Model xuất báo cáo — đổi ở đây (opus/sonnet/haiku hoặc full id).
+CLI_MODEL = "sonnet"
 
 
 def _cli_config() -> tuple:
     """Cấu hình backend CLI. Trả (enabled, exe_path, cli_model).
 
     Mặc định luôn bật Claude Code CLI; exe tự dò trong PATH / ~/.local/bin.
+    Model xuất báo cáo lấy từ config `ai_report_model` (đổi qua UI Setting),
+    fallback CLI_MODEL nếu rỗng.
     """
-    return (True, "", CLI_MODEL)
+    try:
+        from .config import load_config
+        m = (load_config().get("ai_report_model") or "").strip()
+    except Exception:
+        m = ""
+    return (True, "", m or CLI_MODEL)
 
 
 def cli_available() -> bool:

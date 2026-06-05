@@ -3344,7 +3344,7 @@ const CredentialsDialog = ({
                       }}
                     >
                       <Tab value="cron" label="Cron schedule" />
-                      <Tab value="watchlist" label="Watchlist" />
+                      <Tab value="watchlist" label="Report" />
                       <Tab value="realtime" label="Realtime" />
                     </Tabs>
 

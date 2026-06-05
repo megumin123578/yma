@@ -296,6 +296,116 @@ def _find_latest_report(wid: str, wl_name: str) -> str:
     return ""
 
 
+def build_summary_data(wids: list) -> dict:
+    """Payload executive summary cho API/React, dung cung logic voi HTML cu."""
+    wl_data = []
+    for wid in wids:
+        info = _pack_wl(wid)
+        if info:
+            info["report_path"] = _find_latest_report(wid, info["name"])
+            wl_data.append(info)
+
+    wl_data.sort(key=lambda w: w.get("views_delta_7d", 0), reverse=True)
+    cross_top_videos = _collect_cross_niche_videos(wl_data, top_n=15)
+
+    cross_wl_opps = []
+    try:
+        from .cross_wl_learning import find_propagation_opportunities
+        cross_wl_opps = find_propagation_opportunities(log_fn=lambda s: None)
+    except Exception as e:
+        print(f"  WARN: cross_wl_learning loi: {e}")
+
+    return {
+        "date": datetime.now().strftime("%d/%m/%Y %H:%M"),
+        "n_wl": len(wl_data),
+        "total_subs": sum(w["subs"] for w in wl_data),
+        "total_subs_delta_7d": sum(w["subs_delta_7d"] for w in wl_data),
+        "total_views_delta_7d": sum(w["views_delta_7d"] for w in wl_data),
+        "n_warnings": sum(len(w["warnings"]) for w in wl_data),
+        "watchlists": wl_data,
+        "cross_top_videos": cross_top_videos,
+        "cross_wl_opps": cross_wl_opps[:20],
+    }
+
+
+# ============================================================
+# Lưu lịch sử snapshot (mỗi lần WL run xong) — giống page SEO.
+# Index nhẹ (id, date) + 1 file data/snapshot để list nhanh, load lẻ.
+# ============================================================
+_SUMMARY_HISTORY_MAX = 60
+
+
+def _summary_dir() -> Path:
+    d = Path.home() / ".youtube_research" / "summary_reports"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _index_path() -> Path:
+    return _summary_dir() / "index.json"
+
+
+def _read_index() -> list:
+    p = _index_path()
+    if not p.exists():
+        return []
+    try:
+        items = json.loads(p.read_text(encoding="utf-8"))
+        return items if isinstance(items, list) else []
+    except Exception:
+        return []
+
+
+def list_snapshots() -> list:
+    """Metadata snapshot (không kèm data) — mới nhất trước."""
+    return [{"id": it.get("id"), "date": it.get("date")}
+            for it in _read_index()]
+
+
+def get_snapshot(snapshot_id: str = "") -> dict | None:
+    """Snapshot đầy đủ {id, date, data}. snapshot_id rỗng → bản mới nhất."""
+    idx = _read_index()
+    if not idx:
+        return None
+    meta = (idx[0] if not snapshot_id
+            else next((it for it in idx if it.get("id") == snapshot_id), None))
+    if not meta:
+        return None
+    p = _summary_dir() / f"{meta['id']}.json"
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return {"id": meta["id"], "date": meta["date"], "data": data}
+
+
+def save_snapshot(data: dict) -> dict:
+    """Ghi 1 snapshot, prune quá _SUMMARY_HISTORY_MAX. Trả {id, date}."""
+    now = datetime.now()
+    sid = "sum_" + now.strftime("%Y%m%d_%H%M%S")
+    date_s = now.strftime("%Y-%m-%d %H:%M")
+    (_summary_dir() / f"{sid}.json").write_text(
+        json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    idx = _read_index()
+    idx.insert(0, {"id": sid, "date": date_s})
+    keep, drop = idx[:_SUMMARY_HISTORY_MAX], idx[_SUMMARY_HISTORY_MAX:]
+    _index_path().write_text(
+        json.dumps(keep, ensure_ascii=False), encoding="utf-8")
+    for old in drop:
+        try:
+            (_summary_dir() / f"{old['id']}.json").unlink(missing_ok=True)
+        except Exception:
+            pass
+    return {"id": sid, "date": date_s}
+
+
+def build_and_save_snapshot(wids: list) -> dict:
+    """Dựng payload summary cho wids rồi lưu snapshot. Trả {id, date}."""
+    return save_snapshot(build_summary_data(wids))
+
+
 def build_summary(wids: list, out_path: str = "") -> str:
     """Tạo HTML executive summary cho list WL. Trả path file."""
     wl_data = []

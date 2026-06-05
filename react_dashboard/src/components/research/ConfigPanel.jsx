@@ -18,6 +18,7 @@ import { getConfig, putConfig } from "../../services/researchService";
 
 // type: text | password | number | switch | select(options)
 const FIELDS = [
+  { key: "ai_report_model", label: "Model AI", type: "select", options: ["opus", "sonnet", "haiku"] },
   { key: "chrome_mode", label: "Chrome mode", type: "select", options: ["headless", "show", "minimized"] },
   { key: "parallel_workers", label: "Parallel workers", type: "number" },
   { key: "auto_discover_competitors", label: "Auto-discover competitors", type: "switch" },

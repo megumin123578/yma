@@ -115,7 +115,7 @@ const Sidebar = ({
     "/revenue",
   ]);
   const defaultOpenStatistics = inGroup(["/channel_compare", "/rivals"]);
-  const defaultOpenResearch = inGroup(["/research", "/research/config", "/research/seo"]);
+  const defaultOpenResearch = inGroup(["/research", "/research/config", "/research/seo", "/research/summary"]);
   const defaultOpenAutomation = inGroup([
     "/smmstore",
     "/smmstore_analytics",
@@ -570,6 +570,14 @@ const Sidebar = ({
                   defaultOpen={defaultOpenResearch}
                   title={isDesktopCompact ? "Report" : undefined}
                 >
+                  <Item
+                    title="Summary"
+                    to="/research/summary"
+                    icon={<BarChartOutlinedIcon />}
+                    isActive={pathname === "/research/summary"}
+                    onClick={closeOnMobile}
+                    isCompact={isDesktopCompact}
+                  />
                   <Item
                     title="View"
                     to="/research"

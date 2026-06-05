@@ -17,6 +17,16 @@ export const getReport = async (wid, { refresh = false, date = "" } = {}) => {
   return data;
 };
 
+export const getResearchSummary = async ({ refresh = false, snapshot = "" } = {}) => {
+  const params = {};
+  if (refresh) params.refresh = true;
+  if (snapshot) params.snapshot = snapshot;
+  const { data } = await api.get("/api/research/summary", {
+    params: Object.keys(params).length ? params : undefined,
+  });
+  return data;
+};
+
 export const startRun = async ({ wlIds = null, resume = null } = {}) => {
   const { data } = await api.post("/api/research/run", { wlIds, resume });
   return data;

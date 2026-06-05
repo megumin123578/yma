@@ -839,6 +839,17 @@ async def run_daily(wl_ids: Optional[list] = None,
         for stage, status, n in cur:
             log_fn(f"  {stage:12s} {status:8s} {n:>3}")
 
+        # Snapshot báo cáo tổng hợp cuối run → lưu lịch sử (UI chọn date).
+        # Dựng cho TẤT CẢ WL chưa paused để khớp view live, không chỉ wl_ids.
+        try:
+            from . import summary_report
+            active = [w.id for w in wl_mod.list_watchlists()
+                      if not getattr(w, "paused", False)]
+            snap = summary_report.build_and_save_snapshot(active)
+            log_fn(f"  [summary] Đã lưu snapshot báo cáo tổng hợp: {snap['id']}")
+        except Exception as e:
+            log_fn(f"  [summary] Lỗi lưu snapshot (skip): {str(e)[:160]}")
+
     finally:
         conn.close()
     return run_id

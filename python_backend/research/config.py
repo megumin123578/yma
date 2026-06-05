@@ -59,6 +59,8 @@ DEFAULTS = {
     "chrome_mode": "headless",  # show | minimized | headless
     "user_name": "",
     "shared_history_dir": "",
+    # Model Claude CLI xuất báo cáo AI: opus | sonnet | haiku (hoặc full id)
+    "ai_report_model": "sonnet",
     "parallel_workers": 3,  # 1-6
     # ----- Tự kết nạp đối thủ -----
     "auto_discover_competitors": True,

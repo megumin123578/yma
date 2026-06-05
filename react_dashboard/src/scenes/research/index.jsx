@@ -18,6 +18,7 @@ import AutoAwesomeRoundedIcon from "@mui/icons-material/AutoAwesomeRounded";
 import Header from "../../components/Header";
 import { TABS, TAB_GROUPS } from "../../components/research/reportTabs";
 import SeoReport from "../../components/research/SeoReport";
+import SummaryReport from "../../components/research/SummaryReport";
 import useSeoReport from "../../components/research/useSeoReport";
 import { EmptyState } from "../../components/research/primitives";
 import { generateAi, getReport, listWatchlists } from "../../services/researchService";
@@ -112,6 +113,7 @@ const ResearchScene = ({ view = "report" }) => {
 
   return (
     <Box m="20px">
+      {view !== "summary" && (
       <Header
         title={view === "seo" ? "Báo cáo SEO" : "Nghiên cứu ngách"}
         subtitle={
@@ -120,6 +122,13 @@ const ResearchScene = ({ view = "report" }) => {
             : "Báo cáo watchlist (đối thủ, từ khoá, ngách)"
         }
       />
+      )}
+      {view === "summary" && (
+        <Header
+          title="Báo cáo tổng hợp"
+          subtitle="Executive summary nhiều watchlist: tăng trưởng, video nổi bật, cảnh báo và Cross-WL"
+        />
+      )}
 
       {(view === "report" || view === "seo") && (
         <>
@@ -311,6 +320,7 @@ const ResearchScene = ({ view = "report" }) => {
       )}
         </>
       )}
+      {view === "summary" && <SummaryReport />}
     </Box>
   );
 };

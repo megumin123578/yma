@@ -74,6 +74,7 @@ _procs_lock = Lock()
 # TTL ngắn để đổi tab/refresh nhanh không recompute, nhưng vẫn tươi trong phiên.
 _REPORT_TTL = 300  # giây
 _report_cache: dict[str, tuple[float, dict]] = {}
+_summary_cache: tuple[float, dict] | None = None
 _cache_lock = Lock()
 _prewarm_lock = Lock()
 _prewarm_started = False
@@ -408,6 +409,67 @@ def remove_channel(wid: str, cid: str, current_user=Depends(get_current_user_opt
     return {"removed": True, "channelId": cid}
 
 
+@router.get("/summary")
+def get_summary(
+    refresh: bool = False,
+    snapshot: str = "",
+    current_user=Depends(get_current_user_optional),
+):
+    """Executive summary nhieu watchlist.
+
+    Snapshot duoc luu moi lan WL run xong (giong page SEO):
+    - `snapshot=<id>`: xem snapshot lich su do.
+    - mac dinh (khong refresh): tra snapshot moi nhat neu co, khong thi build live.
+    - `refresh=true`: build live ngay (bo qua snapshot + cache).
+    """
+    from python_backend.research import summary_report, watchlist as wlmod
+    snapshots = summary_report.list_snapshots()
+
+    def _with_meta(data: dict, sid: str) -> dict:
+        out = dict(data)
+        out["snapshot_id"] = sid
+        out["snapshots"] = snapshots
+        return out
+
+    # 1) Chon snapshot lich su cu the
+    if snapshot:
+        snap = summary_report.get_snapshot(snapshot)
+        if not snap:
+            raise HTTPException(status_code=404, detail="snapshot not found")
+        return _with_meta(snap["data"], snap["id"])
+
+    # 2) Mac dinh: tra snapshot moi nhat neu co
+    if not refresh and snapshots:
+        snap = summary_report.get_snapshot("")
+        if snap:
+            return _with_meta(snap["data"], snap["id"])
+
+    # 3) Build live (refresh hoac chua co snapshot nao) — giu cache RAM
+    global _summary_cache
+    now = time.monotonic()
+    if not refresh:
+        with _cache_lock:
+            if _summary_cache and (now - _summary_cache[0]) < _REPORT_TTL:
+                add_log("[H] research/summary cache-hit")
+                return _with_meta(_summary_cache[1], "")
+
+    t0 = time.perf_counter()
+    try:
+        wids = [
+            w.id for w in wlmod.list_watchlists()
+            if not bool(getattr(w, "paused", False))
+        ]
+        data = summary_report.build_summary_data(wids)
+    except Exception as e:  # noqa: BLE001
+        print(f"[research] summary loi: {e}")
+        raise HTTPException(status_code=500, detail=f"summary failed: {e}")
+
+    add_log(f"[H] research/summary build: {(time.perf_counter() - t0) * 1000:.1f}ms")
+    with _cache_lock:
+        _summary_cache = (now, data)
+    return _with_meta(data, "")
+
+
 @router.get("/report/{wid}")
 def get_report(
     wid: str,
@@ -455,7 +517,9 @@ class RunRequest(BaseModel):
 
 
 def _invalidate_report_cache(wl_ids):
+    global _summary_cache
     with _cache_lock:
+        _summary_cache = None
         if wl_ids:
             for w in wl_ids:
                 for k in [k for k in _report_cache

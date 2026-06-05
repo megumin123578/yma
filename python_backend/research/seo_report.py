@@ -95,6 +95,6 @@ def generate(wid: str, log_fn=None) -> Optional[dict]:
     if not text or not text.strip():
         _log("Báo cáo SEO: AI trả về rỗng.")
         return None
-    entry = save_report(wid, text.strip(), model="opus")
+    entry = save_report(wid, text.strip(), model=ai_insights._cli_config()[2])
     _log("Báo cáo SEO: đã sinh.")
     return entry
