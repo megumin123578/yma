@@ -3832,6 +3832,27 @@ const CredentialsDialog = ({
                             const runType = formatRunType(run.run_type);
                             const runMessage = cleanError(run.message);
                             const runItems = Array.isArray(run.items) ? run.items : [];
+                            const itemCounts = runItems.reduce(
+                              (acc, item) => {
+                                const key = normalizeRunStatus(item.status);
+                                acc[key] = (acc[key] || 0) + 1;
+                                return acc;
+                              },
+                              {}
+                            );
+                            const itemSummary = runItems.length
+                              ? [
+                                  ["done", "Done"],
+                                  ["running", "Running"],
+                                  ["queued", "Queued"],
+                                  ["error", "Error"],
+                                  ["stopped", "Stopped"],
+                                  ["skipped", "Skipped"],
+                                ]
+                                  .filter(([key]) => itemCounts[key])
+                                  .map(([key, label]) => `${label}: ${itemCounts[key]}`)
+                                  .join(" | ")
+                              : "";
                             return (
                               <Box
                                 key={run.id}
@@ -3934,7 +3955,7 @@ const CredentialsDialog = ({
                                 >
                                   {hasChannelProgress ? (
                                     <Typography variant="caption" color="text.secondary">
-                                      {`Channels: ${processed}/${total}`}
+                                      {itemSummary || `Channels: ${processed}/${total}`}
                                     </Typography>
                                   ) : normalizedStatus !== "running" && normalizedStatus !== "queued" ? (
                                     <Typography variant="caption" color="text.secondary">
@@ -3951,7 +3972,7 @@ const CredentialsDialog = ({
                                     <Box />
                                   )}
                                 </Box>
-                                {normalizedStatus === "running" && total > 0 && (
+                                {normalizedStatus === "running" && total > 0 && runItems.length === 0 && (
                                   <Box
                                     sx={{
                                       height: 6,
@@ -3984,6 +4005,11 @@ const CredentialsDialog = ({
                                         item.token_name ||
                                         "Channel";
                                       const itemMessage = cleanError(item.message);
+                                      const itemPercent = Math.min(
+                                        100,
+                                        Math.max(0, Number(item.percent || 0))
+                                      );
+                                      const itemStage = getStageLabel(item.stage || "");
                                       return (
                                         <Box
                                           key={item.id || `${run.id}-${item.token_name}`}
@@ -4000,9 +4026,47 @@ const CredentialsDialog = ({
                                               : "rgba(15,23,42,0.035)",
                                           }}
                                         >
-                                          <Typography variant="caption" noWrap title={label}>
-                                            {label}
-                                          </Typography>
+                                          <Box minWidth={0} flex={1}>
+                                            <Box display="flex" alignItems="center" gap={0.75} minWidth={0}>
+                                              <Typography variant="caption" noWrap title={label}>
+                                                {label}
+                                              </Typography>
+                                              {itemStage && itemStatus === "running" && (
+                                                <Typography variant="caption" color="text.secondary" noWrap>
+                                                  {itemStage} {itemPercent}%
+                                                </Typography>
+                                              )}
+                                            </Box>
+                                            {(itemStatus === "running" || itemPercent > 0) && (
+                                              <Box
+                                                sx={{
+                                                  mt: 0.35,
+                                                  height: 4,
+                                                  borderRadius: 999,
+                                                  overflow: "hidden",
+                                                  bgcolor: isDark
+                                                    ? "rgba(255,255,255,0.1)"
+                                                    : "rgba(15,23,42,0.1)",
+                                                }}
+                                              >
+                                                <Box
+                                                  sx={{
+                                                    height: "100%",
+                                                    width: `${itemPercent}%`,
+                                                    bgcolor:
+                                                      itemStatus === "error"
+                                                        ? "#ef4444"
+                                                        : itemStatus === "stopped"
+                                                          ? "#94a3b8"
+                                                          : isDark
+                                                            ? "#7de0d2"
+                                                            : "#1aa86c",
+                                                    transition: "width 200ms ease",
+                                                  }}
+                                                />
+                                              </Box>
+                                            )}
+                                          </Box>
                                           <Box display="flex" alignItems="center" gap={0.75} minWidth={0}>
                                             {itemMessage && itemStatus !== "done" && (
                                               <Typography

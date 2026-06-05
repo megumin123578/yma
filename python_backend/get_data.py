@@ -374,6 +374,21 @@ def _schedule_run_item_is_final(token_name: str) -> bool:
         return False
 
 
+def _update_channel_stage(
+    cred_file: str,
+    stage: str,
+    percent: int,
+    message: str,
+) -> None:
+    _update_schedule_run_item(
+        cred_file,
+        "running",
+        stage=stage,
+        percent=percent,
+        message=message,
+    )
+
+
 def _has_aggregate_token_scope() -> bool:
     return bool(_resolve_token_list(os.getenv("RUN_TOKEN_NAMES", "")))
 
@@ -546,6 +561,7 @@ def _run_for_credential(cred_file: str) -> None:
             None if aggregate_run else 1,
             f"Starting {stage}{f' ({account_tag})' if aggregate_run else ''}",
         )
+        _update_channel_stage(cred_file, stage, 10, f"Starting {stage}")
         write_progress(account_tag, stage, 10, "running", f"Starting {stage}")
 
         if stage == "content":
@@ -581,6 +597,13 @@ def _run_for_credential(cred_file: str) -> None:
             f"Completed {stage}{f' ({account_tag})' if aggregate_run else ''}",
         )
         write_progress(account_tag, "done", 100, "done", f"Completed {stage}")
+        _update_schedule_run_item(
+            cred_file,
+            "done",
+            stage=stage,
+            percent=100,
+            message=f"Completed {stage}",
+        )
         return
 
     _run_full_pipeline(
@@ -598,6 +621,7 @@ def _run_full_pipeline(
 ) -> None:
     _raise_if_stop_requested(account_tag, "stopped")
     write_progress(account_tag, "traffic_source", 5, "running", "Starting traffic source")
+    _update_channel_stage(cred_file, "traffic_source", 5, "Starting traffic source")
     _update_schedule_run(
         "running",
         None if aggregate_run else 0,
@@ -615,6 +639,7 @@ def _run_full_pipeline(
     _raise_if_stop_requested(account_tag, "stopped")
 
     write_progress(account_tag, "content", 35, "running", "Starting content fetch")
+    _update_channel_stage(cred_file, "content", 35, "Starting content fetch")
     _update_schedule_run(
         "running",
         None if aggregate_run else 1,
@@ -632,6 +657,7 @@ def _run_full_pipeline(
     _raise_if_stop_requested(account_tag, "stopped")
 
     write_progress(account_tag, "thumbnail_reach", 55, "running", "Starting thumbnail reach")
+    _update_channel_stage(cred_file, "thumbnail_reach", 55, "Starting thumbnail reach")
     _update_schedule_run(
         "running",
         None if aggregate_run else 2,
@@ -658,6 +684,7 @@ def _run_full_pipeline(
     _raise_if_stop_requested(account_tag, "stopped")
 
     write_progress(account_tag, "overview", 60, "running", "Starting overview")
+    _update_channel_stage(cred_file, "overview", 60, "Starting overview")
     _update_schedule_run(
         "running",
         None if aggregate_run else 3,
@@ -675,6 +702,7 @@ def _run_full_pipeline(
     _raise_if_stop_requested(account_tag, "stopped")
 
     write_progress(account_tag, "audience", 80, "running", "Starting audience analytics")
+    _update_channel_stage(cred_file, "audience", 80, "Starting audience analytics")
     _update_schedule_run(
         "running",
         None if aggregate_run else 4,
@@ -692,6 +720,7 @@ def _run_full_pipeline(
     _raise_if_stop_requested(account_tag, "stopped")
 
     write_progress(account_tag, "reach", 90, "running", "Starting reach analytics")
+    _update_channel_stage(cred_file, "reach", 90, "Starting reach analytics")
     _update_schedule_run(
         "running",
         None if aggregate_run else 5,
@@ -709,6 +738,7 @@ def _run_full_pipeline(
     _raise_if_stop_requested(account_tag, "stopped")
 
     write_progress(account_tag, "revenue", 95, "running", "Starting revenue analytics")
+    _update_channel_stage(cred_file, "revenue", 95, "Starting revenue analytics")
     _update_schedule_run(
         "running",
         None if aggregate_run else 6,
@@ -726,6 +756,7 @@ def _run_full_pipeline(
     _raise_if_stop_requested(account_tag, "stopped")
 
     write_progress(account_tag, "subscribers", 98, "running", "Starting subscriber analytics")
+    _update_channel_stage(cred_file, "subscribers", 98, "Starting subscriber analytics")
     _update_schedule_run(
         "running",
         None if aggregate_run else 7,
@@ -741,6 +772,13 @@ def _run_full_pipeline(
         f"Subscribers{f' ({account_tag})' if aggregate_run else ''}",
     )
     write_progress(account_tag, "done", 100, "done", "Completed")
+    _update_schedule_run_item(
+        cred_file,
+        "done",
+        stage="done",
+        percent=100,
+        message="Completed",
+    )
 
 
 def main():
