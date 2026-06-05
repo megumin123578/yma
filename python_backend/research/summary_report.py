@@ -45,7 +45,7 @@ def _overview_latest_videos(account_tag: str, limit: int = 3) -> list:
                 LIMIT :limit
                 """), {"tag": account_tag, "limit": limit}).mappings().all()
             vids = [str(r["video_id"]) for r in base]
-            imp_map, wt_map = {}, {}
+            imp_map, wt_map, dur_map = {}, {}, {}
             if vids:
                 for r in conn.execute(text(
                     """
@@ -68,6 +68,21 @@ def _overview_latest_videos(account_tag: str, limit: int = 3) -> list:
                     GROUP BY video_id
                     """), {"vids": vids}).mappings():
                     wt_map[r["video_id"]] = r["wt"]
+                try:
+                    for r in conn.execute(text(
+                        """
+                        SELECT video_id,
+                               (
+                                   COALESCE(NULLIF(SUBSTRING(duration FROM 'PT([0-9]+)H'), ''), '0')::integer * 3600 +
+                                   COALESCE(NULLIF(SUBSTRING(duration FROM 'PT(?:[0-9]+H)?([0-9]+)M'), ''), '0')::integer * 60 +
+                                   COALESCE(NULLIF(SUBSTRING(duration FROM 'PT(?:[0-9]+H)?(?:[0-9]+M)?([0-9]+)S'), ''), '0')::integer
+                               ) AS duration_seconds
+                        FROM videos
+                        WHERE video_id = ANY(:vids)
+                        """), {"vids": vids}).mappings():
+                        dur_map[r["video_id"]] = int(r["duration_seconds"] or 0)
+                except Exception:
+                    dur_map = {}
     except Exception:
         return []
     out = []
@@ -85,11 +100,60 @@ def _overview_latest_videos(account_tag: str, limit: int = 3) -> list:
             "thumbnail": r.get("thumbnail") or "",
             "views": int(r.get("views") or 0),
             "avg_view_duration": int(r.get("avg_dur") or 0),
+            "duration_seconds": dur_map.get(vid) or 0,
             "watch_minutes": (int(wt) if wt is not None else None),
             "subscribers": subs,
             "impressions": (int(imp) if imp is not None else None),
             "ctr": (round(float(ctr) * 100, 1) if ctr is not None else None),
         })
+    return out
+
+
+def enrich_summary_video_durations(data: dict) -> dict:
+    """Add duration_seconds to latest video rows, including old snapshots."""
+    if not isinstance(data, dict):
+        return data
+    ids = []
+    for wl in data.get("watchlists") or []:
+        for video in wl.get("latest_videos") or []:
+            if not video.get("duration_seconds") and video.get("video_id"):
+                ids.append(str(video.get("video_id")))
+    ids = sorted(set(ids))
+    if not ids:
+        return data
+
+    dur_map = {}
+    try:
+        from sqlalchemy import text
+        from python_backend.db import engine
+        with engine.begin() as conn:
+            for r in conn.execute(text(
+                """
+                SELECT video_id,
+                       (
+                           COALESCE(NULLIF(SUBSTRING(duration FROM 'PT([0-9]+)H'), ''), '0')::integer * 3600 +
+                           COALESCE(NULLIF(SUBSTRING(duration FROM 'PT(?:[0-9]+H)?([0-9]+)M'), ''), '0')::integer * 60 +
+                           COALESCE(NULLIF(SUBSTRING(duration FROM 'PT(?:[0-9]+H)?(?:[0-9]+M)?([0-9]+)S'), ''), '0')::integer
+                       ) AS duration_seconds
+                FROM videos
+                WHERE video_id = ANY(:vids)
+                """), {"vids": ids}).mappings():
+                dur_map[str(r["video_id"])] = int(r["duration_seconds"] or 0)
+    except Exception:
+        return data
+
+    if not dur_map:
+        return data
+    out = dict(data)
+    out["watchlists"] = []
+    for wl in data.get("watchlists") or []:
+        wl_out = dict(wl)
+        wl_out["latest_videos"] = []
+        for video in wl.get("latest_videos") or []:
+            video_out = dict(video)
+            video_out["duration_seconds"] = int(video_out.get("duration_seconds") or dur_map.get(str(video_out.get("video_id"))) or 0)
+            wl_out["latest_videos"].append(video_out)
+        out["watchlists"].append(wl_out)
     return out
 
 
@@ -315,6 +379,7 @@ def _pack_wl(wid: str) -> dict:
             "thumbnail": "",
             "views": int(getattr(v, "view_count", 0) or 0),
             "avg_view_duration": None,
+            "duration_seconds": int(getattr(v, "duration_seconds", 0) or 0),
             "watch_minutes": None,
             "subscribers": None,
             "impressions": None,
@@ -336,6 +401,7 @@ def _pack_wl(wid: str) -> dict:
                         "views": views,
                         "mult": round(views / median_v, 1),
                         "channel": ch.title if ch else "",
+                        "vid": getattr(v, "video_id", "") or "",
                     })
         except Exception:
             pass
@@ -365,6 +431,8 @@ def _collect_cross_niche_videos(wl_data: list, top_n: int = 15) -> list:
                 "mult": v["mult"],
                 "channel": v["channel"],
                 "wl_name": w["name"],
+                "wid": w["wid"],
+                "video_id": v.get("vid", ""),
                 "source": "outlier",
             })
         for v in w.get("top_videos_today", [])[:2]:
@@ -375,6 +443,8 @@ def _collect_cross_niche_videos(wl_data: list, top_n: int = 15) -> list:
                 "pub": v["pub"],
                 "channel": w["self_title"],
                 "wl_name": w["name"],
+                "wid": w["wid"],
+                "video_id": v.get("vid", ""),
                 "source": "self_top",
             })
     # Sort: outlier (mult cao) trộn với self_top (vpd cao)
