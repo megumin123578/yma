@@ -1,6 +1,7 @@
 // components/research/reportTabs.jsx
 // Định nghĩa 22 tab báo cáo nghiên cứu ngách (7 nhóm A-G), render từ build_data JSON.
-import { Box, Link, Typography } from "@mui/material";
+import { useState } from "react";
+import { Box, FormControl, Link, MenuItem, Select, Typography } from "@mui/material";
 import {
   DataTable,
   EmptyState,
@@ -13,6 +14,8 @@ import {
   num,
 } from "./primitives";
 import Markdown from "./Markdown";
+import SeoBestPractice from "./SeoBestPractice";
+import InsideSynthesis from "./InsideSynthesis";
 
 // ---------- helpers ----------
 const isScalar = (v) => v === null || ["string", "number", "boolean"].includes(typeof v);
@@ -333,12 +336,36 @@ const ChannelBlock = ({ ch, defaultOpen = false }) => {
           )}
         </Box>
       )}
+      {Array.isArray(ch.clusters) && ch.clusters.length > 0 && (
+        <Box mt={2}>
+          <Typography variant="subtitle2" fontWeight={700} mb={1}>
+            Phân cụm nội dung
+          </Typography>
+          <DataTable
+            limit={null}
+            rows={ch.clusters}
+            columns={[
+              { key: "label", label: "Cụm" },
+              { key: "n", label: "Số video", align: "right" },
+              { key: "avg", label: "View TB", align: "right", render: (r) => num(r.avg) },
+            ]}
+          />
+        </Box>
+      )}
+      {Array.isArray(ch.new_v) && ch.new_v.length > 0 && (
+        <Box mt={2}>
+          <Typography variant="subtitle2" fontWeight={700} mb={1}>
+            Video vừa đăng (mới từ kỳ trước)
+          </Typography>
+          <DataTable columns={videoCols} rows={ch.new_v} limit={null} />
+        </Box>
+      )}
       {Array.isArray(ch.all_v) && ch.all_v.length > 0 && (
         <Box mt={2}>
           <Typography variant="subtitle2" fontWeight={700} mb={1}>
             Video ({ch.all_v.length})
           </Typography>
-          <DataTable columns={videoCols} rows={ch.all_v} />
+          <DataTable columns={videoCols} rows={ch.all_v} limit={null} />
         </Box>
       )}
       {Array.isArray(ch.top_tags) && ch.top_tags.length > 0 && (
@@ -353,6 +380,22 @@ const ChannelBlock = ({ ch, defaultOpen = false }) => {
           </Box>
         </Box>
       )}
+      {Array.isArray(ch.seo_comps) && ch.seo_comps.length > 0 && (
+        <Box mt={2}>
+          <Typography variant="subtitle2" fontWeight={700} mb={1}>
+            Phân tích thẻ tag & SEO
+          </Typography>
+          <DataTable
+            limit={null}
+            rows={ch.seo_comps}
+            columns={[
+              { key: "name", label: "Thành phần" },
+              { key: "avg", label: "TB", align: "right", render: (r) => num(r.avg) },
+              { key: "max", label: "Tối đa", align: "right", render: (r) => num(r.max) },
+            ]}
+          />
+        </Box>
+      )}
       {ch.ai && String(ch.ai).trim() && (
         <Box mt={2}>
           <Typography variant="subtitle2" fontWeight={700} mb={1}>
@@ -361,6 +404,175 @@ const ChannelBlock = ({ ch, defaultOpen = false }) => {
           <TextBlock text={ch.ai} />
         </Box>
       )}
+      {ch.thumb && ch.thumb.self && (
+        <Box mt={2}>
+          <Typography variant="subtitle2" fontWeight={700} mb={1}>
+            Phân tích thumbnail
+          </Typography>
+          <StatGrid
+            stats={[
+              ch.thumb.self.bright ? { label: "Độ sáng (kênh)", value: ch.thumb.self.bright } : null,
+              ch.thumb.self.sat ? { label: "Độ rực (kênh)", value: ch.thumb.self.sat } : null,
+              ch.thumb.self.colors ? { label: "Màu chủ đạo (kênh)", value: ch.thumb.self.colors } : null,
+              ch.thumb.niche?.colors ? { label: "Màu chủ đạo (ngách)", value: ch.thumb.niche.colors } : null,
+            ]}
+          />
+          {Array.isArray(ch.thumb.obs) && ch.thumb.obs.length > 0 && (
+            <Box component="ul" sx={{ pl: 2, mt: 1, mb: 0 }}>
+              {ch.thumb.obs.map((o, i) => (
+                <li key={i}>
+                  <Typography variant="body2">{o}</Typography>
+                </li>
+              ))}
+            </Box>
+          )}
+          {ch.thumb.verdict && String(ch.thumb.verdict).trim() && (
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              {ch.thumb.verdict}
+            </Typography>
+          )}
+        </Box>
+      )}
+      {Array.isArray(ch.kw) && ch.kw.length > 0 && (
+        <Box mt={2}>
+          <Typography variant="subtitle2" fontWeight={700} mb={1}>
+            Từ khoá của kênh
+          </Typography>
+          <DataTable
+            limit={null}
+            rows={ch.kw}
+            columns={[
+              { key: "kw", label: "Từ khoá" },
+              { key: "score", label: "Điểm", align: "right", render: (r) => (r.score != null ? r.score.toFixed(2) : "—") },
+              { key: "chv", label: "Video kênh dùng", align: "right", render: (r) => num(r.chv) },
+              { key: "comp", label: "Cạnh tranh", align: "center", render: (r) => r.comp || "—" },
+              { key: "rc", label: "Kết quả YT", align: "right", render: (r) => num(r.rc) },
+            ]}
+          />
+        </Box>
+      )}
+      {ch.desc && String(ch.desc).trim() && (
+        <Box mt={2}>
+          <Typography variant="subtitle2" fontWeight={700} mb={1}>
+            Mô tả kênh
+          </Typography>
+          <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+            {ch.desc}
+          </Typography>
+        </Box>
+      )}
+    </SectionCard>
+  );
+};
+
+// Bình luận khán giả (kênh chính) — sentiment + nhận định AI + yêu cầu + top.
+const CommentsBlock = ({ c }) => {
+  if (!c || !c.total) return null;
+  const pill = (w, i) =>
+    typeof w === "string" ? (
+      <Pill key={i} label={w} />
+    ) : (
+      <Pill key={i} label={`${w.word || w.text || ""} (${w.n ?? w.count ?? ""})`} />
+    );
+  return (
+    <SectionCard
+      title={`Bình luận khán giả (${num(c.total)})`}
+      action={
+        <Box component="span" sx={{ fontWeight: 700, whiteSpace: "nowrap" }}>
+          <Box component="span" sx={{ color: "success.main" }}>
+            👍 {num(c.pos)} ({c.pos_pct}%)
+          </Box>
+          {"  ·  "}
+          <Box component="span" sx={{ color: "error.main" }}>
+            👎 {num(c.neg)} ({c.neg_pct}%)
+          </Box>
+        </Box>
+      }
+    >
+      {c.report && String(c.report).trim() && (
+        <Box mb={2}>
+          <Typography variant="subtitle2" fontWeight={700} mb={0.5}>
+            Nhận định AI{c.report_at ? ` — ${c.report_at}` : ""}
+          </Typography>
+          <TextBlock text={c.report} />
+        </Box>
+      )}
+      {Array.isArray(c.requests) && c.requests.length > 0 && (
+        <Box mb={2}>
+          <Typography variant="subtitle2" fontWeight={700} mb={1}>
+            Khán giả xin làm video
+          </Typography>
+          <AutoTable rows={c.requests} />
+        </Box>
+      )}
+      {Array.isArray(c.top_liked) && c.top_liked.length > 0 && (
+        <Box mb={2}>
+          <Typography variant="subtitle2" fontWeight={700} mb={1}>
+            Bình luận nhiều thích nhất
+          </Typography>
+          <AutoTable rows={c.top_liked} />
+        </Box>
+      )}
+      {Array.isArray(c.words) && c.words.length > 0 && (
+        <Box mb={1}>
+          <Typography variant="body2" component="span" sx={{ mr: 0.5 }}>
+            <b>Từ hay gặp:</b>
+          </Typography>
+          {c.words.slice(0, 30).map(pill)}
+        </Box>
+      )}
+      {Array.isArray(c.all) && c.all.length > 0 && (
+        <Box mt={2}>
+          <Typography variant="subtitle2" fontWeight={700} mb={1}>
+            Toàn bộ bình luận ({c.all.length})
+          </Typography>
+          <AutoTable rows={c.all} />
+        </Box>
+      )}
+    </SectionCard>
+  );
+};
+
+// Video của ngành theo từ khoá — dropdown chọn keyword → video mới + xếp hạng.
+const NicheByKeyword = ({ niche, nicheTop }) => {
+  const keys = Object.keys(niche || {});
+  const [sel, setSel] = useState(keys[0] || "");
+  if (!keys.length) return <EmptyState text="Chưa có dữ liệu video ngành theo từ khoá." />;
+  const cur = keys.includes(sel) ? sel : keys[0];
+  const recent = (niche || {})[cur] || [];
+  const top = (nicheTop || {})[cur] || [];
+  return (
+    <SectionCard
+      title="Video của ngành theo từ khoá"
+      action={
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <Select value={cur} onChange={(e) => setSel(e.target.value)}>
+            {keys.map((k) => (
+              <MenuItem key={k} value={k}>
+                {k}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      }
+    >
+      {recent.length > 0 && (
+        <Box mb={2}>
+          <Typography variant="subtitle2" fontWeight={700} mb={1}>
+            🚀 Video mới nhiều view — "{cur}"
+          </Typography>
+          <DataTable columns={videoCols} rows={recent} limit={null} />
+        </Box>
+      )}
+      {top.length > 0 && (
+        <Box>
+          <Typography variant="subtitle2" fontWeight={700} mb={1}>
+            🔥 Xếp hạng top — "{cur}"
+          </Typography>
+          <DataTable columns={videoCols} rows={top} limit={null} />
+        </Box>
+      )}
+      {!recent.length && !top.length && <EmptyState text="Từ khoá này chưa có video." />}
     </SectionCard>
   );
 };
@@ -540,7 +752,36 @@ export const TABS = [
     id: "self",
     group: "B",
     label: "Kênh chính",
-    render: (d) => <ChannelBlock ch={d.self} defaultOpen />,
+    render: (d) => (
+      <>
+        <ChannelBlock ch={d.self} defaultOpen />
+        {Array.isArray(d.video_track) && d.video_track.length > 0 && (
+          <SectionCard title="📈 Diễn biến lượt xem video kênh chính">
+            <DataTable
+              limit={null}
+              rows={d.video_track}
+              columns={[
+                {
+                  key: "title",
+                  label: "Video",
+                  render: (r) =>
+                    r.url ? (
+                      <Link href={r.url} target="_blank" rel="noopener" underline="hover">
+                        {r.title}
+                      </Link>
+                    ) : (
+                      r.title
+                    ),
+                },
+                { key: "pts", label: "Lượt xem qua các kỳ", render: (r) => (r.pts || []).map(num).join(" → ") },
+                { key: "growth", label: "Tăng", align: "right", render: (r) => sg(r.growth) },
+              ]}
+            />
+          </SectionCard>
+        )}
+        <CommentsBlock c={d.comments} />
+      </>
+    ),
   },
   {
     id: "inside_summary",
@@ -569,89 +810,7 @@ export const TABS = [
     id: "inside_synthesis",
     group: "B",
     label: "🧠 Inside × SEO Synthesis",
-    render: (d) => {
-      const s = d.inside_synthesis;
-      if (!s || !Object.keys(s).length) return <EmptyState />;
-      return (
-        <>
-          <SectionCard title={s.niche_name || "Synthesis"} subtitle={s.niche_key}>
-            {Array.isArray(s.findings) && s.findings.length > 0 ? (
-              s.findings.map((f, i) => {
-                if (typeof f === "string")
-                  return (
-                    <Typography key={i} variant="body2" sx={{ mb: 1, lineHeight: 1.6 }}>
-                      {f}
-                    </Typography>
-                  );
-                const c = SEV_SCORE_COLOR[f.severity] || "text.secondary";
-                return (
-                  <Box key={i} sx={{ borderLeft: "3px solid", borderColor: c, pl: 1.5, py: 0.5, mb: 1.5 }}>
-                    <Typography variant="subtitle2" fontWeight={700} sx={{ color: c }}>
-                      {f.finding}
-                    </Typography>
-                    {f.diagnosis && (
-                      <Typography variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
-                        <b>Chẩn đoán:</b> {f.diagnosis}
-                      </Typography>
-                    )}
-                    {f.action && (
-                      <Typography variant="body2" sx={{ mt: 0.5, lineHeight: 1.6 }}>
-                        <b>Hành động:</b> {f.action}
-                      </Typography>
-                    )}
-                  </Box>
-                );
-              })
-            ) : (
-              <EmptyState />
-            )}
-          </SectionCard>
-          {Array.isArray(s.traffic_playbook) && s.traffic_playbook.length > 0 && (
-            <SectionCard title="Traffic Playbook">
-              <DataTable
-                limit={null}
-                rows={s.traffic_playbook}
-                columns={[
-                  { key: "name", label: "Nguồn", render: (r) => r.name || r.source || "—" },
-                  { key: "share_pct", label: "Tỷ lệ", align: "right", render: (r) => (r.share_pct != null ? `${r.share_pct}%` : "—") },
-                  { key: "views", label: "Views", align: "right", render: (r) => num(r.views) },
-                  { key: "benchmark", label: "Benchmark", align: "center", render: (r) => r.benchmark || "—" },
-                  {
-                    key: "status",
-                    label: "Trạng thái",
-                    align: "center",
-                    render: (r) => {
-                      const st = String(r.status || "");
-                      const col =
-                        st === "HIGH" ? "warning" : st === "LOW" ? "error" : st === "OK" || st === "GOOD" ? "success" : "default";
-                      return st ? <Pill label={st} color={col} /> : "—";
-                    },
-                  },
-                  {
-                    key: "actions",
-                    label: "Hành động",
-                    render: (r) =>
-                      Array.isArray(r.actions) && r.actions.length > 0 ? (
-                        <Box component="ul" sx={{ pl: 2, m: 0 }}>
-                          {r.actions.map((a, i) => (
-                            <li key={i}>
-                              <Typography variant="body2" sx={{ lineHeight: 1.5 }}>
-                                {a}
-                              </Typography>
-                            </li>
-                          ))}
-                        </Box>
-                      ) : (
-                        "—"
-                      ),
-                  },
-                ]}
-              />
-            </SectionCard>
-          )}
-        </>
-      );
-    },
+    render: (d) => <InsideSynthesis s={d.inside_synthesis} />,
   },
 
   // ===== C. Khán giả =====
@@ -813,16 +972,7 @@ export const TABS = [
     id: "videos_by_kw",
     group: "E",
     label: "Video theo từ khoá",
-    render: (d) => {
-      const self = d.self || {};
-      const rows = self.all_v || [];
-      if (!rows.length) return <EmptyState text="Kênh chính chưa có video thu thập." />;
-      return (
-        <SectionCard title="Video kênh chính">
-          <DataTable columns={videoCols} rows={rows} />
-        </SectionCard>
-      );
-    },
+    render: (d) => <NicheByKeyword niche={d.niche} nicheTop={d.niche_top} />,
   },
   {
     id: "outliers",
@@ -857,19 +1007,117 @@ export const TABS = [
     group: "F",
     label: "Từ khoá",
     render: (d) => {
-      const enrich = d.kw_enrich || {};
-      const rows = Object.entries(enrich).map(([kw, v]) => ({ kw, ...(v || {}) }));
-      if (!rows.length) return <EmptyState text="Chưa có từ khoá enrich." />;
-      const cols = [
-        { key: "kw", label: "Từ khoá" },
-        { key: "vol", label: "Volume (KT)", align: "right", render: (r) => num(r.vol) },
-        { key: "comp", label: "Cạnh tranh", align: "right", render: (r) => num(r.comp) },
-        { key: "rc", label: "Kết quả YT", align: "right", render: (r) => num(r.rc) },
-      ];
+      const kws = d.keywords || [];
+      const tp = d.title_patterns || [];
+      const tpk = d.title_pattern && Object.keys(d.title_pattern).length ? d.title_pattern : null;
+      if (!kws.length && !tp.length && !tpk) return <EmptyState text="Chưa có dữ liệu từ khoá." />;
+      const fc = tpk?.feature_correlation
+        ? Object.entries(tpk.feature_correlation).map(([k, v]) => ({ feat: k, ...(v || {}) }))
+        : [];
+      const ls = tpk?.length_stats
+        ? Object.entries(tpk.length_stats).map(([k, v]) => ({ bucket: k, ...(v || {}) }))
+        : [];
       return (
-        <SectionCard title={`Từ khoá ngách (${rows.length})`}>
-          <DataTable columns={cols} rows={rows} />
-        </SectionCard>
+        <>
+          {kws.length > 0 && (
+            <SectionCard title={`Từ khoá chủ đạo của ngành (${kws.length})`}>
+              <DataTable
+                limit={null}
+                rows={kws}
+                columns={[
+                  { key: "kw", label: "Từ khoá" },
+                  { key: "score", label: "Điểm", align: "right", render: (r) => (r.score != null ? r.score.toFixed(2) : "—") },
+                  { key: "chv", label: "Video kênh chứa", align: "right", render: (r) => num(r.chv) },
+                  { key: "sources", label: "Nguồn", render: (r) => (r.sources || []).join(", ") || "—" },
+                  ...ktCols(d.kw_enrich),
+                  { key: "sug", label: "Gợi ý tìm", render: (r) => (r.sug || []).slice(0, 6).join(", ") || "—" },
+                ]}
+              />
+            </SectionCard>
+          )}
+          {tp.length > 0 && (
+            <SectionCard title="Công thức tiêu đề thắng trong ngành">
+              <DataTable
+                limit={null}
+                rows={tp}
+                columns={[
+                  { key: "feat", label: "Đặc điểm tiêu đề" },
+                  { key: "n", label: "Số video", align: "right" },
+                  { key: "med_with", label: "View TB khi CÓ", align: "right", render: (r) => num(r.med_with) },
+                  { key: "med_without", label: "khi KHÔNG", align: "right", render: (r) => num(r.med_without) },
+                  { key: "lift", label: "Hệ số", align: "right", render: (r) => (r.lift != null ? `${r.lift}x` : "—") },
+                ]}
+              />
+            </SectionCard>
+          )}
+          {tpk && (
+            <SectionCard title="Công thức tiêu đề (data-driven)">
+              {Array.isArray(tpk.recommendations) && tpk.recommendations.length > 0 && (
+                <Box component="ul" sx={{ pl: 2, mt: 0, mb: 2 }}>
+                  {tpk.recommendations.map((r, i) => (
+                    <li key={i}>
+                      <Typography variant="body2">{r}</Typography>
+                    </li>
+                  ))}
+                </Box>
+              )}
+              {fc.length > 0 && (
+                <Box mb={2}>
+                  <Typography variant="subtitle2" fontWeight={700} mb={1}>
+                    Tương quan feature × views/ngày
+                  </Typography>
+                  <DataTable
+                    limit={null}
+                    rows={fc}
+                    columns={[
+                      { key: "feat", label: "Feature" },
+                      { key: "n_on", label: "N có", align: "right" },
+                      { key: "on_avg", label: "View TB CÓ", align: "right", render: (r) => num(r.on_avg) },
+                      { key: "off_avg", label: "View TB KHÔNG", align: "right", render: (r) => num(r.off_avg) },
+                      { key: "lift_pct", label: "Lift %", align: "right", render: (r) => (r.lift_pct != null ? `${r.lift_pct}%` : "—") },
+                    ]}
+                  />
+                </Box>
+              )}
+              {ls.length > 0 && (
+                <Box mb={2}>
+                  <Typography variant="subtitle2" fontWeight={700} mb={1}>
+                    Độ dài tiêu đề × views/ngày
+                  </Typography>
+                  <DataTable
+                    limit={null}
+                    rows={ls}
+                    columns={[
+                      { key: "bucket", label: "Độ dài" },
+                      { key: "n", label: "N", align: "right" },
+                      { key: "avg_views_per_day", label: "View/ngày TB", align: "right", render: (r) => num(r.avg_views_per_day) },
+                    ]}
+                  />
+                </Box>
+              )}
+              {Array.isArray(tpk.winning_ngrams) && tpk.winning_ngrams.length > 0 && (
+                <Box mb={1}>
+                  <Typography variant="body2" component="span" sx={{ mr: 0.5 }}>
+                    <b>🏆 Cụm "thắng":</b>
+                  </Typography>
+                  {tpk.winning_ngrams.map((g, i) => (
+                    <Pill key={i} label={g.ngram || String(g)} color="success" />
+                  ))}
+                </Box>
+              )}
+              {Array.isArray(tpk.losing_ngrams) && tpk.losing_ngrams.length > 0 && (
+                <Box>
+                  <Typography variant="body2" component="span" sx={{ mr: 0.5 }}>
+                    <b>⚠ Cụm "thua":</b>
+                  </Typography>
+                  {tpk.losing_ngrams.map((g, i) => (
+                    <Pill key={i} label={g.ngram || String(g)} color="error" />
+                  ))}
+                </Box>
+              )}
+            </SectionCard>
+          )}
+        </>
       );
     },
   },
@@ -878,18 +1126,19 @@ export const TABS = [
     group: "F",
     label: "Tiêu đề mẫu",
     render: (d) => {
-      const rows = d.title_patterns || [];
-      if (!rows.length) return <EmptyState text="Chưa đủ video kênh chính để rút công thức tiêu đề." />;
-      const cols = [
-        { key: "feat", label: "Đặc trưng" },
-        { key: "n", label: "Số video", align: "right" },
-        { key: "med_with", label: "Median có", align: "right", render: (r) => num(r.med_with) },
-        { key: "med_without", label: "Median không", align: "right", render: (r) => num(r.med_without) },
-        { key: "lift", label: "Lift", align: "right", render: (r) => (r.lift != null ? `${r.lift}x` : "—") },
-      ];
+      const tv = d.title_variants || [];
+      if (!tv.length) return <EmptyState text="Chưa đủ dữ liệu để sinh tiêu đề mẫu." />;
       return (
-        <SectionCard title="Công thức tiêu đề (data-driven)" subtitle={d.title_n ? `${d.title_n} video phân tích` : ""}>
-          <DataTable columns={cols} rows={rows} />
+        <SectionCard title="Tiêu đề mẫu — sinh từ công thức thắng">
+          <DataTable
+            limit={null}
+            rows={tv}
+            columns={[
+              { key: "title", label: "Tiêu đề mẫu" },
+              { key: "score", label: "Điểm", align: "right", render: (r) => num(r.score) },
+              { key: "template", label: "Mẫu gốc" },
+            ]}
+          />
         </SectionCard>
       );
     },
@@ -930,21 +1179,7 @@ export const TABS = [
     id: "seo_best",
     group: "F",
     label: "📚 SEO Best Practice",
-    render: (d) => {
-      const self = d.self || {};
-      const comps = self.seo_comps || [];
-      if (!comps.length) return <EmptyState text="Chưa có dữ liệu SEO components của kênh chính." />;
-      const cols = [
-        { key: "name", label: "Thành phần" },
-        { key: "avg", label: "TB", align: "right", render: (r) => num(r.avg) },
-        { key: "max", label: "Max", align: "right", render: (r) => num(r.max) },
-      ];
-      return (
-        <SectionCard title="SEO components kênh chính" subtitle={self.seo != null ? `SEO score: ${self.seo}` : ""}>
-          <DataTable columns={cols} rows={comps} />
-        </SectionCard>
-      );
-    },
+    render: () => <SeoBestPractice />,
   },
 
   // ===== G. Đối thủ & Ngách =====
