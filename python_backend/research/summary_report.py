@@ -157,6 +157,100 @@ def enrich_summary_video_durations(data: dict) -> dict:
     return out
 
 
+def enrich_summary_revenue(data: dict) -> dict:
+    """Add revenue fields to summary rows, including old snapshots."""
+    if not isinstance(data, dict):
+        return data
+    needs = [
+        wl for wl in (data.get("watchlists") or [])
+        if wl.get("account_tag") and wl.get("revenue_7d") is None
+    ]
+    if not needs:
+        return data
+
+    revenue_map = {}
+    try:
+        from .analytics_inside import get_revenue_summary
+        for wl in needs:
+            tag = wl.get("account_tag")
+            rev = get_revenue_summary(tag, recent_days=7, latest_available_days=True)
+            if rev:
+                revenue_map[tag] = {
+                    "revenue_7d": float(rev.get("total_revenue") or 0),
+                    "revenue_days": int(rev.get("days_with_data") or 0),
+                    "avg_rpm_7d": float(rev.get("avg_rpm") or 0),
+                }
+    except Exception:
+        return data
+
+    if not revenue_map:
+        return data
+    out = dict(data)
+    out["watchlists"] = []
+    for wl in data.get("watchlists") or []:
+        wl_out = dict(wl)
+        wl_out.update(revenue_map.get(wl.get("account_tag"), {}))
+        out["watchlists"].append(wl_out)
+    return out
+
+
+def _content_daily_top_videos(account_tags: list[str], limit: int = 15) -> list:
+    """Top videos from Content page daily metrics, using each account's latest data day."""
+    tags = sorted({
+        str(tag or "").strip()
+        for tag in (account_tags or [])
+        if str(tag or "").strip()
+    })
+    if not tags:
+        return []
+    try:
+        from sqlalchemy import text
+        from python_backend.db import engine
+        with engine.begin() as conn:
+            rows = conn.execute(text(
+                """
+                WITH latest_day AS (
+                    SELECT v.account_tag, MAX(s.day) AS day
+                    FROM videos v
+                    JOIN video_daily_stats s ON s.video_id = v.video_id
+                    WHERE v.account_tag = ANY(:tags)
+                      AND COALESCE(s.views, 0) > 0
+                    GROUP BY v.account_tag
+                )
+                SELECT
+                    v.account_tag,
+                    v.video_id,
+                    v.title,
+                    v.published_at,
+                    ld.day,
+                    COALESCE(s.views, 0) AS daily_views,
+                    COALESCE(v.views, 0) AS total_views
+                FROM latest_day ld
+                JOIN videos v ON v.account_tag = ld.account_tag
+                JOIN video_daily_stats s
+                  ON s.video_id = v.video_id
+                 AND s.day = ld.day
+                WHERE COALESCE(s.views, 0) > 0
+                ORDER BY COALESCE(s.views, 0) DESC
+                LIMIT :limit
+                """), {"tags": tags, "limit": limit}).mappings().all()
+    except Exception:
+        return []
+    return [
+        {
+            "account_tag": str(r.get("account_tag") or ""),
+            "title": r.get("title") or "",
+            "views": int(r.get("total_views") or 0),
+            "vpd": int(r.get("daily_views") or 0),
+            "pub": str(r.get("published_at") or "")[:10],
+            "day": str(r.get("day") or "")[:10],
+            "vid": str(r.get("video_id") or ""),
+            "source": "content_daily",
+        }
+        for r in rows
+    ]
+
+
 def _pack_wl(wid: str) -> dict:
     """Đóng gói dữ liệu 1 WL cho summary."""
     import time as _t
@@ -211,6 +305,8 @@ def _pack_wl(wid: str) -> dict:
         "subs_delta_7d": 0,
         "views_delta_7d": 0,
         "avg_daily_views_7d": 0,  # View/ngày KÊNH TB 7 ngày cuối từ SB
+        "revenue_7d": None,
+        "revenue_days": 0,
         "top_videos_today": [],   # video kênh chính tăng mạnh hôm nay
         "latest_videos": [],       # 3 video mới nhất (page Overview) — expand UI
         "account_tag": "",         # map kênh chính → account_tag (Overview/Inside)
@@ -314,6 +410,17 @@ def _pack_wl(wid: str) -> dict:
     except Exception as e:
         pass  # silent fallback to SB
 
+    try:
+        from .analytics_inside import get_revenue_summary
+        if account_tag:
+            rev = get_revenue_summary(account_tag, recent_days=7, latest_available_days=True)
+            if rev:
+                info["revenue_7d"] = float(rev.get("total_revenue") or 0)
+                info["revenue_days"] = int(rev.get("days_with_data") or 0)
+                info["avg_rpm_7d"] = float(rev.get("avg_rpm") or 0)
+    except Exception:
+        pass
+
     # Top video hôm nay của kênh chính (sort theo views/ngày GẦN ĐÂY)
     # Ưu tiên: tính delta views vs kỳ trước → mới chính xác view/ngày hiện tại.
     # Fallback: nếu video MỚI ĐĂNG ≤14 ngày → dùng lifetime (cũng ≈ recent).
@@ -361,6 +468,9 @@ def _pack_wl(wid: str) -> dict:
             continue
     today_vids.sort(key=lambda v: v["vpd"], reverse=True)
     info["top_videos_today"] = today_vids[:3]
+    content_daily_top = _content_daily_top_videos([account_tag], limit=3)
+    if content_daily_top:
+        info["top_videos_today"] = content_daily_top
 
     # 3 video MỚI NHẤT — ưu tiên data page Overview (bảng video_overview,
     # data chính chủ của kênh). Fallback scrape ngách nếu chưa map account_tag.
@@ -419,6 +529,35 @@ def _pack_wl(wid: str) -> dict:
 
 def _collect_cross_niche_videos(wl_data: list, top_n: int = 15) -> list:
     """Top video bùng nổ TOÀN CÔNG TY (cross-niche). Sort theo vpd."""
+    account_tags = [
+        w.get("account_tag")
+        for w in (wl_data or [])
+        if w and w.get("account_tag")
+    ]
+    content_daily = _content_daily_top_videos(account_tags, limit=top_n)
+    if content_daily:
+        by_tag = {
+            w.get("account_tag"): w
+            for w in (wl_data or [])
+            if w and w.get("account_tag")
+        }
+        out = []
+        for v in content_daily:
+            w = by_tag.get(v.get("account_tag")) or {}
+            out.append({
+                "title": v["title"],
+                "views": v["views"],
+                "vpd": v["vpd"],
+                "pub": v["pub"],
+                "day": v["day"],
+                "channel": w.get("self_title") or v.get("account_tag") or "",
+                "wl_name": w.get("name") or "",
+                "wid": w.get("wid") or "",
+                "video_id": v.get("vid", ""),
+                "source": "content_daily",
+            })
+        return out[:top_n]
+
     all_vids = []
     for w in wl_data:
         if not w:

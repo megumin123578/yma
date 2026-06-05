@@ -60,6 +60,15 @@ const fmtAvgDur = (avgSec, totalSec) => {
   return `${fmtDur(avg)}${pct}`;
 };
 
+const fmtMoney = (value) => {
+  if (value == null || value === "") return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(Number(value) || 0);
+};
+
 // Mini stat cho header chart retention.
 const RetStat = ({ label, value, color }) => (
   <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -533,11 +542,11 @@ const SummaryReport = () => {
           <Table stickyHeader size="small">
             <TableHead>
               <TableRow>
-                {["", "Kênh chính", "Subs", "Δ Subs 7d", "Δ Views 7d", "View/ngày TB", "Video hot nhất"].map(
+                {["", "Kênh chính", "Subs", "Δ Subs 7d", "Δ Views 7d", "View/ngày TB", "Revenue"].map(
                   (h, i) => (
                     <TableCell
                       key={i}
-                      align={i >= 2 && i <= 5 ? "right" : "left"}
+                      align={i >= 2 ? "right" : "left"}
                       sx={{ fontWeight: 700, whiteSpace: "nowrap", bgcolor: theme.palette.background.paper }}
                     >
                       {h}
@@ -550,7 +559,6 @@ const SummaryReport = () => {
               {wlRows.map((r) => {
                 const open = expandedWid === r.wid;
                 const vids = r.latest_videos || [];
-                const top = (r.top_videos_today || [])[0];
                 return (
                   <Fragment key={r.wid}>
                     <TableRow
@@ -591,19 +599,10 @@ const SummaryReport = () => {
                       <TableCell align="right">{Delta(r.subs_delta_7d)}</TableCell>
                       <TableCell align="right">{Delta(r.views_delta_7d)}</TableCell>
                       <TableCell align="right">{num(r.avg_daily_views_7d)}</TableCell>
-                      <TableCell>
-                        {top ? (
-                          <Box>
-                            <Typography variant="body2" noWrap sx={{ maxWidth: 260 }} title={top.title}>
-                              {top.title}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              ~{num(top.vpd)} view/ngày
-                            </Typography>
-                          </Box>
-                        ) : (
-                          <Typography variant="body2" color="text.secondary">—</Typography>
-                        )}
+                      <TableCell align="right">
+                        <Typography variant="body2" fontWeight={700}>
+                          {fmtMoney(r.revenue_7d)}
+                        </Typography>
                       </TableCell>
                     </TableRow>
                     <TableRow>
@@ -757,7 +756,7 @@ const SummaryReport = () => {
       {tab === "topvideos" && (
       <SectionCard
         title="Top video nổi bật toàn công ty"
-        subtitle="Video bùng nổ xuyên ngách"
+        subtitle="Dựa trên views theo ngày mới nhất có dữ liệu trong Content page"
         action={topVideos.length ? <Chip size="small" variant="outlined" label={`${topVideos.length} video`} /> : null}
       >
         {topVideos.length ? (
@@ -806,8 +805,9 @@ const SummaryReport = () => {
                   </Box>
                 ),
               },
+              { key: "day", label: "Ngày data", render: (r) => r.day || "—" },
               { key: "views", label: "Views", align: "right", render: (r) => num(r.views) },
-              { key: "vpd", label: "View/ngày", align: "right", render: (r) => (r.vpd ? num(r.vpd) : "—") },
+              { key: "vpd", label: "Views ngày", align: "right", render: (r) => (r.vpd ? num(r.vpd) : "—") },
               {
                 key: "mult",
                 label: "Outlier",

@@ -426,7 +426,8 @@ def get_summary(
     snapshots = summary_report.list_snapshots()
 
     def _with_meta(data: dict, sid: str) -> dict:
-        out = dict(summary_report.enrich_summary_video_durations(data))
+        out = summary_report.enrich_summary_video_durations(data)
+        out = dict(summary_report.enrich_summary_revenue(out))
         out["snapshot_id"] = sid
         out["snapshots"] = snapshots
         return out

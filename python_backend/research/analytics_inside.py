@@ -468,7 +468,8 @@ def last_thumbnail_day(account_tag: str) -> str:
 # ============================================================
 
 def get_revenue_summary(account_tag: str,
-                        recent_days: int = 30) -> Dict[str, Any]:
+                        recent_days: int = 30,
+                        latest_available_days: bool = False) -> Dict[str, Any]:
     """Tổng hợp revenue. CHỈ gọi khi cần (app desktop, KHÔNG báo cáo public).
 
     Returns:
@@ -480,13 +481,28 @@ def get_revenue_summary(account_tag: str,
         return {}
     try:
         with eng.connect() as conn:
-            row = conn.execute(text(
-                "SELECT SUM(estimated_revenue), SUM(ad_revenue), "
-                "AVG(rpm), AVG(cpm), SUM(monetized_playbacks), COUNT(*) "
-                "FROM revenue_daily "
-                "WHERE account_tag = :tag "
-                "AND day >= CURRENT_DATE - (:days * INTERVAL '1 day')"),
-                {"tag": account_tag, "days": recent_days}).fetchone()
+            if latest_available_days:
+                row = conn.execute(text(
+                    """
+                    SELECT SUM(estimated_revenue), SUM(ad_revenue),
+                           AVG(rpm), AVG(cpm), SUM(monetized_playbacks), COUNT(*)
+                    FROM (
+                        SELECT estimated_revenue, ad_revenue, rpm, cpm, monetized_playbacks
+                        FROM revenue_daily
+                        WHERE account_tag = :tag
+                        ORDER BY day DESC
+                        LIMIT :days
+                    ) recent_revenue
+                    """),
+                    {"tag": account_tag, "days": recent_days}).fetchone()
+            else:
+                row = conn.execute(text(
+                    "SELECT SUM(estimated_revenue), SUM(ad_revenue), "
+                    "AVG(rpm), AVG(cpm), SUM(monetized_playbacks), COUNT(*) "
+                    "FROM revenue_daily "
+                    "WHERE account_tag = :tag "
+                    "AND day >= CURRENT_DATE - (:days * INTERVAL '1 day')"),
+                    {"tag": account_tag, "days": recent_days}).fetchone()
         if not row or row[0] is None:
             return {}
         return {
