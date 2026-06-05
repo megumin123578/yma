@@ -231,6 +231,31 @@ def _channel_dto(c, connected=None, meta=None) -> dict:
     }
 
 
+def _enrich_report_channel_meta(data: dict) -> dict:
+    """Fill tổng views/video từ metadata cache/API khi snapshot còn 0.
+
+    Snapshot PostgreSQL hiện lưu payload `ChannelInfo.view_count/video_count`
+    theo scraper; nhiều kênh có 2 field này = 0. Metadata này đã có sẵn qua
+    channels.list cache nên dùng làm fallback cho card report. Subscribers giữ
+    nguyên từ snapshot PostgreSQL.
+    """
+    if not isinstance(data, dict):
+        return data
+    channels = []
+    for ch in [data.get("self")] + list(data.get("competitors") or []):
+        if isinstance(ch, dict) and ch.get("channel_id"):
+            channels.append(ch)
+    ids = [ch["channel_id"] for ch in channels]
+    meta = _channel_meta_map(ids)
+    for ch in channels:
+        m = meta.get(ch.get("channel_id")) or {}
+        if not ch.get("total_views") and m.get("totalViews") is not None:
+            ch["total_views"] = int(m.get("totalViews") or 0)
+        if not ch.get("ch_vcount") and m.get("totalVideos") is not None:
+            ch["ch_vcount"] = int(m.get("totalVideos") or 0)
+    return data
+
+
 def prewarm_research_caches() -> None:
     """Prewarm model viral + report mặc định trong thread nền.
 
@@ -277,7 +302,7 @@ def prewarm_research_caches() -> None:
                 if hit and (time.monotonic() - hit[0]) < _REPORT_TTL:
                     return
             t0 = time.perf_counter()
-            data = build_data(wid)
+            data = _enrich_report_channel_meta(build_data(wid))
             if data:
                 with _cache_lock:
                     _report_cache[cache_key] = (time.monotonic(), data)
@@ -406,6 +431,7 @@ def get_report(
     t0 = time.perf_counter()
     try:
         data = build_data(wid, as_of_day=date)
+        data = _enrich_report_channel_meta(data)
     except Exception as e:  # noqa: BLE001
         print(f"[research] build_data loi wid={wid}: {e}")
         raise HTTPException(status_code=500, detail=f"build_data failed: {e}")

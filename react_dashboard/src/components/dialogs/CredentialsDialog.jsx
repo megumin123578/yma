@@ -3831,6 +3831,7 @@ const CredentialsDialog = ({
                             const tokenName = formatTokenName(run.token_name);
                             const runType = formatRunType(run.run_type);
                             const runMessage = cleanError(run.message);
+                            const runItems = Array.isArray(run.items) ? run.items : [];
                             return (
                               <Box
                                 key={run.id}
@@ -3970,6 +3971,68 @@ const CredentialsDialog = ({
                                         transition: "width 200ms ease",
                                       }}
                                     />
+                                  </Box>
+                                )}
+                                {runItems.length > 0 && (
+                                  <Box display="flex" flexDirection="column" gap={0.5} mt={0.5}>
+                                    {runItems.map((item) => {
+                                      const itemStatus = normalizeRunStatus(item.status);
+                                      const itemStyles = statusStyles(itemStatus);
+                                      const label =
+                                        item.channel_title ||
+                                        item.account_tag ||
+                                        item.token_name ||
+                                        "Channel";
+                                      const itemMessage = cleanError(item.message);
+                                      return (
+                                        <Box
+                                          key={item.id || `${run.id}-${item.token_name}`}
+                                          display="flex"
+                                          alignItems="center"
+                                          justifyContent="space-between"
+                                          gap={1}
+                                          sx={{
+                                            px: 1,
+                                            py: 0.5,
+                                            borderRadius: 1,
+                                            bgcolor: isDark
+                                              ? "rgba(255,255,255,0.04)"
+                                              : "rgba(15,23,42,0.035)",
+                                          }}
+                                        >
+                                          <Typography variant="caption" noWrap title={label}>
+                                            {label}
+                                          </Typography>
+                                          <Box display="flex" alignItems="center" gap={0.75} minWidth={0}>
+                                            {itemMessage && itemStatus !== "done" && (
+                                              <Typography
+                                                variant="caption"
+                                                color="text.secondary"
+                                                noWrap
+                                                title={itemMessage}
+                                                sx={{ maxWidth: 220 }}
+                                              >
+                                                {itemMessage}
+                                              </Typography>
+                                            )}
+                                            <Box
+                                              sx={{
+                                                px: 0.75,
+                                                py: 0.15,
+                                                borderRadius: 999,
+                                                fontSize: 11,
+                                                fontWeight: 700,
+                                                textTransform: "uppercase",
+                                                bgcolor: itemStyles.bg,
+                                                color: itemStyles.fg,
+                                              }}
+                                            >
+                                              {itemStatus}
+                                            </Box>
+                                          </Box>
+                                        </Box>
+                                      );
+                                    })}
                                   </Box>
                                 )}
                               </Box>

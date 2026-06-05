@@ -35,6 +35,7 @@ from .common import (
     router,
     _ALLOWED_RUN_STAGES,
     _UNASSIGNED_PROJECT_GROUP,
+    _create_schedule_run_items,
     _fetch_selected_channel_metadata,
     _find_owned_credential_by_identifier,
     _is_admin_user,
@@ -447,6 +448,8 @@ def run_all_tokens(
     db.add(run)
     db.commit()
     db.refresh(run)
+    _create_schedule_run_items(db, run, token_names, message=run_message)
+    db.commit()
     env_extra = {
         "SCHEDULE_RUN_ID": str(run.id),
         "RUN_TOKEN_NAMES": json.dumps(token_names),
@@ -666,6 +669,8 @@ def run_token(
     db.add(run)
     db.commit()
     db.refresh(run)
+    _create_schedule_run_items(db, run, [safe_name], message="Queued manual refresh")
+    db.commit()
     _kickoff_get_data(account_tag, env_extra={"SCHEDULE_RUN_ID": str(run.id)})
     return {"ok": True, "run_id": run.id}
 
@@ -746,6 +751,13 @@ def run_selected_tokens(
     db.add(run)
     db.commit()
     db.refresh(run)
+    _create_schedule_run_items(
+        db,
+        run,
+        token_names,
+        message=f"Queued manual refresh for {len(token_names)} selected token(s)",
+    )
+    db.commit()
     _kickoff_get_data(
         "",
         env_extra={
@@ -797,6 +809,8 @@ def run_token_stage(
     db.add(run)
     db.commit()
     db.refresh(run)
+    _create_schedule_run_items(db, run, [safe_name], message=f"Queued manual {stage}")
+    db.commit()
     _kickoff_get_data(
         account_tag,
         env_extra={"SCHEDULE_RUN_ID": str(run.id), "RUN_STAGE": stage},
@@ -927,4 +941,3 @@ def delete_token(
     db.commit()
     _purge_postgres_account(base_name)
     return {"ok": True}
-

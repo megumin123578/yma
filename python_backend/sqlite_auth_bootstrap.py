@@ -99,6 +99,44 @@ def ensure_user_schedule_run_columns(db_engine: Engine) -> None:
             )
 
 
+def ensure_user_schedule_run_items_table(db_engine: Engine) -> None:
+    with db_engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE IF NOT EXISTS user_schedule_run_items (
+                id INTEGER PRIMARY KEY,
+                run_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                token_name VARCHAR NOT NULL,
+                account_tag VARCHAR,
+                channel_title VARCHAR,
+                status VARCHAR NOT NULL DEFAULT 'queued',
+                stage VARCHAR,
+                percent INTEGER NOT NULL DEFAULT 0,
+                message TEXT,
+                started_at DATETIME,
+                finished_at DATETIME,
+                updated_at DATETIME NOT NULL
+            );
+            """
+        )
+        conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_schedule_run_item_token ON user_schedule_run_items(run_id, token_name);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_schedule_run_items_run ON user_schedule_run_items(run_id);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_schedule_run_items_user ON user_schedule_run_items(user_id);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_schedule_run_items_token ON user_schedule_run_items(token_name);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS idx_schedule_run_items_status ON user_schedule_run_items(status);"
+        )
+
+
 def ensure_user_smmstore_column(db_engine: Engine) -> None:
     with db_engine.begin() as conn:
         columns = conn.exec_driver_sql("PRAGMA table_info(users)").fetchall()
@@ -682,6 +720,7 @@ def ensure_sqlite_auth_state(db_engine: Engine) -> None:
     ensure_video_live_counter_snapshots_channel_name(db_engine)
     ensure_mail_accounts_channel_name(db_engine)
     ensure_user_schedule_run_columns(db_engine)
+    ensure_user_schedule_run_items_table(db_engine)
     ensure_user_smmstore_column(db_engine)
     ensure_user_credential_group_column(db_engine)
     ensure_user_credential_project_column(db_engine)

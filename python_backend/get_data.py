@@ -271,6 +271,109 @@ def _update_schedule_run(status: str, processed=None, total=None, message: str =
                 conn.close()
 
 
+def _update_schedule_run_item(
+    token_name: str,
+    status: str,
+    stage: str = "",
+    percent=None,
+    message: str = "",
+) -> None:
+    run_id = os.getenv("SCHEDULE_RUN_ID")
+    if not run_id or not token_name:
+        return
+
+    token_name = _resolve_token_file(token_name)
+    account_tag = account_tag_from_token_name(token_name)
+    next_status = str(status or "").strip().lower()
+    final_statuses = {"done", "error", "stopped", "canceled", "skipped"}
+    now = (
+        datetime.now(timezone(timedelta(hours=7)))
+        .replace(tzinfo=None)
+        .isoformat(sep=" ")
+    )
+    started_at = now if next_status == "running" else None
+    finished_at = now if next_status in final_statuses else None
+
+    attempts = 3
+    for attempt in range(attempts):
+        conn = None
+        try:
+            conn = _connect_auth_db()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO user_schedule_run_items
+                  (run_id, user_id, token_name, account_tag, channel_title, status, percent, message, updated_at)
+                SELECT ?, user_id, ?, ?, ?, 'queued', 0, '', ?
+                FROM user_schedule_runs
+                WHERE id = ?
+                """,
+                (int(run_id), token_name, account_tag, account_tag, now, int(run_id)),
+            )
+            cur.execute(
+                "SELECT status FROM user_schedule_run_items WHERE run_id = ? AND token_name = ?",
+                (int(run_id), token_name),
+            )
+            row = cur.fetchone()
+            current_status = str(row[0] or "").strip().lower() if row else ""
+            if current_status in final_statuses and current_status != next_status:
+                conn.commit()
+                return
+            cur.execute(
+                """
+                UPDATE user_schedule_run_items
+                SET status = ?,
+                    stage = COALESCE(?, stage),
+                    percent = COALESCE(?, percent),
+                    message = ?,
+                    started_at = COALESCE(started_at, ?),
+                    finished_at = COALESCE(?, finished_at),
+                    updated_at = ?
+                WHERE run_id = ? AND token_name = ?
+                """,
+                (
+                    next_status,
+                    stage or None,
+                    percent,
+                    message,
+                    started_at,
+                    finished_at,
+                    now,
+                    int(run_id),
+                    token_name,
+                ),
+            )
+            conn.commit()
+            return
+        except Exception as exc:
+            message_text = str(exc).lower()
+            if "locked" in message_text and attempt < attempts - 1:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            return
+        finally:
+            if conn is not None:
+                conn.close()
+
+
+def _schedule_run_item_is_final(token_name: str) -> bool:
+    run_id = os.getenv("SCHEDULE_RUN_ID")
+    if not run_id or not token_name:
+        return False
+    try:
+        conn = _connect_auth_db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT status FROM user_schedule_run_items WHERE run_id = ? AND token_name = ?",
+            (int(run_id), _resolve_token_file(token_name)),
+        )
+        row = cur.fetchone()
+        conn.close()
+        return bool(row and str(row[0] or "").strip().lower() in {"done", "error", "stopped", "canceled", "skipped"})
+    except Exception:
+        return False
+
+
 def _has_aggregate_token_scope() -> bool:
     return bool(_resolve_token_list(os.getenv("RUN_TOKEN_NAMES", "")))
 
@@ -382,8 +485,18 @@ class _RunLock:
 
 def _run_credential_with_lock(cred_file: str) -> str:
     account_tag = account_tag_from_token_name(cred_file)
-    with _RunLock(account_tag):
-        _run_for_credential(cred_file)
+    try:
+        with _RunLock(account_tag):
+            _update_schedule_run_item(cred_file, "running", percent=0, message="Running")
+            _run_for_credential(cred_file)
+            if not _schedule_run_item_is_final(cred_file):
+                _update_schedule_run_item(cred_file, "done", percent=100, message="Completed")
+    except Exception as exc:
+        if str(exc) == "Stop requested":
+            _update_schedule_run_item(cred_file, "stopped", message="Stopped by admin")
+        else:
+            _update_schedule_run_item(cred_file, "error", message=str(exc))
+        raise
     return account_tag
 
 
@@ -409,6 +522,13 @@ def _run_for_credential(cred_file: str) -> None:
             0,
             "idle",
             "Select a channel before running.",
+        )
+        _update_schedule_run_item(
+            cred_file,
+            "skipped",
+            stage="waiting_channel",
+            percent=0,
+            message="Select a channel before running.",
         )
         return
 

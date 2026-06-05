@@ -254,6 +254,7 @@ def _pack(res, wc, inside_ci=None):
                             ][:6]})
     return {
         "has": True,
+        "channel_id": getattr(ch, "channel_id", "") or "",
         "title": getattr(ch, "title", "") or "",
         "subs": int(getattr(ch, "subscriber_count", 0) or 0),
         "url": getattr(ch, "url", "") or "",

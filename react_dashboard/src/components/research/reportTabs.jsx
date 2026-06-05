@@ -363,7 +363,7 @@ const kwCols = [
 ];
 
 // ---------- channel block (self + competitors) ----------
-const ChannelBlock = ({ ch, defaultOpen = false }) => {
+const ChannelBlock = ({ ch, defaultOpen = false, showUrl = true }) => {
   if (!ch) return null;
   if (!ch.has) {
     return (
@@ -377,7 +377,7 @@ const ChannelBlock = ({ ch, defaultOpen = false }) => {
   return (
     <SectionCard
       title={ch.title}
-      subtitle={ch.url}
+      subtitle={showUrl ? ch.url : ""}
       action={ch.auto_added ? <Pill label="Mới kết nạp" color="info" /> : null}
     >
       <StatGrid
@@ -451,12 +451,12 @@ const ChannelBlock = ({ ch, defaultOpen = false }) => {
               columns={
                 sb.source === "inside_api"
                   ? [
-                      { key: "d", label: "Ngày" },
+                      { key: "d", label: "Ngày", render: (r) => dmy(r.d) },
                       { key: "sc", label: "ĐK +/-", align: "right", render: (r) => sg(r.sc) },
                       { key: "vc", label: "Xem +/-", align: "right", render: (r) => sg(r.vc) },
                     ]
                   : [
-                      { key: "d", label: "Ngày" },
+                      { key: "d", label: "Ngày", render: (r) => dmy(r.d) },
                       { key: "s", label: "Người ĐK", align: "right", render: (r) => num(r.s) },
                       { key: "sc", label: "ĐK +/-", align: "right", render: (r) => sg(r.sc) },
                       { key: "v", label: "Tổng xem", align: "right", render: (r) => num(r.v) },
@@ -885,7 +885,7 @@ export const TABS = [
     label: "Kênh chính",
     render: (d) => (
       <>
-        <ChannelBlock ch={d.self} defaultOpen />
+        <ChannelBlock ch={d.self} defaultOpen showUrl={false} />
         {Array.isArray(d.video_track) && d.video_track.length > 0 && (
           <SectionCard title="📈 Diễn biến lượt xem video kênh chính">
             <DataTable

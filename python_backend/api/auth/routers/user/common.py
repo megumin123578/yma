@@ -19,7 +19,7 @@ from python_backend.api.auth.models import User, RivalChannel, RivalChannelGroup
 from python_backend.api.auth.auth_utils import get_current_user, get_current_user_optional, hash_password
 from python_backend.api.auth import schemas
 from python_backend.api.auth.schemas import UserMe, UserProfileUpdate
-from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun, TokenProgress, PasswordChangeRequest, SmmstoreAnalyticsCache, SmmstoreScheduledOrder, LiveCounterSnapshot, VideoLiveCounterSnapshot, OAuthState, MailOAuthState, PermissionAudit
+from python_backend.api.auth.models import UserHiddenChannel, UserSchedule, UserScheduleRun, UserScheduleRunItem, TokenProgress, PasswordChangeRequest, SmmstoreAnalyticsCache, SmmstoreScheduledOrder, LiveCounterSnapshot, VideoLiveCounterSnapshot, OAuthState, MailOAuthState, PermissionAudit
 from python_backend.api.auth.visibility import get_hidden_account_tags
 from python_backend.mail_gmail_api import (
     build_mail_oauth_flow,
@@ -554,6 +554,110 @@ def _run_channel_titles(db: Session, user_id: int, token_names: List[str]) -> Li
         if title:
             out.append(title)
     return out
+
+
+def _run_token_metadata(db: Session, user_id: int, token_names: List[str]) -> dict:
+    if not token_names:
+        return {}
+    rows = (
+        db.query(
+            UserCredential.token_name,
+            UserCredential.account_tag,
+            UserCredential.selected_channel_title,
+        )
+        .filter(
+            UserCredential.user_id == user_id,
+            UserCredential.token_name.in_(token_names),
+        )
+        .all()
+    )
+    return {
+        row.token_name: {
+            "account_tag": row.account_tag or account_tag_from_token_name(row.token_name),
+            "channel_title": row.selected_channel_title or row.account_tag or row.token_name,
+        }
+        for row in rows
+        if row.token_name
+    }
+
+
+def _create_schedule_run_items(
+    db: Session,
+    run: UserScheduleRun,
+    token_names: List[str],
+    status: str = "queued",
+    message: str = "",
+) -> None:
+    clean_token_names = [str(name or "").strip() for name in token_names if str(name or "").strip()]
+    if not clean_token_names or not run.id:
+        return
+
+    existing = {
+        row.token_name
+        for row in db.query(UserScheduleRunItem.token_name)
+        .filter(UserScheduleRunItem.run_id == run.id)
+        .all()
+    }
+    meta = _run_token_metadata(db, run.user_id, clean_token_names)
+    now = datetime.utcnow()
+    for token_name in clean_token_names:
+        if token_name in existing:
+            continue
+        item_meta = meta.get(token_name, {})
+        db.add(
+            UserScheduleRunItem(
+                run_id=run.id,
+                user_id=run.user_id,
+                token_name=token_name,
+                account_tag=item_meta.get("account_tag") or account_tag_from_token_name(token_name),
+                channel_title=item_meta.get("channel_title") or account_tag_from_token_name(token_name),
+                status=status,
+                percent=0,
+                message=message,
+                updated_at=now,
+            )
+        )
+
+
+def _serialize_schedule_run_items(db: Session, run_id: int) -> List[dict]:
+    rows = (
+        db.query(UserScheduleRunItem)
+        .filter(UserScheduleRunItem.run_id == run_id)
+        .order_by(UserScheduleRunItem.id.asc())
+        .all()
+    )
+    return [
+        {
+            "id": row.id,
+            "token_name": row.token_name,
+            "account_tag": row.account_tag,
+            "channel_title": row.channel_title,
+            "status": row.status,
+            "stage": row.stage,
+            "percent": row.percent,
+            "message": row.message,
+            "started_at": row.started_at.isoformat() if row.started_at else None,
+            "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+        for row in rows
+    ]
+
+
+def _remaining_run_token_names(db: Session, row: UserScheduleRun) -> List[str]:
+    items = (
+        db.query(UserScheduleRunItem)
+        .filter(UserScheduleRunItem.run_id == row.id)
+        .order_by(UserScheduleRunItem.id.asc())
+        .all()
+    )
+    if items:
+        return [
+            item.token_name
+            for item in items
+            if item.token_name and str(item.status or "").strip().lower() != "done"
+        ]
+    return _run_token_names_from_row(row)
 
 
 def _pick_primary_channel(credentials):

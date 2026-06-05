@@ -16,6 +16,7 @@ from python_backend.api.auth.models import (
     UserCredential,
     UserSchedule,
     UserScheduleRun,
+    UserScheduleRunItem,
     VideoLiveCounterSnapshot,
 )
 from sqlalchemy import func
@@ -29,9 +30,12 @@ from python_backend.api.auth.scheduler import _now_saigon_naive, mark_channel_ac
 from .common import (
     router,
     _ALLOWED_RUN_STAGES,
+    _create_schedule_run_items,
     _is_admin_user,
     _kickoff_get_data,
+    _remaining_run_token_names,
     _run_channel_titles,
+    _serialize_schedule_run_items,
     _run_token_names_from_row,
     _safe_token_name,
 )
@@ -96,6 +100,7 @@ def list_schedule_runs(
                 "token_names": r.token_names,
                 "run_type": r.run_type,
                 "channel_titles": _run_channel_titles(db, r.user_id, _run_token_names_from_row(r)),
+                "items": _serialize_schedule_run_items(db, r.id),
                 "status": r.status,
                 "processed": r.processed,
                 "total": r.total,
@@ -126,6 +131,7 @@ def _serialize_schedule_runs(limit: int) -> dict:
                     "token_names": r.token_names,
                     "run_type": r.run_type,
                     "channel_titles": _run_channel_titles(db, r.user_id, _run_token_names_from_row(r)),
+                    "items": _serialize_schedule_run_items(db, r.id),
                     "status": r.status,
                     "processed": r.processed,
                     "total": r.total,
@@ -207,6 +213,19 @@ def stop_schedule_run(
     row.message = "Stopped by admin"
     row.finished_at = _now_saigon_naive()
     db.add(row)
+    now = _now_saigon_naive()
+    db.query(UserScheduleRunItem).filter(
+        UserScheduleRunItem.run_id == row.id,
+        UserScheduleRunItem.status.in_(["queued", "running"]),
+    ).update(
+        {
+            "status": "stopped",
+            "message": "Stopped by admin",
+            "finished_at": now,
+            "updated_at": now,
+        },
+        synchronize_session=False,
+    )
     db.commit()
     return {"ok": True, "status": row.status}
 
@@ -227,9 +246,9 @@ def resume_schedule_run(
     if row.status in {"running", "queued"}:
         return {"ok": True, "status": row.status, "run_id": row.id}
 
-    token_names = _run_token_names_from_row(row)
+    token_names = _remaining_run_token_names(db, row)
     if not token_names:
-        raise HTTPException(status_code=400, detail="Run has no tokens to resume")
+        raise HTTPException(status_code=400, detail="Run has no remaining tokens to resume")
 
     valid_token_names = []
     for token_name in token_names:
@@ -238,7 +257,7 @@ def resume_schedule_run(
             continue
         if token_exists(safe_name):
             valid_token_names.append(safe_name)
-    valid_token_names = sorted(set(valid_token_names))
+    valid_token_names = list(dict.fromkeys(valid_token_names))
     if not valid_token_names:
         raise HTTPException(status_code=400, detail="No tokens available to resume")
 
@@ -253,7 +272,7 @@ def resume_schedule_run(
             write_progress(account_tag_from_token_name(token_name), "queued", 0, "queued", "Queued manual refresh")
         message = f"Queued manual refresh for {len(valid_token_names)} token(s)"
         new_run = UserScheduleRun(
-            user_id=current_user.id,
+            user_id=row.user_id,
             schedule_id=None,
             token_name=None,
             token_names=json.dumps(valid_token_names),
@@ -275,7 +294,7 @@ def resume_schedule_run(
             write_progress(account_tag_from_token_name(token_name), "queued", 0, "queued", f"Queued manual {stage}")
         message = f"Queued manual {stage} for {len(valid_token_names)} token(s)"
         new_run = UserScheduleRun(
-            user_id=current_user.id,
+            user_id=row.user_id,
             schedule_id=None,
             token_name=None,
             token_names=json.dumps(valid_token_names),
@@ -295,7 +314,7 @@ def resume_schedule_run(
             write_progress(account_tag_from_token_name(token_name), "queued", 0, "queued", "Queued manual refresh")
         message = f"Queued manual refresh for {len(valid_token_names)} selected token(s)"
         new_run = UserScheduleRun(
-            user_id=current_user.id,
+            user_id=row.user_id,
             schedule_id=None,
             token_name=None,
             token_names=json.dumps(valid_token_names),
@@ -318,7 +337,7 @@ def resume_schedule_run(
         write_progress(account_tag, "queued", 0, "queued", f"Manual {stage}")
         message = f"Queued manual {stage}"
         new_run = UserScheduleRun(
-            user_id=current_user.id,
+            user_id=row.user_id,
             schedule_id=None,
             token_name=token_name,
             token_names=json.dumps([token_name]),
@@ -330,13 +349,32 @@ def resume_schedule_run(
             message=message,
         )
         env_extra = {"RUN_STAGE": stage}
+    elif run_type == "scheduled":
+        for token_name in valid_token_names:
+            write_progress(account_tag_from_token_name(token_name), "queued", 0, "queued", "Queued scheduled resume")
+        message = f"Queued scheduled resume for {len(valid_token_names)} remaining token(s)"
+        new_run = UserScheduleRun(
+            user_id=row.user_id,
+            schedule_id=row.schedule_id,
+            token_name=valid_token_names[0] if len(valid_token_names) == 1 else None,
+            token_names=json.dumps(valid_token_names),
+            run_type="scheduled",
+            status="queued",
+            started_at=_now_saigon_naive(),
+            processed=0,
+            total=len(valid_token_names),
+            message=message,
+        )
+        env_extra = {
+            "RUN_TOKEN_NAMES": json.dumps(valid_token_names),
+        }
     else:
         token_name = valid_token_names[0]
         account_tag = account_tag_from_token_name(token_name)
         write_progress(account_tag, "queued", 0, "queued", "Manual refresh")
         message = "Queued manual refresh"
         new_run = UserScheduleRun(
-            user_id=current_user.id,
+            user_id=row.user_id,
             schedule_id=None,
             token_name=token_name,
             token_names=json.dumps([token_name]),
@@ -351,6 +389,8 @@ def resume_schedule_run(
     db.add(new_run)
     db.commit()
     db.refresh(new_run)
+    _create_schedule_run_items(db, new_run, _run_token_names_from_row(new_run), message=message)
+    db.commit()
     env_extra["SCHEDULE_RUN_ID"] = str(new_run.id)
     _kickoff_get_data(account_tag, env_extra=env_extra)
     return {"ok": True, "status": new_run.status, "run_id": new_run.id}

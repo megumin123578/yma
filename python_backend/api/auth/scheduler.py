@@ -18,6 +18,7 @@ from python_backend.api.auth.models import (
     UserCredential,
     UserSchedule,
     UserScheduleRun,
+    UserScheduleRunItem,
 )
 from python_backend.db import engine as analytics_engine
 from python_backend.mail_gmail_api import sync_mail_account
@@ -914,6 +915,21 @@ def _run_loop():
                 db.add(run)
                 db.commit()
                 db.refresh(run)
+                for token_name in token_names:
+                    db.add(
+                        UserScheduleRunItem(
+                            run_id=run.id,
+                            user_id=row.user_id,
+                            token_name=token_name,
+                            account_tag=account_tag_from_token_name(token_name),
+                            channel_title=account_tag_from_token_name(token_name),
+                            status="queued",
+                            percent=0,
+                            message="Queued by scheduler",
+                            updated_at=now_saigon,
+                        )
+                    )
+                db.commit()
                 if _RUNS_MAX > 0:
                     cutoff = (
                         db.query(UserScheduleRun.id)
@@ -923,6 +939,9 @@ def _run_loop():
                     )
                     if cutoff:
                         ids = [r[0] for r in cutoff]
+                        db.query(UserScheduleRunItem).filter(UserScheduleRunItem.run_id.in_(ids)).delete(
+                            synchronize_session=False
+                        )
                         db.query(UserScheduleRun).filter(UserScheduleRun.id.in_(ids)).delete(
                             synchronize_session=False
                         )

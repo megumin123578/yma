@@ -168,6 +168,27 @@ class UserScheduleRun(Base):
     message = Column(Text, nullable=True)
 
 
+class UserScheduleRunItem(Base):
+    __tablename__ = "user_schedule_run_items"
+    __table_args__ = (
+        UniqueConstraint("run_id", "token_name", name="uq_schedule_run_item_token"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_id = Column(Integer, ForeignKey("user_schedule_runs.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_name = Column(String, nullable=False, index=True)
+    account_tag = Column(String, nullable=True, index=True)
+    channel_title = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="queued", index=True)
+    stage = Column(String, nullable=True)
+    percent = Column(Integer, nullable=False, default=0)
+    message = Column(Text, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
 class TokenProgress(Base):
     __tablename__ = "token_progress"
     __table_args__ = (
