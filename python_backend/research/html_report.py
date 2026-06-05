@@ -443,7 +443,7 @@ def build_data(wid: str, as_of_day: str = "") -> dict:
         print(f"  WARN: title_pattern loi: {e}")
         data["title_pattern"] = None
 
-    # 2. Thumbnail Vision summary (đọc từ pkl nếu có, fallback heuristic
+    # 2. Thumbnail Vision summary (đọc từ snapshot nếu có, fallback heuristic
     # nếu chưa — chốt 23/05: KHÔNG để báo cáo trống tab)
     try:
         if self_res:
@@ -478,7 +478,7 @@ def build_data(wid: str, as_of_day: str = "") -> dict:
         data["ab_rescue"] = []
 
     # === Wave 2 modules ===
-    # 4. Comment Intelligence — đọc từ pkl, fallback heuristic nếu chưa
+    # 4. Comment Intelligence — đọc từ snapshot, fallback heuristic nếu chưa
     try:
         if self_res:
             ci = self_res.get("comment_intelligence")
@@ -530,74 +530,79 @@ def build_data(wid: str, as_of_day: str = "") -> dict:
         print(f"  WARN: posting_v2 loi: {e}")
         data["posting_v2"] = None
 
-    # 7. Viral Predictor — train + predict cho self_channel video gần đây
+    # 7. Viral Predictor — dùng model cache để predict cho self_channel video gần đây.
+    # Không train trong request: nếu chưa có model thì kích hoạt train nền và
+    # để tab viral tạm trống.
     try:
         from .viral_predictor import (
-            train_predictor, predict, collect_training_data)
+            ensure_fresh_async, get_cached_model, predict)
         if self_res and self_ch:
-            # Train (cached nếu đã có model trong runtime)
-            if not hasattr(build_data, "_viral_model"):
-                X, y = collect_training_data(log_fn=lambda s: None)
-                build_data._viral_model = train_predictor(X, y,
-                                                          log_fn=lambda s: None)
-            model = build_data._viral_model
-            sc_videos = self_res.get("videos") or []
-            ch = self_res.get("channel")
-            from statistics import median
-            vpds = [(getattr(v, "view_count", 0) or 0)
-                    / max(getattr(v, "days_old", 1) or 1, 1)
-                    for v in sc_videos]
-            vpds = [x for x in vpds if x > 0]
-            ch_med = median(vpds) if vpds else 1000
-            ch_subs = getattr(ch, "subscriber_count", 0) if ch else 0
-            # Predict cho top 5 video gần nhất
-            predictions = []
-            for v in sorted(sc_videos,
-                            key=lambda v: getattr(v, "published_at", ""),
-                            reverse=True)[:5]:
-                pub = getattr(v, "published_at", "") or ""
-                if not pub:
-                    continue
-                try:
-                    from datetime import datetime as _dt
-                    pdt = _dt.fromisoformat(pub.replace("Z", "+00:00"))
-                    hr = pdt.hour
-                    dw = pdt.weekday()
-                except Exception:
-                    continue
-                p = predict(model, ch_subs,
-                            getattr(v, "title", ""),
-                            getattr(v, "duration_seconds", 0) or 0,
-                            hr, dw, ch_med)
-                actual_vpd = ((getattr(v, "view_count", 0) or 0)
-                              / max(getattr(v, "days_old", 1) or 1, 1))
-                predictions.append({
-                    "title": getattr(v, "title", ""),
-                    "video_id": getattr(v, "video_id", ""),
-                    "predicted_vpd": p.get("predicted_vpd", 0),
-                    "actual_vpd": int(actual_vpd),
-                    "percentile_rank": p.get("percentile_rank", 0),
-                    "advice": p.get("advice", []),
-                })
-            data["viral_predictor"] = {
-                "model_r_squared": model.get("r_squared", 0),
-                "model_n_samples": model.get("n_samples", 0),
-                "predictions": predictions,
-            }
+            ensure_fresh_async()
+            model = get_cached_model()
+            if not model or "error" in model:
+                data["viral_predictor"] = None
+                data["viral_predictor_status"] = "training"
+            else:
+                sc_videos = self_res.get("videos") or []
+                ch = self_res.get("channel")
+                from statistics import median
+                vpds = [(getattr(v, "view_count", 0) or 0)
+                        / max(getattr(v, "days_old", 1) or 1, 1)
+                        for v in sc_videos]
+                vpds = [x for x in vpds if x > 0]
+                ch_med = median(vpds) if vpds else 1000
+                ch_subs = getattr(ch, "subscriber_count", 0) if ch else 0
+                # Predict cho top 5 video gần nhất
+                predictions = []
+                for v in sorted(sc_videos,
+                                key=lambda v: getattr(v, "published_at", ""),
+                                reverse=True)[:5]:
+                    pub = getattr(v, "published_at", "") or ""
+                    if not pub:
+                        continue
+                    try:
+                        from datetime import datetime as _dt
+                        pdt = _dt.fromisoformat(pub.replace("Z", "+00:00"))
+                        hr = pdt.hour
+                        dw = pdt.weekday()
+                    except Exception:
+                        continue
+                    p = predict(model, ch_subs,
+                                getattr(v, "title", ""),
+                                getattr(v, "duration_seconds", 0) or 0,
+                                hr, dw, ch_med)
+                    actual_vpd = ((getattr(v, "view_count", 0) or 0)
+                                  / max(getattr(v, "days_old", 1) or 1, 1))
+                    predictions.append({
+                        "title": getattr(v, "title", ""),
+                        "video_id": getattr(v, "video_id", ""),
+                        "predicted_vpd": p.get("predicted_vpd", 0),
+                        "actual_vpd": int(actual_vpd),
+                        "percentile_rank": p.get("percentile_rank", 0),
+                        "advice": p.get("advice", []),
+                    })
+                data["viral_predictor"] = {
+                    "model_r_squared": model.get("r_squared", 0),
+                    "model_n_samples": model.get("n_samples", 0),
+                    "predictions": predictions,
+                }
+                data["viral_predictor_status"] = "ready"
         else:
             data["viral_predictor"] = None
+            data["viral_predictor_status"] = "unavailable"
     except Exception as e:
         print(f"  WARN: viral_predictor loi: {e}")
         data["viral_predictor"] = None
+        data["viral_predictor_status"] = "error"
 
     # 8. Cross-WL Learning — opportunities (compute once toàn report, đắt)
     # → chỉ compute khi build report tổng hợp, tab này empty trong báo cáo WL
     # individual. Để placeholder cho tab summary sau.
 
-    # (Gộp yt_manage_app 2026-06): BỎ khối ghi ngược 5 field vào pkl self_channel.
+    # (Gộp yt_manage_app 2026-06): BỎ khối ghi ngược 5 field vào snapshot self_channel.
     # build_data() nay là READ-ONLY (server endpoint gọi mỗi lần xem báo cáo,
     # không được mutate dữ liệu). Khâu AI sẽ đọc các field này trực tiếp từ JSON
-    # ở Phase 5, không cần persist lại vào pkl.
+    # ở Phase 5, không cần persist lại vào snapshot.
 
     # Video đột biến toàn ngành — vượt >=3 lần view trung vị kênh đăng,
     # CHỈ video đăng ≤7 ngày gần nhất (chốt 21/05 — tránh outlier evergreen

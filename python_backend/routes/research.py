@@ -75,6 +75,8 @@ _procs_lock = Lock()
 _REPORT_TTL = 300  # giây
 _report_cache: dict[str, tuple[float, dict]] = {}
 _cache_lock = Lock()
+_prewarm_lock = Lock()
+_prewarm_started = False
 
 # Báo cáo SEO (Claude CLI) đang sinh nền: tập wid để chống bấm trùng.
 _seo_gen_lock = Lock()
@@ -169,7 +171,8 @@ def _watchlist_summary(w, connected=None, meta=None) -> dict:
     meta = meta if meta is not None else {}
     self_ch = w.self_channel
     self_tag = connected.get(self_ch.channel_id) if self_ch else None
-    avatar = (meta.get(self_ch.channel_id, {}) or {}).get("avatar", "") if self_ch else ""
+    self_meta = (meta.get(self_ch.channel_id, {}) or {}) if self_ch else {}
+    avatar = self_meta.get("avatar", "")
     return {
         "id": w.id,
         "name": w.name,
@@ -178,6 +181,8 @@ def _watchlist_summary(w, connected=None, meta=None) -> dict:
         "paused": bool(getattr(w, "paused", False)),
         "pausedReason": getattr(w, "paused_reason", ""),
         "avatar": avatar,
+        "subs": int(self_meta.get("subs", 0) or 0),
+        "totalViews": int(self_meta.get("totalViews", 0) or 0),
         "selfChannel": {
             "channelId": self_ch.channel_id,
             "title": self_ch.title,
@@ -200,6 +205,8 @@ def list_watchlists(current_user=Depends(get_current_user_optional)):
     self_ids = [w.self_channel.channel_id for w in wls if w.self_channel]
     meta = _channel_meta_map(self_ids)
     items = [_watchlist_summary(w, connected, meta) for w in wls]
+    # Kênh nhiều sub / view đứng trước.
+    items.sort(key=lambda it: (it.get("subs", 0), it.get("totalViews", 0)), reverse=True)
     add_log(f"[H] research/watchlists: {(time.perf_counter() - t0) * 1000:.1f}ms n={len(items)}")
     return {"items": items}
 
@@ -222,6 +229,64 @@ def _channel_dto(c, connected=None, meta=None) -> dict:
         "totalViews": m.get("totalViews"),
         "totalVideos": m.get("totalVideos"),
     }
+
+
+def prewarm_research_caches() -> None:
+    """Prewarm model viral + report mặc định trong thread nền.
+
+    Không block startup/request. Frontend mặc định mở watchlist đầu tiên, nên
+    cache report đầu tiên đủ để tránh lần mở trang đầu phải tự build lạnh.
+    """
+    global _prewarm_started
+    with _prewarm_lock:
+        if _prewarm_started:
+            return
+        _prewarm_started = True
+
+    def _worker():
+        try:
+            from python_backend.research.viral_predictor import train_and_cache
+            train_and_cache(force=False, log_fn=lambda s: None)
+        except Exception as e:  # noqa: BLE001
+            print(f"[research prewarm] viral model loi: {e}")
+
+        try:
+            from python_backend.research import watchlist as wlmod
+            from python_backend.research.html_report import build_data
+
+            wls = [w for w in wlmod.list_watchlists()
+                   if not bool(getattr(w, "paused", False))]
+            if not wls:
+                return
+            self_ids = [w.self_channel.channel_id for w in wls
+                        if getattr(w, "self_channel", None)]
+            meta = _channel_meta_map(self_ids)
+            wls.sort(
+                key=lambda w: (
+                    int((meta.get(w.self_channel.channel_id, {}) or {})
+                        .get("subs", 0) or 0) if w.self_channel else 0,
+                    int((meta.get(w.self_channel.channel_id, {}) or {})
+                        .get("totalViews", 0) or 0) if w.self_channel else 0,
+                ),
+                reverse=True,
+            )
+            wid = wls[0].id
+            cache_key = f"{wid}|"
+            with _cache_lock:
+                hit = _report_cache.get(cache_key)
+                if hit and (time.monotonic() - hit[0]) < _REPORT_TTL:
+                    return
+            t0 = time.perf_counter()
+            data = build_data(wid)
+            if data:
+                with _cache_lock:
+                    _report_cache[cache_key] = (time.monotonic(), data)
+                print("[research prewarm] report "
+                      f"wid={wid} {(time.perf_counter() - t0) * 1000:.1f}ms")
+        except Exception as e:  # noqa: BLE001
+            print(f"[research prewarm] report loi: {e}")
+
+    Thread(target=_worker, daemon=True, name="research-prewarm").start()
 
 
 class WatchlistCreate(BaseModel):
@@ -348,8 +413,9 @@ def get_report(
         raise HTTPException(status_code=404, detail="Watchlist not found or no data")
 
     add_log(f"[H] research/report build wid={wid} date={date}: {(time.perf_counter() - t0) * 1000:.1f}ms")
-    with _cache_lock:
-        _report_cache[cache_key] = (now, data)
+    if data.get("viral_predictor_status") != "training":
+        with _cache_lock:
+            _report_cache[cache_key] = (now, data)
     return data
 
 

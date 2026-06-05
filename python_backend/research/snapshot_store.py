@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """snapshot_store.py — Backend lưu snapshot cào (result dict) vào PostgreSQL.
 
-Thay dần file pkl (~/.youtube_research/history/*.pkl). Đây CHỈ là tầng lưu
-trữ độc lập — chưa wire vào pipeline; persistence.py sẽ delegate sang đây ở
-bước sau (centralize-then-swap).
+Đây là backend snapshot hiện tại của `persistence.py`, thay cho lịch sử file
+pkl cũ (~/.youtube_research/history/*.pkl).
 
 result dict chứa object sống: ChannelInfo / VideoInfo / KeywordEntry. Serializer
 gắn thẻ `__type__` khi ghi JSON và rehydrate lại object khi đọc → giữ nguyên

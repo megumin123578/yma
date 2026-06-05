@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Viral Score Predictor — dự đoán views/day cho video chưa upload.
 
-Train từ data lịch sử (pkl history): linear regression với numpy.lstsq.
+Train từ dữ liệu snapshot lịch sử trong PostgreSQL: linear regression với
+numpy.lstsq.
 Output: predicted views/day + percentile so với median channel.
 
 Features (numeric):
@@ -86,7 +87,7 @@ def _video_to_features(video, channel_subs: int,
 
 def collect_training_data(wl_ids: Optional[list] = None,
                            log_fn: Callable[[str], None] = print) -> tuple:
-    """Lấy training data từ pkl history của tất cả channel.
+    """Lấy training data từ snapshot history của tất cả channel.
 
     Returns: (X, y) numpy arrays.
         X: shape (n_samples, n_features)
@@ -101,7 +102,7 @@ def collect_training_data(wl_ids: Optional[list] = None,
 
     X_rows = []
     y_rows = []
-    n_pkl = 0
+    n_snapshots = 0
     n_skip = 0
     seen_video = set()
 
@@ -118,7 +119,7 @@ def collect_training_data(wl_ids: Optional[list] = None,
                 if d is None:
                     n_skip += 1
                     continue
-                n_pkl += 1
+                n_snapshots += 1
                 ch = d.get("channel")
                 vids = d.get("videos") or []
                 if not ch or not vids:
@@ -153,7 +154,7 @@ def collect_training_data(wl_ids: Optional[list] = None,
                     X_rows.append(feats)
                     y_rows.append(math.log10(vpd + 1))
 
-    log_fn(f"  📊 training data: {len(X_rows)} samples from {n_pkl} pkls "
+    log_fn(f"  📊 training data: {len(X_rows)} samples from {n_snapshots} snapshots "
            f"({n_skip} skip)")
     if not X_rows:
         return None, None
@@ -204,6 +205,113 @@ def train_predictor(X=None, y=None, wl_ids: Optional[list] = None,
         "r_squared": float(r_squared),
         "percentiles": pcts,
     }
+
+
+import json as _json
+import time as _time
+from pathlib import Path as _Path
+from threading import Lock as _Lock, Thread as _Thread
+
+_MODEL_PATH = _Path.home() / ".youtube_research" / "viral_model.json"
+_MODEL_TTL = 6 * 3600  # 6h — data đổi sau mỗi run, retrain nền định kỳ
+_model_cache = {"model": None, "ts": 0.0}
+_model_lock = _Lock()
+_training = False
+
+
+def _load_persisted() -> tuple:
+    try:
+        if _MODEL_PATH.exists():
+            raw = _json.loads(_MODEL_PATH.read_text(encoding="utf-8"))
+            m = raw.get("model")
+            if m:
+                return m, float(raw.get("ts") or 0)
+    except Exception:
+        pass
+    return None, 0.0
+
+
+def _save_persisted(model: dict, ts: float) -> None:
+    try:
+        _MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _MODEL_PATH.with_suffix(".tmp")
+        tmp.write_text(_json.dumps({"model": model, "ts": ts}),
+                       encoding="utf-8")
+        tmp.replace(_MODEL_PATH)
+    except Exception as e:
+        print(f"[viral] save model loi: {e}")
+
+
+def get_cached_model(max_age_sec: int = _MODEL_TTL) -> Optional[dict]:
+    """Model đã train (in-mem → đĩa). KHÔNG train (không block request).
+
+    Trả model kể cả khi cũ (stale) — vẫn tốt hơn rỗng; `ensure_fresh_async`
+    sẽ refresh nền. None khi chưa từng train.
+    """
+    with _model_lock:
+        if _model_cache["model"] is not None:
+            return _model_cache["model"]
+    m, ts = _load_persisted()
+    if m is not None:
+        with _model_lock:
+            _model_cache["model"] = m
+            _model_cache["ts"] = ts
+    return m
+
+
+def train_and_cache(force: bool = False, log_fn: Callable = print) -> Optional[dict]:
+    """Train model + lưu (đĩa + in-mem). Guard: chỉ 1 lần train đồng thời.
+
+    Bỏ qua nếu đã có model còn tươi (< TTL) trừ khi force.
+    """
+    global _training
+    now = _time.time()
+    with _model_lock:
+        if not force and _model_cache["model"] is not None \
+                and (now - _model_cache["ts"]) < _MODEL_TTL:
+            return _model_cache["model"]
+    if not force:
+        m, ts = _load_persisted()
+        if m is not None and (now - ts) < _MODEL_TTL:
+            with _model_lock:
+                _model_cache["model"] = m
+                _model_cache["ts"] = ts
+            return m
+    with _model_lock:
+        if _training:
+            return _model_cache["model"]
+        _training = True
+    try:
+        model = train_predictor(log_fn=log_fn)
+        if not model or "error" in model:
+            log_fn(f"[viral] train bo qua: {model}")
+            return None
+        ts = _time.time()
+        with _model_lock:
+            _model_cache["model"] = model
+            _model_cache["ts"] = ts
+        _save_persisted(model, ts)
+        return model
+    finally:
+        with _model_lock:
+            _training = False
+
+
+def ensure_fresh_async() -> None:
+    """Train nền nếu chưa có model hoặc đã quá TTL. Không block caller."""
+    now = _time.time()
+    with _model_lock:
+        if _training:
+            return
+        m = _model_cache["model"]
+        fresh = m is not None and (now - _model_cache["ts"]) < _MODEL_TTL
+    if not fresh and get_cached_model() is not None:
+        with _model_lock:
+            fresh = (now - _model_cache["ts"]) < _MODEL_TTL
+    if fresh:
+        return
+    _Thread(target=lambda: train_and_cache(force=True, log_fn=lambda s: None),
+            daemon=True, name="viral-train").start()
 
 
 def predict(model: dict, channel_subs: int, title: str,

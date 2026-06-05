@@ -103,6 +103,11 @@ async def lifespan(_: FastAPI):
         start_scheduler()
     prewarm_content_cache()
     try:
+        from python_backend.routes.research import prewarm_research_caches
+        prewarm_research_caches()
+    except Exception as e:  # noqa: BLE001
+        print(f"[main] research prewarm loi: {e}")
+    try:
         from python_backend.routes.research import start_research_scheduler
         start_research_scheduler()
     except Exception as e:  # noqa: BLE001
