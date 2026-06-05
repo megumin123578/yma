@@ -58,6 +58,18 @@ export const generateSeoReport = async (wid) => {
   return data;
 };
 
+// Cào bình luận kênh chính của 1 watchlist (nền). Trả {status}.
+export const mineComments = async (wid) => {
+  const { data } = await api.post(`/api/research/report/${wid}/comments/mine`);
+  return data;
+};
+
+// Trạng thái cào bình luận. Trả {mining, last}.
+export const getCommentMineStatus = async (wid) => {
+  const { data } = await api.get(`/api/research/report/${wid}/comments/mine`);
+  return data;
+};
+
 // ----- Quản lý watchlist + kênh (Settings/Channel) -----
 export const createWatchlist = async (name, description = "") => {
   const { data } = await api.post("/api/research/watchlists", { name, description });

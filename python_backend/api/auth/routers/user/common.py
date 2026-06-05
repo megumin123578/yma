@@ -281,6 +281,7 @@ def _build_oauth_flow() -> Flow:
     }
     flow = Flow.from_client_config(client_config, scopes=SCOPES)
     flow.redirect_uri = OAUTH_REDIRECT_URL
+    flow.autogenerate_code_verifier = False  # start/callback là 2 Flow khác → tắt PKCE, tránh "Missing code verifier"
     return flow
 
 

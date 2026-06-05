@@ -1,7 +1,7 @@
 // components/research/reportTabs.jsx
 // Định nghĩa 22 tab báo cáo nghiên cứu ngách (7 nhóm A-G), render từ build_data JSON.
-import { useState } from "react";
-import { Box, FormControl, Link, MenuItem, Select, Typography } from "@mui/material";
+import { useEffect, useRef, useState } from "react";
+import { Box, Button, CircularProgress, FormControl, Link, MenuItem, Select, Typography } from "@mui/material";
 import {
   DataTable,
   EmptyState,
@@ -15,6 +15,113 @@ import {
 } from "./primitives";
 import Markdown from "./Markdown";
 import SeoBestPractice from "./SeoBestPractice";
+import { getCommentMineStatus, mineComments } from "../../services/researchService";
+
+// Nút cào bình luận kênh chính (chạy nền) + poll trạng thái; xong thì reload report.
+const CommentMineButton = ({ wid, onDone }) => {
+  const [mining, setMining] = useState(false);
+  const [msg, setMsg] = useState("");
+  const pollRef = useRef(null);
+
+  const stop = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const poll = () => {
+    stop();
+    pollRef.current = setInterval(async () => {
+      try {
+        const r = await getCommentMineStatus(wid);
+        if (!r?.mining) {
+          stop();
+          setMining(false);
+          setMsg(
+            r?.last?.error
+              ? `Lỗi: ${r.last.error}`
+              : `Đã cào ${r?.last?.new_comments ?? 0} bình luận mới.`
+          );
+          onDone?.();
+        }
+      } catch {
+        // lỗi tạm thời → tiếp tục poll
+      }
+    }, 4000);
+  };
+
+  useEffect(() => {
+    let alive = true;
+    getCommentMineStatus(wid)
+      .then((r) => {
+        if (alive && r?.mining) {
+          setMining(true);
+          poll();
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+      stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wid]);
+
+  const run = async () => {
+    setMsg("");
+    try {
+      await mineComments(wid);
+      setMining(true);
+      poll();
+    } catch (e) {
+      setMsg(e?.response?.data?.detail || e.message);
+    }
+  };
+
+  return (
+    <Box display="flex" alignItems="center" gap={1} mb={2} flexWrap="wrap">
+      <Button
+        size="small"
+        variant="contained"
+        onClick={run}
+        disabled={mining}
+        startIcon={mining ? <CircularProgress size={14} color="inherit" /> : null}
+      >
+        {mining ? "Đang cào bình luận…" : "Cào bình luận"}
+      </Button>
+      {msg && (
+        <Typography variant="caption" color="text.secondary">
+          {msg}
+        </Typography>
+      )}
+    </Box>
+  );
+};
+
+const AudienceInsight = ({ d, ctx }) => {
+  const ci = d.comment_intel;
+  const c = d.comments;
+  const hasCi =
+    ci && (typeof ci === "string" || (typeof ci === "object" && Object.keys(ci).length && !ci.error));
+  const hasComments = c && Object.keys(c).length;
+  return (
+    <>
+      {ctx?.wid && <CommentMineButton wid={ctx.wid} onDone={ctx.reload} />}
+      {hasCi ? (
+        <TextBlock text={typeof ci === "string" ? ci : JSON.stringify(ci, null, 2)} />
+      ) : hasComments ? (
+        Object.entries(c).map(([k, v]) => (
+          <SectionCard key={k} title={prettyKey(k)}>
+            {Array.isArray(v) ? <AutoTable rows={v} /> : <TextBlock text={String(v)} />}
+          </SectionCard>
+        ))
+      ) : (
+        <EmptyState text="Chưa có dữ liệu bình luận — bấm “Cào bình luận” để thu thập." />
+      )}
+    </>
+  );
+};
 import InsideSynthesis from "./InsideSynthesis";
 
 // ---------- helpers ----------
@@ -205,6 +312,30 @@ const ktCols = (kwEnrich) => [
 
 const videoCols = [
   {
+    key: "thumb",
+    label: "Ảnh",
+    render: (r) =>
+      r.vid ? (
+        <Box
+          component="a"
+          href={r.url || `https://www.youtube.com/watch?v=${r.vid}`}
+          target="_blank"
+          rel="noopener"
+          sx={{ display: "block", lineHeight: 0 }}
+        >
+          <Box
+            component="img"
+            src={`https://i.ytimg.com/vi/${r.vid}/mqdefault.jpg`}
+            alt=""
+            loading="lazy"
+            sx={{ width: 96, height: 54, objectFit: "cover", borderRadius: 1, display: "block" }}
+          />
+        </Box>
+      ) : (
+        "—"
+      ),
+  },
+  {
     key: "title",
     label: "Video",
     render: (r) =>
@@ -339,7 +470,7 @@ const ChannelBlock = ({ ch, defaultOpen = false }) => {
       {Array.isArray(ch.clusters) && ch.clusters.length > 0 && (
         <Box mt={2}>
           <Typography variant="subtitle2" fontWeight={700} mb={1}>
-            Phân cụm nội dung
+            Phân cụm nội dung — format nào hiệu quả
           </Typography>
           <DataTable
             limit={null}
@@ -363,7 +494,7 @@ const ChannelBlock = ({ ch, defaultOpen = false }) => {
       {Array.isArray(ch.all_v) && ch.all_v.length > 0 && (
         <Box mt={2}>
           <Typography variant="subtitle2" fontWeight={700} mb={1}>
-            Video ({ch.all_v.length})
+            Video của kênh ({ch.all_v.length})
           </Typography>
           <DataTable columns={videoCols} rows={ch.all_v} limit={null} />
         </Box>
@@ -581,7 +712,7 @@ const NicheByKeyword = ({ niche, nicheTop }) => {
 // group: nhãn nhóm; id, label, render(d)
 export const TAB_GROUPS = [
   { key: "A", label: "Tổng quan & Sức khoẻ" },
-  { key: "B", label: "Hiệu quả tổng thể" },
+  { key: "B", label: "Kênh chính" },
   { key: "C", label: "Khán giả" },
   { key: "D", label: "Traffic & CTR" },
   { key: "E", label: "Nội dung" },
@@ -835,19 +966,7 @@ export const TABS = [
     id: "audience_insight",
     group: "C",
     label: "💬 Audience insight",
-    render: (d) => {
-      const ci = d.comment_intel;
-      if (ci && Object.keys(ci).length) return <TextBlock text={typeof ci === "string" ? ci : JSON.stringify(ci, null, 2)} />;
-      const c = d.comments;
-      if (c && Object.keys(c).length) {
-        return Object.entries(c).map(([k, v]) => (
-          <SectionCard key={k} title={prettyKey(k)}>
-            {Array.isArray(v) ? <AutoTable rows={v} /> : <TextBlock text={String(v)} />}
-          </SectionCard>
-        ));
-      }
-      return <EmptyState text="Chưa có phân tích bình luận (tính năng tuỳ chọn)." />;
-    },
+    render: (d, ctx) => <AudienceInsight d={d} ctx={ctx} />,
   },
   {
     id: "inside_retention",

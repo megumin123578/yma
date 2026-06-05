@@ -31,6 +31,15 @@ const fmtDate = (s) => {
   return y && m && d ? `${d}/${m}/${y}` : String(s || "");
 };
 
+// "2026-06-05 03:53" -> ngày "2026-06-05", giờ "03:53"
+const seoYmd = (dt) => String(dt || "").split(" ")[0];
+const seoHm = (dt) => String(dt || "").split(" ")[1] || "";
+// "2026-06-05" -> "26/06/05"
+const yymmdd = (s) => {
+  const [y, m, d] = String(s || "").split("-");
+  return y && m && d ? `${y.slice(2)}/${m}/${d}` : String(s || "");
+};
+
 const ResearchScene = ({ view = "report" }) => {
   const theme = useTheme();
   const filterControlSx = getSharedFilterControlSx(theme, { flex: "0 0 auto" });
@@ -93,6 +102,13 @@ const ResearchScene = ({ view = "report" }) => {
   const activeTab = TABS.find((t) => t.id === tabId);
   // dark mode: primary.main trùng background → dùng secondary cho phần chọn
   const selColor = theme.palette.mode === "dark" ? "secondary" : "primary";
+
+  // SEO date dropdown: tách ngày (yy/mm/dd) + giờ; dropdown giờ chỉ hiện khi
+  // ngày đó có ≥2 báo cáo (cần chọn giữa các thời điểm).
+  const seoSel = seo.items.find((i) => i.id === seo.selId);
+  const seoDays = [...new Set(seo.items.map((i) => seoYmd(i.date)))];
+  const seoDay = seoYmd(seoSel?.date) || seoDays[0] || "";
+  const seoDayItems = seo.items.filter((i) => seoYmd(i.date) === seoDay);
 
   return (
     <Box m="20px">
@@ -163,23 +179,41 @@ const ResearchScene = ({ view = "report" }) => {
           </FormControl>
         )}
         {view === "seo" && seo.items.length > 0 && (
-          <FormControl size="small" sx={{ ...filterControlSx, minWidth: { xs: "100%", sm: 185 } }}>
-            <Select
-              value={seo.selId}
-              onChange={(e) => seo.select(e.target.value)}
-              MenuProps={selectMenuProps}
-              renderValue={(val) => {
-                const it = seo.items.find((i) => i.id === val);
-                return `🗓 ${it?.date || ""}`;
-              }}
-            >
-              {seo.items.map((it) => (
-                <MenuItem key={it.id} value={it.id}>
-                  {it.date}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <>
+            <FormControl size="small" sx={{ ...filterControlSx, minWidth: { xs: "100%", sm: 150 } }}>
+              <Select
+                value={seoDay}
+                onChange={(e) => {
+                  const newest = seo.items.find((i) => seoYmd(i.date) === e.target.value);
+                  if (newest) seo.select(newest.id);
+                }}
+                MenuProps={selectMenuProps}
+                renderValue={(val) => `🗓 ${yymmdd(val)}`}
+              >
+                {seoDays.map((d) => (
+                  <MenuItem key={d} value={d}>
+                    {yymmdd(d)}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            {seoDayItems.length > 1 && (
+              <FormControl size="small" sx={{ ...filterControlSx, minWidth: { xs: "100%", sm: 120 } }}>
+                <Select
+                  value={seo.selId}
+                  onChange={(e) => seo.select(e.target.value)}
+                  MenuProps={selectMenuProps}
+                  renderValue={(val) => `🕐 ${seoHm(seo.items.find((i) => i.id === val)?.date)}`}
+                >
+                  {seoDayItems.map((it) => (
+                    <MenuItem key={it.id} value={it.id}>
+                      {seoHm(it.date)}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+          </>
         )}
         {view === "seo" && (
           <Button
@@ -264,7 +298,7 @@ const ResearchScene = ({ view = "report" }) => {
             {activeTab ? (
               (() => {
                 try {
-                  return activeTab.render(report);
+                  return activeTab.render(report, { wid, reload: () => loadReport(wid, true) });
                 } catch (e) {
                   return <EmptyState text={`Lỗi render tab: ${e.message}`} />;
                 }

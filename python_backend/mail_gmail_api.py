@@ -122,6 +122,7 @@ def build_mail_oauth_flow(redirect_url: str) -> Flow:
     }
     flow = Flow.from_client_config(client_config, scopes=MAIL_GMAIL_SCOPES)
     flow.redirect_uri = redirect_url
+    flow.autogenerate_code_verifier = False  # start/callback là 2 Flow khác → tắt PKCE, tránh "Missing code verifier"
     return flow
 
 

@@ -79,6 +79,9 @@ _cache_lock = Lock()
 # Báo cáo SEO (Claude CLI) đang sinh nền: tập wid để chống bấm trùng.
 _seo_gen_lock = Lock()
 _seo_generating: set[str] = set()
+_comment_mine_lock = Lock()
+_comment_mining: set[str] = set()
+_comment_mine_last: dict[str, dict] = {}
 
 
 def _connected_channel_map() -> dict:
@@ -494,6 +497,59 @@ def generate_seo_report(wid: str, current_user=Depends(get_current_user_optional
 
     Thread(target=_worker, daemon=True).start()
     add_log(f"[H] research/seo generate wid={wid}")
+    return {"status": "started"}
+
+
+@router.get("/report/{wid}/comments/mine")
+def comment_mine_status(wid: str, current_user=Depends(get_current_user_optional)):
+    """Trạng thái cào bình luận kênh chính. Trả {mining, last}."""
+    with _comment_mine_lock:
+        return {"mining": wid in _comment_mining,
+                "last": _comment_mine_last.get(wid)}
+
+
+@router.post("/report/{wid}/comments/mine")
+def start_comment_mine(wid: str, current_user=Depends(get_current_user_optional)):
+    """Cào bình luận 10 video mới nhất của kênh chính (nền). Trả ngay {status}."""
+    with _comment_mine_lock:
+        if wid in _comment_mining:
+            return {"status": "mining"}
+        _comment_mining.add(wid)
+
+    def _worker():
+        result, err = None, None
+        try:
+            from python_backend.research import (
+                watchlist as wlmod, persistence, comment_miner)
+            w = wlmod.load_watchlist(wid)
+            self_ch = w.self_channel if w else None
+            if not self_ch:
+                raise RuntimeError("Watchlist không có kênh chính")
+            days = persistence.snapshot_days_for_channel(self_ch.channel_id)
+            self_res = (persistence.find_for_channel_as_of(
+                self_ch.channel_id, days[0]) if days else None)
+            videos = (self_res or {}).get("videos") or []
+            if not videos:
+                raise RuntimeError("Kênh chính chưa có video snapshot để cào")
+            result = comment_miner.mine_channel_comments(
+                self_ch.channel_id, self_ch.title or "", videos,
+                log_fn=lambda m: add_log(f"[comment] {m}"))
+        except Exception as e:  # noqa: BLE001
+            err = str(e)
+            add_log(f"[comment] mine loi wid={wid}: {e}")
+        finally:
+            with _comment_mine_lock:
+                _comment_mining.discard(wid)
+                _comment_mine_last[wid] = {
+                    "new_comments": (result or {}).get("new_comments", 0),
+                    "total_comments": (result or {}).get("total_comments", 0),
+                    "error": err,
+                }
+            if err is None:
+                _invalidate_report_cache([wid])
+
+    Thread(target=_worker, daemon=True).start()
+    add_log(f"[H] research/comments mine wid={wid}")
     return {"status": "started"}
 
 
