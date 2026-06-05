@@ -1,21 +1,192 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
+  Avatar,
   Box,
   Chip,
   CircularProgress,
+  Collapse,
   FormControl,
+  Link,
   MenuItem,
+  Paper,
+  Popover,
   Select,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   Typography,
   useTheme,
 } from "@mui/material";
+import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
 import { alpha } from "@mui/material/styles";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip as RTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { DataTable, EmptyState, SectionCard, TextBlock, num } from "./primitives";
-import { getResearchSummary } from "../../services/researchService";
+import {
+  getResearchSummary,
+  getVideoRetention,
+  listWatchlists,
+} from "../../services/researchService";
 import {
   getSharedFilterControlSx,
   getSharedSelectMenuProps,
 } from "../filterStyles";
+
+// giây -> "m:ss"
+const fmtDur = (sec) => {
+  const s = Math.round(Number(sec) || 0);
+  if (!s) return "—";
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
+
+// Mini stat cho header chart retention.
+const RetStat = ({ label, value, color }) => (
+  <Box sx={{ flex: 1, minWidth: 0 }}>
+    <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block", lineHeight: 1.2 }}>
+      {label}
+    </Typography>
+    <Typography variant="subtitle2" fontWeight={800} sx={{ color, lineHeight: 1.2 }}>
+      {value}
+    </Typography>
+  </Box>
+);
+
+// Chart retention (nguồn page Audience) — diễn giải dễ hiểu khi hover video.
+const RetentionMini = ({ rows, title, theme }) => {
+  if (rows == null) {
+    return (
+      <Box display="flex" alignItems="center" gap={1}>
+        <CircularProgress size={14} />
+        <Typography variant="caption" color="text.secondary">
+          Đang tải retention…
+        </Typography>
+      </Box>
+    );
+  }
+  if (!rows.length) {
+    return (
+      <Typography variant="caption" color="text.secondary">
+        Không có dữ liệu retention cho video này.
+      </Typography>
+    );
+  }
+
+  const data = rows
+    .filter((r) => r.elapsed_video_time_ratio != null)
+    .sort((a, b) => a.elapsed_video_time_ratio - b.elapsed_video_time_ratio)
+    .map((r) => ({
+      x: Math.round((r.elapsed_video_time_ratio || 0) * 100),
+      y: +(((r.audience_watch_ratio || 0) * 100).toFixed(1)),
+    }));
+
+  // Chỉ số tóm tắt dễ hiểu
+  const avgPct = Math.round(data.reduce((s, p) => s + p.y, 0) / data.length);
+  const endPct = Math.round(data[data.length - 1].y);
+  let dropX = null;
+  let dropAmt = 0;
+  for (let i = 1; i < data.length; i++) {
+    const d = data[i - 1].y - data[i].y;
+    if (d > dropAmt) {
+      dropAmt = d;
+      dropX = data[i].x;
+    }
+  }
+  const endColor =
+    endPct >= 50 ? theme.palette.success.main : endPct >= 30 ? theme.palette.warning.main : theme.palette.error.main;
+  // dark mode: primary.main gần trùng nền → dùng màu sáng (info.light) cho line.
+  const lineColor =
+    theme.palette.mode === "dark" ? theme.palette.info.light : theme.palette.primary.main;
+
+  return (
+    <Box>
+      <Typography variant="subtitle2" fontWeight={700} noWrap title={title} sx={{ maxWidth: 410 }}>
+        {title}
+      </Typography>
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+        Tỷ lệ người xem còn lại theo thời lượng video
+      </Typography>
+
+      <Box display="flex" gap={1.5} mb={1}>
+        <RetStat label="Xem trung bình" value={`${avgPct}%`} color={lineColor} />
+        <RetStat label="Xem đến hết" value={`${endPct}%`} color={endColor} />
+        <RetStat
+          label="Tụt mạnh nhất"
+          value={dropX != null ? `${dropX}% video` : "—"}
+          color={theme.palette.error.main}
+        />
+      </Box>
+
+      <Box sx={{ height: 168 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 6, right: 10, bottom: 18, left: -8 }}>
+            <defs>
+              <linearGradient id="retGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={lineColor} stopOpacity={0.35} />
+                <stop offset="100%" stopColor={lineColor} stopOpacity={0.02} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke={alpha(theme.palette.text.secondary, 0.18)} vertical={false} />
+            <XAxis
+              dataKey="x"
+              type="number"
+              domain={[0, 100]}
+              ticks={[0, 25, 50, 75, 100]}
+              tick={{ fontSize: 10 }}
+              tickFormatter={(v) => `${v}%`}
+              stroke={theme.palette.text.secondary}
+              label={{ value: "Thời lượng video", position: "insideBottom", offset: -8, fontSize: 11, fill: theme.palette.text.secondary }}
+            />
+            <YAxis
+              tick={{ fontSize: 10 }}
+              tickFormatter={(v) => `${v}%`}
+              width={42}
+              stroke={theme.palette.text.secondary}
+              domain={[0, (max) => Math.max(100, Math.ceil(max / 10) * 10)]}
+            />
+            <RTooltip
+              formatter={(v) => [`${v}%`, "Người xem còn lại"]}
+              labelFormatter={(l) => `Tại ${l}% video`}
+              contentStyle={{ fontSize: 12, borderRadius: 8 }}
+            />
+            <ReferenceLine
+              y={100}
+              stroke={alpha(theme.palette.text.secondary, 0.5)}
+              strokeDasharray="4 4"
+              label={{ value: "Bắt đầu 100%", position: "right", fontSize: 9, fill: theme.palette.text.secondary }}
+            />
+            {dropX != null && (
+              <ReferenceLine x={dropX} stroke={theme.palette.error.main} strokeDasharray="4 4" strokeOpacity={0.7} />
+            )}
+            <Area
+              type="monotone"
+              dataKey="y"
+              stroke={lineColor}
+              strokeWidth={2}
+              fill="url(#retGrad)"
+              dot={false}
+              isAnimationActive={false}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      </Box>
+
+      <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+        Đường càng cao &amp; phẳng = giữ chân tốt · vạch đỏ = nơi nhiều người thoát.
+      </Typography>
+    </Box>
+  );
+};
 
 const sg = (v) => {
   const n = Number(v) || 0;
@@ -38,6 +209,22 @@ const SummaryReport = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [avatars, setAvatars] = useState({});
+  const [expandedWid, setExpandedWid] = useState("");
+  const [retHover, setRetHover] = useState(null); // {anchorEl, key, video}
+  const [retCache, setRetCache] = useState({}); // key -> rows | null(loading)
+
+  const handleVideoEnter = (e, accountTag, v) => {
+    const key = `${accountTag || ""}|${v.video_id}`;
+    setRetHover({ anchorEl: e.currentTarget, key, video: v });
+    if (accountTag && v.video_id && retCache[key] === undefined) {
+      setRetCache((c) => ({ ...c, [key]: null }));
+      getVideoRetention(accountTag, v.video_id)
+        .then((d) => setRetCache((c) => ({ ...c, [key]: d?.rows || [] })))
+        .catch(() => setRetCache((c) => ({ ...c, [key]: [] })));
+    }
+  };
+  const handleVideoLeave = () => setRetHover(null);
 
   const load = (opts = {}) => {
     setLoading(true);
@@ -53,6 +240,15 @@ const SummaryReport = () => {
 
   useEffect(() => {
     load();
+    listWatchlists()
+      .then((items) => {
+        const m = {};
+        items.forEach((w) => {
+          if (w.avatar) m[w.id] = w.avatar;
+        });
+        setAvatars(m);
+      })
+      .catch(() => {});
   }, []);
 
   const snapshots = data?.snapshots || [];
@@ -149,6 +345,9 @@ const SummaryReport = () => {
   const cardBg =
     theme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(15,23,42,0.02)";
   const subtleBorder = `1px solid ${theme.palette.divider}`;
+  // dark mode: primary.main gần trùng nền → dùng màu sáng cho accent/hover.
+  const accentColor =
+    theme.palette.mode === "dark" ? theme.palette.info.light : theme.palette.primary.main;
 
   const dateBar = (
     <Box display="flex" alignItems="center" gap={1.5} mb={2} flexWrap="wrap">
@@ -231,55 +430,207 @@ const SummaryReport = () => {
 
       <SectionCard
         title="Tình hình từng kênh"
-        subtitle="Sắp xếp theo Δ views 7 ngày · kênh nóng nhất lên đầu"
+        subtitle="Bấm vào một kênh để xem 3 video mới nhất"
         action={<Chip size="small" variant="outlined" label={`${wlRows.length} kênh`} />}
       >
-        <DataTable
-          rows={wlRows}
-          limit={null}
-          columns={[
-            {
-              key: "self_title",
-              label: "Kênh chính",
-              render: (r) => (
-                <Box>
-                  <Typography variant="body2" fontWeight={700} noWrap>
-                    {r.self_title || r.name || "—"}
-                  </Typography>
-                  {r.name && r.name !== r.self_title && (
-                    <Typography variant="caption" color="text.secondary" noWrap>
-                      {r.name}
-                    </Typography>
-                  )}
-                </Box>
-              ),
-            },
-            { key: "subs", label: "Subs", align: "right", render: (r) => (
-              <Typography variant="body2" fontWeight={600}>{num(r.subs)}</Typography>
-            ) },
-            { key: "subs_delta_7d", label: "Δ Subs 7d", align: "right", render: (r) => Delta(r.subs_delta_7d) },
-            { key: "views_delta_7d", label: "Δ Views 7d", align: "right", render: (r) => Delta(r.views_delta_7d) },
-            { key: "avg_daily_views_7d", label: "View/ngày TB", align: "right", render: (r) => num(r.avg_daily_views_7d) },
-            {
-              key: "top_videos_today",
-              label: "Video hot nhất",
-              render: (r) => {
-                const v = (r.top_videos_today || [])[0];
-                if (!v) return <Typography variant="body2" color="text.secondary">—</Typography>;
+        <TableContainer
+          component={Paper}
+          elevation={0}
+          sx={{ border: subtleBorder, borderRadius: 2 }}
+        >
+          <Table stickyHeader size="small">
+            <TableHead>
+              <TableRow>
+                {["", "Kênh chính", "Subs", "Δ Subs 7d", "Δ Views 7d", "View/ngày TB", "Video hot nhất"].map(
+                  (h, i) => (
+                    <TableCell
+                      key={i}
+                      align={i >= 2 && i <= 5 ? "right" : "left"}
+                      sx={{ fontWeight: 700, whiteSpace: "nowrap", bgcolor: theme.palette.background.paper }}
+                    >
+                      {h}
+                    </TableCell>
+                  )
+                )}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {wlRows.map((r) => {
+                const open = expandedWid === r.wid;
+                const vids = r.latest_videos || [];
+                const top = (r.top_videos_today || [])[0];
                 return (
-                  <Box>
-                    <Typography variant="body2" noWrap sx={{ maxWidth: 260 }} title={v.title}>
-                      {v.title}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      ~{num(v.vpd)} view/ngày
-                    </Typography>
-                  </Box>
+                  <Fragment key={r.wid}>
+                    <TableRow
+                      hover
+                      onClick={() => setExpandedWid(open ? "" : r.wid)}
+                      sx={{ cursor: "pointer", "& > *": { borderBottom: open ? "unset" : undefined } }}
+                    >
+                      <TableCell sx={{ width: 36 }}>
+                        <KeyboardArrowDownRoundedIcon
+                          fontSize="small"
+                          sx={{
+                            color: "text.secondary",
+                            transition: "transform .2s ease",
+                            transform: open ? "rotate(180deg)" : "none",
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Avatar src={avatars[r.wid] || ""} sx={{ width: 30, height: 30 }}>
+                            {(r.self_title || r.name || "?")[0]}
+                          </Avatar>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography variant="body2" fontWeight={700} noWrap>
+                              {r.self_title || r.name || "—"}
+                            </Typography>
+                            {r.name && r.name !== r.self_title && (
+                              <Typography variant="caption" color="text.secondary" noWrap>
+                                {r.name}
+                              </Typography>
+                            )}
+                          </Box>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography variant="body2" fontWeight={600}>{num(r.subs)}</Typography>
+                      </TableCell>
+                      <TableCell align="right">{Delta(r.subs_delta_7d)}</TableCell>
+                      <TableCell align="right">{Delta(r.views_delta_7d)}</TableCell>
+                      <TableCell align="right">{num(r.avg_daily_views_7d)}</TableCell>
+                      <TableCell>
+                        {top ? (
+                          <Box>
+                            <Typography variant="body2" noWrap sx={{ maxWidth: 260 }} title={top.title}>
+                              {top.title}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              ~{num(top.vpd)} view/ngày
+                            </Typography>
+                          </Box>
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">—</Typography>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={7} sx={{ py: 0, border: 0, bgcolor: cardBg }}>
+                        <Collapse in={open} timeout="auto" unmountOnExit>
+                          <Box sx={{ py: 1.75, px: 1 }}>
+                            {vids.length ? (
+                              <TableContainer
+                                component={Paper}
+                                elevation={0}
+                                sx={{ border: subtleBorder, borderRadius: 2, mt: 1 }}
+                              >
+                                <Table size="small">
+                                  <TableHead>
+                                    <TableRow>
+                                      {["Video", "Ngày đăng", "Views", "Watch time (h)", "Avg duration", "Subs", "Impressions", "CTR"].map(
+                                        (h, i) => (
+                                          <TableCell
+                                            key={i}
+                                            align={i >= 2 ? "right" : "left"}
+                                            sx={{ fontWeight: 700, whiteSpace: "nowrap", bgcolor: theme.palette.background.paper }}
+                                          >
+                                            {h}
+                                          </TableCell>
+                                        )
+                                      )}
+                                    </TableRow>
+                                  </TableHead>
+                                  <TableBody>
+                                    {vids.map((v) => (
+                                      <TableRow
+                                        key={v.video_id}
+                                        hover
+                                        onMouseEnter={(e) => handleVideoEnter(e, r.account_tag, v)}
+                                        onMouseLeave={handleVideoLeave}
+                                      >
+                                        <TableCell>
+                                          <Link
+                                            href={v.url || undefined}
+                                            target="_blank"
+                                            rel="noopener"
+                                            underline="none"
+                                            sx={{
+                                              display: "flex",
+                                              alignItems: "center",
+                                              gap: 1,
+                                              color: "inherit",
+                                              "&:hover .vtitle": { color: accentColor },
+                                            }}
+                                          >
+                                            <Box
+                                              component="img"
+                                              src={
+                                                (v.thumbnail || "").startsWith("http")
+                                                  ? v.thumbnail
+                                                  : v.video_id
+                                                  ? `https://i.ytimg.com/vi/${v.video_id}/mqdefault.jpg`
+                                                  : ""
+                                              }
+                                              alt=""
+                                              loading="lazy"
+                                              sx={{
+                                                width: 72,
+                                                height: 40,
+                                                objectFit: "cover",
+                                                borderRadius: 1,
+                                                flexShrink: 0,
+                                                bgcolor: theme.palette.action.hover,
+                                              }}
+                                            />
+                                            <Typography
+                                              className="vtitle"
+                                              variant="body2"
+                                              sx={{
+                                                fontWeight: 600,
+                                                maxWidth: 320,
+                                                display: "-webkit-box",
+                                                WebkitLineClamp: 2,
+                                                WebkitBoxOrient: "vertical",
+                                                overflow: "hidden",
+                                                lineHeight: 1.35,
+                                              }}
+                                              title={v.title}
+                                            >
+                                              {v.title}
+                                            </Typography>
+                                          </Link>
+                                        </TableCell>
+                                        <TableCell sx={{ whiteSpace: "nowrap" }}>{v.published_at || "—"}</TableCell>
+                                        <TableCell align="right">{num(v.views)}</TableCell>
+                                        <TableCell align="right">
+                                          {v.watch_minutes == null ? "—" : num(Math.round(v.watch_minutes / 60))}
+                                        </TableCell>
+                                        <TableCell align="right" sx={{ whiteSpace: "nowrap" }}>
+                                          {fmtDur(v.avg_view_duration)}
+                                        </TableCell>
+                                        <TableCell align="right">{num(v.subscribers)}</TableCell>
+                                        <TableCell align="right">{num(v.impressions)}</TableCell>
+                                        <TableCell align="right">{v.ctr == null ? "—" : `${v.ctr}%`}</TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </TableContainer>
+                            ) : (
+                              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                Chưa có dữ liệu video.
+                              </Typography>
+                            )}
+                          </Box>
+                        </Collapse>
+                      </TableCell>
+                    </TableRow>
+                  </Fragment>
                 );
-              },
-            },
-          ]}
-        />
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </SectionCard>
 
       <SectionCard
@@ -302,7 +653,6 @@ const SummaryReport = () => {
                 ),
               },
               { key: "channel", label: "Kênh" },
-              { key: "wl_name", label: "Watchlist" },
               { key: "views", label: "Views", align: "right", render: (r) => num(r.views) },
               { key: "vpd", label: "View/ngày", align: "right", render: (r) => (r.vpd ? num(r.vpd) : "—") },
               {
@@ -410,6 +760,21 @@ const SummaryReport = () => {
           <EmptyState text="Chưa có tóm lược chiến lược." />
         )}
       </SectionCard>
+
+      <Popover
+        open={Boolean(retHover)}
+        anchorEl={retHover?.anchorEl}
+        onClose={handleVideoLeave}
+        anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+        transformOrigin={{ vertical: "top", horizontal: "left" }}
+        disableRestoreFocus
+        sx={{ pointerEvents: "none" }}
+        slotProps={{ paper: { sx: { p: 1.5, width: 460, borderRadius: 2 } } }}
+      >
+        {retHover && (
+          <RetentionMini rows={retCache[retHover.key]} title={retHover.video.title} theme={theme} />
+        )}
+      </Popover>
     </Box>
   );
 };

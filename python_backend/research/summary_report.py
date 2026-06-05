@@ -22,6 +22,77 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 
 
+def _overview_latest_videos(account_tag: str, limit: int = 3) -> list:
+    """3 video mới nhất + đủ metrics, gom từ các bảng của page Overview:
+    video_overview (views, avg duration, subs), video_thumbnail_daily
+    (impressions, CTR), video_daily_stats (watch time = estimated_minutes).
+    """
+    if not account_tag:
+        return []
+    try:
+        from sqlalchemy import text
+        from python_backend.db import engine
+        with engine.begin() as conn:
+            base = conn.execute(text(
+                """
+                SELECT video_id, title, thumbnail, publish_date, views,
+                       average_view_duration_seconds AS avg_dur,
+                       subscribers_gained, subscribers_lost
+                FROM video_overview
+                WHERE account_tag = :tag
+                  AND video_id IS NOT NULL AND video_id <> ''
+                ORDER BY publish_date DESC NULLS LAST
+                LIMIT :limit
+                """), {"tag": account_tag, "limit": limit}).mappings().all()
+            vids = [str(r["video_id"]) for r in base]
+            imp_map, wt_map = {}, {}
+            if vids:
+                for r in conn.execute(text(
+                    """
+                    SELECT video_id, SUM(thumbnail_impressions) AS imp,
+                           CASE WHEN SUM(thumbnail_impressions) > 0
+                                THEN SUM(COALESCE(thumbnail_ctr, 0)
+                                         * thumbnail_impressions)
+                                     / SUM(thumbnail_impressions)
+                                ELSE NULL END AS ctr
+                    FROM video_thumbnail_daily
+                    WHERE video_id = ANY(:vids)
+                    GROUP BY video_id
+                    """), {"vids": vids}).mappings():
+                    imp_map[r["video_id"]] = (r["imp"], r["ctr"])
+                for r in conn.execute(text(
+                    """
+                    SELECT video_id, SUM(estimated_minutes) AS wt
+                    FROM video_daily_stats
+                    WHERE video_id = ANY(:vids)
+                    GROUP BY video_id
+                    """), {"vids": vids}).mappings():
+                    wt_map[r["video_id"]] = r["wt"]
+    except Exception:
+        return []
+    out = []
+    for r in base:
+        vid = str(r.get("video_id") or "")
+        imp, ctr = imp_map.get(vid, (None, None))
+        wt = wt_map.get(vid)
+        sg, sl = r.get("subscribers_gained"), r.get("subscribers_lost")
+        subs = (int(sg or 0) - int(sl or 0)) if (sg is not None or sl is not None) else None
+        out.append({
+            "title": r.get("title") or "",
+            "video_id": vid,
+            "url": f"https://www.youtube.com/watch?v={vid}" if vid else "",
+            "published_at": str(r.get("publish_date") or "")[:10],
+            "thumbnail": r.get("thumbnail") or "",
+            "views": int(r.get("views") or 0),
+            "avg_view_duration": int(r.get("avg_dur") or 0),
+            "watch_minutes": (int(wt) if wt is not None else None),
+            "subscribers": subs,
+            "impressions": (int(imp) if imp is not None else None),
+            "ctr": (round(float(ctr) * 100, 1) if ctr is not None else None),
+        })
+    return out
+
+
 def _pack_wl(wid: str) -> dict:
     """Đóng gói dữ liệu 1 WL cho summary."""
     import time as _t
@@ -77,6 +148,8 @@ def _pack_wl(wid: str) -> dict:
         "views_delta_7d": 0,
         "avg_daily_views_7d": 0,  # View/ngày KÊNH TB 7 ngày cuối từ SB
         "top_videos_today": [],   # video kênh chính tăng mạnh hôm nay
+        "latest_videos": [],       # 3 video mới nhất (page Overview) — expand UI
+        "account_tag": "",         # map kênh chính → account_tag (Overview/Inside)
         "outlier_videos": [],      # video toàn ngách đột biến
         "warnings": [],
         "strategy_preview": "",
@@ -142,30 +215,38 @@ def _pack_wl(wid: str) -> dict:
     # views_delta_7d / avg_daily_views_7d của 5/6 WL active = 0 (sai).
     # FIX: cho self_channel, override SB bằng Inside (channel_daily_metrics
     # 7 ngày gần nhất). Inside có data chính xác hơn SB cho self channel.
+    # Map kênh chính → account_tag (dùng cho Inside override + video Overview).
+    account_tag = ""
     try:
-        from .analytics_inside import get_channel_inside, match_account_tag
+        from .analytics_inside import match_account_tag
         if sc:
-            tag = match_account_tag(sc.title, sc.channel_id)
-            if tag:
-                inside_ci = get_channel_inside(tag, recent_days=7)
-                if inside_ci and inside_ci.get("has_data"):
-                    daily = inside_ci.get("daily_metrics_15d") or []
-                    last7 = daily[-7:] if len(daily) >= 7 else daily
-                    if last7:
-                        views_vals = [int(d.get("views_daily", 0) or 0)
-                                      for d in last7]
-                        views_vals = [v for v in views_vals if v >= 0]
-                        if views_vals:
-                            info["avg_daily_views_7d"] = int(
-                                sum(views_vals) / len(views_vals))
-                            info["views_delta_7d"] = sum(views_vals)
-                        subs_vals = [int(d.get("subs_net", 0) or 0)
-                                     for d in last7]
-                        if subs_vals:
-                            info["subs_delta_7d"] = sum(subs_vals)
-                        # Tăng subs đếm từ Inside.last_subs_net (7d)
-                        # → có thể override nếu SB rỗng
-                        info["data_source"] = "inside"
+            account_tag = match_account_tag(sc.title, sc.channel_id) or ""
+    except Exception:
+        account_tag = ""
+    info["account_tag"] = account_tag
+
+    try:
+        from .analytics_inside import get_channel_inside
+        if account_tag:
+            inside_ci = get_channel_inside(account_tag, recent_days=7)
+            if inside_ci and inside_ci.get("has_data"):
+                daily = inside_ci.get("daily_metrics_15d") or []
+                last7 = daily[-7:] if len(daily) >= 7 else daily
+                if last7:
+                    views_vals = [int(d.get("views_daily", 0) or 0)
+                                  for d in last7]
+                    views_vals = [v for v in views_vals if v >= 0]
+                    if views_vals:
+                        info["avg_daily_views_7d"] = int(
+                            sum(views_vals) / len(views_vals))
+                        info["views_delta_7d"] = sum(views_vals)
+                    subs_vals = [int(d.get("subs_net", 0) or 0)
+                                 for d in last7]
+                    if subs_vals:
+                        info["subs_delta_7d"] = sum(subs_vals)
+                    # Tăng subs đếm từ Inside.last_subs_net (7d)
+                    # → có thể override nếu SB rỗng
+                    info["data_source"] = "inside"
     except Exception as e:
         pass  # silent fallback to SB
 
@@ -216,6 +297,29 @@ def _pack_wl(wid: str) -> dict:
             continue
     today_vids.sort(key=lambda v: v["vpd"], reverse=True)
     info["top_videos_today"] = today_vids[:3]
+
+    # 3 video MỚI NHẤT — ưu tiên data page Overview (bảng video_overview,
+    # data chính chủ của kênh). Fallback scrape ngách nếu chưa map account_tag.
+    info["latest_videos"] = _overview_latest_videos(account_tag, limit=3)
+    if not info["latest_videos"]:
+        latest = sorted(
+            videos, key=lambda v: getattr(v, "published_at", "") or "",
+            reverse=True)[:3]
+        info["latest_videos"] = [{
+            "title": getattr(v, "title", "") or "",
+            "video_id": getattr(v, "video_id", "") or "",
+            "url": (getattr(v, "url", "") or
+                    (f"https://www.youtube.com/watch?v={getattr(v, 'video_id', '')}"
+                     if getattr(v, "video_id", "") else "")),
+            "published_at": (getattr(v, "published_at", "") or "")[:10],
+            "thumbnail": "",
+            "views": int(getattr(v, "view_count", 0) or 0),
+            "avg_view_duration": None,
+            "watch_minutes": None,
+            "subscribers": None,
+            "impressions": None,
+            "ctr": None,
+        } for v in latest]
 
     # Outlier videos (view ≥3x median của kênh, ≥50K views)
     if videos:

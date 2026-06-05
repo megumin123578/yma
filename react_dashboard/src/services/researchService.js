@@ -27,6 +27,14 @@ export const getResearchSummary = async ({ refresh = false, snapshot = "" } = {}
   return data;
 };
 
+// Retention curve 1 video (nguồn page Audience). Trả {rows:[{elapsed..., audience_watch_ratio}]}.
+export const getVideoRetention = async (accountTag, videoId) => {
+  const { data } = await api.get("/api/audience/retention", {
+    params: { accountTag, videoId },
+  });
+  return data;
+};
+
 export const startRun = async ({ wlIds = null, resume = null } = {}) => {
   const { data } = await api.post("/api/research/run", { wlIds, resume });
   return data;
