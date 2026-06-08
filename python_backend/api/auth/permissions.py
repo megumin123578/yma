@@ -42,6 +42,7 @@ PAGE_ACTIONS: Set[str] = {
 
 DATA_ACTIONS: Set[str] = {
     "view",
+    "view_revenue",
 }
 
 ADMIN_ACTIONS: Set[str] = {
@@ -106,6 +107,11 @@ def user_has_permission(
         if r_scope_type == s_type and r_scope_value == s_value:
             return True
     return False
+
+
+def can_view_revenue(db: Session, user: Optional[User]) -> bool:
+    """True if user may see revenue values (admin or granted `view_revenue`)."""
+    return user_has_permission(db, user, "view_revenue")
 
 
 def user_permissions(db: Session, user: Optional[User]) -> list[dict]:

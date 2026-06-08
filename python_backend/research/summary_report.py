@@ -356,6 +356,7 @@ def _pack_wl(wid: str) -> dict:
         "revenue_7d": None,
         "revenue_days": 0,
         "top_videos_today": [],   # video kênh chính tăng mạnh hôm nay
+        "top_videos_day": [],     # top 10 video trong ngày của kênh (lọc theo kênh)
         "latest_videos": [],       # 10 video mới nhất (page Overview) — expand UI
         "account_tag": "",         # map kênh chính → account_tag (Overview/Inside)
         "outlier_videos": [],      # video toàn ngách đột biến
@@ -516,9 +517,21 @@ def _pack_wl(wid: str) -> dict:
             continue
     today_vids.sort(key=lambda v: v["vpd"], reverse=True)
     info["top_videos_today"] = today_vids[:3]
-    content_daily_top = _content_daily_top_videos([account_tag], limit=3)
+    content_daily_top = _content_daily_top_videos([account_tag], limit=10)
     if content_daily_top:
-        info["top_videos_today"] = content_daily_top
+        info["top_videos_today"] = content_daily_top[:3]
+    info["top_videos_day"] = [{
+        "title": v["title"],
+        "views": v["views"],
+        "vpd": v["vpd"],
+        "pub": v["pub"],
+        "day": v["day"],
+        "channel": (sc.title if sc else "") or account_tag,
+        "wl_name": w.name,
+        "wid": wid,
+        "video_id": v.get("vid", ""),
+        "source": "content_daily",
+    } for v in content_daily_top]
 
     # 10 video MỚI NHẤT — ưu tiên data page Overview (bảng video_overview,
     # data chính chủ của kênh). Fallback scrape ngách nếu chưa map account_tag.

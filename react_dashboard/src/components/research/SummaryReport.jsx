@@ -558,9 +558,13 @@ const SummaryReport = () => {
   const wlRows = allWlRows.filter(matchWl);
   const wids = new Set(wlRows.map((w) => w.wid));
   const isFiltered = Boolean(channel || project);
-  const topVideos = (data.cross_top_videos || []).filter(
-    (v) => !isFiltered || wids.has(v.wid)
-  );
+  // Chọn kênh: top 10 video trong ngày của riêng kênh. Project / tất cả: lọc từ
+  // top toàn công ty.
+  const topVideos = channel
+    ? wlRows.flatMap((w) => w.top_videos_day || [])
+    : (data.cross_top_videos || []).filter(
+        (v) => !isFiltered || wids.has(v.wid)
+      );
   // Cross-WL là quan hệ XUYÊN watchlist/project → luôn hiển thị toàn bộ, không lọc.
   const opps = data.cross_wl_opps || [];
 
@@ -999,7 +1003,7 @@ const SummaryReport = () => {
 
       {tab === "topvideos" && (
       <SectionCard
-        title="Top video nổi bật toàn công ty"
+        title={channel ? "Top 10 video trong ngày của kênh" : "Top video nổi bật toàn công ty"}
         subtitle="Dựa trên views theo ngày mới nhất có dữ liệu trong Content page"
         action={topVideos.length ? <Chip size="small" variant="outlined" label={`${topVideos.length} video`} /> : null}
       >

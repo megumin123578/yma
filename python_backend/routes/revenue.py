@@ -28,6 +28,7 @@ def _log_handler(name: str):
 from python_backend.api.auth.auth_utils import get_current_user_optional
 from python_backend.api.auth.database import get_db
 from python_backend.api.auth.visibility import get_allowed_account_tags, get_hidden_account_tags
+from python_backend.api.auth.permissions import can_view_revenue
 from python_backend.api.auth.models import UserCredential
 from python_backend.module_trafficsource import sanitize_filename
 from python_backend.token_store import token_exists
@@ -149,11 +150,12 @@ def list_channels(
             for row in creds
             if row.account_tag
         }
+    reveal = can_view_revenue(db, current_user)
     labeled = [
         {
             "value": item["value"],
             "label": label_map.get(item["value"], item["label"]),
-            "estimated_revenue": item["estimated_revenue"],
+            "estimated_revenue": item["estimated_revenue"] if reveal else None,
         }
         for item in items
     ]
