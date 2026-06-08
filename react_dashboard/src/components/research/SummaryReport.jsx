@@ -38,6 +38,7 @@ import {
 } from "recharts";
 import { DataTable, EmptyState, SectionCard, num } from "./primitives";
 import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "../ChannelSwitcher";
+import { useCanViewRevenue } from "../../context/UserContext";
 import Markdown from "./Markdown";
 import {
   getResearchSummary,
@@ -431,6 +432,7 @@ const StrategyDetail = ({ wid, title, name, avatar, fallback, theme, subtleBorde
 
 const SummaryReport = () => {
   const theme = useTheme();
+  const canViewRevenue = useCanViewRevenue();
   const filterControlSx = getSharedFilterControlSx(theme, { flex: "0 0 auto" });
   const selectMenuProps = getSharedSelectMenuProps(theme);
   const [data, setData] = useState(null);
@@ -849,7 +851,7 @@ const SummaryReport = () => {
                       <TableCell align="right">{num(r.avg_daily_views_7d)}</TableCell>
                       <TableCell align="right">
                         <Typography variant="body2" fontWeight={700}>
-                          {fmtMoney(r.revenue_7d)}
+                          {canViewRevenue ? fmtMoney(r.revenue_7d) : "•••"}
                         </Typography>
                       </TableCell>
                     </TableRow>

@@ -23,6 +23,7 @@ const RevenueOverviewSection = ({
     revenueXAxisTicks,
     chartTooltipStyles,
     dashboardPalette,
+    canViewRevenue = true,
 }) => {
     const theme = useTheme();
 
@@ -102,7 +103,7 @@ const RevenueOverviewSection = ({
                                 </Box>
                             ))}
                         </Box>
-                        {revenueChartData.length > 0 && (
+                        {canViewRevenue && revenueChartData.length > 0 && (
                             <Box mt={2} sx={{ ml: -3, minWidth: 0, width: "100%" }}>
                                 <ResponsiveContainer
                                     width="100%"

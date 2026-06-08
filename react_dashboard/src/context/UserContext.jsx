@@ -150,6 +150,8 @@ export const useHasPermission = (action, scope) => {
   );
 };
 
+export const useCanViewRevenue = () => useHasPermission("view_revenue");
+
 export const useIsOwner = () => {
   const ctx = useContext(UserContext);
   return !!ctx?.isOwner;

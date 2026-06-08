@@ -37,6 +37,9 @@ import {
   setStoredSharedChannelId,
 } from "../utils/sharedChannel";
 import { sortByStoredTokenOrder } from "../utils/tokenOrder";
+import { useCanViewRevenue } from "../context/UserContext";
+
+const REVENUE_MASK = "•••";
 
 const RANGE_OPTIONS = [
   { value: "7d", label: "Last 7 days" },
@@ -104,7 +107,7 @@ const RevenueTooltip = ({ title, children }) => {
   );
 };
 
-const MiniMetricCard = ({ label, value, accent, helper, isCurrency = true }) => {
+const MiniMetricCard = ({ label, value, accent, helper, isCurrency = true, masked = false }) => {
   const cardContent = (
     <Box
       sx={{
@@ -130,7 +133,7 @@ const MiniMetricCard = ({ label, value, accent, helper, isCurrency = true }) => 
         </Typography>
       </Stack>
       <Typography variant="h6" fontWeight={800} mt={0.65}>
-        {isCurrency ? formatCurrency(value) : formatNumber(value)}
+        {masked ? REVENUE_MASK : isCurrency ? formatCurrency(value) : formatNumber(value)}
       </Typography>
     </Box>
   );
@@ -140,7 +143,7 @@ const MiniMetricCard = ({ label, value, accent, helper, isCurrency = true }) => 
   return <RevenueTooltip title={helper}>{cardContent}</RevenueTooltip>;
 };
 
-const MetricRow = ({ label, value, accent, helper, isCurrency = true }) => {
+const MetricRow = ({ label, value, accent, helper, isCurrency = true, masked = false }) => {
   const rowContent = (
     <Box
       sx={{
@@ -179,7 +182,7 @@ const MetricRow = ({ label, value, accent, helper, isCurrency = true }) => {
         </Typography>
       </Stack>
       <Typography variant="subtitle1" fontWeight={700}>
-        {isCurrency ? formatCurrency(value) : formatNumber(value)}
+        {masked ? REVENUE_MASK : isCurrency ? formatCurrency(value) : formatNumber(value)}
       </Typography>
     </Box>
   );
@@ -192,6 +195,7 @@ const MetricRow = ({ label, value, accent, helper, isCurrency = true }) => {
 const RevenueAnalytics = () => {
   const theme = useTheme();
   const colors = tokens(theme.palette.mode);
+  const canViewRevenue = useCanViewRevenue();
 
   const [channels, setChannels] = useState([]);
   const [channelAvatarMap, setChannelAvatarMap] = useState({});
@@ -565,6 +569,7 @@ const RevenueAnalytics = () => {
                     accent={item.accent}
                     helper={item.helper}
                     isCurrency={item.isCurrency}
+                    masked={!canViewRevenue && item.isCurrency !== false}
                   />
                 </Grid>
               ))}
@@ -588,6 +593,7 @@ const RevenueAnalytics = () => {
                       value={item.value}
                       accent={item.accent}
                       helper={item.helper}
+                      masked={!canViewRevenue}
                     />
                   ))}
                 </Stack>
@@ -606,7 +612,21 @@ const RevenueAnalytics = () => {
           ref={chartWrapRef}
           sx={{ width: "100%", height: CHART_HEIGHT, minHeight: 240, minWidth: 0 }}
         >
-          {chartData.length === 0 ? (
+          {!canViewRevenue ? (
+            <Box
+              sx={{
+                height: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 28,
+                letterSpacing: 4,
+                color: colors.grey[300],
+              }}
+            >
+              {REVENUE_MASK}
+            </Box>
+          ) : chartData.length === 0 ? (
             <Box
               sx={{
                 height: "100%",

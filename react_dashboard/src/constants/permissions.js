@@ -40,6 +40,14 @@ export const PAGE_GROUPS = [
 
 export const PAGE_ACTIONS = PAGE_GROUPS.flatMap((g) => g.actions);
 
+export const DATA_ACTIONS = [
+  {
+    value: "view_revenue",
+    label: "View revenue",
+    description: "See revenue values; without it revenue is masked everywhere",
+  },
+];
+
 export const ADMIN_ACTIONS = [
   { value: "manage_users", label: "Manage users", description: "Add/remove users, reset password" },
   { value: "manage_roles", label: "Manage roles", description: "Create roles, assign permissions" },

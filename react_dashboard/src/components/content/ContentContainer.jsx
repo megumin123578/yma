@@ -64,6 +64,7 @@ import {
 
 } from "../Module";
 import { getChannelRevenueMap } from "../Module";
+import { useCanViewRevenue } from "../../context/UserContext";
 
 import { ResponsiveBar } from "@nivo/bar";
 import api from "../../services/api";
@@ -582,6 +583,7 @@ const ContentAnalytics = ({
   const hasForcedChannelId = !!normalizedForcedChannelId;
 
   const theme = useTheme();
+  const canViewRevenue = useCanViewRevenue();
   const isMobileTable = useMediaQuery(theme.breakpoints.down("md"));
   const showPublishedColumn = !isMobileTable;
   const storedFilters = useMemo(() => loadStoredContentFilters(), []);
@@ -1415,13 +1417,17 @@ const ContentAnalytics = ({
       ? [
           {
             label: "Revenue",
-            value: totalRevenue == null ? "-" : formatCurrencyValue(totalRevenue),
+            value: !canViewRevenue
+              ? "•••"
+              : totalRevenue == null
+              ? "-"
+              : formatCurrencyValue(totalRevenue),
           },
         ]
       : [];
 
     return [...leadingCards, ...trailingCards, ...revenueCard];
-  }, [allChannelTableRows, contentType, deferredRows.length, showAllMode, totalRevenue, totals]);
+  }, [allChannelTableRows, canViewRevenue, contentType, deferredRows.length, showAllMode, totalRevenue, totals]);
 
 
 
@@ -3013,7 +3019,7 @@ const ContentAnalytics = ({
               ))}
               {showAllMode ? (
                 <TableCell align="right" sx={{ fontWeight: 700 }}>
-                  {formatCurrencyValue(totalRevenue)}
+                  {canViewRevenue ? formatCurrencyValue(totalRevenue) : "•••"}
                 </TableCell>
               ) : null}
             </TableRow>
@@ -3229,7 +3235,9 @@ const ContentAnalytics = ({
                     ))}
 
                     {showAllMode ? (
-                      <TableCell align="right">{formatCurrencyValue(r.revenue)}</TableCell>
+                      <TableCell align="right">
+                        {canViewRevenue ? formatCurrencyValue(r.revenue) : "•••"}
+                      </TableCell>
                     ) : null}
 
                   </TableRow>

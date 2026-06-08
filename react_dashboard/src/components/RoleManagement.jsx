@@ -22,6 +22,7 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import {
   ADMIN_ACTIONS,
+  DATA_ACTIONS,
   PAGE_GROUPS,
 } from "../constants/permissions";
 import {
@@ -635,6 +636,42 @@ const RoleManagement = () => {
                   </Box>
                 ))}
               </Box>
+            </Box>
+
+            {/* Data permissions */}
+            <Box
+              sx={{
+                p: 2,
+                border: `1px solid ${border}`,
+                borderRadius: 2,
+                display: "flex",
+                flexDirection: "column",
+                gap: 1,
+              }}
+            >
+              <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                Data permissions
+              </Typography>
+              {DATA_ACTIONS.map((a) => (
+                <Box key={a.value} display="flex" alignItems="center" gap={0.75}>
+                  <Checkbox
+                    size="small"
+                    checked={hasGlobalPerm(a.value)}
+                    onChange={(e) => togglePerm(a.value, e.target.checked)}
+                    disabled={readOnlyRole}
+                  />
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                      {a.label}
+                    </Typography>
+                    {a.description && (
+                      <Typography variant="caption" color="text.secondary">
+                        {a.description}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              ))}
             </Box>
 
             {/* Admin permissions */}

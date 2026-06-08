@@ -7,6 +7,7 @@ import api from "../../services/api";
 import { COUNTRY_FALLBACK } from "../../data/countryMapping";
 import { useGeoFeatures } from "../../utils/useGeoFeatures";
 import { getChannelRevenueMap } from "../Module";
+import { useCanViewRevenue } from "../../context/UserContext";
 import { sendLiveCounterHeartbeat } from "../../services/userService";
 import {
     getStoredSharedChannelId,
@@ -36,6 +37,7 @@ import {
 
 const DashboardContainer = () => {
     const theme = useTheme();
+    const canViewRevenue = useCanViewRevenue();
     const isDark = theme.palette.mode === "dark";
     const colors = tokens(theme.palette.mode);
     const geoFeatures = useGeoFeatures();
@@ -693,25 +695,26 @@ const DashboardContainer = () => {
         value >= 0 ? dashboardPalette.positive : dashboardPalette.error;
     const formatPct = (value) => `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 
+    const money = (value) => (canViewRevenue ? formatCurrency(value) : "•••");
     const revenueMetricCards = [
         {
             label: "Estimated Revenue",
-            value: formatCurrency(revenueSummary.estimated),
+            value: money(revenueSummary.estimated),
             color: dashboardPalette.revenueMetricColors.estimated,
         },
         {
             label: "Estimated Ad Revenue",
-            value: formatCurrency(revenueSummary.ad),
+            value: money(revenueSummary.ad),
             color: dashboardPalette.revenueMetricColors.ad,
         },
         {
             label: "Gross Revenue",
-            value: formatCurrency(revenueSummary.gross),
+            value: money(revenueSummary.gross),
             color: dashboardPalette.revenueMetricColors.gross,
         },
         {
             label: "Premium Revenue",
-            value: formatCurrency(revenueSummary.premium),
+            value: money(revenueSummary.premium),
             color: dashboardPalette.revenueMetricColors.premium,
         },
         {
@@ -726,17 +729,17 @@ const DashboardContainer = () => {
         },
         {
             label: "RPM",
-            value: formatCurrency(revenueSummary.rpm),
+            value: money(revenueSummary.rpm),
             color: dashboardPalette.revenueMetricColors.rpm,
         },
         {
             label: "CPM",
-            value: formatCurrency(revenueSummary.cpm),
+            value: money(revenueSummary.cpm),
             color: dashboardPalette.revenueMetricColors.cpm,
         },
         {
             label: "Playback CPM",
-            value: formatCurrency(revenueSummary.playbackCpm),
+            value: money(revenueSummary.playbackCpm),
             color: dashboardPalette.revenueMetricColors.playbackCpm,
         },
     ];
@@ -838,6 +841,7 @@ const DashboardContainer = () => {
                             revenueXAxisTicks={revenueXAxisTicks}
                             chartTooltipStyles={chartTooltipStyles}
                             dashboardPalette={dashboardPalette}
+                            canViewRevenue={canViewRevenue}
                         />
                     </Box>
 

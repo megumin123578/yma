@@ -194,6 +194,21 @@ def enrich_summary_revenue(data: dict) -> dict:
     return out
 
 
+def strip_summary_revenue(data: dict) -> dict:
+    """Remove revenue fields from summary rows (for users lacking view_revenue)."""
+    if not isinstance(data, dict):
+        return data
+    out = dict(data)
+    out["watchlists"] = []
+    for wl in data.get("watchlists") or []:
+        wl_out = dict(wl)
+        for k in ("revenue_7d", "revenue_days", "avg_rpm_7d"):
+            if k in wl_out:
+                wl_out[k] = None
+        out["watchlists"].append(wl_out)
+    return out
+
+
 def enrich_summary_projects(data: dict) -> dict:
     """Gắn project (project_name) cho mỗi WL theo account_tag.
 

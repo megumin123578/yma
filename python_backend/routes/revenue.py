@@ -219,6 +219,23 @@ def get_revenue(
             f"[DB] revenue/select: "
             f"{(time.perf_counter() - t_query) * 1000:.1f}ms rows={len(rows)}"
         )
+    if not can_view_revenue(db, current_user):
+        masked = []
+        for r in rows:
+            d = dict(r)
+            for k in (
+                "estimated_revenue",
+                "ad_revenue",
+                "gross_revenue",
+                "estimated_red_partner_revenue",
+                "cpm",
+                "playback_cpm",
+                "rpm",
+            ):
+                if k in d:
+                    d[k] = None
+            masked.append(d)
+        rows = masked
     return {
         "rows": rows,
         "start_date": str(start_date) if start_date else None,

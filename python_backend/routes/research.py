@@ -21,8 +21,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from python_backend.api.auth.auth_utils import get_current_user_optional
+from python_backend.api.auth.database import get_db
+from python_backend.api.auth.permissions import can_view_revenue
 from python_backend.perf_log import add_log
 from python_backend.sse_utils import poll_stream, sse_response
 
@@ -409,9 +412,14 @@ def remove_channel(wid: str, cid: str, current_user=Depends(get_current_user_opt
     return {"removed": True, "channelId": cid}
 
 
-def _summary_with_meta(summary_report, data: dict, sid: str, snapshots: list) -> dict:
+def _summary_with_meta(
+    summary_report, data: dict, sid: str, snapshots: list, can_view_revenue: bool = True
+) -> dict:
     out = summary_report.enrich_summary_video_durations(data)
-    out = summary_report.enrich_summary_revenue(out)
+    if can_view_revenue:
+        out = summary_report.enrich_summary_revenue(out)
+    else:
+        out = summary_report.strip_summary_revenue(out)
     out = dict(summary_report.enrich_summary_projects(out))
     out["snapshot_id"] = sid
     out["snapshots"] = snapshots
@@ -423,6 +431,7 @@ def get_summary(
     refresh: bool = False,
     snapshot: str = "",
     current_user=Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
 ):
     """Executive summary nhieu watchlist.
 
@@ -433,9 +442,10 @@ def get_summary(
     """
     from python_backend.research import summary_report, watchlist as wlmod
     snapshots = summary_report.list_snapshots()
+    reveal_revenue = can_view_revenue(db, current_user)
 
     def _with_meta(data: dict, sid: str) -> dict:
-        return _summary_with_meta(summary_report, data, sid, snapshots)
+        return _summary_with_meta(summary_report, data, sid, snapshots, reveal_revenue)
 
     # 1) Chon snapshot lich su cu the
     if snapshot:
@@ -477,7 +487,10 @@ def get_summary(
 
 
 @router.post("/summary/refresh")
-def refresh_summary(current_user=Depends(get_current_user_optional)):
+def refresh_summary(
+    current_user=Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
     """Tao lai bao cao tong: build live + luu snapshot moi (giong cuoi WL run).
 
     Snapshot moi tro thanh ban moi nhat va xuat hien trong dropdown lich su.
@@ -503,7 +516,10 @@ def refresh_summary(current_user=Depends(get_current_user_optional)):
     if not snap:
         raise HTTPException(status_code=500, detail="snapshot not found after build")
     snapshots = summary_report.list_snapshots()
-    return _summary_with_meta(summary_report, snap["data"], snap["id"], snapshots)
+    return _summary_with_meta(
+        summary_report, snap["data"], snap["id"], snapshots,
+        can_view_revenue(db, current_user),
+    )
 
 
 @router.get("/strategy/{wid}")
