@@ -34,7 +34,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { DataTable, EmptyState, SectionCard, TextBlock, num } from "./primitives";
+import { DataTable, EmptyState, SectionCard, num } from "./primitives";
+import Markdown from "./Markdown";
 import {
   getResearchSummary,
   getVideoRetention,
@@ -80,6 +81,82 @@ const RetStat = ({ label, value, color }) => (
     </Typography>
   </Box>
 );
+
+// Cross-WL summary uses the original HTML card layout: source WL -> target WL, cluster, reason, samples.
+const CrossWLOpportunityCards = ({ opps = [], theme, cardBg, subtleBorder }) => {
+  if (!opps.length) {
+    return (
+      <EmptyState text="Chưa phát hiện cơ hội propagation rõ ràng. Có thể vì các WL chưa đủ overlap audience, hoặc viral cluster chưa hình thành." />
+    );
+  }
+
+  const accent = theme.palette.mode === "dark" ? theme.palette.secondary.light : theme.palette.secondary.main;
+
+  return (
+    <Box sx={{ display: "grid", gap: 1.5 }}>
+      {opps.slice(0, 20).map((o, i) => (
+        <Box
+          key={`${o.source_wl_id || o.source_wl_name}-${o.target_wl_id || o.target_wl_name}-${o.viral_cluster}-${i}`}
+          sx={{
+            p: 1.75,
+            borderRadius: 2,
+            border: subtleBorder,
+            borderLeft: `4px solid ${accent}`,
+            bgcolor: cardBg,
+          }}
+        >
+          <Typography variant="subtitle2" fontWeight={800} sx={{ color: accent, mb: 0.75 }}>
+            {i + 1}. WL "{o.source_wl_name || o.source_wl_id || "Nguồn"}" → WL "
+            {o.target_wl_name || o.target_wl_id || "Đích"}"
+            {o.similarity_score != null ? ` (similarity ${o.similarity_score})` : ""}
+          </Typography>
+
+          <Typography variant="body2" sx={{ mb: 0.75 }}>
+            <b>Cluster viral:</b>{" "}
+            <Box
+              component="code"
+              sx={{
+                px: 0.75,
+                py: 0.2,
+                borderRadius: 1,
+                bgcolor: alpha(accent, theme.palette.mode === "dark" ? 0.18 : 0.09),
+                color: accent,
+                fontWeight: 700,
+              }}
+            >
+              {o.viral_cluster || "—"}
+            </Box>{" "}
+            {o.cluster_avg_vpd != null ? `(${num(o.cluster_avg_vpd)} views/ngày TB)` : ""}
+          </Typography>
+
+          {o.reason && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1, lineHeight: 1.6 }}>
+              {o.reason}
+            </Typography>
+          )}
+
+          {Array.isArray(o.sample_videos) && o.sample_videos.length > 0 && (
+            <Box>
+              <Typography variant="body2" fontWeight={700} sx={{ mb: 0.5 }}>
+                Video mẫu:
+              </Typography>
+              <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+                {o.sample_videos.map((v, vi) => (
+                  <li key={vi}>
+                    <Typography variant="body2" sx={{ lineHeight: 1.55 }}>
+                      {v.title || "Video"} {v.channel ? `— ${v.channel}` : ""}
+                      {v.vpd != null ? ` (${num(v.vpd)} v/d)` : ""}
+                    </Typography>
+                  </li>
+                ))}
+              </Box>
+            </Box>
+          )}
+        </Box>
+      ))}
+    </Box>
+  );
+};
 
 // Chart retention (nguồn page Audience) — diễn giải dễ hiểu khi hover video.
 const RetentionMini = ({ rows, title, durationSeconds, theme }) => {
@@ -369,12 +446,6 @@ const SummaryReport = () => {
   const wlRows = data.watchlists || [];
   const topVideos = data.cross_top_videos || [];
   const opps = data.cross_wl_opps || [];
-  const oppColumns = opps.length
-    ? Object.keys(opps[0])
-        .filter((k) => ["string", "number", "boolean"].includes(typeof opps[0][k]))
-        .slice(0, 8)
-        .map((k) => ({ key: k, label: k.replace(/_/g, " ") }))
-    : [];
 
   const pos = theme.palette.success.main;
   const neg = theme.palette.error.main;
@@ -877,22 +948,26 @@ const SummaryReport = () => {
         title="Cơ hội Cross-WL"
         subtitle="Cụm đang viral ở WL này → gợi ý thử cho WL khác có cùng tệp người xem"
       >
-        {opps.length ? (
-          <DataTable rows={opps} columns={oppColumns} limit={20} />
-        ) : (
-          <EmptyState text="Chưa có cơ hội Cross-WL." />
-        )}
+        <CrossWLOpportunityCards
+          opps={opps}
+          theme={theme}
+          cardBg={cardBg}
+          subtleBorder={subtleBorder}
+        />
       </SectionCard>
       )}
 
       {tab === "strategy" && (
-      <SectionCard title="Tóm lược chiến lược từng kênh">
+      <SectionCard
+        title="Tóm lược chiến lược từng kênh"
+        subtitle="Render markdown từ phân tích mới nhất của từng WL"
+      >
         {wlRows.some((w) => w.strategy_preview) ? (
           <Box
             sx={{
               display: "grid",
-              gap: 1.5,
-              gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+              gap: 2,
+              gridTemplateColumns: { xs: "1fr", xl: "1fr 1fr" },
             }}
           >
             {wlRows
@@ -901,17 +976,35 @@ const SummaryReport = () => {
                 <Box
                   key={w.wid}
                   sx={{
-                    p: 1.75,
+                    p: 2,
                     borderRadius: 2,
                     border: subtleBorder,
                     borderLeft: `3px solid ${theme.palette.secondary.main}`,
                     bgcolor: cardBg,
+                    minWidth: 0,
+                    "& .strategy-md": {
+                      fontSize: "0.92rem",
+                      lineHeight: 1.65,
+                    },
+                    "& .strategy-md h1": { fontSize: "1.05rem", mt: 0, mb: 1 },
+                    "& .strategy-md h2": { fontSize: "1rem", mt: 1.5, mb: 0.75 },
+                    "& .strategy-md h3": { fontSize: "0.95rem", mt: 1.25, mb: 0.5 },
+                    "& .strategy-md p": { my: 0.75 },
+                    "& .strategy-md ul, & .strategy-md ol": { my: 0.75, pl: 2.5 },
+                    "& .strategy-md li": { mb: 0.35 },
                   }}
                 >
-                  <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-                    {w.name}
+                  <Typography variant="subtitle2" fontWeight={800}>
+                    {w.self_title || w.name}
                   </Typography>
-                  <TextBlock text={w.strategy_preview} />
+                  {w.self_title && w.name && w.self_title !== w.name && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                      {w.name}
+                    </Typography>
+                  )}
+                  <Box className="strategy-md">
+                    <Markdown text={w.strategy_preview} />
+                  </Box>
                 </Box>
               ))}
           </Box>

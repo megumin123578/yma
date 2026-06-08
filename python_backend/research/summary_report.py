@@ -516,13 +516,14 @@ def _pack_wl(wid: str) -> dict:
         except Exception:
             pass
 
-    # Strategy preview (lấy 200 ký tự đầu của chiến lược mới nhất)
+    # Strategy preview for the React summary tab. Keep enough markdown to be readable,
+    # while avoiding a very large executive-summary payload.
     la = w.latest_analysis
     if isinstance(la, dict):
         content = la.get("content", "")
-        info["strategy_preview"] = content[:250].strip()
+        info["strategy_preview"] = content[:2500].strip()
     elif isinstance(la, str):
-        info["strategy_preview"] = la[:250].strip()
+        info["strategy_preview"] = la[:2500].strip()
 
     return info
 

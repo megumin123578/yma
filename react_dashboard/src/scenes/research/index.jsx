@@ -35,11 +35,6 @@ const fmtDate = (s) => {
 // "2026-06-05 03:53" -> ngày "2026-06-05", giờ "03:53"
 const seoYmd = (dt) => String(dt || "").split(" ")[0];
 const seoHm = (dt) => String(dt || "").split(" ")[1] || "";
-// "2026-06-05" -> "26/06/05"
-const yymmdd = (s) => {
-  const [y, m, d] = String(s || "").split("-");
-  return y && m && d ? `${y.slice(2)}/${m}/${d}` : String(s || "");
-};
 
 const ResearchScene = ({ view = "report" }) => {
   const theme = useTheme();
@@ -189,7 +184,7 @@ const ResearchScene = ({ view = "report" }) => {
         )}
         {view === "seo" && seo.items.length > 0 && (
           <>
-            <FormControl size="small" sx={{ ...filterControlSx, minWidth: { xs: "100%", sm: 150 } }}>
+            <FormControl size="small" sx={{ ...filterControlSx, minWidth: { xs: "100%", sm: 175 } }}>
               <Select
                 value={seoDay}
                 onChange={(e) => {
@@ -197,11 +192,11 @@ const ResearchScene = ({ view = "report" }) => {
                   if (newest) seo.select(newest.id);
                 }}
                 MenuProps={selectMenuProps}
-                renderValue={(val) => `🗓 ${yymmdd(val)}`}
+                renderValue={(val) => `🗓 ${fmtDate(val)}`}
               >
                 {seoDays.map((d) => (
                   <MenuItem key={d} value={d}>
-                    {yymmdd(d)}
+                    {fmtDate(d)}
                   </MenuItem>
                 ))}
               </Select>
