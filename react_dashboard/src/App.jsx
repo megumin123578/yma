@@ -201,7 +201,7 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         }
       />
       <Route
-        path="/research"
+        path="/report"
         element={
           <ProtectedRoute user={user} loading={loading}>
             <ResearchScene view="report" />
@@ -209,7 +209,7 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         }
       />
       <Route
-        path="/research/seo"
+        path="/report/seo"
         element={
           <ProtectedRoute user={user} loading={loading}>
             <ResearchScene view="seo" />
@@ -217,7 +217,7 @@ const AppRoutes = memo(function AppRoutes({ user, loading }) {
         }
       />
       <Route
-        path="/research/summary"
+        path="/report/summary"
         element={
           <ProtectedRoute user={user} loading={loading}>
             <ResearchScene view="summary" />

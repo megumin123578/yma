@@ -22,8 +22,8 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 
 
-def _overview_latest_videos(account_tag: str, limit: int = 3) -> list:
-    """3 video mới nhất + đủ metrics, gom từ các bảng của page Overview:
+def _overview_latest_videos(account_tag: str, limit: int = 10) -> list:
+    """video mới nhất + đủ metrics, gom từ các bảng của page Overview:
     video_overview (views, avg duration, subs), video_thumbnail_daily
     (impressions, CTR), video_daily_stats (watch time = estimated_minutes).
     """
@@ -194,6 +194,54 @@ def enrich_summary_revenue(data: dict) -> dict:
     return out
 
 
+def enrich_summary_projects(data: dict) -> dict:
+    """Gắn project (project_name) cho mỗi WL theo account_tag.
+
+    Key bằng UserCredential.account_tag (đúng account_tag đã lưu trong row WL)
+    nên áp dụng được cả cho snapshot cũ. Dùng để lọc kênh theo project ở React.
+    """
+    if not isinstance(data, dict):
+        return data
+    wls = data.get("watchlists") or []
+    tags = sorted({
+        str(wl.get("account_tag") or "").strip()
+        for wl in wls
+        if str(wl.get("account_tag") or "").strip()
+    })
+    if not tags:
+        return data
+
+    proj_map = {}
+    try:
+        from python_backend.api.auth.database import SessionLocal
+        from python_backend.api.auth.models import UserCredential
+    except Exception:
+        return data
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(UserCredential.account_tag, UserCredential.project_name)
+            .filter(UserCredential.account_tag.in_(tags))
+            .all()
+        )
+        for tag, project in rows:
+            name = str(project or "").strip()
+            if name and not proj_map.get(tag):
+                proj_map[tag] = name
+    except Exception:
+        return data
+    finally:
+        db.close()
+
+    out = dict(data)
+    out["watchlists"] = []
+    for wl in wls:
+        wl_out = dict(wl)
+        wl_out["project"] = proj_map.get(str(wl.get("account_tag") or "").strip(), "")
+        out["watchlists"].append(wl_out)
+    return out
+
+
 def _content_daily_top_videos(account_tags: list[str], limit: int = 15) -> list:
     """Top videos from Content page daily metrics, using each account's latest data day."""
     tags = sorted({
@@ -308,7 +356,7 @@ def _pack_wl(wid: str) -> dict:
         "revenue_7d": None,
         "revenue_days": 0,
         "top_videos_today": [],   # video kênh chính tăng mạnh hôm nay
-        "latest_videos": [],       # 3 video mới nhất (page Overview) — expand UI
+        "latest_videos": [],       # 10 video mới nhất (page Overview) — expand UI
         "account_tag": "",         # map kênh chính → account_tag (Overview/Inside)
         "outlier_videos": [],      # video toàn ngách đột biến
         "warnings": [],
@@ -472,13 +520,13 @@ def _pack_wl(wid: str) -> dict:
     if content_daily_top:
         info["top_videos_today"] = content_daily_top
 
-    # 3 video MỚI NHẤT — ưu tiên data page Overview (bảng video_overview,
+    # 10 video MỚI NHẤT — ưu tiên data page Overview (bảng video_overview,
     # data chính chủ của kênh). Fallback scrape ngách nếu chưa map account_tag.
-    info["latest_videos"] = _overview_latest_videos(account_tag, limit=3)
+    info["latest_videos"] = _overview_latest_videos(account_tag, limit=10)
     if not info["latest_videos"]:
         latest = sorted(
             videos, key=lambda v: getattr(v, "published_at", "") or "",
-            reverse=True)[:3]
+            reverse=True)[:10]
         info["latest_videos"] = [{
             "title": getattr(v, "title", "") or "",
             "video_id": getattr(v, "video_id", "") or "",

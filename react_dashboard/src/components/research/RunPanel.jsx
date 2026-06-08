@@ -17,6 +17,7 @@ import {
 import PlayArrowRoundedIcon from "@mui/icons-material/PlayArrowRounded";
 import StopRoundedIcon from "@mui/icons-material/StopRounded";
 import WifiOffRoundedIcon from "@mui/icons-material/WifiOffRounded";
+import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
 import { getActiveRuns, getRun, startRun, stopRun, streamRun } from "../../services/researchService";
 
 const STATUS_COLOR = {
@@ -83,6 +84,7 @@ const RunPanel = ({ wlNameById = {}, wlAvatarById = {} }) => {
   const [progress, setProgress] = useState(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
+  const [expandedJobs, setExpandedJobs] = useState({});
   const [selectedWid, setSelectedWid] = useState("");
   const [connLost, setConnLost] = useState(false);
   const [, setTick] = useState(0);
@@ -188,6 +190,7 @@ const RunPanel = ({ wlNameById = {}, wlAvatarById = {} }) => {
   const sortedWls = [...wls].sort(
     (a, b) => (ROLLUP_RANK[rollup(a.stages)] ?? 9) - (ROLLUP_RANK[rollup(b.stages)] ?? 9)
   );
+  const toggleJob = (wlId) => setExpandedJobs((m) => ({ ...m, [wlId]: !m[wlId] }));
 
   return (
     <Box
@@ -358,20 +361,56 @@ const RunPanel = ({ wlNameById = {}, wlAvatarById = {} }) => {
           {sortedWls.map((wl) => {
             const st = rollup(wl.stages);
             const errs = (wl.stages || []).filter((s) => s.status === "failed" && s.error);
+            const jobOpen = !!expandedJobs[wl.wlId];
             return (
-              <Box key={wl.wlId} sx={{ p: 1, border: `1px solid ${theme.palette.divider}`, borderRadius: 1.5 }}>
-                <Box display="flex" alignItems="center" gap={1} mb={0.5}>
+              <Box
+                key={wl.wlId}
+                sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: 1.5, overflow: "hidden" }}
+              >
+                <Box
+                  onClick={() => toggleJob(wl.wlId)}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    p: 1,
+                    cursor: "pointer",
+                    "&:hover": { bgcolor: theme.palette.action.hover },
+                  }}
+                >
+                  <KeyboardArrowDownRoundedIcon
+                    fontSize="small"
+                    sx={{
+                      color: "text.secondary",
+                      transition: "transform .2s ease",
+                      transform: jobOpen ? "rotate(180deg)" : "none",
+                    }}
+                  />
                   <Chip size="small" color={STATUS_COLOR[st] || "default"} label={st} sx={{ height: 18 }} />
-                  <Typography variant="body2" fontWeight={600}>
+                  <Typography variant="body2" fontWeight={600} noWrap>
                     {wlNameById[wl.wlId] || wl.wlId}
                   </Typography>
+                  <Box flexGrow={1} />
+                  {errs.length > 0 && (
+                    <Chip
+                      size="small"
+                      color="error"
+                      variant="outlined"
+                      label={`${errs.length} lỗi`}
+                      sx={{ height: 18 }}
+                    />
+                  )}
                 </Box>
-                <StageChips stages={wl.stages} />
-                {errs.map((s, i) => (
-                  <Typography key={i} variant="caption" color="error" sx={{ display: "block", mt: 0.5 }}>
-                    {s.stage}: {s.error}
-                  </Typography>
-                ))}
+                <Collapse in={jobOpen} unmountOnExit>
+                  <Box sx={{ px: 1, pb: 1 }}>
+                    <StageChips stages={wl.stages} />
+                    {errs.map((s, i) => (
+                      <Typography key={i} variant="caption" color="error" sx={{ display: "block", mt: 0.5 }}>
+                        {s.stage}: {s.error}
+                      </Typography>
+                    ))}
+                  </Box>
+                </Collapse>
               </Box>
             );
           })}

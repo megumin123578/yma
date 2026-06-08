@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   Avatar,
   Box,
+  Button,
   Chip,
   CircularProgress,
   Collapse,
@@ -23,6 +24,7 @@ import {
   useTheme,
 } from "@mui/material";
 import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
+import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import { alpha } from "@mui/material/styles";
 import {
   Area,
@@ -40,6 +42,7 @@ import {
   getResearchSummary,
   getVideoRetention,
   listWatchlists,
+  refreshResearchSummary,
 } from "../../services/researchService";
 import {
   getSharedFilterControlSx,
@@ -364,10 +367,12 @@ const SummaryReport = () => {
   const selectMenuProps = getSharedSelectMenuProps(theme);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState("");
   const [avatars, setAvatars] = useState({});
   const [expandedWid, setExpandedWid] = useState("");
   const [tab, setTab] = useState("overview");
+  const [project, setProject] = useState(""); // "" = tất cả project
   const [retHover, setRetHover] = useState(null); // {anchorEl, key, video}
   const [retCache, setRetCache] = useState({}); // key -> rows | null(loading)
 
@@ -395,6 +400,16 @@ const SummaryReport = () => {
       .finally(() => setLoading(false));
   };
 
+  // Tạo lại báo cáo: build live + lưu snapshot mới → trở thành bản mới nhất.
+  const regenerate = () => {
+    setRegenerating(true);
+    setError("");
+    refreshResearchSummary()
+      .then(setData)
+      .catch((e) => setError(e?.response?.data?.detail || e.message))
+      .finally(() => setRegenerating(false));
+  };
+
   useEffect(() => {
     load();
     listWatchlists()
@@ -419,14 +434,16 @@ const SummaryReport = () => {
 
   const warnings = useMemo(
     () =>
-      (data?.watchlists || []).flatMap((w) =>
-        (w.warnings || []).map((warning) => ({
-          watchlist: w.name,
-          channel: w.self_title,
-          warning,
-        }))
-      ),
-    [data]
+      (data?.watchlists || [])
+        .filter((w) => !project || (w.project || "").trim() === project)
+        .flatMap((w) =>
+          (w.warnings || []).map((warning) => ({
+            watchlist: w.name,
+            channel: w.self_title,
+            warning,
+          }))
+        ),
+    [data, project]
   );
 
   if (loading && !data) {
@@ -443,8 +460,19 @@ const SummaryReport = () => {
   if (error && !data) return <EmptyState text={`Lỗi: ${error}`} />;
   if (!data) return <EmptyState text="Chưa có dữ liệu báo cáo tổng hợp." />;
 
-  const wlRows = data.watchlists || [];
-  const topVideos = data.cross_top_videos || [];
+  const allWlRows = data.watchlists || [];
+  const projectOptions = [
+    ...new Set(allWlRows.map((w) => (w.project || "").trim()).filter(Boolean)),
+  ].sort((a, b) => a.localeCompare(b));
+
+  const wlRows = allWlRows.filter(
+    (w) => !project || (w.project || "").trim() === project
+  );
+  const wids = new Set(wlRows.map((w) => w.wid));
+  const topVideos = (data.cross_top_videos || []).filter(
+    (v) => !project || wids.has(v.wid)
+  );
+  // Cross-WL là quan hệ XUYÊN watchlist/project → luôn hiển thị toàn bộ, không lọc theo project.
   const opps = data.cross_wl_opps || [];
 
   const pos = theme.palette.success.main;
@@ -457,33 +485,39 @@ const SummaryReport = () => {
     </Typography>
   );
 
+  // KPI tính lại theo tập kênh đang hiển thị (toàn bộ hoặc 1 project).
+  const totalSubs = wlRows.reduce((s, w) => s + (w.subs || 0), 0);
+  const totalSubsDelta = wlRows.reduce((s, w) => s + (w.subs_delta_7d || 0), 0);
+  const totalViewsDelta = wlRows.reduce((s, w) => s + (w.views_delta_7d || 0), 0);
+  const nWarnings = warnings.length;
+
   const kpis = [
     {
       label: "Người đăng ký",
-      value: num(data.total_subs),
+      value: num(totalSubs),
       hint: "Tổng hiện tại",
       accent: theme.palette.primary.main,
     },
     {
       label: "Δ Subs · 7 ngày",
-      value: sg(data.total_subs_delta_7d),
+      value: sg(totalSubsDelta),
       hint: "So với tuần trước",
-      accent: deltaColor(data.total_subs_delta_7d),
-      color: deltaColor(data.total_subs_delta_7d),
+      accent: deltaColor(totalSubsDelta),
+      color: deltaColor(totalSubsDelta),
     },
     {
       label: "Δ Views · 7 ngày",
-      value: sg(data.total_views_delta_7d),
+      value: sg(totalViewsDelta),
       hint: "Tăng trưởng gần nhất",
-      accent: deltaColor(data.total_views_delta_7d),
-      color: deltaColor(data.total_views_delta_7d),
+      accent: deltaColor(totalViewsDelta),
+      color: deltaColor(totalViewsDelta),
     },
     {
       label: "Cảnh báo",
-      value: num(data.n_warnings),
-      hint: data.n_warnings ? "Cần xử lý" : "Tốt, không có",
-      accent: data.n_warnings ? theme.palette.warning.main : pos,
-      color: data.n_warnings ? theme.palette.warning.main : pos,
+      value: num(nWarnings),
+      hint: nWarnings ? "Cần xử lý" : "Tốt, không có",
+      accent: nWarnings ? theme.palette.warning.main : pos,
+      color: nWarnings ? theme.palette.warning.main : pos,
     },
   ];
 
@@ -504,7 +538,7 @@ const SummaryReport = () => {
               const newest = snapshots.find((s) => snapYmd(s.date) === e.target.value);
               if (newest) load({ snapshot: newest.id });
             }}
-            disabled={loading}
+            disabled={loading || regenerating}
             MenuProps={selectMenuProps}
             renderValue={(val) => `🗓 ${fmtSnapDay(val)}`}
           >
@@ -521,7 +555,7 @@ const SummaryReport = () => {
           <Select
             value={snapshotId}
             onChange={(e) => load({ snapshot: e.target.value })}
-            disabled={loading}
+            disabled={loading || regenerating}
             MenuProps={selectMenuProps}
             renderValue={(val) => `🕐 ${snapHm(snapshots.find((s) => s.id === val)?.date)}`}
           >
@@ -533,8 +567,42 @@ const SummaryReport = () => {
           </Select>
         </FormControl>
       )}
+      {projectOptions.length > 0 && (
+        <FormControl size="small" sx={{ ...filterControlSx, minWidth: { xs: "100%", sm: 190 } }}>
+          <Select
+            value={project}
+            onChange={(e) => setProject(e.target.value)}
+            displayEmpty
+            MenuProps={selectMenuProps}
+            renderValue={(val) => `📁 ${val || "Tất cả project"}`}
+          >
+            <MenuItem value="">Tất cả project</MenuItem>
+            {projectOptions.map((p) => (
+              <MenuItem key={p} value={p}>
+                {p}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      )}
       {loading && <CircularProgress size={18} />}
       {error && <Chip size="small" color="error" variant="outlined" label={error} />}
+      <Button
+        size="small"
+        variant="outlined"
+        onClick={regenerate}
+        disabled={loading || regenerating}
+        startIcon={
+          regenerating ? (
+            <CircularProgress size={14} color="inherit" />
+          ) : (
+            <RefreshRoundedIcon fontSize="small" />
+          )
+        }
+        sx={{ ml: "auto", textTransform: "none", flex: "0 0 auto" }}
+      >
+        {regenerating ? "Đang tạo lại…" : "Tạo lại báo cáo"}
+      </Button>
     </Box>
   );
 
@@ -602,7 +670,7 @@ const SummaryReport = () => {
       {tab === "overview" && (
       <SectionCard
         title="Tình hình từng kênh"
-        subtitle="Bấm vào một kênh để xem 3 video mới nhất"
+        subtitle="Bấm vào một kênh để xem 10 video mới nhất"
         action={<Chip size="small" variant="outlined" label={`${wlRows.length} kênh`} />}
       >
         <TableContainer
@@ -877,8 +945,17 @@ const SummaryReport = () => {
                 ),
               },
               { key: "day", label: "Ngày data", render: (r) => r.day || "—" },
-              { key: "views", label: "Views", align: "right", render: (r) => num(r.views) },
-              { key: "vpd", label: "Views ngày", align: "right", render: (r) => (r.vpd ? num(r.vpd) : "—") },
+              {
+                key: "vpd",
+                label: "Views trong ngày",
+                align: "right",
+                render: (r) => (
+                  <Typography variant="body2" fontWeight={700}>
+                    {r.vpd ? num(r.vpd) : "—"}
+                  </Typography>
+                ),
+              },
+              { key: "views", label: "Tổng views", align: "right", render: (r) => num(r.views) },
               {
                 key: "mult",
                 label: "Outlier",

@@ -409,6 +409,15 @@ def remove_channel(wid: str, cid: str, current_user=Depends(get_current_user_opt
     return {"removed": True, "channelId": cid}
 
 
+def _summary_with_meta(summary_report, data: dict, sid: str, snapshots: list) -> dict:
+    out = summary_report.enrich_summary_video_durations(data)
+    out = summary_report.enrich_summary_revenue(out)
+    out = dict(summary_report.enrich_summary_projects(out))
+    out["snapshot_id"] = sid
+    out["snapshots"] = snapshots
+    return out
+
+
 @router.get("/summary")
 def get_summary(
     refresh: bool = False,
@@ -426,11 +435,7 @@ def get_summary(
     snapshots = summary_report.list_snapshots()
 
     def _with_meta(data: dict, sid: str) -> dict:
-        out = summary_report.enrich_summary_video_durations(data)
-        out = dict(summary_report.enrich_summary_revenue(out))
-        out["snapshot_id"] = sid
-        out["snapshots"] = snapshots
-        return out
+        return _summary_with_meta(summary_report, data, sid, snapshots)
 
     # 1) Chon snapshot lich su cu the
     if snapshot:
@@ -469,6 +474,36 @@ def get_summary(
     with _cache_lock:
         _summary_cache = (now, data)
     return _with_meta(data, "")
+
+
+@router.post("/summary/refresh")
+def refresh_summary(current_user=Depends(get_current_user_optional)):
+    """Tao lai bao cao tong: build live + luu snapshot moi (giong cuoi WL run).
+
+    Snapshot moi tro thanh ban moi nhat va xuat hien trong dropdown lich su.
+    """
+    from python_backend.research import summary_report, watchlist as wlmod
+    global _summary_cache
+    t0 = time.perf_counter()
+    try:
+        wids = [
+            w.id for w in wlmod.list_watchlists()
+            if not bool(getattr(w, "paused", False))
+        ]
+        meta = summary_report.build_and_save_snapshot(wids)
+    except Exception as e:  # noqa: BLE001
+        print(f"[research] summary refresh loi: {e}")
+        raise HTTPException(status_code=500, detail=f"summary refresh failed: {e}")
+
+    add_log(f"[H] research/summary refresh: {(time.perf_counter() - t0) * 1000:.1f}ms")
+    with _cache_lock:
+        _summary_cache = None
+
+    snap = summary_report.get_snapshot(meta["id"])
+    if not snap:
+        raise HTTPException(status_code=500, detail="snapshot not found after build")
+    snapshots = summary_report.list_snapshots()
+    return _summary_with_meta(summary_report, snap["data"], snap["id"], snapshots)
 
 
 @router.get("/report/{wid}")

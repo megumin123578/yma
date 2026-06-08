@@ -27,6 +27,12 @@ export const getResearchSummary = async ({ refresh = false, snapshot = "" } = {}
   return data;
 };
 
+// Tạo lại báo cáo tổng: build live + lưu snapshot mới. Trả payload như getResearchSummary.
+export const refreshResearchSummary = async () => {
+  const { data } = await api.post("/api/research/summary/refresh");
+  return data;
+};
+
 // Retention curve 1 video (nguồn page Audience). Trả {rows:[{elapsed..., audience_watch_ratio}]}.
 export const getVideoRetention = async (accountTag, videoId) => {
   const { data } = await api.get("/api/audience/retention", {
