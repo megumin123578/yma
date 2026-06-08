@@ -12,6 +12,7 @@ import {
   useTheme,
 } from "@mui/material";
 import YouTubeIcon from "@mui/icons-material/YouTube";
+import FolderOutlinedIcon from "@mui/icons-material/FolderOutlined";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -149,6 +150,9 @@ const ChannelSwitcher = ({
   showAllVisible = true,
   showAllActive = false,
   onShowAllClick,
+  // Opt-in: cho phép chọn CẢ project (không chỉ kênh). Mặc định off → dashboard/analytics giữ nguyên.
+  onSelectProject,
+  selectedProjectName = "",
   textFieldSx,
 }) => {
   const theme = useTheme();
@@ -363,6 +367,18 @@ const ChannelSwitcher = ({
     () =>
       groupedOptions.find((option) => option.value === selectedValue) ||
       mergedOptions.find((option) => option.value === selectedValue) ||
+      (selectedProjectName
+        ? {
+            raw: null,
+            value: "__project__",
+            label: selectedProjectName,
+            avatar: "",
+            meta: "",
+            hidden: false,
+            tokenName: "",
+            isProject: true,
+          }
+        : null) ||
       (showAllActive
         ? {
             raw: null,
@@ -375,7 +391,7 @@ const ChannelSwitcher = ({
           }
         : null) ||
       null,
-    [groupedOptions, mergedOptions, selectedValue, showAllActive, showAllSelectedLabel]
+    [groupedOptions, mergedOptions, selectedValue, selectedProjectName, showAllActive, showAllSelectedLabel]
   );
 
   const normalizedSelectedLabel = String(selectedOption?.label || "").trim().toLowerCase();
@@ -728,6 +744,8 @@ const ChannelSwitcher = ({
       {topLevelHierarchyEntries.map((entry) => {
         const isActive = activeProjectEntry?.key === entry.key;
         const channelCount = entry.items?.length || 0;
+        const isProjectSelected =
+          !!onSelectProject && entry.projectName === selectedProjectName;
         return (
           <Box
             key={entry.key}
@@ -736,12 +754,22 @@ const ChannelSwitcher = ({
               setHoveredProjectKey(entry.key);
               setHoveredProjectRect(getAnchorRect(event.currentTarget));
             }}
+            onClick={
+              onSelectProject
+                ? () => {
+                    onSelectProject(entry.projectName);
+                    setOpen(false);
+                    setStickyHiddenValues([]);
+                    resetHierarchyHover();
+                  }
+                : undefined
+            }
             sx={{
               ...menuRowSx,
               justifyContent: "space-between",
-              bgcolor: isActive ? "action.selected" : "transparent",
+              bgcolor: isProjectSelected || isActive ? "action.selected" : "transparent",
               "&:hover": {
-                bgcolor: isActive ? "action.selected" : "action.hover",
+                bgcolor: isProjectSelected || isActive ? "action.selected" : "action.hover",
               },
             }}
           >
@@ -965,7 +993,9 @@ const ChannelSwitcher = ({
               ...params.InputProps,
               startAdornment: (
                 <>
-                  {selectedOption?.avatar ? (
+                  {selectedOption?.isProject ? (
+                    <FolderOutlinedIcon sx={{ fontSize: 20, color: "text.secondary", mr: 0.5 }} />
+                  ) : selectedOption?.avatar ? (
                     <Avatar
                       src={selectedOption.avatar}
                       alt={selectedOption.label}

@@ -506,6 +506,26 @@ def refresh_summary(current_user=Depends(get_current_user_optional)):
     return _summary_with_meta(summary_report, snap["data"], snap["id"], snapshots)
 
 
+@router.get("/strategy/{wid}")
+def get_watchlist_strategy(
+    wid: str,
+    current_user=Depends(get_current_user_optional),
+):
+    """Full chiến lược (latest_analysis) của 1 watchlist — cho tab Chiến lược
+    báo cáo tổng (lấy on-demand để không phình snapshot)."""
+    from python_backend.research import watchlist as wlmod
+    w = wlmod.load_watchlist(wid)
+    if not w:
+        raise HTTPException(status_code=404, detail="watchlist not found")
+    la = w.latest_analysis
+    content = ""
+    if isinstance(la, dict):
+        content = (la.get("content") or "").strip()
+    elif isinstance(la, str):
+        content = la.strip()
+    return {"wid": wid, "content": content}
+
+
 @router.get("/report/{wid}")
 def get_report(
     wid: str,

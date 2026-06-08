@@ -33,6 +33,12 @@ export const refreshResearchSummary = async () => {
   return data;
 };
 
+// Full chiến lược (latest_analysis) của 1 watchlist — cho tab Chiến lược báo cáo tổng.
+export const getWatchlistStrategy = async (wid) => {
+  const { data } = await api.get(`/api/research/strategy/${wid}`);
+  return data;
+};
+
 // Retention curve 1 video (nguồn page Audience). Trả {rows:[{elapsed..., audience_watch_ratio}]}.
 export const getVideoRetention = async (accountTag, videoId) => {
   const { data } = await api.get("/api/audience/retention", {

@@ -37,10 +37,12 @@ import {
   YAxis,
 } from "recharts";
 import { DataTable, EmptyState, SectionCard, num } from "./primitives";
+import ChannelSwitcher, { CHANNEL_SWITCHER_SX } from "../ChannelSwitcher";
 import Markdown from "./Markdown";
 import {
   getResearchSummary,
   getVideoRetention,
+  getWatchlistStrategy,
   listWatchlists,
   refreshResearchSummary,
 } from "../../services/researchService";
@@ -361,6 +363,72 @@ const fmtSnapDay = (ymd) => {
   return y && m && d ? `${d}/${m}/${y}` : String(ymd || "");
 };
 
+// Tab Chiến lược: full nội dung latest_analysis của 1 kênh, fetch on-demand, full width.
+const StrategyDetail = ({ wid, title, name, avatar, fallback, theme, subtleBorder, cardBg }) => {
+  const [content, setContent] = useState(null); // null = đang tải
+  useEffect(() => {
+    let alive = true;
+    setContent(null);
+    getWatchlistStrategy(wid)
+      .then((d) => alive && setContent(d?.content || ""))
+      .catch(() => alive && setContent(""));
+    return () => {
+      alive = false;
+    };
+  }, [wid]);
+
+  const text = content || fallback || "";
+  return (
+    <Box
+      sx={{
+        p: 2,
+        borderRadius: 2,
+        border: subtleBorder,
+        borderLeft: `3px solid ${theme.palette.secondary.main}`,
+        bgcolor: cardBg,
+        minWidth: 0,
+        "& .strategy-md": { fontSize: "0.92rem", lineHeight: 1.65 },
+        "& .strategy-md h1": { fontSize: "1.05rem", mt: 0, mb: 1 },
+        "& .strategy-md h2": { fontSize: "1rem", mt: 1.5, mb: 0.75 },
+        "& .strategy-md h3": { fontSize: "0.95rem", mt: 1.25, mb: 0.5 },
+        "& .strategy-md p": { my: 0.75 },
+        "& .strategy-md ul, & .strategy-md ol": { my: 0.75, pl: 2.5 },
+        "& .strategy-md li": { mb: 0.35 },
+      }}
+    >
+      <Box display="flex" alignItems="center" gap={1} mb={1}>
+        <Avatar src={avatar} sx={{ width: 30, height: 30 }}>
+          {(title || "?")[0]}
+        </Avatar>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="subtitle2" fontWeight={800} noWrap>
+            {title}
+          </Typography>
+          {name && name !== title && (
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+              {name}
+            </Typography>
+          )}
+        </Box>
+      </Box>
+      {content == null ? (
+        <Box display="flex" alignItems="center" gap={1}>
+          <CircularProgress size={16} />
+          <Typography variant="body2" color="text.secondary">
+            Đang tải chiến lược…
+          </Typography>
+        </Box>
+      ) : text ? (
+        <Box className="strategy-md">
+          <Markdown text={text} />
+        </Box>
+      ) : (
+        <EmptyState text="Chưa có tóm lược chiến lược." />
+      )}
+    </Box>
+  );
+};
+
 const SummaryReport = () => {
   const theme = useTheme();
   const filterControlSx = getSharedFilterControlSx(theme, { flex: "0 0 auto" });
@@ -370,9 +438,9 @@ const SummaryReport = () => {
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState("");
   const [avatars, setAvatars] = useState({});
-  const [expandedWid, setExpandedWid] = useState("");
   const [tab, setTab] = useState("overview");
-  const [project, setProject] = useState(""); // "" = tất cả project
+  const [channel, setChannel] = useState(""); // "" = không lọc theo kênh (account_tag||wid)
+  const [project, setProject] = useState(""); // "" = không lọc theo project
   const [retHover, setRetHover] = useState(null); // {anchorEl, key, video}
   const [retCache, setRetCache] = useState({}); // key -> rows | null(loading)
 
@@ -435,15 +503,22 @@ const SummaryReport = () => {
   const warnings = useMemo(
     () =>
       (data?.watchlists || [])
-        .filter((w) => !project || (w.project || "").trim() === project)
+        .filter((w) =>
+          channel
+            ? ((w.account_tag || "").trim() || w.wid) === channel
+            : project
+            ? (w.project || "").trim() === project
+            : true
+        )
         .flatMap((w) =>
           (w.warnings || []).map((warning) => ({
+            wid: w.wid,
             watchlist: w.name,
             channel: w.self_title,
             warning,
           }))
         ),
-    [data, project]
+    [data, channel, project]
   );
 
   if (loading && !data) {
@@ -461,18 +536,32 @@ const SummaryReport = () => {
   if (!data) return <EmptyState text="Chưa có dữ liệu báo cáo tổng hợp." />;
 
   const allWlRows = data.watchlists || [];
-  const projectOptions = [
-    ...new Set(allWlRows.map((w) => (w.project || "").trim()).filter(Boolean)),
-  ].sort((a, b) => a.localeCompare(b));
 
-  const wlRows = allWlRows.filter(
-    (w) => !project || (w.project || "").trim() === project
-  );
+  // Dropdown gộp project + kênh (UI ChannelSwitcher y hệt dashboard). Key theo
+  // account_tag (khớp token inventory để group/avatar), fallback wid cho WL chưa map.
+  const channelKey = (w) => (w.account_tag || "").trim() || w.wid;
+  const channelPickerOptions = allWlRows.map((w) => ({
+    value: channelKey(w),
+    wid: w.wid,
+    label: w.self_title || w.name || w.wid,
+    project_name: (w.project || "").trim(),
+    avatar: avatars[w.wid] || "",
+  }));
+
+  // Lọc theo kênh (ưu tiên) hoặc theo project; không chọn gì = tất cả.
+  const matchWl = (w) =>
+    channel
+      ? channelKey(w) === channel
+      : project
+      ? (w.project || "").trim() === project
+      : true;
+  const wlRows = allWlRows.filter(matchWl);
   const wids = new Set(wlRows.map((w) => w.wid));
+  const isFiltered = Boolean(channel || project);
   const topVideos = (data.cross_top_videos || []).filter(
-    (v) => !project || wids.has(v.wid)
+    (v) => !isFiltered || wids.has(v.wid)
   );
-  // Cross-WL là quan hệ XUYÊN watchlist/project → luôn hiển thị toàn bộ, không lọc theo project.
+  // Cross-WL là quan hệ XUYÊN watchlist/project → luôn hiển thị toàn bộ, không lọc.
   const opps = data.cross_wl_opps || [];
 
   const pos = theme.palette.success.main;
@@ -567,23 +656,35 @@ const SummaryReport = () => {
           </Select>
         </FormControl>
       )}
-      {projectOptions.length > 0 && (
-        <FormControl size="small" sx={{ ...filterControlSx, minWidth: { xs: "100%", sm: 190 } }}>
-          <Select
-            value={project}
-            onChange={(e) => setProject(e.target.value)}
-            displayEmpty
-            MenuProps={selectMenuProps}
-            renderValue={(val) => `📁 ${val || "Tất cả project"}`}
-          >
-            <MenuItem value="">Tất cả project</MenuItem>
-            {projectOptions.map((p) => (
-              <MenuItem key={p} value={p}>
-                {p}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+      {channelPickerOptions.length > 0 && (
+        <ChannelSwitcher
+          options={channelPickerOptions}
+          value={channel}
+          onChange={(option) => {
+            setChannel(option?.value || "");
+            setProject("");
+          }}
+          onSelectProject={(p) => {
+            setProject(p || "");
+            setChannel("");
+          }}
+          selectedProjectName={project}
+          sx={CHANNEL_SWITCHER_SX}
+          disabled={loading || regenerating}
+          placeholder="Tìm theo tên kênh"
+          noOptionsText="Không tìm thấy kênh"
+          getOptionAvatar={(option) => option?.avatar || ""}
+          showAllVisible
+          showAllActive={!channel && !project}
+          showAllDisabled={false}
+          onShowAllClick={() => {
+            setChannel("");
+            setProject("");
+          }}
+          showAllLabel="Tất cả kênh"
+          showAllSelectedLabel="Tất cả kênh"
+          textFieldSx={filterControlSx}
+        />
       )}
       {loading && <CircularProgress size={18} />}
       {error && <Chip size="small" color="error" variant="outlined" label={error} />}
@@ -670,7 +771,7 @@ const SummaryReport = () => {
       {tab === "overview" && (
       <SectionCard
         title="Tình hình từng kênh"
-        subtitle="Bấm vào một kênh để xem 10 video mới nhất"
+        subtitle="Bấm vào một kênh để chỉ xem báo cáo kênh đó (bấm lại để xem tất cả)"
         action={<Chip size="small" variant="outlined" label={`${wlRows.length} kênh`} />}
       >
         <TableContainer
@@ -696,13 +797,17 @@ const SummaryReport = () => {
             </TableHead>
             <TableBody>
               {wlRows.map((r) => {
-                const open = expandedWid === r.wid;
+                const rKey = channelKey(r);
+                const open = channel === rKey;
                 const vids = r.latest_videos || [];
                 return (
                   <Fragment key={r.wid}>
                     <TableRow
                       hover
-                      onClick={() => setExpandedWid(open ? "" : r.wid)}
+                      onClick={() => {
+                        setChannel(channel === rKey ? "" : rKey);
+                        setProject("");
+                      }}
                       sx={{ cursor: "pointer", "& > *": { borderBottom: open ? "unset" : undefined } }}
                     >
                       <TableCell sx={{ width: 36 }}>
@@ -997,9 +1102,13 @@ const SummaryReport = () => {
                 key: "channel",
                 label: "Kênh",
                 render: (r) => (
-                  <Box>
-                    <Typography variant="body2" fontWeight={700}>{r.channel || "—"}</Typography>
-                    <Typography variant="caption" color="text.secondary">{r.watchlist}</Typography>
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <Avatar src={avatars[r.wid] || ""} sx={{ width: 24, height: 24 }}>
+                      {(r.channel || "?")[0]}
+                    </Avatar>
+                    <Typography variant="body2" fontWeight={700} noWrap title={r.channel}>
+                      {r.channel || "—"}
+                    </Typography>
                   </Box>
                 ),
               },
@@ -1035,56 +1144,21 @@ const SummaryReport = () => {
       )}
 
       {tab === "strategy" && (
-      <SectionCard
-        title="Tóm lược chiến lược từng kênh"
-        subtitle="Render markdown từ phân tích mới nhất của từng WL"
-      >
-        {wlRows.some((w) => w.strategy_preview) ? (
-          <Box
-            sx={{
-              display: "grid",
-              gap: 2,
-              gridTemplateColumns: { xs: "1fr", xl: "1fr 1fr" },
-            }}
-          >
-            {wlRows
-              .filter((w) => w.strategy_preview)
-              .map((w) => (
-                <Box
-                  key={w.wid}
-                  sx={{
-                    p: 2,
-                    borderRadius: 2,
-                    border: subtleBorder,
-                    borderLeft: `3px solid ${theme.palette.secondary.main}`,
-                    bgcolor: cardBg,
-                    minWidth: 0,
-                    "& .strategy-md": {
-                      fontSize: "0.92rem",
-                      lineHeight: 1.65,
-                    },
-                    "& .strategy-md h1": { fontSize: "1.05rem", mt: 0, mb: 1 },
-                    "& .strategy-md h2": { fontSize: "1rem", mt: 1.5, mb: 0.75 },
-                    "& .strategy-md h3": { fontSize: "0.95rem", mt: 1.25, mb: 0.5 },
-                    "& .strategy-md p": { my: 0.75 },
-                    "& .strategy-md ul, & .strategy-md ol": { my: 0.75, pl: 2.5 },
-                    "& .strategy-md li": { mb: 0.35 },
-                  }}
-                >
-                  <Typography variant="subtitle2" fontWeight={800}>
-                    {w.self_title || w.name}
-                  </Typography>
-                  {w.self_title && w.name && w.self_title !== w.name && (
-                    <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-                      {w.name}
-                    </Typography>
-                  )}
-                  <Box className="strategy-md">
-                    <Markdown text={w.strategy_preview} />
-                  </Box>
-                </Box>
-              ))}
-          </Box>
+      <SectionCard title="Tóm lược chiến lược từng kênh">
+        {!channel ? (
+          <EmptyState text="Chọn một kênh ở trên để xem chiến lược của kênh đó." />
+        ) : wlRows[0] ? (
+          <StrategyDetail
+            key={wlRows[0].wid}
+            wid={wlRows[0].wid}
+            title={wlRows[0].self_title || wlRows[0].name}
+            name={wlRows[0].name}
+            avatar={avatars[wlRows[0].wid] || ""}
+            fallback={wlRows[0].strategy_preview}
+            theme={theme}
+            subtleBorder={subtleBorder}
+            cardBg={cardBg}
+          />
         ) : (
           <EmptyState text="Chưa có tóm lược chiến lược." />
         )}

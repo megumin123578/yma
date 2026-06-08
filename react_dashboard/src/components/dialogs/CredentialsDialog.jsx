@@ -167,6 +167,26 @@ const isChannelProgressRunType = (runType) => {
   );
 };
 
+const isMailTokenName = (name) => String(name || "").trim().toLowerCase().startsWith("mail__");
+
+// Run của các token mail (mail__*) — ẩn khỏi tab Run logs (đã có trang Email riêng).
+const isMailRun = (run) => {
+  let names = [];
+  if (run?.token_names) {
+    try {
+      const parsed = JSON.parse(run.token_names);
+      if (Array.isArray(parsed)) names = parsed.map((x) => String(x || ""));
+    } catch {
+      names = [];
+    }
+  }
+  if (!names.length && run?.token_name) names = [String(run.token_name)];
+  if (!names.length && Array.isArray(run?.items)) {
+    names = run.items.map((it) => String(it?.token_name || "")).filter(Boolean);
+  }
+  return names.length > 0 && names.every(isMailTokenName);
+};
+
 const CredentialsDialog = ({
   open,
   onClose,
@@ -3815,23 +3835,34 @@ const CredentialsDialog = ({
                         <Typography variant="body2" color="text.secondary">
                           {cleanError(runsError)}
                         </Typography>
-                      ) : scheduleRuns.length === 0 ? (
+                      ) : scheduleRuns.filter((run) => !isMailRun(run)).length === 0 ? (
                         <Typography variant="body2" color="text.secondary">
                           {loadingRuns ? "Loading logs..." : "No runs yet."}
                         </Typography>
                       ) : (
                         <Box display="flex" flexDirection="column" gap={1}>
-                          {scheduleRuns.map((run) => {
+                          {scheduleRuns.filter((run) => !isMailRun(run)).map((run) => {
                             const normalizedStatus = normalizeRunStatus(run.status);
                             const styles = statusStyles(normalizedStatus);
-                            const processed = run.processed ?? 0;
-                            const total = run.total ?? 0;
+                            const allRunItems = Array.isArray(run.items) ? run.items : [];
+                            const runItems = allRunItems.filter(
+                              (item) => !isMailTokenName(item?.token_name)
+                            );
+                            const removedMailItems = runItems.length !== allRunItems.length;
+                            const processed = removedMailItems
+                              ? runItems.filter(
+                                  (it) =>
+                                    !["running", "queued", "pending", "in_progress"].includes(
+                                      normalizeRunStatus(it.status)
+                                    )
+                                ).length
+                              : run.processed ?? 0;
+                            const total = removedMailItems ? runItems.length : run.total ?? 0;
                             const hasChannelProgress =
                               isChannelProgressRunType(run.run_type) && total > 0;
                             const tokenName = formatTokenName(run.token_name);
                             const runType = formatRunType(run.run_type);
                             const runMessage = cleanError(run.message);
-                            const runItems = Array.isArray(run.items) ? run.items : [];
                             const itemCounts = runItems.reduce(
                               (acc, item) => {
                                 const key = normalizeRunStatus(item.status);
